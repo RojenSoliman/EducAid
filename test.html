@@ -38,7 +38,10 @@ function onScanSuccess(decodedText, decodedResult) {
     });
 
     // Stop scanning after first successful scan
-    html5QrcodeScanner.clear();
+    html5QrcodeScanner.clear().catch(error => {
+    // Optionally log or handle the error gracefully
+    console.warn("Scanner clear error:", error);
+});
 }
 
 // Configure and render scanner
