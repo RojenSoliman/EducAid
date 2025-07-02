@@ -1,31 +1,54 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Test Page</title>
-        <link rel="stylesheet" href="styles.css">
-        <script src="script.js"></script>
-    </head>
-    <body>
-        <h1>Welcome to the Test Page</h1>
-        <p>This is a simple HTML page to test the structure and functionality.</p>
-        <button id="testButton">Click Me!</button>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>QR Code Scanner | EducAid</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
 
-        <script>
-            document.getElementById('testButton').addEventListener('click', function() {
-                alert('Button was clicked!');
-            });
-            //hello
-            // branch methods uli
-            //pano mag commit
+<div class="container py-5">
+  <h2 class="mb-4 text-center">Scan Student QR Code</h2>
+  
+  <div id="reader" style="width: 100%; max-width: 500px; margin: auto;"></div>
+  
+  <div class="mt-4 text-center">
+    <p id="qr-result" class="lead text-success fw-bold"></p>
+  </div>
+</div>
 
-            //ung dalawang copilot
-            //wait
-            // ala ung commit
+<script>
+function onScanSuccess(decodedText, decodedResult) {
+    // Display scanned QR code text
+    document.getElementById('qr-result').innerText = "Scanned: " + decodedText;
 
+    // Send to backend to update status
+    fetch('update_status.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ qr_code: decodedText })
+    })
+    .then(response => response.text())
+    .then(message => {
+        alert("Server says: " + message);
+    });
 
-            //nyaknyak
-        </script>
-    </body>
+    // Stop scanning after first successful scan
+    html5QrcodeScanner.clear();
+}
+
+// Configure and render scanner
+let html5QrcodeScanner = new Html5QrcodeScanner("reader", {
+    fps: 10,
+    qrbox: 250,
+    rememberLastUsedCamera: true
+});
+html5QrcodeScanner.render(onScanSuccess);
+</script>
+
+</body>
 </html>
