@@ -4,6 +4,9 @@
     if (!$connection) {
         die("Connection failed: " . pg_last_error());
     }
+    else {
+        echo "Connection successful";
+    }
 
     
 
