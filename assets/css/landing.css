@@ -1,4 +1,10 @@
-/* Static green gradient background */
+
+* {
+  transition: all 0.3s ease-in-out;
+  scroll-behavior: smooth;
+  box-sizing: border-box;
+}
+
 body {
   background: linear-gradient(135deg, #0f9b0f, #004d00);
   color: white;
@@ -150,4 +156,40 @@ section.bg-light p {
 
 .dot.active {
   background-color: #0f9b0f;
+}
+
+.navbar {
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.navbar a.nav-link:hover,
+.navbar-brand:hover {
+  color: #0f9b0f !important;
+  transform: translateY(-2px);
+}
+.btn {
+  transition: all 0.3s ease;
+}
+
+.btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.fade-in {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 1s ease, transform 1s ease;
+}
+
+.fade-in.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+footer {
+  transition: background-color 0.5s ease;
+}
+
+footer:hover {
+  background-color: #114488;
 }
