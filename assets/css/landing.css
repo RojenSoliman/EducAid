@@ -1,0 +1,110 @@
+/* Static green gradient background */
+body {
+  background: linear-gradient(135deg, #0f9b0f, #004d00);
+  color: white;
+  min-height: 100vh;
+}
+
+/* Hero section full-screen height */
+.hero-fullscreen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+}
+
+/* Button styling */
+.btn-rounded {
+  border-radius: 30px;
+  padding: 10px 20px;
+}
+
+/* Hero image styling */
+.hero-img {
+  height: auto;
+  max-height: 600px;
+  width: auto;
+  max-width: 100%;
+  border-radius: 12px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+}
+
+
+
+section.bg-light h5 {
+  font-size: 2rem;
+  font-weight: bold;
+}
+
+section.bg-light p {
+  margin-bottom: 0;
+}
+.bi {
+  color: #ffc107;
+  margin-bottom: 10px;
+}
+
+.slideshow-container {
+  position: relative;
+  max-width: 400px;
+  height: 550px;
+  margin: auto;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+}
+
+.slide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 1s ease-in-out;
+  z-index: 0;
+}
+
+.slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.slide.active {
+  opacity: 1;
+  visibility: visible;
+  z-index: 1;
+}
+
+
+
+
+.fade {
+  animation: fade 1s ease-in-out;
+}
+
+@keyframes fade {
+  from {opacity: 0.4;}
+  to {opacity: 1;}
+}
+
+.dot-container {
+  text-align: center;
+  padding: 10px 0;
+}
+
+.dot {
+  height: 10px;
+  width: 10px;
+  margin: 0 5px;
+  background-color: #ddd;
+  border-radius: 50%;
+  display: inline-block;
+  transition: background-color 0.3s;
+}
+
+.dot.active {
+  background-color: #0f9b0f;
+}
