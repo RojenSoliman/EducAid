@@ -43,16 +43,25 @@ section.bg-light p {
   margin-bottom: 10px;
 }
 
+
+/* Slideshow Container */
 .slideshow-container {
   position: relative;
-  max-width: 400px;
+  width: 550px;
   height: 550px;
   margin: auto;
   overflow: hidden;
   border-radius: 12px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
 }
 
+.slideshow-container:hover {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+  transform: scale(1.01);
+}
+
+/* Slides */
 .slide {
   position: absolute;
   top: 0;
@@ -61,22 +70,56 @@ section.bg-light p {
   height: 100%;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 1s ease-in-out;
   z-index: 0;
+  transition: opacity 1.2s ease, visibility 1.2s ease;
 }
 
-.slide img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 12px;
-}
-
+/* Active Slide */
 .slide.active {
   opacity: 1;
   visibility: visible;
   z-index: 1;
 }
+
+/* Slide Image */
+.slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+  transition: transform 1s ease;
+}
+
+/* Optional subtle zoom on hover */
+.slide img:hover {
+  transform: scale(1.03);
+}
+
+/* Dot Navigation */
+.dot-container {
+  text-align: center;
+  padding: 12px 0;
+}
+
+.dot {
+  height: 12px;
+  width: 12px;
+  margin: 0 6px;
+  background-color: #bbb;
+  border-radius: 50%;
+  display: inline-block;
+  transition: background-color 0.4s ease, transform 0.3s ease;
+}
+
+.dot:hover {
+  transform: scale(1.3);
+}
+
+.dot.active {
+  background-color: #0f9b0f;
+  transform: scale(1.3);
+}
+
 
 
 
