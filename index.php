@@ -19,5 +19,6 @@
 
 
         </script>
+        <a href="config/database.php" target="_blank">Open db connection test</a>
     </body>
 </html>
