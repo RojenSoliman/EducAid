@@ -38,11 +38,9 @@
         ?>
 
         <br>
-       
-        
-        
-        
+
         <a href="config/database.php">Open db connection test</a>
+        <a href="test.html">Open QR scanning test</a>
         <?php
             include 'includes/footer.php';
         ?>
