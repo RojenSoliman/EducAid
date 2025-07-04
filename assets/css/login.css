@@ -23,7 +23,7 @@ html, body {
 /* Left Panel */
 .left-panel {
   flex: 0.55;
-  background-color: #0066cc;
+  background-color: #007bff;
   transition: background-color 0.5s ease-in-out;
 }
 
