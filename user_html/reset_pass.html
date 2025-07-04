@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reset Password – EducAid</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link rel="stylesheet" href="../assets/css/reset.css" />
+</head>
+<body>
+  <div class="reset-wrapper d-flex justify-content-center align-items-center">
+    <div class="reset-card text-center shadow">
+      <img src="../assets/images/logo.png" alt="Logo" width="60" class="mb-3" />
+      <h4 class="fw-bold mb-2">Reset Your Password</h4>
+      <p class="text-muted mb-2">Enter your new password below.</p>
+      <p class="text-muted small">
+        Password must be at least <strong>12 characters</strong> long and include <strong>uppercase, lowercase, numbers,</strong> and <strong>symbols</strong>.
+      </p>
+
+      <form onsubmit="handleResetSubmit(event)">
+        <input type="hidden" id="token" />
+        <div class="mb-3 text-start">
+          <label for="newPassword" class="form-label">New Password</label>
+          <input type="password" id="newPassword" class="form-control" placeholder="Enter new password" required />
+        </div>
+        <div class="mb-3 text-start">
+          <label for="confirmPassword" class="form-label">Confirm Password</label>
+          <input type="password" id="confirmPassword" class="form-control" placeholder="Confirm password" required />
+        </div>
+        <div id="message" class="text-danger mb-2 small"></div>
+        <button type="submit" class="btn btn-success w-100">Reset Password</button>
+      </form>
+
+      <a href="user_loginpage.html" class="d-block mt-3 text-decoration-none text-primary small">
+        ← Back to Login
+      </a>
+    </div>
+  </div>
+
+  <script src="../assets/js/reset_password.js"></script>
+</body>
+</html>
