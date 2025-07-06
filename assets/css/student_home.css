@@ -1,0 +1,98 @@
+/* Base Styling */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f8f9fa;
+}
+
+/* Layout */
+#wrapper {
+  display: flex;
+  min-height: 100vh;
+}
+
+#sidebar-wrapper {
+  min-width: 250px;
+  max-width: 250px;
+  transition: all 0.3s ease;
+}
+
+/* Collapsed */
+#wrapper.toggled #sidebar-wrapper {
+  margin-left: -250px;
+}
+
+#page-content-wrapper {
+  flex: 1;
+  overflow-x: hidden;
+}
+
+/* Sidebar Colors */
+.bg-sidebar {
+  background-color: #003366;
+}
+
+.list-group-item {
+  border: none;
+  font-size: 0.95rem;
+  transition: background-color 0.2s ease;
+}
+
+.list-group-item:hover {
+  background-color: #002a55;
+  color: #ffffff;
+}
+
+/* Card Styling */
+.card {
+  transition: transform 0.3s ease;
+}
+
+.card:hover {
+  transform: scale(1.01);
+}
+
+.card-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+@media (max-width: 992px) {
+  #sidebar-wrapper {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100%;
+    z-index: 1040;
+    background-color: #003366;
+    transition: transform 0.3s ease-in-out;
+    transform: translateX(-100%);
+  }
+
+  #wrapper.toggled #sidebar-wrapper {
+    transform: translateX(0);
+  }
+
+  #page-content-wrapper {
+    width: 100%;
+  }
+
+  #menu-toggle {
+    z-index: 1050;
+  }
+}
+/* Mobile Sidebar Backdrop */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 1030;
+  transition: opacity 0.3s ease;
+}
+
+/* When sidebar is open */
+#wrapper.toggled + .sidebar-backdrop {
+  display: block;
+}
