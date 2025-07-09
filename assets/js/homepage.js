@@ -1,15 +1,39 @@
 document.addEventListener("DOMContentLoaded", function () {
-  const wrapper = document.getElementById("wrapper");
+  const sidebar = document.getElementById("sidebar");
   const toggleBtn = document.getElementById("menu-toggle");
   const backdrop = document.getElementById("sidebar-backdrop");
 
+  function isMobile() {
+    return window.innerWidth <= 768;
+  }
+
+  // Toggle sidebar
   toggleBtn.addEventListener("click", function () {
-    wrapper.classList.toggle("toggled");
-    backdrop.classList.toggle("d-none");
+    if (isMobile()) {
+      sidebar.classList.add("open");
+      backdrop.classList.remove("d-none");
+      document.body.classList.add("no-scroll");
+    } else {
+      sidebar.classList.toggle("close");
+    }
   });
 
+  // Close on backdrop click
   backdrop.addEventListener("click", function () {
-    wrapper.classList.remove("toggled");
+    sidebar.classList.remove("open");
     backdrop.classList.add("d-none");
+    document.body.classList.remove("no-scroll");
   });
+
+  // Close when clicking outside
+  document.addEventListener("click", function (e) {
+    const isClickInside = sidebar.contains(e.target) || toggleBtn.contains(e.target);
+    if (isMobile() && sidebar.classList.contains("open") && !isClickInside) {
+      sidebar.classList.remove("open");
+      backdrop.classList.add("d-none");
+      document.body.classList.remove("no-scroll");
+    }
+  });
+
+  // REMOVE auto-highlight logic (to fix all items being highlighted)
 });
