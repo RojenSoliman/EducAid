@@ -1,0 +1,304 @@
+/* ===========================
+   Base Layout
+=========================== */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f8f9fa;
+  margin: 0;
+  padding: 0;
+}
+
+#wrapper {
+  display: flex;
+  min-height: 100vh;
+  position: relative;
+}
+
+/* ===========================
+   Sidebar Styles
+=========================== */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 260px;
+  background: #ffffff;
+  border-right: 1px solid #e5e5e5;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.05);
+  transition: width 0.3s ease-in-out, transform 0.3s ease-in-out;
+  z-index: 1040;
+  overflow-x: hidden;
+}
+
+.sidebar.close {
+  width: 78px;
+}
+
+.logo-details {
+  display: flex;
+  align-items: center;
+  padding: 26px 24px;
+  transition: padding 0.3s ease-in-out;
+}
+
+.logo-details .icon {
+  font-size: 28px;
+  color: #003366;
+}
+
+.logo_name {
+  font-size: 20px;
+  font-weight: 600;
+  margin-left: 12px;
+  color: #003366;
+  white-space: nowrap;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.sidebar.close .logo_name {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.nav-list {
+  list-style: none;
+  padding: 0;
+  margin-top: 14px;
+}
+
+.nav-item {
+  position: relative;
+  margin: 0 12px 20px 12px;
+  transition: margin 0.3s ease-in-out;
+}
+
+.nav-item a {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px;
+  color: #333;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 18px;
+  background-color: transparent;
+  transition: all 0.3s ease-in-out;
+}
+
+.nav-item a:hover {
+  background: #f3f3f3;
+  color: #003366;
+}
+
+.nav-item.active a {
+  background-color: #e0ebff;
+  color: #003366;
+  font-weight: 600;
+}
+
+.nav-item .icon {
+  font-size: 22px;
+  min-width: 50px;
+  text-align: center;
+  transition: all 0.3s ease-in-out;
+}
+
+.nav-item.active .icon {
+  color: #003366;
+}
+
+.links_name {
+  white-space: nowrap;
+  font-size: 17px;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.sidebar.close .links_name {
+  display: none;
+}
+
+.logout {
+  margin-top: auto;
+  margin-bottom: 30px;
+}
+
+.sidebar.close .nav-item a {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+
+.sidebar.close .nav-item .icon {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* ===========================
+   Main Content Area
+=========================== */
+.home-section {
+  position: relative;
+  margin-left: 260px;
+  width: calc(100% - 260px);
+  transition: margin-left 0.3s ease-in-out, width 0.3s ease-in-out;
+  min-height: 100vh;
+  background: #f8f9fa;
+}
+
+.sidebar.close ~ .home-section {
+  margin-left: 78px;
+  width: calc(100% - 78px);
+}
+
+.sidebar-toggle {
+  padding: 20px 30px;
+  transition: padding 0.3s ease-in-out;
+}
+
+#menu-toggle {
+  font-size: 26px;
+  cursor: pointer;
+}
+
+/* ===========================
+   Cards & Layouts
+=========================== */
+.card {
+  border-radius: 12px;
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+.card-title {
+  background: linear-gradient(90deg, #003366, #0055a5);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 600;
+}
+
+.card .badge {
+  font-size: 0.875rem;
+  padding: 0.35em 0.6em;
+}
+
+.card-body {
+  background-color: #ffffff;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+/* Divider between stacked cards */
+.card + .card {
+  border-top: 1px solid #eee;
+  margin-top: 20px;
+}
+
+/* ===========================
+   Section Enhancements
+=========================== */
+.container-fluid {
+  padding-top: 32px;
+  padding-bottom: 64px;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #003366;
+  margin-bottom: 12px;
+  border-left: 4px solid #003366;
+  padding-left: 10px;
+}
+
+/* ===========================
+   Profile Image
+=========================== */
+.rounded-circle {
+  object-fit: cover;
+}
+
+/* ===========================
+   Scroll to Top Button
+=========================== */
+#scrollTopBtn {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+  text-align: center;
+  padding: 0;
+  line-height: 44px;
+  background-color: #003366;
+  border: none;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+#scrollTopBtn:hover {
+  background-color: #0055a5;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+/* ===========================
+   Backdrop (Mobile Only)
+=========================== */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  opacity: 1;
+  transition: opacity 0.3s ease;
+  z-index: 1030;
+}
+
+.sidebar-backdrop.d-none {
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+}
+
+/* ===========================
+   Responsive (Mobile)
+=========================== */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+    left: 0;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar.close {
+    transform: translateX(-100%);
+  }
+
+  .sidebar ~ .home-section,
+  .sidebar.close ~ .home-section {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .sidebar-toggle {
+    padding: 16px 16px;
+  }
+}
+
+/* ===========================
+   Lock Scroll (Mobile Open)
+=========================== */
+body.no-scroll {
+  overflow: hidden;
+}
