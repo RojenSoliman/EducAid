@@ -1,27 +1,60 @@
+/* notifications.css */
 * {
   box-sizing: border-box;
 }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f8f9fa;
   margin: 0;
   padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .notifications-list {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  transition: all 0.3s ease;
 }
 
 .notification-card {
-  background: #ffffff;
+  background: #fff;
   border-radius: 10px;
   padding: 16px 20px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
   transition: all 0.3s ease;
   border-left: 5px solid transparent;
+  opacity: 1;
+  transform: translateY(0);
+  animation: slideIn 0.3s ease forwards;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    height: auto;
+    margin-bottom: 16px;
+    padding: 16px 20px;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(20px);
+    height: 0;
+    margin: 0;
+    padding: 0;
+  }
 }
 
 .notification-card.unread {
@@ -34,11 +67,31 @@ body {
 
 .notification-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+
+.notification-card.fade-out {
+  animation: slideOut 0.3s ease forwards;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 .notification-header {
-  cursor: default;
+  cursor: pointer;
+}
+
+.notification-body {
+  padding-left: 42px;
+  margin-top: 12px;
+}
+
+.toggle-icon {
+  font-size: 20px;
+  transition: transform 0.3s ease;
+}
+
+.notification-card.expanded .toggle-icon {
+  transform: rotate(180deg);
 }
 
 .icon-box {
@@ -52,28 +105,50 @@ body {
 }
 
 .action-buttons {
+  margin-left: auto;
   display: flex;
   gap: 12px;
-  font-size: 1.2rem;
 }
 
-/* Responsive Controls */
-.notification-actions-mobile {
+#unread-count {
+  font-size: 14px;
+  padding: 4px 8px;
+  vertical-align: middle;
+}
+
+#empty-state {
+  padding: 40px 20px;
+  color: #6c757d;
+  text-align: center;
+}
+
+.undo-snackbar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #343a40;
+  color: white;
+  padding: 10px 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  z-index: 9999;
   display: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
-/* Desktop */
-@media (min-width: 768px) {
-  .notification-actions-desktop {
-    display: flex !important;
-  }
-
-  .notification-actions-mobile {
-    display: none !important;
-  }
+.undo-snackbar.show {
+  display: block;
+  opacity: 1;
 }
 
-/* Mobile */
+/* Button active state */
+.btn-group .btn.active {
+  font-weight: 600;
+}
+
+/* Responsive layout */
 @media (max-width: 767px) {
   .notification-actions-mobile {
     display: flex !important;
@@ -89,12 +164,14 @@ body {
   .notification-actions-desktop {
     display: none !important;
   }
+}
 
-  .action-buttons {
-    font-size: 1.1rem;
+@media (min-width: 768px) {
+  .notification-actions-desktop {
+    display: flex !important;
   }
 
-  .notification-card {
-    padding: 14px 16px;
+  .notification-actions-mobile {
+    display: none !important;
   }
 }
