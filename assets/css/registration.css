@@ -1,0 +1,84 @@
+/* multistep-registration.css */
+body {
+  background-color: #f8f9fa;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.register-card {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 24px;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.05);
+}
+
+.step-indicator {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.step {
+  width: 30px;
+  height: 30px;
+  line-height: 30px;
+  border-radius: 50%;
+  background-color: #dee2e6;
+  color: #6c757d;
+  font-weight: 600;
+  display: inline-block;
+  text-align: center;
+}
+
+.step.active {
+  background-color: #0d6efd;
+  color: white;
+}
+
+.step-panel {
+  animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.btn {
+  transition: background-color 0.3s ease;
+}
+
+.btn:focus {
+  box-shadow: none;
+}
+
+/* Responsive improvements */
+@media (max-width: 576px) {
+  .register-card {
+    padding: 20px 16px;
+  }
+
+  .step {
+    width: 26px;
+    height: 26px;
+    line-height: 26px;
+    font-size: 14px;
+  }
+
+  h4 {
+    font-size: 20px;
+  }
+
+  .form-label {
+    font-size: 14px;
+  }
+
+  .btn {
+    font-size: 14px;
+  }
+}
