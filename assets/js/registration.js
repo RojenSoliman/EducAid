@@ -87,3 +87,55 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+// Password Strength Checker
+document.addEventListener("DOMContentLoaded", () => {
+  const passwordInput = document.getElementById("password");
+  const strengthBar = document.getElementById("strengthBar");
+  const strengthText = document.getElementById("strengthText");
+
+  passwordInput.addEventListener("input", () => {
+    const val = passwordInput.value;
+    let strength = 0;
+
+    // Scoring rules
+    if (val.length >= 12) strength += 1;
+    if (/[A-Z]/.test(val)) strength += 1;
+    if (/[a-z]/.test(val)) strength += 1;
+    if (/[0-9]/.test(val)) strength += 1;
+    if (/[\W_]/.test(val)) strength += 1;
+
+    // Update progress bar
+    let strengthPercent = (strength / 5) * 100;
+    strengthBar.style.width = strengthPercent + "%";
+
+    // Color and label
+    if (strength <= 2) {
+      strengthBar.className = "progress-bar bg-danger";
+      strengthText.textContent = "Weak";
+    } else if (strength === 3 || strength === 4) {
+      strengthBar.className = "progress-bar bg-warning";
+      strengthText.textContent = "Moderate";
+    } else {
+      strengthBar.className = "progress-bar bg-success";
+      strengthText.textContent = "Strong";
+    }
+  });
+});
+// Toggle password visibility
+document.querySelectorAll(".toggle-password").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const targetId = btn.getAttribute("data-target");
+    const input = document.getElementById(targetId);
+    const icon = btn.querySelector("i");
+
+    if (input.type === "password") {
+      input.type = "text";
+      icon.classList.remove("bi-eye");
+      icon.classList.add("bi-eye-slash");
+    } else {
+      input.type = "password";
+      icon.classList.remove("bi-eye-slash");
+      icon.classList.add("bi-eye");
+    }
+  });
+});
