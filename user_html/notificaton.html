@@ -8,107 +8,104 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="stylesheet" href="../assets/css/homepage.css" />
   <link rel="stylesheet" href="../assets/css/notifications.css" />
-
 </head>
 <body>
-  <div id="wrapper">
-    <!-- Sidebar -->
-    <div class="sidebar close" id="sidebar">
-      <div class="logo-details">
-        <i class="bi bi-mortarboard-fill icon"></i>
-        <span class="logo_name">EducAid</span>
-      </div>
-      <ul class="nav-list">
-        <li class="nav-item">
-          <a href="homepage.html">
-            <i class="bi bi-house-door icon"></i>
-            <span class="links_name">Dashboard</span>
-          </a>
-        </li>
-        <li class="nav-item">
-          <a href="#">
-            <i class="bi bi-file-text icon"></i>
-            <span class="links_name">Application Status</span>
-          </a>
-        </li>
-        <li class="nav-item">
-          <a href="#">
-            <i class="bi bi-upload icon"></i>
-            <span class="links_name">Upload Documents</span>
-          </a>
-        </li>
-        <li class="nav-item">
-          <a href="#">
-            <i class="bi bi-qr-code-scan icon"></i>
-            <span class="links_name">My QR Code</span>
-          </a>
-        </li>
-        <li class="nav-item active">
-          <a href="notifications.html">
-            <i class="bi bi-bell-fill icon"></i>
-            <span class="links_name">Notifications</span>
-          </a>
-        </li>
-        <li class="nav-item">
-          <a href="#">
-            <i class="bi bi-person icon"></i>
-            <span class="links_name">Profile</span>
-          </a>
-        </li>
-        <li class="nav-item logout">
-          <a href="#">
-            <i class="bi bi-box-arrow-right icon"></i>
-            <span class="links_name">Logout</span>
-          </a>
-        </li>
-      </ul>
+<div id="wrapper">
+  <!-- Sidebar -->
+  <div class="sidebar close" id="sidebar">
+    <div class="logo-details">
+      <i class="bi bi-mortarboard-fill icon"></i>
+      <span class="logo_name">EducAid</span>
     </div>
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+    <ul class="nav-list">
+      <li class="nav-item"><a href="homepage.html"><i class="bi bi-house-door icon"></i><span class="links_name">Dashboard</span></a></li>
+      <li class="nav-item"><a href="#"><i class="bi bi-file-text icon"></i><span class="links_name">Application Status</span></a></li>
+      <li class="nav-item"><a href="#"><i class="bi bi-upload icon"></i><span class="links_name">Upload Documents</span></a></li>
+      <li class="nav-item"><a href="#"><i class="bi bi-qr-code-scan icon"></i><span class="links_name">My QR Code</span></a></li>
+      <li class="nav-item active"><a href="notifications.html"><i class="bi bi-bell-fill icon"></i><span class="links_name">Notifications</span></a></li>
+      <li class="nav-item"><a href="#"><i class="bi bi-person icon"></i><span class="links_name">Profile</span></a></li>
+      <li class="nav-item logout"><a href="#"><i class="bi bi-box-arrow-right icon"></i><span class="links_name">Logout</span></a></li>
+    </ul>
+  </div>
+  <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
 
-    <!-- Page Content -->
-    <section class="home-section" id="page-content-wrapper">
-      <nav>
-        <div class="sidebar-toggle px-4 py-3">
-          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
+  <!-- Main Content -->
+  <section class="home-section">
+    <nav>
+      <div class="sidebar-toggle px-4 py-3">
+        <i class="bi bi-list" id="menu-toggle"></i>
+      </div>
+    </nav>
+
+    <div class="container-fluid py-4 px-4">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h3 class="fw-bold mb-0">
+          <i class="bi bi-bell-fill me-2 text-warning"></i>
+          Notifications <span id="unread-count" class="badge bg-danger">0</span>
+        </h3>
+        <button id="mark-all-read" class="btn btn-sm btn-outline-success">
+          <i class="bi bi-envelope-check me-1"></i> Mark All as Read
+        </button>
+      </div>
+
+      <div class="btn-group mb-4 w-100 w-md-auto" role="group">
+        <button type="button" class="btn btn-outline-primary active" id="filter-unread">Unread</button>
+        <button type="button" class="btn btn-outline-secondary" id="filter-read">Read</button>
+      </div>
+
+      <div id="empty-state" class="text-center text-muted d-none">
+        <i class="bi bi-inbox display-5"></i>
+        <p class="mt-2">No notifications to show.</p>
+      </div>
+
+      <div class="notifications-list">
+        <div class="notification-card unread" data-status="unread">
+          <div class="notification-header d-flex justify-content-between" onclick="toggleNotification(this)">
+            <div class="d-flex align-items-center gap-2">
+              <div class="icon-box text-info"><i class="bi bi-info-circle-fill"></i></div>
+              <div>
+                <strong>System Maintenance</strong>
+                <div class="text-muted small">Posted: July 10</div>
+              </div>
+            </div>
+            <i class="bi bi-chevron-down toggle-icon"></i>
+          </div>
+          <div class="notification-body d-none">
+            <p>The portal will be temporarily unavailable on <b>July 15</b> from <b>1:00 AM to 3:00 AM</b>.</p>
+            <div class="action-buttons">
+              <button class="btn btn-sm mark-btn" title="Mark as Read"><i class="bi bi-envelope-open text-secondary"></i></button>
+              <button class="btn btn-sm delete-btn" title="Delete"><i class="bi bi-trash-fill text-danger"></i></button>
+            </div>
+          </div>
         </div>
-      </nav>
 
-      <div class="container-fluid py-4 px-4">
-        <h3 class="fw-bold mb-4"><i class="bi bi-bell-fill me-2 text-warning"></i>Notifications</h3>
-
-        <div class="card shadow-sm border-0 fade-in mb-4">
-          <div class="card-body">
-            <ul class="list-unstyled mb-0">
-              <li class="mb-4 d-flex align-items-start">
-                <i class="bi bi-info-circle-fill text-info me-3 mt-1 fs-4"></i>
-                <div>
-                  <strong>System Maintenance:</strong> The portal will be temporarily unavailable on <b>July 15</b> from <b>1:00 AM to 3:00 AM</b>.
-                  <div class="text-muted small">Posted: July 10</div>
-                </div>
-              </li>
-              <li class="mb-4 d-flex align-items-start">
-                <i class="bi bi-calendar-check-fill text-success me-3 mt-1 fs-4"></i>
-                <div>
-                  <strong>Event Update:</strong> Guidance orientation is set for <b>August 5</b>. Register now via the dashboard.
-                  <div class="text-muted small">Posted: July 9</div>
-                </div>
-              </li>
-              <li class="d-flex align-items-start">
-                <i class="bi bi-exclamation-circle-fill text-danger me-3 mt-1 fs-4"></i>
-                <div>
-                  <strong>Upload Reminder:</strong> Final deadline for grade upload is <b>August 15</b>. Late submissions are not accepted.
-                  <div class="text-muted small">Posted: July 7</div>
-                </div>
-              </li>
-            </ul>
+        <div class="notification-card read" data-status="read">
+          <div class="notification-header d-flex justify-content-between" onclick="toggleNotification(this)">
+            <div class="d-flex align-items-center gap-2">
+              <div class="icon-box text-success"><i class="bi bi-calendar-check-fill"></i></div>
+              <div>
+                <strong>Event Update</strong>
+                <div class="text-muted small">Posted: July 9</div>
+              </div>
+            </div>
+            <i class="bi bi-chevron-down toggle-icon"></i>
+          </div>
+          <div class="notification-body d-none">
+            <p>Guidance orientation is set for <b>August 5</b>. Register now via the dashboard.</p>
+            <div class="action-buttons">
+              <button class="btn btn-sm mark-btn" title="Mark as Unread"><i class="bi bi-envelope text-success"></i></button>
+              <button class="btn btn-sm delete-btn" title="Delete"><i class="bi bi-trash-fill text-danger"></i></button>
+            </div>
           </div>
         </div>
       </div>
-    </section>
-  </div>
+    </div>
+  </section>
+</div>
 
-  <!-- JS Files -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="../assets/js/homepage.js"></script>
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../assets/js/homepage.js"></script>
+<script src="../assets/js/notifications.js"></script>
 </body>
 </html>
