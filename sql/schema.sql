@@ -17,7 +17,7 @@ CREATE TABLE admins (
     admin_id SERIAL PRIMARY KEY,
     municipality_id INT REFERENCES municipalities(municipality_id),
     username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
+    password TEXT NOT NULL
 );
 
 -- Students
