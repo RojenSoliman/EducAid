@@ -1,34 +1,57 @@
 <?php
-// Start the session to access the unique_id stored earlier
+// Include the PHP QR code library
+// Adjust this path based on where 'qrlib.php' is located relative to THIS file.
+// Assuming 'phpqrcode' folder is in the same directory as 'generate_qr.php' (i.e., inside EDUCAID).
+include('phpqrcode/qrlib.php');
+
+// Start the session to retrieve the unique_id
 session_start();
+
+// Disable error reporting for this script to prevent any PHP errors/warnings
+// from corrupting the image data. This is CRUCIAL for image generation scripts.
+error_reporting(0);
+ini_set('display_errors', 0);
+
+// Check if there is a unique ID stored in the session
+if (isset($_SESSION['unique_id'])) {
+    $unique_id = $_SESSION['unique_id'];
+
+    // Set the content type header to tell the browser it's an image (PNG)
+    header('Content-Type: image/png');
+    // Add headers to prevent caching of the image. This ensures a fresh QR code
+    // is always loaded if the unique ID changes in the session.
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    // Generate the QR code with the unique identifier and output it directly to the browser.
+    // The 'false' argument tells QRcode::png to send the image data to the browser output.
+    // QR_ECLEVEL_L (Low error correction), 4 (pixel size), 2 (border size) are common values.
+    QRcode::png($unique_id, false, QR_ECLEVEL_L, 4, 2);
+
+    // Stop further script execution after sending the image to prevent any extra output
+    exit;
+} else {
+    // If no unique ID is found in the session (e.g., direct access to generate_qr.php,
+    // or session expired), output a fallback blank/error image.
+    // This prevents a broken image icon in the browser.
+    $width = 250;
+    $height = 250;
+    $im = imagecreatetruecolor($width, $height); // Create a blank image
+    $bg_color = imagecolorallocate($im, 240, 240, 240); // Light gray background
+    imagefill($im, 0, 0, $bg_color);
+    $text_color = imagecolorallocate($im, 100, 100, 100); // Darker gray text
+    $font = 3; // Built-in font size
+    $text = "No QR Data";
+    $text_width = imagefontwidth($font) * strlen($text);
+    $text_height = imagefontheight($font);
+    $x = ($width - $text_width) / 2;
+    $y = ($height - $text_height) / 2;
+    imagestring($im, $font, $x, $y, $text, $text_color);
+
+    header('Content-Type: image/png');
+    imagepng($im);
+    imagedestroy($im);
+    exit;
+}
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QR Code Generator</title>
-    <link rel="stylesheet" href="qrcode.css"> <!-- Link to your existing CSS -->
-</head>
-<body>
-
-    <div class="container">
-        <h1>Generate Unique QR Code</h1>
-        
-        <!-- Form that sends request to generate_qr.php to create a QR code -->
-        <form action="generate_qr.php" method="POST">
-            <button type="submit" name="generate">Generate QR Code</button>
-        </form>
-
-        <!-- Display QR Code after submission -->
-        <?php
-        // Check if the unique_id session is set
-        if (isset($_SESSION['unique_id'])) {
-            echo "<h3>Your Unique QR Code:</h3>";
-            echo "<img src='generate_qr.php' alt='Generated QR Code'>";  
-        }
-        ?>
-    </div>
-
-</body>
-</html>
