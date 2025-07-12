@@ -2,6 +2,8 @@
     include 'config/database.php';
     include 'includes/header.php';
     // Database connection can be tested here if needed
+    // test 123
+// hello world
 ?>
 <!DOCTYPE html>
 <html>
