@@ -24,14 +24,14 @@
         </script>
 
         <?php
-            $result = pg_query($connection, "SELECT * FROM users");
+            $result = pg_query($connection, "SELECT * FROM admins");
             if(!$result){
                 echo "An error occurred while querying the database.";
             } else {
                 echo "<h2>Database Query Result:</h2>";
                 echo "<ul>";
                 while ($row = pg_fetch_assoc($result)) {
-                    echo "<li>" . htmlspecialchars($row['user_fname']) . "</li>";
+                    echo "<li>" . htmlspecialchars($row['username']) . "</li>";
                 }
                 echo "</ul>";
             }
