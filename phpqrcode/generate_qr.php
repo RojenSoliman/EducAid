@@ -1,16 +1,15 @@
 <?php
 // Include the PHP QR code library
-// Adjust this path based on where 'qrlib.php' is located relative to THIS file.
-// Assuming 'phpqrcode' folder is in the same directory as 'generate_qr.php' (i.e., inside EDUCAID).
+// IMPORTANT: Since generate_qr.php is INSIDE the 'phpqrcode' folder,
+// we just need to reference 'qrlib.php' directly in the same folder.
 include('phpqrcode/qrlib.php');
 
-// Start the session to retrieve the unique_id
+// Start the session to retrieve the unique_id stored earlier
 session_start();
 
-// Disable error reporting for this script to prevent any PHP errors/warnings
-// from corrupting the image data. This is CRUCIAL for image generation scripts.
-error_reporting(0);
-ini_set('display_errors', 0);
+// Enable error reporting for debugging (disable in production)
+// error_reporting(E_ALL); // Keep this commented or remove for production
+// ini_set('display_errors', 1); // Keep this commented or remove for production
 
 // Check if there is a unique ID stored in the session
 if (isset($_SESSION['unique_id'])) {
@@ -18,15 +17,12 @@ if (isset($_SESSION['unique_id'])) {
 
     // Set the content type header to tell the browser it's an image (PNG)
     header('Content-Type: image/png');
-    // Add headers to prevent caching of the image. This ensures a fresh QR code
-    // is always loaded if the unique ID changes in the session.
+    // Add headers to prevent caching of the image
     header('Cache-Control: no-cache, no-store, must-revalidate');
     header('Pragma: no-cache');
     header('Expires: 0');
 
-    // Generate the QR code with the unique identifier and output it directly to the browser.
-    // The 'false' argument tells QRcode::png to send the image data to the browser output.
-    // QR_ECLEVEL_L (Low error correction), 4 (pixel size), 2 (border size) are common values.
+    // Generate the QR code with the unique identifier and output it directly to the browser
     QRcode::png($unique_id, false, QR_ECLEVEL_L, 4, 2);
 
     // Stop further script execution after sending the image to prevent any extra output
@@ -34,7 +30,6 @@ if (isset($_SESSION['unique_id'])) {
 } else {
     // If no unique ID is found in the session (e.g., direct access to generate_qr.php,
     // or session expired), output a fallback blank/error image.
-    // This prevents a broken image icon in the browser.
     $width = 250;
     $height = 250;
     $im = imagecreatetruecolor($width, $height); // Create a blank image
