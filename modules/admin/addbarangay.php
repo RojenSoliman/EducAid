@@ -25,28 +25,51 @@ include '../../config/database.php';
         <button type="submit" name="register">Register Barangay</button>
     </form>
 
+
     <?php
-    if (isset($_POST['register'])) {
-        $username = $_POST['barangay'];
+if (isset($_POST['register'])) {
+    $username = trim($_POST['barangay']);
+    $municipality_id = 1; // General Trias
 
-        // Connect to PostgreSQL (update credentials)
-        if (!$connection) {
-            echo "<p style='color:red;'>Connection failed.</p>";
-            exit;
-        }
+    if (!$connection) {
+        echo "<p style='color:red;'>Connection failed.</p>";
+        exit;
+    }
 
-        // Insert into admins (no email or full_name)
+    // Check for duplicates (case-insensitive)
+    $checkQuery = "SELECT 1 FROM barangays WHERE LOWER(name) = LOWER($1) AND municipality_id = $2";
+    $checkResult = pg_query_params($connection, $checkQuery, [$username, $municipality_id]);
+
+    if (pg_num_rows($checkResult) > 0) {
+        echo "<p style='color:red;'>Barangay already exists.</p>";
+    } else {
+        // Insert new barangay
         $query = "INSERT INTO barangays (municipality_id, name) VALUES ($1, $2)";
         $result = pg_query_params($connection, $query, [$municipality_id, $username]);
 
         if ($result) {
-            echo "<p style='color:green;'>Admin registered successfully!</p>";
+            echo "<p style='color:green;'>Barangay added successfully!</p>";
         } else {
-            echo "<p style='color:red;'>Error: " . pg_last_error($conn) . "</p>";
+            echo "<p style='color:red;'>Error: " . pg_last_error($connection) . "</p>";
         }
-
-        pg_close($connection);
     }
-    ?>
+}
+
+// Display all barangays
+$result = pg_query($connection, "SELECT * FROM barangays WHERE municipality_id = 1 ORDER BY name ASC");
+
+if (!$result) {
+    echo "<p style='color:red;'>An error occurred while querying the database.</p>";
+} else {
+    echo "<h2>Barangays:</h2>";
+    echo "<ul>";
+    while ($row = pg_fetch_assoc($result)) {
+        echo "<li>" . htmlspecialchars($row['name']) . "</li>";
+    }
+    echo "</ul>";
+}
+
+pg_close($connection);
+?>
 </body>
 </html>
