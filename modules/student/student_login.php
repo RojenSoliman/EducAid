@@ -6,7 +6,7 @@ if (isset($_SESSION['student_username'])) {
     exit;
 }
 ?>
-
+<!-- 
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -35,32 +35,39 @@ if (isset($_SESSION['student_username'])) {
         <input type="password" name="password" required>
         
         <button type="submit" name="login">Login</button>
-    </form>
+    </form> -->
 
     <?php
-    if (isset($_POST['login'])) {
-        $firstname = $_POST['firstname'];
-        $middlename = $_POST['middlename'];
-        $lastname = $_POST['lastname'];
+    if (isset($_POST['student_login'])) {
+        // $firstname = $_POST['firstname'];
+        // $middlename = $_POST['middlename'];
+        // $lastname = $_POST['lastname'];
+        // Get email and password from the HTML form
+        $email = $_POST['email'];
         $password = $_POST['password'];
     
         if (!isset($connection) || !$connection) {
-            echo "<p style='color:red;'>Connection failed.</p>";
+            echo "<p style='color:red;'>" . htmlspecialchars("Connection failed.") . "</p>";
             exit;
         }
     
         $result = pg_query_params(
             $connection,
-            "SELECT * FROM students WHERE first_name = $1 AND middle_name = $2 AND last_name = $3",
-            [$firstname, $middlename, $lastname]
+            // "SELECT * FROM students WHERE first_name = $1 AND middle_name = $2 AND last_name = $3",
+            // [$firstname, $middlename, $lastname]
+            "SELECT * FROM students WHERE email = $1",
+            [$email]
         );
-    
-        if ($row = pg_fetch_assoc($result)) {
+
+        if ($result === false) {
+            echo "<p style='color:red;'>Database query error.</p>";
+        } elseif ($row = pg_fetch_assoc($result)) {
             if (password_verify($password, $row['password'])) {
-                $_SESSION['student_username'] = $firstname . ' ' . $middlename . ' ' . $lastname;
+                // $_SESSION['student_username'] = $firstname . ' ' . $middlename . ' ' . $lastname;
+                $_SESSION['student_username'] = $row['email'];
                 $_SESSION['student_id'] = $row['student_id'];
                 header("Location: homepage.php");
-                exit;
+                echo "<p style='color:red;'>" . htmlspecialchars("Invalid password.") . "</p>";
             } else {
                 echo "<p style='color:red;'>Invalid password.</p>";
             }
@@ -73,5 +80,5 @@ if (isset($_SESSION['student_username'])) {
         }
     }
     ?>
-</body>
-</html>
+<!-- </body>
+</html> -->
