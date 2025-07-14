@@ -37,14 +37,69 @@ if (isset($_SESSION['student_username'])) {
                 exit;
             } else {
                 // Invalid password
-                echo "<p style='color:red;'>Invalid password.</p>";
-                header("Location: student_login.html");
+                echo '
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Login Error</title>
+                    <link rel="stylesheet" href="../../assets/css/bootstrap.min.css">
+                </head>
+                <body class="bg-light">
+                    <div class="modal show d-block" tabindex="-1" style="background: rgba(0, 123, 255, 1);">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title text-danger">Login Error</h5>
+                                </div>
+                                <div class="modal-body">
+                                    <p>Invalid password.</p>
+                                </div>
+                                <div class="modal-footer">
+                                    <a href="student_login.html" class="btn btn-primary">OK</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <script src="../../assets/js/bootstrap.bundle.min.js"></script>
+                </body>
+                </html>
+                ';
+                exit;
             }
         } else {
             // User not found
-            echo "<p style='color:red;'>User not found.</p>";
-            header("Location: student_login.html");
-            
+            echo '
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Login Error</title>
+                    <link rel="stylesheet" href="../../assets/css/bootstrap.min.css">
+                </head>
+                <body class="bg-light">
+                    <div class="modal show d-block" tabindex="-1" style="background: rgba(0, 123, 255, 1);">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title text-danger">Login Error</h5>
+                                </div>
+                                <div class="modal-body">
+                                    <p>User not found.</p>
+                                </div>
+                                <div class="modal-footer">
+                                    <a href="student_login.html" class="btn btn-primary">OK</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <script src="../../assets/js/bootstrap.bundle.min.js"></script>
+                </body>
+                </html>
+            ';
+            exit;
         }
 
         // Close the database connection if it was established
