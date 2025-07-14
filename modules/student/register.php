@@ -108,7 +108,7 @@
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)";
         $result = pg_query_params($connection, $query, [$municipality_id, $firstname, $middlename, $lastname, $age, $barangay, $email, $mobile, $hashed, $sex, 'applicant', $payroll_no, $qr_code, 'f', date('Y-m-d H:i:s')]);
         if ($result) {
-            echo "<script>alert('Student registered successfully!'); window.location.href = 'profile.php';</script>";
+            echo "<script>alert('Student registered successfully!'); window.location.href = 'student_login.html';</script>";
         } else {
             echo "<p style='color:red;'>Error: " . pg_last_error($connection) . "</p>";
         }
