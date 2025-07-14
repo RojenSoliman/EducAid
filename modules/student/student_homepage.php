@@ -67,10 +67,10 @@ if (!isset($_SESSION['student_username'])) {
           </a>
         </li>
         <li class="nav-item logout">
-          <a href="#">
-            <i class="bi bi-box-arrow-right icon"></i>
-            <span class="links_name">Logout</span>
-          </a>
+            <a href="#" onclick="confirmLogout(event)">
+                <i class="bi bi-box-arrow-right icon"></i>
+                <span class="links_name">Logout</span>
+            </a>
         </li>
       </ul>
     </div>
@@ -89,7 +89,7 @@ if (!isset($_SESSION['student_username'])) {
         <div class="d-flex align-items-center mb-4">
           <img src="../../assets/images/default/profile.png" class="rounded-circle me-3" width="60" height="60" alt="Student Profile">
           <div>
-            <h2 class="fw-bold mb-1">Welcome, Juan Dela Cruz!</h2>
+            <h2 class="fw-bold mb-1">Welcome, <?php echo htmlspecialchars($_SESSION['student_username']); ?>!</h2>
             <small class="text-muted">Last login: July 10, 2025 – 9:14 AM</small>
           </div>
         </div>
@@ -197,5 +197,16 @@ if (!isset($_SESSION['student_username'])) {
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/homepage.js"></script>
   <script src="../../assets/js/deadline.js"></script>
+
+    <script>
+        function confirmLogout(event) {
+            event.preventDefault(); // Stop default <a> action
+
+            if (confirm("Are you sure you want to logout?")) {
+            window.location.href = 'logout.php'; // Now redirect manually
+            }
+        }
+    </script>
+
 </body>
 </html>
