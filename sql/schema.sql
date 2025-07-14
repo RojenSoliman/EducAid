@@ -27,8 +27,6 @@ CREATE TABLE students (
     first_name TEXT,
     middle_name TEXT,
     last_name TEXT,
-    age INT,
-    barangay TEXT,
     email TEXT UNIQUE,
     mobile TEXT,
     password TEXT NOT NULL,
@@ -37,7 +35,9 @@ CREATE TABLE students (
     payroll_no INT,
     qr_code TEXT,
     has_received BOOLEAN DEFAULT FALSE,
-    application_date TIMESTAMP DEFAULT NOW()
+    application_date TIMESTAMP DEFAULT NOW(),
+    bdate DATE,
+    barangay_id INT REFERENCES barangays(barangay_id)
 );
 
 -- Applications (No GPA, used for tracking per semester)

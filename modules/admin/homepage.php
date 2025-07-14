@@ -18,5 +18,8 @@ if (!isset($_SESSION['admin_username'])) {
     <form method="post" action="logout.php">
         <button type="submit" name="logout">Logout</button>
     </form>
+
+    
+
 </body>
 </html>
