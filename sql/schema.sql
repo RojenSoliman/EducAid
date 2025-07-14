@@ -91,3 +91,9 @@ CREATE TABLE qr_logs (
     scanned_at TIMESTAMP DEFAULT NOW(),
     scanned_by INT REFERENCES admins(admin_id)
 );
+
+CREATE TABLE barangays (
+    barangay_id SERIAL PRIMARY KEY,
+    municipality_id INT REFERENCES municipalities(municipality_id),
+    name TEXT NOT NULL
+);
