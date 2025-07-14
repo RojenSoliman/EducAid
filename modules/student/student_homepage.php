@@ -38,12 +38,6 @@ if (!isset($_SESSION['student_username'])) {
         </li>
         <li class="nav-item">
           <a href="#">
-            <i class="bi bi-file-text icon"></i>
-            <span class="links_name">Application Status</span>
-          </a>
-        </li>
-        <li class="nav-item">
-          <a href="#">
             <i class="bi bi-upload icon"></i>
             <span class="links_name">Upload Documents</span>
           </a>
