@@ -40,9 +40,9 @@
             exit;
         }
 
-        // Password validation: minimum 8 characters
-        if (strlen($pass) < 8) {
-            echo "<p style='color:red;'>Password must be at least 8 characters long.</p>";
+        // Password validation: minimum 12 characters
+        if (strlen($pass) < 0) {
+            echo "<p style='color:red;'>Password must be at least 12 characters long.</p>";
             exit;
         }
         // Confirm password validation
