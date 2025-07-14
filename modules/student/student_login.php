@@ -2,7 +2,7 @@
 include __DIR__ . '/../../config/database.php';
 session_start();
 if (isset($_SESSION['student_username'])) {
-    header("Location: homepage.php");
+    header("Location: student_homepage.php");
     exit;
 }
 
@@ -33,7 +33,7 @@ if (isset($_SESSION['student_username'])) {
             if (password_verify($password, $row['password'])) {
                 $_SESSION['student_username'] = $firstname . ' ' . $lastname;
                 $_SESSION['student_id'] = $row['student_id'];
-                header("Location: homepage.php");
+                header("Location: student_homepage.php");
                 exit;
             } else {
                 // Invalid password
