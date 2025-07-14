@@ -64,7 +64,7 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
         <ul class="nav flex-column">
           <li class="nav-item"><a class="nav-link" href="homepage.php">Home</a></li>
           <li class="nav-item"><a class="nav-link active" href="verify_students.php">Verify Students</a></li>
-          <li class="nav-item"><a class="nav-link" href="manage_applicants.php">Manage Applicants</a></li>
+          <li class="nav-item"><a class="nav-link" href="">Manage Applicants</a></li>
           <li class="nav-item">
             <a class="nav-link text-danger" href="logout.php" onclick="return confirm('Are you sure you want to logout?');">
               Logout
