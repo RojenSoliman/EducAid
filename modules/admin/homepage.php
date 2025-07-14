@@ -1,6 +1,6 @@
 <?php
 session_start();
-if (!isset($_SESSION['username'])) {
+if (!isset($_SESSION['admin_username'])) {
     header("Location: index.php");
     exit;
 }
@@ -13,7 +13,7 @@ if (!isset($_SESSION['username'])) {
     <title>Admin Dashboard</title>
 </head>
 <body>
-    <h2>Welcome, <?php echo htmlspecialchars($_SESSION['username']); ?>!</h2>
+    <h2>Welcome, <?php echo htmlspecialchars($_SESSION['admin_username']); ?>!</h2>
     <p>You are logged in to the admin dashboard.</p>
     <form method="post" action="logout.php">
         <button type="submit" name="logout">Logout</button>

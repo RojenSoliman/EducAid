@@ -1,7 +1,7 @@
 <?php
     include __DIR__ . '/../../config/database.php';
     session_start();
-    if (isset($_SESSION['username'])) {
+    if (isset($_SESSION['admin_username'])) {
         header("Location: homepage.php");
         exit;
     }
@@ -45,7 +45,7 @@
 
         if ($row = pg_fetch_assoc($result)) {
             if (password_verify($password, $row['password'])) {
-                $_SESSION['username'] = $username;
+                $_SESSION['admin_username'] = $username;
                 $_SESSION['admin_id'] = $row['admin_id'];
                 header("Location: homepage.php");
                 exit;
