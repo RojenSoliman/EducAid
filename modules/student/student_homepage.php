@@ -87,20 +87,31 @@ if (!isset($_SESSION['student_username'])) {
             <small class="text-muted">Last login: July 10, 2025 – 9:14 AM</small>
           </div>
         </div>
-          <?php
+       <!-- Educational Event -->
+        <?php
           include '../../config/database.php';
           $announcement = pg_query($connection, "SELECT * FROM announcements WHERE municipality_id = 1 AND is_active = TRUE ORDER BY created_at DESC LIMIT 1");
           if ($announcement && pg_num_rows($announcement) > 0) {
               $row = pg_fetch_assoc($announcement);
-              echo "<div class='alert alert-info'>
-                      <h5 class='mb-1'>" . htmlspecialchars($row['title']) . "</h5>
-                      <p class='mb-0'><strong>Location:</strong> " . htmlspecialchars($row['location']) . "</p>
-                      <p class='mb-0'><strong>Date:</strong> " . htmlspecialchars($row['announcement_date']) . "</p>
-                      <p class='mb-0'><strong>Time:</strong> " . htmlspecialchars($row['time']) . "</p>
-                      <p class='mb-0'><strong>Note:</strong> " . htmlspecialchars($row['reminder']) . "</p>
+              echo "<div class='custom-card mb-4 shadow-sm'>
+                      <div class='custom-card-header bg-warning text-dark'>
+                        <h5 class='mb-0'><i class='bi bi-calendar-event me-2'></i>" . htmlspecialchars($row['title']) . "</h5>
+                      </div>
+                      <div class='custom-card-body'>
+                        <ul class='mb-0'>
+                          <li><strong>Location:</strong> " . htmlspecialchars($row['location']) . "</li>
+                          <li><strong>Date:</strong> " . htmlspecialchars($row['announcement_date']) . "</li>
+                          <li><strong>Time:</strong> " . htmlspecialchars($row['time']) . "</li>
+                          <li><strong>Reminder:</strong> " . htmlspecialchars($row['reminder']) . "</li>
+                        </ul>
+                      </div>
                     </div>";
           } else {
-              echo "<div class='alert alert-secondary'>No current announcements available.</div>";
+              echo "<div class='custom-card mb-4 shadow-sm>No current announcements available.
+                      <div class='custom-card-header bg-warning text-dark'>
+                        <h5 class='mb-0'><i class='bi bi-calendar-event me-2'></i>No current announcements.</h5>
+                      </div>
+                    </div>";
           }
           ?>
         <!-- Dashboard Cards -->
@@ -216,20 +227,6 @@ if (!isset($_SESSION['student_username'])) {
             <ul class="mb-0">
               <li>Upload your updated grades by <strong>August 15</strong>.</li>
               <li>Check notifications regularly for city updates.</li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Educational Event -->
-        <div class="custom-card mb-4 shadow-sm">
-          <div class="custom-card-header bg-warning text-dark">
-            <h5 class="mb-0"><i class="bi bi-calendar-event me-2"></i>Upcoming Educational Assistance Event</h5>
-          </div>
-          <div class="custom-card-body">
-            <ul class="mb-0">
-              <li><strong>Semester & SY:</strong> 1st Semester, SY 2025–2026</li>
-              <li><strong>Meeting Place:</strong> General Trias Convention Center</li>
-              <li><strong>Date & Time:</strong> August 30, 2025 at 9:00 AM</li>
             </ul>
           </div>
         </div>
