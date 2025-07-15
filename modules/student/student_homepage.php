@@ -1,8 +1,8 @@
 <?php
 session_start();
 if (!isset($_SESSION['student_username'])) {
-    header("Location: student_login.php");
-    exit;
+  header("Location: student_login.html");
+  exit;
 }
 ?>
 
