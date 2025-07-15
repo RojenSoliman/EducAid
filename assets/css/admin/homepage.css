@@ -1,0 +1,141 @@
+/* homepage.css - Admin Dashboard Styles */
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f4f6f9;
+  overflow-x: hidden;
+}
+
+.sidebar {
+  background-color: #4A6FA5;
+  color: white;
+  min-height: 100vh;
+  transition: width 0.3s ease;
+  padding-top: 20px;
+  width: 220px;
+}
+
+.sidebar.collapsed {
+  width: 60px !important;
+  overflow: hidden;
+}
+
+.sidebar h4 {
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.sidebar .nav-link {
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 5px;
+  transition: background 0.3s;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.sidebar .nav-link i {
+  font-size: 16px;
+}
+
+.sidebar .nav-link span {
+  display: inline-block;
+  transition: opacity 0.3s, width 0.3s;
+}
+
+.sidebar.collapsed .nav-link span {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+
+.sidebar .nav-link:hover,
+.sidebar .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.main-content {
+  transition: margin-left 0.3s ease;
+  margin-left: 220px;
+}
+
+.main-content.expanded {
+  margin-left: 60px;
+}
+
+.card {
+  border: none;
+  border-left: 5px solid #4A6FA5;
+  transition: transform 0.3s ease;
+}
+
+.card:hover {
+  transform: scale(1.02);
+}
+
+.card-title {
+  font-weight: 600;
+  color: #333;
+}
+
+.card-text {
+  font-size: 1.4rem;
+  color: #000;
+}
+
+.welcome-msg {
+  font-weight: 600;
+  color: #4A6FA5;
+}
+
+.section-title {
+  font-weight: 500;
+  color: #222;
+}
+
+.section-description {
+  font-size: 0.95rem;
+  color: #666;
+}
+
+#sidebarToggle {
+  font-size: 20px;
+  padding: 6px 12px;
+  border-radius: 5px;
+  border: none;
+  background: #4A6FA5;
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    z-index: 1000;
+    height: 100vh;
+    width: 200px;
+    left: -200px;
+    top: 0;
+    transition: left 0.3s ease-in-out;
+  }
+
+  .sidebar.open {
+    left: 0;
+  }
+
+  .main-content,
+  .main-content.expanded {
+    margin-left: 0 !important;
+  }
+
+  #sidebarToggle {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1100;
+  }
+}
