@@ -1,6 +1,28 @@
 <?php
 include_once '../../config/database.php';
 
+$municipality_id = 1;
+$activeSlot = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
+$slotInfo = pg_fetch_assoc($activeSlot);
+
+$slotsLeft = 0;
+if ($slotInfo) {
+    $countQuery = "
+        SELECT COUNT(*) AS total FROM students 
+        WHERE status = 'applicant' AND application_date >= $1
+    ";
+    $countResult = pg_query_params($connection, $countQuery, [$slotInfo['created_at']]);
+    $countRow = pg_fetch_assoc($countResult);
+    $slotsUsed = intval($countRow['total']) + (isset($_POST['register']) ? 1 : 0);
+    $slotsLeft = intval($slotInfo['slot_count']) - $slotsUsed;
+}
+
+if ($slotsLeft <= 0) {
+  header("Location: student_login.html");
+    echo "<div class='alert alert-danger mt-4'>The slots are full. Please wait for the next announcement.</div>";
+    exit;
+}
+
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
   $firstname = $_POST['first_name'];
   $middlename = $_POST['middle_name'];
@@ -57,6 +79,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
   if ($result) {
     echo "<script>alert('Student registered successfully!'); window.location.href = 'student_login.html';</script>";
+
     exit;
   } else {
     echo "<script>alert('Error: " . pg_last_error($connection) . "');</script>";
