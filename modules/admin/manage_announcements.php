@@ -6,16 +6,16 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 
-// Handle form submit
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Handle form submission to post new announcement
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['post_announcement'])) {
     $title = $_POST['title'];
     $location = $_POST['location'];
     $announcement_date = $_POST['announcement_date'];
     $time = $_POST['time'];
     $reminder = $_POST['reminder'];
-    $municipality_id = 1; // hardcoded for GenTri
+    $municipality_id = 1; // GenTri
 
-    // Deactivate old announcement
+    // Deactivate previous announcement
     pg_query_params($connection, "UPDATE announcements SET is_active = FALSE WHERE is_active = TRUE AND municipality_id = $1", [$municipality_id]);
 
     // Insert new
@@ -23,8 +23,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               VALUES ($1, $2, $3, $4, $5, $6, NOW())";
     pg_query_params($connection, $query, [$municipality_id, $title, $location, $announcement_date, $time, $reminder]);
 }
-?>
 
+// Handle toggle active/inactive
+if (isset($_POST['toggle_status'])) {
+    $announcement_id = $_POST['announcement_id'];
+    $new_status = $_POST['new_status'] === '1' ? 'FALSE' : 'TRUE';
+
+    // If enabling this one, disable others first
+    if ($new_status === 'TRUE') {
+        pg_query_params($connection, "UPDATE announcements SET is_active = FALSE WHERE municipality_id = $1", [1]);
+    }
+
+    // Update the selected one
+    pg_query_params($connection, "UPDATE announcements SET is_active = $new_status::BOOLEAN WHERE announcement_id = $1", [$announcement_id]);
+}
+?>
 <!DOCTYPE html>
 <html>
 <head>
@@ -33,29 +46,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body class="bg-light">
 <div class="container py-4">
-    <nav class="col-md-2 d-flex flex-column bg-light sidebar">
-                <div class="sidebar-sticky">
-                    <h4 class="text-center mt-3">Admin Dashboard</h4>
-                    <ul class="nav flex-column">
-                        <li class="nav-item">
-                            <a class="nav-link active" href="homepage.php">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="verify_students.php">Verify Students</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="manage_announcements.php">Manage Announcements</a>
-                        <li class="nav-item">
-                            <a class="nav-link" href="">Manage Applicants</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="logout.php">Logout</a>
-                        </li>
-                    </ul>
-                </div>
-            </nav>
+    <!-- Sidebar -->
+    <nav class="col-md-2 d-flex flex-column bg-light sidebar mb-4">
+        <div class="sidebar-sticky">
+            <h4 class="text-center mt-3">Admin Dashboard</h4>
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link" href="homepage.php">Home</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="verify_students.php">Verify Students</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link active" href="manage_announcements.php">Manage Announcements</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="">Manage Applicants</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="logout.php">Logout</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- New Announcement Form -->
     <h2>Post New Announcement</h2>
     <form method="POST" class="card p-4 mb-5">
+        <input type="hidden" name="post_announcement" value="1">
         <div class="mb-3">
             <label class="form-label">Title</label>
             <input type="text" name="title" class="form-control" required>
@@ -79,33 +97,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <button type="submit" class="btn btn-primary">Post Announcement</button>
     </form>
 
+    <!-- Previous Announcements -->
     <h3>Previous Announcements</h3>
     <table class="table table-bordered">
         <thead>
             <tr>
-                <th>Title</th><th>Location</th><th>Date</th><th>Time</th><th>Reminder</th><th>Status</th>
+                <th>Title</th><th>Location</th><th>Date</th><th>Time</th><th>Reminder</th><th>Status</th><th>Action</th>
             </tr>
         </thead>
         <tbody>
-        <?php
-        $res = pg_query($connection, "SELECT * FROM announcements WHERE municipality_id = 1 ORDER BY created_at DESC LIMIT 5");
-        while ($row = pg_fetch_assoc($res)) {
-            echo "<tr>
-                <td>" . htmlspecialchars($row['title']) . "</td>
-                <td>" . htmlspecialchars($row['location']) . "</td>
-                <td>" . htmlspecialchars($row['announcement_date']) . "</td>
-                <td>" . htmlspecialchars($row['time']) . "</td>
-                <td>" . htmlspecialchars($row['reminder']) . "</td>
-                <td>";
-            if ($row['is_active'] === 't' || $row['is_active'] === true || $row['is_active'] == 1) {
-                echo '<span class="badge bg-success">Active</span>';
-            } else {
-                echo '<span class="badge bg-danger">Inactive</span>';
+            <?php
+            $res = pg_query($connection, "SELECT * FROM announcements WHERE municipality_id = 1 ORDER BY created_at DESC LIMIT 5");
+            while ($row = pg_fetch_assoc($res)) {
+                $id = $row['announcement_id'];
+                $is_active = $row['is_active'] === 't' || $row['is_active'] === true;
+                echo "<tr>
+                    <td>" . htmlspecialchars($row['title']) . "</td>
+                    <td>" . htmlspecialchars($row['location']) . "</td>
+                    <td>" . htmlspecialchars($row['announcement_date']) . "</td>
+                    <td>" . htmlspecialchars($row['time']) . "</td>
+                    <td>" . htmlspecialchars($row['reminder']) . "</td>
+                    <td>";
+                echo $is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-danger">Inactive</span>';
+                echo "</td>
+                    <td>
+                        <form method='POST'>
+                            <input type='hidden' name='announcement_id' value='$id'>
+                            <input type='hidden' name='new_status' value='" . ($is_active ? "1" : "0") . "'>
+                            <button type='submit' name='toggle_status' class='btn btn-sm btn-outline-" . ($is_active ? "danger" : "success") . "'>
+                                " . ($is_active ? "Disable" : "Enable") . "
+                            </button>
+                        </form>
+                    </td>
+                </tr>";
             }
-            echo "</td>
-            </tr>";
-        }
-        ?>
+            ?>
         </tbody>
     </table>
 </div>
