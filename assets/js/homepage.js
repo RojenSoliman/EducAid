@@ -7,6 +7,13 @@ document.addEventListener("DOMContentLoaded", function () {
     return window.innerWidth <= 768;
   }
 
+  // ✅ Force correct sidebar state on initial load
+  if (isMobile()) {
+    sidebar.classList.remove("close");
+  } else {
+    sidebar.classList.add("close");
+  }
+
   // Toggle sidebar
   toggleBtn.addEventListener("click", function () {
     if (isMobile()) {
@@ -35,5 +42,15 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // REMOVE auto-highlight logic (to fix all items being highlighted)
+  // Handle window resize
+  window.addEventListener("resize", () => {
+    if (isMobile()) {
+      sidebar.classList.remove("close");
+    } else {
+      sidebar.classList.remove("open");
+      backdrop.classList.add("d-none");
+      sidebar.classList.add("close");
+      document.body.classList.remove("no-scroll");
+    }
+  });
 });
