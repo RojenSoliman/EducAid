@@ -97,3 +97,12 @@ CREATE TABLE barangays (
     municipality_id INT REFERENCES municipalities(municipality_id),
     name TEXT NOT NULL
 );
+-- Signup slots for students
+-- This table allows municipalities to manage the number of students they can accommodate
+CREATE TABLE signup_slots (
+    slot_id SERIAL PRIMARY KEY,
+    municipality_id INT REFERENCES municipalities(municipality_id),
+    slot_count INT NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
