@@ -5,17 +5,18 @@ if (!isset($_SESSION['admin_username'])) {
     header("Location: index.php");
     exit;
 }
-
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../assets/css/admin_homepage.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+  <link rel="stylesheet" href="../../assets/css/admin/homepage.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
 </head>
 <body>
     <div class="container-fluid">
@@ -30,8 +31,6 @@ if (!isset($_SESSION['admin_username'])) {
                         <li class="nav-item">
                             <a class="nav-link" href="verify_students.php">Verify Students</a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="manage_announcements.php">Manage Announcements</a>
                         <li class="nav-item">
                             <a class="nav-link" href="">Manage Applicants</a>
                         </li>
@@ -102,8 +101,7 @@ if (!isset($_SESSION['admin_username'])) {
     <script src="../../assets/js/admin_homepage.js"></script>
 </body>
 </html>
+
 <?php
 pg_close($connection);
-// End of the admin homepage code
 ?>
-

@@ -1,0 +1,144 @@
+/* Base Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'Poppins', sans-serif;
+  background: linear-gradient(135deg, #062f63, #0a0f3d);
+  overflow: hidden;
+}
+
+/* Wrapper */
+.login-wrapper {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* Card */
+.right-panel {
+  background: #1a1f3b;
+  padding: 40px 30px;
+  border-radius: 12px;
+  box-shadow: 0 15px 30px rgba(0,0,0,0.3);
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+  color: white;
+}
+
+/* Logo */
+.logo {
+  width: 60px;
+  margin-bottom: 15px;
+}
+
+/* Header */
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #00ba56;
+  margin-bottom: 5px;
+}
+
+.subtext {
+  font-size: 14px;
+  color: #cfd8e1;
+  margin-bottom: 25px;
+  line-height: 1.4;
+}
+
+/* Form */
+.login-form label {
+  display: block;
+  text-align: left;
+  font-size: 13px;
+  color: #cfcfcf;
+  margin-bottom: 6px;
+}
+
+.input-group {
+  margin-bottom: 18px;
+  text-align: left;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 6px;
+  background: #121528;
+  color: white;
+  font-size: 14px;
+  outline: none;
+  transition: box-shadow 0.3s ease;
+}
+
+.input-group input:focus {
+  box-shadow: 0 0 0 2px #00ba56;
+}
+
+/* Button */
+button[type="submit"] {
+  width: 100%;
+  background: #00ba56;
+  border: none;
+  padding: 10px;
+  font-size: 15px;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+button[type="submit"]:hover {
+  background: #019748;
+  transform: scale(1.01);
+}
+
+/* Footer */
+.form-footer {
+  margin-top: 15px;
+  font-size: 12px;
+}
+
+.form-footer a {
+  color: #aaa;
+  text-decoration: none;
+}
+
+.form-footer a:hover {
+  color: #ffffff;
+}
+
+/* Error Message */
+.error {
+  color: #ff4d4d;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .right-panel {
+    padding: 30px 20px;
+  }
+
+  .title {
+    font-size: 20px;
+  }
+
+  .subtext {
+    font-size: 13px;
+  }
+
+  button[type="submit"] {
+    font-size: 14px;
+  }
+}

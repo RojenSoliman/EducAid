@@ -33,19 +33,7 @@
         $username = $_POST['username'];
         $pass = $_POST['password'];
         $confirm = $_POST['confirm_password'];
-        $username = trim($_POST['username']);
-        // Username validation: 4-32 chars, alphanumeric and underscores only
-        if (!preg_match('/^\w{4,32}$/', $username)) {
-            echo "<p style='color:red;'>Username must be 4-32 characters and contain only letters, numbers, and underscores.</p>";
-            exit;
-        }
 
-        // Password validation: minimum 12 characters
-        if (strlen($pass) < 0) {
-            echo "<p style='color:red;'>Password must be at least 12 characters long.</p>";
-            exit;
-        }
-        // Confirm password validation
         if ($pass !== $confirm) {
             echo "<p style='color:red;'>Passwords do not match.</p>";
             exit;
@@ -53,7 +41,6 @@
 
         $hashed = password_hash($pass, PASSWORD_ARGON2ID);
         $municipality_id = 1;
-
 
         // Connect to PostgreSQL (update credentials)
 
