@@ -31,6 +31,8 @@ if (!isset($_SESSION['admin_username'])) {
                             <a class="nav-link" href="verify_students.php">Verify Students</a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="manage_announcements.php">Manage Announcements</a>
+                        <li class="nav-item">
                             <a class="nav-link" href="">Manage Applicants</a>
                         </li>
                         <li class="nav-item">

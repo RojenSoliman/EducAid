@@ -93,7 +93,22 @@ if (!isset($_SESSION['student_username'])) {
             <small class="text-muted">Last login: July 10, 2025 – 9:14 AM</small>
           </div>
         </div>
-
+          <?php
+          include '../../config/database.php';
+          $announcement = pg_query($connection, "SELECT * FROM announcements WHERE municipality_id = 1 AND is_active = TRUE ORDER BY created_at DESC LIMIT 1");
+          if ($announcement && pg_num_rows($announcement) > 0) {
+              $row = pg_fetch_assoc($announcement);
+              echo "<div class='alert alert-info'>
+                      <h5 class='mb-1'>" . htmlspecialchars($row['title']) . "</h5>
+                      <p class='mb-0'><strong>Location:</strong> " . htmlspecialchars($row['location']) . "</p>
+                      <p class='mb-0'><strong>Date:</strong> " . htmlspecialchars($row['announcement_date']) . "</p>
+                      <p class='mb-0'><strong>Time:</strong> " . htmlspecialchars($row['time']) . "</p>
+                      <p class='mb-0'><strong>Note:</strong> " . htmlspecialchars($row['reminder']) . "</p>
+                    </div>";
+          } else {
+              echo "<div class='alert alert-secondary'>No current announcements available.</div>";
+          }
+          ?>
         <!-- Dashboard Cards -->
         <div class="row g-4 mb-4">
           <div class="col-md-4">
@@ -107,12 +122,47 @@ if (!isset($_SESSION['student_username'])) {
             </div>
           </div>
           <div class="col-md-4">
+            <?php
+            // Example: fetch status from database or session
+            // For demonstration, let's assume $status is set
+            // $status = 'active'; // Possible values: 'active', 'applicant', 'disabled'
+
+            // Replace this with your actual logic to get the status
+            $status = 'active'; // Example, replace with real value
+            $result = pg_query_params($connection, "SELECT status FROM students WHERE student_id = $1", [$_SESSION['student_id']]);
+            $status = null;
+            if ($result && pg_num_rows($result) > 0) {
+              $row = pg_fetch_assoc($result);
+              $status = $row['status'];
+            }
+            if ($status === 'active') {
+              $cardHeaderClass = 'bg-success text-white';
+              $icon = 'bi-check2-circle';
+              $statusText = 'Verified';
+              $bodyClass = 'text-success fw-semibold';
+            } elseif ($status === 'applicant') {
+              $cardHeaderClass = 'bg-warning text-dark';
+              $icon = 'bi-hourglass-split';
+              $statusText = 'Applicant';
+              $bodyClass = 'text-warning fw-semibold';
+            } elseif ($status === 'disabled') {
+              $cardHeaderClass = 'bg-danger text-white';
+              $icon = 'bi-x-circle';
+              $statusText = 'Disabled';
+              $bodyClass = 'text-danger fw-semibold';
+            } else {
+              $cardHeaderClass = 'bg-secondary text-white';
+              $icon = 'bi-question-circle';
+              $statusText = 'Unknown';
+              $bodyClass = 'text-secondary fw-semibold';
+            }
+            ?>
             <div class="custom-card shadow-sm">
-              <div class="custom-card-header bg-success text-white">
-                <h5 class="mb-0"><i class="bi bi-check2-circle me-2"></i>Application Status</h5>
+              <div class="custom-card-header <?php echo $cardHeaderClass; ?>">
+              <h5 class="mb-0"><i class="bi <?php echo $icon; ?> me-2"></i>Application Status</h5>
               </div>
-              <div class="custom-card-body text-success fw-semibold">
-                Verified
+              <div class="custom-card-body <?php echo $bodyClass; ?>">
+              <?php echo $statusText; ?>
               </div>
             </div>
           </div>
