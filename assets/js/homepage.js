@@ -6,7 +6,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function isMobile() {
     return window.innerWidth <= 768;
   }
-
+  //pa check nga
   // ✅ Force correct sidebar state on initial load
   if (isMobile()) {
     sidebar.classList.remove("close");

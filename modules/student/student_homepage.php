@@ -68,7 +68,7 @@ if (!isset($_SESSION['student_username'])) {
       </ul>
     </div>
     <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
-
+   <!-- Page Content -->
     <!-- Page Content -->
     <section class="home-section" id="page-content-wrapper">
       <nav>
