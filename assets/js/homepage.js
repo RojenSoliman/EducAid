@@ -6,33 +6,48 @@ document.addEventListener("DOMContentLoaded", function () {
   function isMobile() {
     return window.innerWidth <= 768;
   }
-  //pa check nga
-  // ✅ Force correct sidebar state on initial load
-  if (isMobile()) {
-    sidebar.classList.remove("close");
-  } else {
-    sidebar.classList.add("close");
+
+  // ✅ NEW: Consolidated sidebar state handler
+  function updateSidebarState() {
+    if (isMobile()) {
+      // On mobile: sidebar should not be collapsed, and should start hidden
+      sidebar.classList.remove("close");
+      sidebar.classList.remove("open");
+      backdrop.classList.add("d-none");
+      document.body.classList.remove("no-scroll");
+    } else {
+      // On desktop: sidebar should be collapsed by default
+      sidebar.classList.add("close");
+      sidebar.classList.remove("open");
+      backdrop.classList.add("d-none");
+      document.body.classList.remove("no-scroll");
+    }
   }
 
-  // Toggle sidebar
+  // ✅ CHANGE: Delay initial state set to ensure correct rendering
+  setTimeout(updateSidebarState, 10);
+
+  // ✅ UNCHANGED: Handle menu icon toggle
   toggleBtn.addEventListener("click", function () {
     if (isMobile()) {
+      // On mobile: open sidebar with backdrop and scroll lock
       sidebar.classList.add("open");
       backdrop.classList.remove("d-none");
       document.body.classList.add("no-scroll");
     } else {
+      // On desktop: toggle collapse state
       sidebar.classList.toggle("close");
     }
   });
 
-  // Close on backdrop click
+  // ✅ UNCHANGED: Close on backdrop click
   backdrop.addEventListener("click", function () {
     sidebar.classList.remove("open");
     backdrop.classList.add("d-none");
     document.body.classList.remove("no-scroll");
   });
 
-  // Close when clicking outside
+  // ✅ UNCHANGED: Close on outside click (mobile only)
   document.addEventListener("click", function (e) {
     const isClickInside = sidebar.contains(e.target) || toggleBtn.contains(e.target);
     if (isMobile() && sidebar.classList.contains("open") && !isClickInside) {
@@ -42,15 +57,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Handle window resize
-  window.addEventListener("resize", () => {
-    if (isMobile()) {
-      sidebar.classList.remove("close");
-    } else {
-      sidebar.classList.remove("open");
-      backdrop.classList.add("d-none");
-      sidebar.classList.add("close");
-      document.body.classList.remove("no-scroll");
-    }
-  });
+  // ✅ CHANGE: Re-check correct state when window resizes
+  window.addEventListener("resize", updateSidebarState);
 });
