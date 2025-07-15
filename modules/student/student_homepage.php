@@ -6,7 +6,6 @@ if (!isset($_SESSION['student_username'])) {
 }
 ?>
 
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -19,7 +18,7 @@ if (!isset($_SESSION['student_username'])) {
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
 
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="../../assets/css/homepage.css" />
+  <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
 </head>
 <body>
   <div id="wrapper">
@@ -80,20 +79,21 @@ if (!isset($_SESSION['student_username'])) {
 
       <div class="container-fluid py-4 px-4">
         <!-- Header -->
-        <div class="d-flex align-items-center mb-4">
+        <div class="d-flex align-items-center mb-4 section-spacing">
           <img src="../../assets/images/default/profile.png" class="rounded-circle me-3" width="60" height="60" alt="Student Profile">
           <div>
             <h2 class="fw-bold mb-1">Welcome, <?php echo htmlspecialchars($_SESSION['student_username']); ?>!</h2>
             <small class="text-muted">Last login: July 10, 2025 – 9:14 AM</small>
           </div>
         </div>
-       <!-- Educational Event -->
+
+        <!-- Educational Event -->
         <?php
           include '../../config/database.php';
           $announcement = pg_query($connection, "SELECT * FROM announcements WHERE municipality_id = 1 AND is_active = TRUE ORDER BY created_at DESC LIMIT 1");
           if ($announcement && pg_num_rows($announcement) > 0) {
               $row = pg_fetch_assoc($announcement);
-              echo "<div class='custom-card mb-4 shadow-sm'>
+              echo "<div class='custom-card mb-4 shadow-sm section-spacing'>
                       <div class='custom-card-header bg-warning text-dark'>
                         <h5 class='mb-0'><i class='bi bi-calendar-event me-2'></i>" . htmlspecialchars($row['title']) . "</h5>
                       </div>
@@ -107,15 +107,16 @@ if (!isset($_SESSION['student_username'])) {
                       </div>
                     </div>";
           } else {
-              echo "<div class='custom-card mb-4 shadow-sm>No current announcements available.
+              echo "<div class='custom-card mb-4 shadow-sm section-spacing'>
                       <div class='custom-card-header bg-warning text-dark'>
                         <h5 class='mb-0'><i class='bi bi-calendar-event me-2'></i>No current announcements.</h5>
                       </div>
                     </div>";
           }
-          ?>
+        ?>
+
         <!-- Dashboard Cards -->
-        <div class="row g-4 mb-4">
+        <div class="row g-4 section-spacing">
           <div class="col-md-4">
             <div class="custom-card shadow-sm">
               <div class="custom-card-header bg-primary text-white">
@@ -126,14 +127,9 @@ if (!isset($_SESSION['student_username'])) {
               </div>
             </div>
           </div>
+
           <div class="col-md-4">
             <?php
-            // Example: fetch status from database or session
-            // For demonstration, let's assume $status is set
-            // $status = 'active'; // Possible values: 'active', 'applicant', 'disabled'
-
-            // Replace this with your actual logic to get the status
-            $status = 'active'; // Example, replace with real value
             $result = pg_query_params($connection, "SELECT status FROM students WHERE student_id = $1", [$_SESSION['student_id']]);
             $status = null;
             if ($result && pg_num_rows($result) > 0) {
@@ -164,13 +160,14 @@ if (!isset($_SESSION['student_username'])) {
             ?>
             <div class="custom-card shadow-sm">
               <div class="custom-card-header <?php echo $cardHeaderClass; ?>">
-              <h5 class="mb-0"><i class="bi <?php echo $icon; ?> me-2"></i>Application Status</h5>
+                <h5 class="mb-0"><i class="bi <?php echo $icon; ?> me-2"></i>Application Status</h5>
               </div>
               <div class="custom-card-body <?php echo $bodyClass; ?>">
-              <?php echo $statusText; ?>
+                <?php echo $statusText; ?>
               </div>
             </div>
           </div>
+
           <div class="col-md-4">
             <div class="custom-card shadow-sm">
               <div class="custom-card-header bg-secondary text-white">
@@ -183,14 +180,14 @@ if (!isset($_SESSION['student_username'])) {
           </div>
         </div>
 
-        <div id="deadline-section" class="custom-card border border-2 border-danger-subtle mb-4 shadow-sm">
+        <!-- Deadline Section -->
+        <div id="deadline-section" class="custom-card border border-2 border-danger-subtle shadow-sm section-spacing">
           <div class="p-3 d-flex justify-content-between align-items-center bg-danger-subtle border-bottom" data-bs-toggle="collapse" data-bs-target="#deadline-body" style="cursor: pointer;">
             <h5 class="mb-0 text-danger fw-bold">
               <i class="bi bi-hourglass-top me-2"></i>Application Submission Deadlines
             </h5>
             <span class="badge bg-light text-danger border border-danger" id="deadline-badge">Loading...</span>
           </div>
-        
           <div id="deadline-body" class="collapse show">
             <div class="custom-card-body">
               <div class="row gy-3">
@@ -216,10 +213,9 @@ if (!isset($_SESSION['student_username'])) {
             </div>
           </div>
         </div>
-        
 
         <!-- Reminders -->
-        <div class="custom-card mb-4 shadow-sm">
+        <div class="custom-card shadow-sm section-spacing">
           <div class="custom-card-header bg-info text-white">
             <h5 class="mb-0"><i class="bi bi-bell-fill me-2"></i>Reminders</h5>
           </div>
@@ -238,16 +234,13 @@ if (!isset($_SESSION['student_username'])) {
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/homepage.js"></script>
   <script src="../../assets/js/deadline.js"></script>
-
-    <script>
-        function confirmLogout(event) {
-            event.preventDefault(); // Stop default <a> action
-
-            if (confirm("Are you sure you want to logout?")) {
-            window.location.href = 'logout.php'; // Now redirect manually
-            }
-        }
-    </script>
-
+  <script>
+    function confirmLogout(event) {
+      event.preventDefault();
+      if (confirm("Are you sure you want to logout?")) {
+        window.location.href = 'logout.php';
+      }
+    }
+  </script>
 </body>
 </html>
