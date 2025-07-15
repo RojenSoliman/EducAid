@@ -1,0 +1,132 @@
+/* Admin Sidebar Styles */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 250px;
+  background-color: #4A6FA5;
+  padding: 20px 0;
+  transition: width 0.3s ease;
+  overflow: hidden;
+  z-index: 1000;
+}
+
+.sidebar.close {
+  width: 70px;
+}
+
+.sidebar .logo-details {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 20px;
+}
+
+.sidebar .logo-details .icon {
+  font-size: 1.5rem;
+  color: #fff;
+  margin-right: 8px;
+}
+
+.sidebar .logo-details .logo_name {
+  font-size: 1.1rem;
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: opacity 0.3s ease;
+}
+
+.sidebar.close .logo-details .logo_name {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nav-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nav-item {
+  margin: 10px 0;
+}
+
+.nav-item a {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition: background 0.2s ease;
+  border-radius: 8px;
+}
+
+.nav-item a .icon {
+  font-size: 1.2rem;
+  margin-right: 12px;
+}
+
+.nav-item a .links_name {
+  white-space: nowrap;
+  transition: opacity 0.2s ease, width 0.2s ease;
+}
+
+.sidebar.close .nav-item a .links_name {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+
+.nav-item a:hover,
+.nav-item.active a {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.nav-item.logout a {
+  color: #ffcccc;
+}
+
+.sidebar-toggle {
+  cursor: pointer;
+  font-size: 1.4rem;
+  color: #4A6FA5;
+  background: transparent;
+  border: none;
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 999;
+}
+
+.sidebar-backdrop.d-none {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar.close {
+    transform: translateX(-100%);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+  }
+
+  .home-section {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+}
