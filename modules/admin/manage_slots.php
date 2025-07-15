@@ -25,7 +25,7 @@ $slotsLeft = 0;
 if ($slotInfo) {
     $countQuery = "
         SELECT COUNT(*) AS total FROM students 
-        WHERE status = 'applicant' AND created_at >= $1
+        WHERE status = 'applicant' AND application_date >= $1
     ";
     $countResult = pg_query_params($connection, $countQuery, [$slotInfo['created_at']]);
     $countRow = pg_fetch_assoc($countResult);
