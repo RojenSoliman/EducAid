@@ -35,7 +35,13 @@ if (!isset($_SESSION['admin_username'])) {
                             <a class="nav-link" href="">Manage Applicants</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="logout.php">Logout</a>
+                            <a class="nav-link" href="manage_announcements.php">Manage Announcements</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="manage_slots.php">Manage Signup Slots</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-danger" href="logout.php" onclick="return confirm('Are you sure you want to logout?');">Logout</a>
                         </li>
                     </ul>
                 </div>
