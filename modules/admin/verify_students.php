@@ -24,6 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['revert_list'])) {
         pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
         $isFinalized = false;
+        // Reset all payroll numbers to 0 if requested
+        if (isset($_POST['reset_payroll'])) {
+            pg_query($connection, "UPDATE students SET payroll_no = 0");
+        }
     }
     // Mark students as active
     if (isset($_POST['activate']) && isset($_POST['selected_applicants'])) {
@@ -217,6 +221,44 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
   </div>
 </div>
 
+<!-- Modal for Generate Payroll Confirmation -->
+<div class="modal fade" id="generatePayrollModal" tabindex="-1" aria-labelledby="generatePayrollModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="generatePayrollModalLabel">Generate Payroll Numbers</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        Are you sure you want to generate payroll numbers for all active students? This will overwrite any existing payroll numbers.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="generatePayrollConfirmBtnModal">Generate</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for Revert Confirmation -->
+<div class="modal fade" id="revertListModal" tabindex="-1" aria-labelledby="revertListModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="revertListModalLabel">Revert List</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        Are you sure you want to revert? All payroll numbers will reset if they have already been generated.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="revertListConfirmBtnModal">Yes, Revert</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   // Finalize modal confirm button disables checkboxes and revert button, then toggles button to Revert
@@ -228,6 +270,50 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
     // Set hidden input to trigger finalize on submit
     document.getElementById('finalizeListInput').value = '1';
     document.getElementById('activeStudentsForm').submit();
+  });
+
+  // Generate Payroll Numbers confirmation
+  document.getElementById('generatePayrollBtn')?.addEventListener('click', function () {
+    var generatePayrollModal = new bootstrap.Modal(document.getElementById('generatePayrollModal'));
+    generatePayrollModal.show();
+  });
+  document.getElementById('generatePayrollConfirmBtnModal')?.addEventListener('click', function () {
+    // Submit hidden form to generate payroll numbers
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.style.display = 'none';
+    var input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'generate_payroll';
+    input.value = '1';
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+  });
+
+  // Revert List confirmation
+  document.getElementById('revertTriggerBtn')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    var revertListModal = new bootstrap.Modal(document.getElementById('revertListModal'));
+    revertListModal.show();
+  });
+  document.getElementById('revertListConfirmBtnModal')?.addEventListener('click', function () {
+    // Submit hidden form to revert and reset payroll numbers
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.style.display = 'none';
+    var input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'revert_list';
+    input.value = '1';
+    form.appendChild(input);
+    var resetInput = document.createElement('input');
+    resetInput.type = 'hidden';
+    resetInput.name = 'reset_payroll';
+    resetInput.value = '1';
+    form.appendChild(resetInput);
+    document.body.appendChild(form);
+    form.submit();
   });
 
   // Revert handler to re-enable checkboxes and revert button
@@ -249,19 +335,6 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
 
   // Attach finalizeHandler initially to the Finalize button
   document.getElementById('finalizeTriggerBtn')?.addEventListener('click', finalizeHandler);
-
-  document.getElementById('generatePayrollBtn')?.addEventListener('click', function () {
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.style.display = 'none';
-    var input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'generate_payroll';
-    input.value = '1';
-    form.appendChild(input);
-    document.body.appendChild(form);
-    form.submit();
-  });
 
   // On page load, set up UI based on PHP $isFinalized
   var isFinalized = <?= $isFinalized ? 'true' : 'false' ?>;
