@@ -108,3 +108,10 @@ CREATE TABLE signup_slots (
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE config (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
+INSERT INTO config (key, value) VALUES ('student_list_finalized', '0');
