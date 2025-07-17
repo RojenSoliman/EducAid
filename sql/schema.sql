@@ -102,6 +102,8 @@ CREATE TABLE barangays (
 CREATE TABLE signup_slots (
     slot_id SERIAL PRIMARY KEY,
     municipality_id INT REFERENCES municipalities(municipality_id),
+    academic_year TEXT,
+    semester TEXT,
     slot_count INT NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW()

@@ -3,7 +3,67 @@ include_once '../../config/database.php';
 
 $municipality_id = 1;
 
-// Handle registration
+// 🔹 Check on page load (not POST): prevent form from rendering if slots are full
+if ($_SERVER["REQUEST_METHOD"] !== "POST") {
+    $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
+    $slotInfo = pg_fetch_assoc($slotRes);
+
+    $slotsLeft = 0;
+    if ($slotInfo) {
+        $countRes = pg_query_params($connection, "
+            SELECT COUNT(*) AS total FROM students 
+            WHERE (status = 'applicant' OR status = 'active') 
+            AND application_date >= $1
+        ", [$slotInfo['created_at']]);
+        $countRow = pg_fetch_assoc($countRes);
+        $slotsLeft = intval($slotInfo['slot_count']) - intval($countRow['total']);
+    }
+
+    if ($slotsLeft <= 0) {
+        echo <<<HTML
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>EducAid – Registration Closed</title>
+            <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
+            <style>
+                .alert-container {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                }
+                .spinner {
+                    width: 3rem;
+                    height: 3rem;
+                    margin-bottom: 1rem;
+                }
+            </style>
+        </head>
+        <body class="bg-light">
+            <div class="container alert-container">
+                <div class="text-center">
+                    <svg class="spinner text-danger" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid">
+                        <circle cx="50" cy="50" fill="none" stroke="currentColor" stroke-width="10" r="35" stroke-dasharray="164.93361431346415 56.97787143782138">
+                            <animateTransform attributeName="transform" type="rotate" repeatCount="indefinite" dur="1s" values="0 50 50;360 50 50" keyTimes="0;1"/>
+                        </circle>
+                    </svg>
+                    <h4 class="text-danger">Slots are full.</h4>
+                    <p>Please wait for the next announcement before registering again.</p>
+                    <a href="student_login.html" class="btn btn-outline-primary mt-3">Back to Login</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        HTML;
+        exit;
+    }
+}
+
+// 🔹 Registration logic
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $firstname = $_POST['first_name'];
     $middlename = $_POST['middle_name'];
@@ -41,17 +101,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         exit;
     }
 
-    // Fetch active slot
+    // Recheck slot (safety redundancy)
     $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
     $slotInfo = pg_fetch_assoc($slotRes);
-
     if (!$slotInfo) {
         echo "<script>alert('No active slot found.'); history.back();</script>";
         exit;
     }
 
-    // Count applicants after slot activation
-    $countRes = pg_query_params($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'applicant' AND application_date >= $1", [$slotInfo['created_at']]);
+    $countRes = pg_query_params($connection, "
+      SELECT COUNT(*) AS total FROM students 
+      WHERE (status = 'applicant' OR status = 'active') 
+      AND application_date >= $1
+    ", [$slotInfo['created_at']]);
     $countRow = pg_fetch_assoc($countRes);
     $slotsUsed = intval($countRow['total']);
     $slotsLeft = intval($slotInfo['slot_count']) - $slotsUsed;
@@ -61,32 +123,28 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         exit;
     }
 
-    // Insert student
+    // Insert new student
     $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10)";
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10) RETURNING student_id";
+    
+    // Add the RETURNING clause to get the inserted student_id
     $result = pg_query_params($connection, $insertQuery, [$municipality_id, $firstname, $middlename, $lastname, $email, $mobile, $hashed, $sex, $age, $barangay]);
 
     if ($result) {
+        // Get the student_id from the returned result
+        $student_id_row = pg_fetch_assoc($result);
+        $student_id = $student_id_row['student_id'];
+
+        // Insert into applications table (link student to active slot)
+        $semester = $slotInfo['semester'];  // 1st or 2nd semester
+        $academic_year = $slotInfo['academic_year'];  // Format: 2025-2026
+        $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";
+        pg_query_params($connection, $applicationQuery, [$student_id, $semester, $academic_year]);
+
         echo "<script>alert('Registration successful!'); window.location.href = 'student_login.html';</script>";
         exit;
     } else {
         echo "<script>alert('Registration failed.');</script>";
-    }
-} else {
-    // On load: check if slots are full
-    $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
-    $slotInfo = pg_fetch_assoc($slotRes);
-    $slotsLeft = 0;
-
-    if ($slotInfo) {
-        $countRes = pg_query_params($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'applicant' AND application_date >= $1", [$slotInfo['created_at']]);
-        $countRow = pg_fetch_assoc($countRes);
-        $slotsLeft = intval($slotInfo['slot_count']) - intval($countRow['total']);
-    }
-
-    if ($slotsLeft <= 0) {
-        echo "<div class='alert alert-danger text-center mt-4'>The slots are full. Please wait for the next announcement.</div>";
-        exit;
     }
 }
 ?>
