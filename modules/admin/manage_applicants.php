@@ -57,7 +57,6 @@ if (!empty($params)) {
     $applicants = pg_query($connection, $query);
 }
 
-
 ?>
 
 <!DOCTYPE html>
