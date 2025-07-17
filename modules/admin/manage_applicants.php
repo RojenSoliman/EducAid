@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Fetch applicants
 $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'applicant'");
+
 ?>
 
 <!DOCTYPE html>
@@ -78,57 +79,59 @@ $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'appl
                     </tr>
                 </thead>
                 <tbody>
-                    <?php while ($applicant = pg_fetch_assoc($applicants)) { 
-                        $student_id = $applicant['student_id'];
-                        $isComplete = check_documents($connection, $student_id); // Check if the student uploaded all required documents
-                    ?>
-                        <tr>
-                            <td><?= htmlspecialchars($applicant['first_name']) . ' ' . htmlspecialchars($applicant['last_name']) ?></td>
-                            <td><?= htmlspecialchars($applicant['mobile']) ?></td>
-                            <td><?= htmlspecialchars($applicant['email']) ?></td>
-                            <td><?= $isComplete ? 'Complete' : 'Incomplete' ?></td>
-                            <td>
-                                <!-- Button to view documents -->
-                                <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#viewDocumentsModal<?= $student_id ?>">View Documents</button>
-                            </td>
-                        </tr>
-                        <?php if(!$applicant){
-                            echo "<tr><td colspan='5'>No active students found.</td></tr>";
-                        }?>
-                        <!-- Modal for Viewing Documents -->
-                        <div class="modal fade" id="viewDocumentsModal<?= $student_id ?>" tabindex="-1" aria-labelledby="viewDocumentsModalLabel" aria-hidden="true">
-                            <div class="modal-dialog modal-lg">
-                                <div class="modal-content">
-                                    <div class="modal-header">
-                                        <h5 class="modal-title" id="viewDocumentsModalLabel">Documents for <?= htmlspecialchars($applicant['first_name']) ?> <?= htmlspecialchars($applicant['last_name']) ?></h5>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                    </div>
-                                    <div class="modal-body">
-                                        <?php
-                                        $documents = pg_query_params($connection, "SELECT * FROM documents WHERE student_id = $1", [$student_id]);
-                                        if (pg_num_rows($documents) > 0) {
-                                            while ($doc = pg_fetch_assoc($documents)) {
-                                                echo "<p><strong>" . ucfirst(str_replace("_", " ", $doc['type'])) . ":</strong> <a href='" . htmlspecialchars($doc['file_path']) . "' target='_blank'>View</a></p>";
+                    <?php if (pg_num_rows($applicants) === 0): ?>
+                        <tr><td colspan="5" class="text-center">No applicants found.</td></tr>
+                    <?php else: ?>
+                        <?php while ($applicant = pg_fetch_assoc($applicants)) { 
+                            $student_id = $applicant['student_id'];
+                            $isComplete = check_documents($connection, $student_id); // Check if the student uploaded all required documents
+                        ?>
+                            <tr>
+                                <td><?= htmlspecialchars($applicant['first_name']) . ' ' . htmlspecialchars($applicant['last_name']) ?></td>
+                                <td><?= htmlspecialchars($applicant['mobile']) ?></td>
+                                <td><?= htmlspecialchars($applicant['email']) ?></td>
+                                <td><?= $isComplete ? 'Complete' : 'Incomplete' ?></td>
+                                <td>
+                                    <!-- Button to view documents -->
+                                    <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#viewDocumentsModal<?= $student_id ?>">View Documents</button>
+                                </td>
+                            </tr>
+
+                            <!-- Modal for Viewing Documents -->
+                            <div class="modal fade" id="viewDocumentsModal<?= $student_id ?>" tabindex="-1" aria-labelledby="viewDocumentsModalLabel" aria-hidden="true">
+                                <div class="modal-dialog modal-lg">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title" id="viewDocumentsModalLabel">Documents for <?= htmlspecialchars($applicant['first_name']) ?> <?= htmlspecialchars($applicant['last_name']) ?></h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <?php
+                                            $documents = pg_query_params($connection, "SELECT * FROM documents WHERE student_id = $1", [$student_id]);
+                                            if (pg_num_rows($documents) > 0) {
+                                                while ($doc = pg_fetch_assoc($documents)) {
+                                                    echo "<p><strong>" . ucfirst(str_replace("_", " ", $doc['type'])) . ":</strong> <a href='" . htmlspecialchars($doc['file_path']) . "' target='_blank'>View</a></p>";
+                                                }
+                                            } else {
+                                                echo "<p>No documents available.</p>";
                                             }
-                                        } else {
-                                            echo "<p>No documents available.</p>";
-                                        }
-                                        ?>
-                                    </div>
-                                    <div class="modal-footer">
-                                        <?php if ($isComplete): ?>
-                                            <form method="POST">
-                                                <input type="hidden" name="student_id" value="<?= $student_id ?>" />
-                                                <button type="submit" name="mark_verified" class="btn btn-success">Mark as Verified</button>
-                                            </form>
-                                        <?php else: ?>
-                                            <button class="btn btn-secondary" disabled>Not all documents uploaded</button>
-                                        <?php endif; ?>
+                                            ?>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <?php if ($isComplete): ?>
+                                                <form method="POST">
+                                                    <input type="hidden" name="student_id" value="<?= $student_id ?>" />
+                                                    <button type="submit" name="mark_verified" class="btn btn-success">Mark as Verified</button>
+                                                </form>
+                                            <?php else: ?>
+                                                <button class="btn btn-secondary" disabled>Not all documents uploaded</button>
+                                            <?php endif; ?>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    <?php } ?>
+                        <?php } ?>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
