@@ -52,28 +52,18 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
   <meta charset="UTF-8">
   <title>Verify Students</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
   <link rel="stylesheet" href="../../assets/css/admin_homepage.css">
+   <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
 </head>
 <body>
 <div class="container-fluid">
   <div class="row">
-    <!-- Sidebar -->
-    <nav class="col-md-2 d-flex flex-column bg-light sidebar">
-      <div class="sidebar-sticky">
-        <h4 class="text-center mt-3">Admin Dashboard</h4>
-        <ul class="nav flex-column">
-          <li class="nav-item"><a class="nav-link" href="homepage.php">Home</a></li>
-          <li class="nav-item"><a class="nav-link active" href="verify_students.php">Verify Students</a></li>
-          <li class="nav-item"><a class="nav-link" href="manage_announcements.php">Manage Announcements</a></li>
-          <li class="nav-item"><a class="nav-link" href="">Manage Applicants</a></li>
-          <li class="nav-item">
-            <a class="nav-link text-danger" href="logout.php" onclick="return confirm('Are you sure you want to logout?');">
-              Logout
-            </a>
-          </li>
-        </ul>
-      </div>
-    </nav>
+    <!-- Sidebar (comes first for layout logic to work) -->
+    <?php include '../../includes/admin/admin_sidebar.php'; ?>
+
+    <!-- Backdrop for mobile sidebar -->
+    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
 
     <!-- Main -->
     <main class="col-md-10 ms-sm-auto px-4 py-4">
@@ -204,6 +194,9 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
     document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.checked = this.checked);
   });
 </script>
+ <script src="../../assets/js/admin/sidebar.js"></script>
+ 
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
 <?php pg_close($connection); ?>
