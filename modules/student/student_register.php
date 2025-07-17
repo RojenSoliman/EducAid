@@ -125,12 +125,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
     // Insert new student
     $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10)";
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10) RETURNING student_id";
+    
+    // Add the RETURNING clause to get the inserted student_id
     $result = pg_query_params($connection, $insertQuery, [$municipality_id, $firstname, $middlename, $lastname, $email, $mobile, $hashed, $sex, $age, $barangay]);
 
     if ($result) {
-        // Get the student_id of the newly registered student
-        $student_id = pg_last_oid($result);
+        // Get the student_id from the returned result
+        $student_id_row = pg_fetch_assoc($result);
+        $student_id = $student_id_row['student_id'];
 
         // Insert into applications table (link student to active slot)
         $semester = $slotInfo['semester'];  // 1st or 2nd semester
