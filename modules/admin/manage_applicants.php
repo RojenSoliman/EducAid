@@ -71,8 +71,8 @@ $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'appl
                 <thead>
                     <tr>
                         <th>Name</th>
+                        <th>Contact Number</th>
                         <th>Email</th>
-                        <th>Status</th>
                         <th>Documents Status</th>
                         <th>Action</th>
                     </tr>
@@ -84,8 +84,8 @@ $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'appl
                     ?>
                         <tr>
                             <td><?= htmlspecialchars($applicant['first_name']) . ' ' . htmlspecialchars($applicant['last_name']) ?></td>
+                            <td><?= htmlspecialchars($applicant['mobile']) ?></td>
                             <td><?= htmlspecialchars($applicant['email']) ?></td>
-                            <td><?= htmlspecialchars($applicant['status']) ?></td>
                             <td><?= $isComplete ? 'Complete' : 'Incomplete' ?></td>
                             <td>
                                 <!-- Button to view documents -->
