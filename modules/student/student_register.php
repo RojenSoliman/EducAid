@@ -51,7 +51,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     }
 
     // Count applicants after slot activation
-    $countRes = pg_query_params($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'applicant' AND application_date >= $1", [$slotInfo['created_at']]);
+    $countRes = pg_query_params($connection, "
+      SELECT COUNT(*) AS total FROM students 
+      WHERE (status = 'applicant' OR status = 'active') 
+      AND application_date >= $1
+    ", [$slotInfo['created_at']]);
     $countRow = pg_fetch_assoc($countRes);
     $slotsUsed = intval($countRow['total']);
     $slotsLeft = intval($slotInfo['slot_count']) - $slotsUsed;

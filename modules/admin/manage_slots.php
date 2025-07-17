@@ -33,7 +33,8 @@ if ($slotInfo) {
 
     $countQuery = "
         SELECT COUNT(*) AS total FROM students 
-        WHERE status = 'applicant' AND municipality_id = $1 AND application_date >= $2
+        WHERE (status = 'applicant' OR status = 'active') 
+        AND municipality_id = $1 AND application_date >= $2
     ";
     $countResult = pg_query_params($connection, $countQuery, [$municipality_id, $createdAt]);
     $countRow = pg_fetch_assoc($countResult);
