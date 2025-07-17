@@ -49,7 +49,7 @@
             echo "<p style='color:red;'>Connection failed.</p>";
             exit;
         }
-
+        // check 
         // Insert into admins (no email or full_name)
         $query = "INSERT INTO admins (municipality_id, username, password) VALUES ($1, $2, $3)";
         $result = pg_query_params($connection, $query, [$municipality_id, $username, $hashed]);
