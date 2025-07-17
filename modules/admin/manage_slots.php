@@ -12,8 +12,17 @@ $municipality_id = 1;
 // Handle new slot submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['slot_count'])) {
     $newSlotCount = intval($_POST['slot_count']);
+    $semester = $_POST['semester'];
+    $academic_year = $_POST['academic_year'];
+
+    // Validate the academic year format (****-****)
+    if (!preg_match('/^\d{4}-\d{4}$/', $academic_year)) {
+        echo "<script>alert('Invalid school year format. Please use the format ****-****.'); history.back();</script>";
+        exit;
+    }
+
     pg_query_params($connection, "UPDATE signup_slots SET is_active = FALSE WHERE is_active = TRUE AND municipality_id = $1", [$municipality_id]);
-    pg_query_params($connection, "INSERT INTO signup_slots (municipality_id, slot_count, is_active) VALUES ($1, $2, TRUE)", [$municipality_id, $newSlotCount]);
+    pg_query_params($connection, "INSERT INTO signup_slots (municipality_id, slot_count, is_active, semester, academic_year) VALUES ($1, $2, TRUE, $3, $4)", [$municipality_id, $newSlotCount, $semester, $academic_year]);
 
     // Redirect to prevent resubmission on refresh
     header("Location: manage_slots.php");
@@ -98,6 +107,20 @@ if ($slotInfo) {
                 <label class="form-label">Enter number of new applicant slots</label>
                 <input type="number" name="slot_count" class="form-control" min="1" required>
             </div>
+
+            <div class="mb-3">
+                <label class="form-label">Select Semester</label>
+                <select name="semester" class="form-select" required>
+                    <option value="1st Semester">1st Semester</option>
+                    <option value="2nd Semester">2nd Semester</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Enter Academic Year (Format: 2025-2026)</label>
+                <input type="text" name="academic_year" class="form-control" pattern="^\d{4}-\d{4}$" required placeholder="2025-2026">
+            </div>
+
             <button type="submit" class="btn btn-primary">Release New Slots</button>
         </form>
 
@@ -109,6 +132,8 @@ if ($slotInfo) {
                     <p><strong>Slots Released:</strong> <?= htmlspecialchars($slotInfo['slot_count']) ?></p>
                     <p><strong>Slots Used:</strong> <?= $slotsUsed ?></p>
                     <p><strong>Slots Remaining:</strong> <?= max(0, $slotsLeft) ?></p>
+                    <p><strong>Semester:</strong> <?= htmlspecialchars($slotInfo['semester']) ?></p>
+                    <p><strong>Academic Year:</strong> <?= htmlspecialchars($slotInfo['academic_year']) ?></p>
                 </div>
             </div>
 

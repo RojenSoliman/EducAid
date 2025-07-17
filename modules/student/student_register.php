@@ -129,6 +129,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $result = pg_query_params($connection, $insertQuery, [$municipality_id, $firstname, $middlename, $lastname, $email, $mobile, $hashed, $sex, $age, $barangay]);
 
     if ($result) {
+        // Get the student_id of the newly registered student
+        $student_id = pg_last_oid($result);
+
+        // Insert into applications table (link student to active slot)
+        $semester = $slotInfo['semester'];  // 1st or 2nd semester
+        $academic_year = $slotInfo['academic_year'];  // Format: 2025-2026
+        $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";
+        pg_query_params($connection, $applicationQuery, [$student_id, $semester, $academic_year]);
+
         echo "<script>alert('Registration successful!'); window.location.href = 'student_login.html';</script>";
         exit;
     } else {
@@ -262,5 +271,3 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
   <script src="../../assets/js/registration.js"></script>
 </body>
 </html>
-
-
