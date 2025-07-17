@@ -7,12 +7,27 @@ if (!isset($_SESSION['student_username'])) {
     exit;
 }
 
+// Get student ID
+$student_id = $_SESSION['student_id'];
+
+// Check if all required documents are uploaded
+$query = "SELECT COUNT(*) AS total_uploaded FROM documents WHERE student_id = $1 AND type IN ('id_picture', 'certificate_of_indigency', 'letter_to_mayor')";
+$result = pg_query_params($connection, $query, [$student_id]);
+$row = pg_fetch_assoc($result);
+
+if ($row['total_uploaded'] == 3) {
+    $allDocumentsUploaded = true;
+} else {
+    $allDocumentsUploaded = false;
+}
+
 // Handle the file uploads
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents'])) {
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$allDocumentsUploaded) {
+    $student_name = $_SESSION['student_username']; // Assuming student_username is stored in the session
     $student_id = $_SESSION['student_id']; // Assuming student_id is stored in the session
 
     // Create a folder for the student if it doesn't exist
-    $uploadDir = "../../assets/uploads/{$student_id}/";
+    $uploadDir = "../../assets/uploads/students/{$student_name}/";
     if (!file_exists($uploadDir)) {
         mkdir($uploadDir, 0777, true);
     }
@@ -68,24 +83,31 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents'])) {
         </nav>
         <div class="container py-5">
             <h2 class="text-center">Upload Required Documents</h2>
-            <form method="POST" enctype="multipart/form-data">
-            <div class="mb-3">
-                <label for="id_picture" class="form-label">ID Picture</label>
-                <input type="file" class="form-control" name="documents[]" id="id_picture" required />
-                <input type="hidden" name="document_type[]" value="id_picture" />
-            </div>
-            <div class="mb-3">
-                <label for="letter_to_mayor" class="form-label">Letter to Mayor</label>
-                <input type="file" class="form-control" name="documents[]" id="letter_to_mayor" required />
-                <input type="hidden" name="document_type[]" value="letter_to_mayor" />
-            </div>
-            <div class="mb-3">
-                <label for="certificate_of_indigency" class="form-label">Certificate of Indigency</label>
-                <input type="file" class="form-control" name="documents[]" id="certificate_of_indigency" required />
-                <input type="hidden" name="document_type[]" value="certificate_of_indigency" />
-            </div>
-            <button type="submit" class="btn btn-success w-100">Upload Documents</button>
-            </form>
+
+            <?php if ($allDocumentsUploaded): ?>
+                <div class="alert alert-success text-center">
+                    <strong>All documents have been uploaded!</strong> You cannot upload documents anymore unless the admin denies your submission.
+                </div>
+            <?php else: ?>
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="id_picture" class="form-label">ID Picture</label>
+                        <input type="file" class="form-control" name="documents[]" id="id_picture" required />
+                        <input type="hidden" name="document_type[]" value="id_picture" />
+                    </div>
+                    <div class="mb-3">
+                        <label for="letter_to_mayor" class="form-label">Letter to Mayor</label>
+                        <input type="file" class="form-control" name="documents[]" id="letter_to_mayor" required />
+                        <input type="hidden" name="document_type[]" value="letter_to_mayor" />
+                    </div>
+                    <div class="mb-3">
+                        <label for="certificate_of_indigency" class="form-label">Certificate of Indigency</label>
+                        <input type="file" class="form-control" name="documents[]" id="certificate_of_indigency" required />
+                        <input type="hidden" name="document_type[]" value="certificate_of_indigency" />
+                    </div>
+                    <button type="submit" class="btn btn-success w-100">Upload Documents</button>
+                </form>
+            <?php endif; ?>
         </div> 
         </section>
     </div>

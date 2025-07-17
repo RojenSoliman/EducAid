@@ -57,7 +57,7 @@
         if ($result) {
             echo "<p style='color:green;'>Admin registered successfully!</p>";
         } else {
-            echo "<p style='color:red;'>Error: " . pg_last_error($conn) . "</p>";
+            echo "<p style='color:red;'>Error: " . pg_last_error($connection) . "</p>";
         }
 
         pg_close($connection);
