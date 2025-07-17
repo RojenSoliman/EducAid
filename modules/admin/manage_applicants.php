@@ -21,9 +21,20 @@ function check_documents($connection, $student_id) {
     return count(array_diff($required_docs, $uploaded_docs)) == 0;
 }
 
+// Handle form submissions to mark students as active
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['mark_verified']) && isset($_POST['student_id'])) {
+        $student_id = $_POST['student_id'];
+
+        // Mark student as 'active' if all documents are uploaded
+        pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$student_id]);
+
+        echo "<script>alert('Student marked as verified and active.'); window.location.href = 'manage_applicants.php';</script>";
+    }
+}
+
 // Fetch applicants
 $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'applicant'");
-
 ?>
 
 <!DOCTYPE html>
@@ -51,7 +62,7 @@ $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'appl
             </ul>
         </div>
     </nav>
-    
+
     <!-- Main Content -->
     <div class="container mt-5">
         <h1>Manage Applicants</h1>
@@ -79,6 +90,15 @@ $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'appl
                             <td>
                                 <!-- Button to view documents -->
                                 <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#viewDocumentsModal<?= $student_id ?>">View Documents</button>
+                                <?php if ($isComplete): ?>
+                                    <!-- Button to mark as verified -->
+                                    <form method="POST" style="display:inline;">
+                                        <input type="hidden" name="student_id" value="<?= $student_id ?>" />
+                                        <button type="submit" name="mark_verified" class="btn btn-success mt-2">Mark as Verified</button>
+                                    </form>
+                                <?php else: ?>
+                                    <button class="btn btn-secondary mt-2" disabled>Not all documents uploaded</button>
+                                <?php endif; ?>
                             </td>
                         </tr>
 
@@ -104,9 +124,9 @@ $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'appl
                                     </div>
                                     <div class="modal-footer">
                                         <?php if ($isComplete): ?>
-                                            <form action="verify_document.php" method="POST">
+                                            <form method="POST">
                                                 <input type="hidden" name="student_id" value="<?= $student_id ?>" />
-                                                <button type="submit" class="btn btn-success">Mark as Verified</button>
+                                                <button type="submit" name="mark_verified" class="btn btn-success">Mark as Verified</button>
                                             </form>
                                         <?php else: ?>
                                             <button class="btn btn-secondary" disabled>Not all documents uploaded</button>
