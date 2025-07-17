@@ -24,9 +24,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['slot_count'])) {
 
     // Validate admin password
     $admin_username = $_SESSION['admin_username'];
-    $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE username = $1", [$admin_username]);
+    $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE username = $1", array($admin_username));
     $adminRow = pg_fetch_assoc($adminQuery);
-    if (!$adminRow || $adminRow['password'] !== $admin_password) {
+    if (!$adminRow || !password_verify($admin_password, $adminRow['password'])) {
         echo "<script>alert('Incorrect password. Please try again.'); history.back();</script>";
         exit;
     }
@@ -167,18 +167,19 @@ if ($slotInfo) {
         // On confirm, copy password to form and submit
         document.getElementById('confirmReleaseBtn').addEventListener('click', function() {
             var modalPassword = document.getElementById('modal_admin_password').value;
-            // Create hidden input in form if not exists
-            var form = document.getElementById('releaseSlotsForm');
-            var existing = document.getElementsByName('admin_password')[0];
-            if (!existing || existing.id !== 'modal_admin_password') {
-                var input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = 'admin_password';
-                input.value = modalPassword;
-                form.appendChild(input);
-            } else {
-                existing.value = modalPassword;
+            if (!modalPassword) {
+                alert('Please enter your password.');
+                return;
             }
+            var form = document.getElementById('releaseSlotsForm');
+            var hiddenInput = form.querySelector('input[name="admin_password"]');
+            if (!hiddenInput) {
+                hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'admin_password';
+                form.appendChild(hiddenInput);
+            }
+            hiddenInput.value = modalPassword;
             form.submit();
         });
         </script>
