@@ -94,50 +94,6 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
         </div>
       </form>
 
-      <!-- Applicants Table -->
-      <form method="POST">
-        <div class="card mb-4">
-          <div class="card-header bg-primary text-white">Applicants</div>
-          <div class="card-body">
-            <table class="table table-hover table-bordered">
-              <thead>
-                <tr>
-                  <th><input type="checkbox" id="selectAllApplicants"></th>
-                  <th>Full Name</th>
-                  <th>Email</th>
-                  <th>Mobile Number</th>
-                  <th>Barangay</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php
-                $applicants = fetch_students($connection, 'applicant', $sort, $barangayFilter);
-                if (pg_num_rows($applicants) > 0):
-                  while ($row = pg_fetch_assoc($applicants)):
-                    $id = $row['student_id'];
-                    $name = htmlspecialchars($row['last_name'] . ', ' . $row['first_name'] . ' ' . $row['middle_name']);
-                    $email = htmlspecialchars($row['email']);
-                    $mobile = htmlspecialchars($row['mobile']);
-                    $barangay = htmlspecialchars($row['barangay']);
-                    echo "<tr>
-                            <td><input type='checkbox' name='selected_applicants[]' value='$id'></td>
-                            <td>$name</td>
-                            <td>$email</td>
-                            <td>$mobile</td>
-                            <td>$barangay</td>
-                          </tr>";
-                  endwhile;
-                else:
-                  echo "<tr><td colspan='5'>No applicants found.</td></tr>";
-                endif;
-                ?>
-              </tbody>
-            </table>
-            <button type="submit" name="activate" class="btn btn-success mt-2">Set Selected as Active</button>
-          </div>
-        </div>
-      </form>
-
       <!-- Active Students Table -->
       <form method="POST">
         <div class="card">

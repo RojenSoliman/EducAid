@@ -90,18 +90,11 @@ $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'appl
                             <td>
                                 <!-- Button to view documents -->
                                 <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#viewDocumentsModal<?= $student_id ?>">View Documents</button>
-                                <?php if ($isComplete): ?>
-                                    <!-- Button to mark as verified -->
-                                    <form method="POST" style="display:inline;">
-                                        <input type="hidden" name="student_id" value="<?= $student_id ?>" />
-                                        <button type="submit" name="mark_verified" class="btn btn-success mt-2">Mark as Verified</button>
-                                    </form>
-                                <?php else: ?>
-                                    <button class="btn btn-secondary mt-2" disabled>Not all documents uploaded</button>
-                                <?php endif; ?>
                             </td>
                         </tr>
-
+                        <?php if(!$applicant){
+                            echo "<tr><td colspan='5'>No active students found.</td></tr>";
+                        }?>
                         <!-- Modal for Viewing Documents -->
                         <div class="modal fade" id="viewDocumentsModal<?= $student_id ?>" tabindex="-1" aria-labelledby="viewDocumentsModalLabel" aria-hidden="true">
                             <div class="modal-dialog modal-lg">
