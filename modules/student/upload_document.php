@@ -1,4 +1,5 @@
 <?php
+include '../../config/database.php';
 // Check if student is logged in
 session_start();
 if (!isset($_SESSION['student_username'])) {
