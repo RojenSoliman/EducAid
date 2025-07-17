@@ -14,10 +14,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['slot_count'])) {
     $newSlotCount = intval($_POST['slot_count']);
     $semester = $_POST['semester'];
     $academic_year = $_POST['academic_year'];
+    $admin_password = $_POST['admin_password'];
 
     // Validate the academic year format (****-****)
     if (!preg_match('/^\d{4}-\d{4}$/', $academic_year)) {
         echo "<script>alert('Invalid school year format. Please use the format ****-****.'); history.back();</script>";
+        exit;
+    }
+
+    // Validate admin password
+    $admin_username = $_SESSION['admin_username'];
+    $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE username = $1", [$admin_username]);
+    $adminRow = pg_fetch_assoc($adminQuery);
+    if (!$adminRow || $adminRow['password'] !== $admin_password) {
+        echo "<script>alert('Incorrect password. Please try again.'); history.back();</script>";
         exit;
     }
 
@@ -102,7 +112,7 @@ if ($slotInfo) {
     <div class="container py-4">
         <h2 class="mb-4">Manage Signup Slots</h2>
 
-        <form method="POST" class="card p-4 mb-5 shadow-sm">
+        <form id="releaseSlotsForm" method="POST" class="card p-4 mb-5 shadow-sm">
             <div class="mb-3">
                 <label class="form-label">Enter number of new applicant slots</label>
                 <input type="number" name="slot_count" class="form-control" min="1" required>
@@ -121,8 +131,57 @@ if ($slotInfo) {
                 <input type="text" name="academic_year" class="form-control" pattern="^\d{4}-\d{4}$" required placeholder="2025-2026">
             </div>
 
-            <button type="submit" class="btn btn-primary">Release New Slots</button>
+            <button type="button" id="showPasswordModalBtn" class="btn btn-primary">Release New Slots</button>
         </form>
+
+        <!-- Password Confirmation Modal -->
+        <div class="modal fade" id="passwordModal" tabindex="-1" aria-labelledby="passwordModalLabel" aria-hidden="true">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="passwordModalLabel">Confirm Your Password</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <div class="mb-3">
+                  <label class="form-label">Enter your password to confirm release</label>
+                  <input type="password" name="admin_password" id="modal_admin_password" class="form-control" required placeholder="Enter your password">
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="confirmReleaseBtn" class="btn btn-primary">Confirm Release</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+        // Show modal on button click
+        document.getElementById('showPasswordModalBtn').addEventListener('click', function() {
+            var passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
+            passwordModal.show();
+        });
+
+        // On confirm, copy password to form and submit
+        document.getElementById('confirmReleaseBtn').addEventListener('click', function() {
+            var modalPassword = document.getElementById('modal_admin_password').value;
+            // Create hidden input in form if not exists
+            var form = document.getElementById('releaseSlotsForm');
+            var existing = document.getElementsByName('admin_password')[0];
+            if (!existing || existing.id !== 'modal_admin_password') {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'admin_password';
+                input.value = modalPassword;
+                form.appendChild(input);
+            } else {
+                existing.value = modalPassword;
+            }
+            form.submit();
+        });
+        </script>
 
         <?php if ($slotInfo): ?>
             <div class="card shadow-sm mb-4">
