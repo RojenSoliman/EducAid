@@ -129,7 +129,7 @@ if (!empty($params)) {
                             $isComplete = check_documents($connection, $student_id); // Check if the student uploaded all required documents
                         ?>
                             <tr>
-                                <td><?= htmlspecialchars($applicant['first_name']) . ' ' . htmlspecialchars($applicant['last_name']) ?></td>
+                                <td><?= htmlspecialchars($applicant['last_name'] . ', ' . $applicant['first_name'] . ' ' . $applicant['middle_name']); ?></td>
                                 <td><?= htmlspecialchars($applicant['mobile']) ?></td>
                                 <td><?= htmlspecialchars($applicant['email']) ?></td>
                                 <td><?= $isComplete ? 'Complete' : 'Incomplete' ?></td>
