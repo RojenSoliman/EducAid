@@ -17,8 +17,8 @@
         <span class="links_name">Verify Students</span>
       </a>
     </li>
-    <li class="nav-item">
-      <a href="#">
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_applicants.php' ? 'active' : ''; ?>">
+      <a href="manage_applicants.php">
         <i class="bi bi-people icon"></i>
         <span class="links_name">Manage Applicants</span>
       </a>

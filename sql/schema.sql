@@ -54,10 +54,10 @@ CREATE TABLE applications (
 CREATE TABLE documents (
     document_id SERIAL PRIMARY KEY,
     student_id INT REFERENCES students(student_id),
-    type TEXT CHECK (type IN ('school_id', 'eaf', 'certificate_of_indigency', 'letter_to_mayor')),
+    type TEXT CHECK (type IN ('school_id', 'eaf', 'certificate_of_indigency', 'letter_to_mayor', 'id_picture')),
     file_path TEXT,
     upload_date TIMESTAMP DEFAULT NOW(),
-    is_valid BOOLEAN DEFAULT TRUE,
+    is_valid BOOLEAN DEFAULT FALSE,  -- Set to FALSE by default, to be validated by admin
     validation_notes TEXT
 );
 
