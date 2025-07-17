@@ -20,9 +20,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Filters
+// Get filter and sort parameters
 $sort = $_GET['sort'] ?? 'asc';
 $barangayFilter = $_GET['barangay'] ?? '';
+$searchSurname = trim($_GET['search_surname'] ?? '');
+
+// Base query
+$query = "SELECT * FROM students WHERE status = 'applicant'";
+$params = [];
+
+// If searching by surname
+if (!empty($searchSurname)) {
+    $query .= " AND last_name ILIKE $1";
+    $params[] = "%$searchSurname%";
+}
+
+// Add sorting
+$query .= " ORDER BY last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
+
+// Run the correct query function
+if (!empty($params)) {
+    $applicants = pg_query_params($connection, $query, $params);
+} else {
+    $applicants = pg_query($connection, $query);
+}
+
 
 // Barangay list
 $barangayOptions = [];
@@ -77,6 +99,10 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
             <option value="asc" <?= $sort === 'asc' ? 'selected' : '' ?>>A to Z</option>
             <option value="desc" <?= $sort === 'desc' ? 'selected' : '' ?>>Z to A</option>
           </select>
+        </div>
+        <div class="col-md-4">
+          <label for="search_surname" class="form-label">Search by Surname</label>
+          <input type="text" name="search_surname" class="form-control" value="<?= htmlspecialchars($searchSurname) ?>" />
         </div>
         <div class="col-md-4">
           <label for="barangay" class="form-label">Filter by Barangay</label>

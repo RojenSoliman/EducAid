@@ -33,8 +33,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch applicants
-$applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'applicant'");
+// Get filter and sort parameters
+$sort = $_GET['sort'] ?? 'asc';
+$searchSurname = trim($_GET['search_surname'] ?? '');
+
+// Base query
+$query = "SELECT * FROM students WHERE status = 'applicant'";
+$params = [];
+
+// If searching by surname
+if (!empty($searchSurname)) {
+    $query .= " AND last_name ILIKE $1";
+    $params[] = "%$searchSurname%";
+}
+
+// Add sorting
+$query .= " ORDER BY last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
+
+// Run the correct query function
+if (!empty($params)) {
+    $applicants = pg_query_params($connection, $query, $params);
+} else {
+    $applicants = pg_query($connection, $query);
+}
+
 
 ?>
 
@@ -67,6 +89,26 @@ $applicants = pg_query($connection, "SELECT * FROM students WHERE status = 'appl
     <!-- Main Content -->
     <div class="container mt-5">
         <h1>Manage Applicants</h1>
+        <div class="row mb-4">
+            <!-- Sort and Search Form -->
+            <form class="d-flex" method="GET">
+                <div class="col-md-4">
+                    <label for="sort" class="form-label">Sort by Surname</label>
+                    <select name="sort" id="sort" class="form-select">
+                        <option value="asc" <?= $sort === 'asc' ? 'selected' : '' ?>>A to Z</option>
+                        <option value="desc" <?= $sort === 'desc' ? 'selected' : '' ?>>Z to A</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="search_surname" class="form-label">Search by Surname</label>
+                    <input type="text" name="search_surname" class="form-control" value="<?= htmlspecialchars($searchSurname) ?>" />
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
+                </div>
+            </form>
+        </div>
+
         <div class="table-responsive">
             <table class="table table-bordered">
                 <thead>
