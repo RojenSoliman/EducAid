@@ -27,8 +27,6 @@ CREATE TABLE students (
     first_name TEXT,
     middle_name TEXT,
     last_name TEXT,
-    age INT,
-    barangay TEXT,
     email TEXT UNIQUE,
     mobile TEXT,
     password TEXT NOT NULL,
@@ -37,7 +35,9 @@ CREATE TABLE students (
     payroll_no INT,
     qr_code TEXT,
     has_received BOOLEAN DEFAULT FALSE,
-    application_date TIMESTAMP DEFAULT NOW()
+    application_date TIMESTAMP DEFAULT NOW(),
+    bdate DATE,
+    barangay_id INT REFERENCES barangays(barangay_id)
 );
 
 -- Applications (No GPA, used for tracking per semester)
@@ -54,10 +54,10 @@ CREATE TABLE applications (
 CREATE TABLE documents (
     document_id SERIAL PRIMARY KEY,
     student_id INT REFERENCES students(student_id),
-    type TEXT CHECK (type IN ('school_id', 'eaf', 'certificate_of_indigency', 'letter_to_mayor')),
+    type TEXT CHECK (type IN ('school_id', 'eaf', 'certificate_of_indigency', 'letter_to_mayor', 'id_picture')),
     file_path TEXT,
     upload_date TIMESTAMP DEFAULT NOW(),
-    is_valid BOOLEAN DEFAULT TRUE,
+    is_valid BOOLEAN DEFAULT FALSE,  -- Set to FALSE by default, to be validated by admin
     validation_notes TEXT
 );
 
@@ -90,4 +90,21 @@ CREATE TABLE qr_logs (
     student_id INT REFERENCES students(student_id),
     scanned_at TIMESTAMP DEFAULT NOW(),
     scanned_by INT REFERENCES admins(admin_id)
+);
+
+CREATE TABLE barangays (
+    barangay_id SERIAL PRIMARY KEY,
+    municipality_id INT REFERENCES municipalities(municipality_id),
+    name TEXT NOT NULL
+);
+-- Signup slots for students
+-- This table allows municipalities to manage the number of students they can accommodate
+CREATE TABLE signup_slots (
+    slot_id SERIAL PRIMARY KEY,
+    municipality_id INT REFERENCES municipalities(municipality_id),
+    academic_year TEXT,
+    semester TEXT,
+    slot_count INT NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
 );

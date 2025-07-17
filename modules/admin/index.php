@@ -1,63 +1,75 @@
 <?php
-    include __DIR__ . '/../../config/database.php';
-    session_start();
-    if (isset($_SESSION['username'])) {
-        header("Location: homepage.php");
-        exit;
-    }
+include __DIR__ . '/../../config/database.php';
+session_start();
+if (isset($_SESSION['admin_username'])) {
+    header("Location: homepage.php");
+    exit;
+}
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Admin Login</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }
-        label { display: block; margin-top: 10px; }
-        input { width: 100%; padding: 8px; margin-top: 5px; }
-        button { margin-top: 15px; padding: 10px 20px; }
-    </style>
+    
+  <meta charset="UTF-8" />
+  <title>Admin Login</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../assets/css/admin/index.css" />
+
 </head>
 <body>
-    <h2>Admin Login</h2>
-    <form method="post" action="index.php">
-        <label>Username:</label>
-        <input type="text" name="username" required>
-        
-        <label>Password:</label>
-        <input type="password" name="password" required>
-        
-        <button type="submit" name="login">Login</button>
-    </form>
+  <div class="login-wrapper">
+    <div class="right-panel">
+      <form class="login-form" method="post" action="index.php">
+        <img src="../../assets/images/logo.png" alt="General Trias Logo" class="logo" />
+        <h1 class="title">EducAid</h1>
+        <p class="subtext"><span class="typing-text">Welcome Back, Administrator!</span></p>
 
-    <?php
-    if (isset($_POST['login'])) {
-        $username = $_POST['username'];
-        $password = $_POST['password'];
+        <div class="input-group">
+          <label for="username">Email</label>
+          <input type="text" name="username" placeholder="Enter email" required />
+        </div>
 
-        if (!$connection) {
-            echo "<p style='color:red;'>Connection failed.</p>";
-            exit;
-        }
+        <div class="input-group">
+          <label for="password">Password</label>
+          <input type="password" name="password" placeholder="Enter password" required />
+        </div>
 
-        $result = pg_query_params($connection, "SELECT * FROM admins WHERE username = $1", [$username]);
+        <button type="submit" name="login">Sign In</button>
+        <div class="form-footer">
+          <a href="#">Forgot your password?</a>
+        </div>
 
-        if ($row = pg_fetch_assoc($result)) {
-            if (password_verify($password, $row['password'])) {
-                $_SESSION['username'] = $username;
-                $_SESSION['admin_id'] = $row['admin_id'];
-                header("Location: homepage.php");
+        <?php
+        if (isset($_POST['login'])) {
+            $username = $_POST['username'];
+            $password = $_POST['password'];
+
+            if (!$connection) {
+                echo "<p class='error'>Connection failed.</p>";
                 exit;
-            } else {
-                echo "<p style='color:red;'>Invalid password.</p>";
             }
-        } else {
-            echo "<p style='color:red;'>User not found.</p>";
-        }
 
-        pg_close($connection);
-    }
-    ?>
+            $result = pg_query_params($connection, "SELECT * FROM admins WHERE username = $1", [$username]);
+
+            if ($row = pg_fetch_assoc($result)) {
+                if (password_verify($password, $row['password'])) {
+                    $_SESSION['admin_username'] = $username;
+                    $_SESSION['admin_id'] = $row['admin_id'];
+                    header("Location: homepage.php");
+                    exit;
+                } else {
+                    echo "<p class='error'>Invalid password.</p>";
+                }
+            } else {
+                echo "<p class='error'>User not found.</p>";
+            }
+
+            pg_close($connection);
+        }
+        ?>
+      </form>
+    </div>
+  </div>
 </body>
 </html>
