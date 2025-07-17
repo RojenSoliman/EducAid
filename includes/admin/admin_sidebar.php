@@ -11,16 +11,16 @@
         <span class="links_name">Dashboard</span>
       </a>
     </li>
-    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'verify_students.php' ? 'active' : ''; ?>">
-      <a href="verify_students.php">
-        <i class="bi bi-person-check icon"></i>
-        <span class="links_name">Verify Students</span>
-      </a>
-    </li>
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_applicants.php' ? 'active' : ''; ?>">
       <a href="manage_applicants.php">
         <i class="bi bi-people icon"></i>
         <span class="links_name">Manage Applicants</span>
+      </a>
+    </li>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'verify_students.php' ? 'active' : ''; ?>">
+      <a href="verify_students.php">
+        <i class="bi bi-person-check icon"></i>
+        <span class="links_name">Verify Students</span>
       </a>
     </li>
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_announcements.php' ? 'active' : ''; ?>">
