@@ -59,7 +59,7 @@ while ($row = pg_fetch_assoc($barangayResult)) {
 
 function fetch_students($connection, $status, $sort, $barangayFilter) {
     $query = "
-        SELECT s.student_id, s.first_name, s.middle_name, s.last_name, s.mobile, s.email, b.name AS barangay 
+        SELECT s.student_id, s.first_name, s.middle_name, s.last_name, s.mobile, s.email, b.name AS barangay, s.payroll_no
         FROM students s
         JOIN barangays b ON s.barangay_id = b.barangay_id
         WHERE s.status = $1";
@@ -135,6 +135,7 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
                   <th>Email</th>
                   <th>Mobile Number</th>
                   <th>Barangay</th>
+                  <th class="payroll-col d-none">Payroll Number</th>
                 </tr>
               </thead>
               <tbody>
@@ -147,24 +148,26 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
                     $email = htmlspecialchars($row['email']);
                     $mobile = htmlspecialchars($row['mobile']);
                     $barangay = htmlspecialchars($row['barangay']);
+                    $payroll_no = isset($row['payroll_no']) ? $row['payroll_no'] : '';
                     echo "<tr>
                             <td><input type='checkbox' name='selected_actives[]' value='$id'></td>
                             <td>$name</td>
                             <td>$email</td>
                             <td>$mobile</td>
                             <td>$barangay</td>
+                            <td class='payroll-col d-none'>$payroll_no</td>
                           </tr>";
                   endwhile;
                 else:
-                  echo "<tr><td colspan='5'>No active students found.</td></tr>";
+                  echo "<tr><td colspan='6'>No active students found.</td></tr>";
                 endif;
                 ?>
               </tbody>
             </table>
             <button type="submit" name="deactivate" class="btn btn-danger mt-2" id="revertBtn">Revert to Applicant</button>
-
             <!-- Finalize/Revert Button -->
             <button type="button" class="btn btn-success mt-2" id="finalizeTriggerBtn">Finalize List</button>
+            <button type="button" class="btn btn-primary mt-2 ms-2 d-none" id="generatePayrollBtn">Generate Payroll Numbers</button>
           </div>
         </div>
       </form>
@@ -192,64 +195,89 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
 <script>
   // Finalize modal confirm button disables checkboxes and revert button, then toggles button to Revert
-document.getElementById('finalizeConfirmBtnModal')?.addEventListener('click', function () {
-  // Disable the checkboxes
-  document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = true);
-  
-  // Disable the 'Revert to Applicant' button
-  document.getElementById('revertBtn').disabled = true;
-  
-  // Change Finalize button to Revert
-  var finalizeBtn = document.getElementById('finalizeTriggerBtn');
-  finalizeBtn.textContent = 'Revert List';
-  finalizeBtn.classList.remove('btn-success');
-  finalizeBtn.classList.add('btn-warning');
-  finalizeBtn.id = 'revertTriggerBtn';
+  document.getElementById('finalizeConfirmBtnModal')?.addEventListener('click', function () {
+    // Disable the checkboxes
+    document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = true);
+    // Disable the 'Revert to Applicant' button
+    document.getElementById('revertBtn').disabled = true;
+    // Change Finalize button to Revert
+    var finalizeBtn = document.getElementById('finalizeTriggerBtn');
+    finalizeBtn.textContent = 'Revert List';
+    finalizeBtn.classList.remove('btn-success');
+    finalizeBtn.classList.add('btn-warning');
+    finalizeBtn.id = 'revertTriggerBtn';
+    finalizeBtn.removeEventListener('click', finalizeHandler);
+    finalizeBtn.addEventListener('click', revertHandler);
+    // Show Generate Payroll Numbers button
+    document.getElementById('generatePayrollBtn').classList.remove('d-none');
+    // Show payroll number column
+    document.querySelectorAll('.payroll-col').forEach(col => col.classList.remove('d-none'));
+    // Hide the modal after finalizing
+    var finalizeModal = bootstrap.Modal.getInstance(document.getElementById('finalizeModal'));
+    finalizeModal.hide();
+  });
 
-  // Remove event listener for finalize and add event listener for revert
-  finalizeBtn.removeEventListener('click', finalizeHandler);
-  finalizeBtn.addEventListener('click', revertHandler);
+  // Finalize handler to show the modal
+  function finalizeHandler() {
+    var finalizeModal = new bootstrap.Modal(document.getElementById('finalizeModal'));
+    finalizeModal.show();
+  }
 
-  // Hide the modal after finalizing
-  var finalizeModal = bootstrap.Modal.getInstance(document.getElementById('finalizeModal'));
-  finalizeModal.hide();
-});
+  // Revert handler to re-enable checkboxes and revert button
+  function revertHandler() {
+    document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = false);
+    document.getElementById('revertBtn').disabled = false;
+    var revertBtn = document.getElementById('revertTriggerBtn');
+    revertBtn.textContent = 'Finalize List';
+    revertBtn.classList.remove('btn-warning');
+    revertBtn.classList.add('btn-success');
+    revertBtn.id = 'finalizeTriggerBtn';
+    revertBtn.removeEventListener('click', revertHandler);
+    revertBtn.addEventListener('click', finalizeHandler);
+    // Hide Generate Payroll Numbers button
+    document.getElementById('generatePayrollBtn').classList.add('d-none');
+    // Hide payroll number column
+    document.querySelectorAll('.payroll-col').forEach(col => col.classList.add('d-none'));
+  }
 
-// Finalize handler to show the modal
-function finalizeHandler() {
-  var finalizeModal = new bootstrap.Modal(document.getElementById('finalizeModal'));
-  finalizeModal.show();
-}
+  // Attach finalizeHandler initially to the Finalize button
+  document.getElementById('finalizeTriggerBtn')?.addEventListener('click', finalizeHandler);
 
-// Revert handler to re-enable checkboxes and revert button
-function revertHandler() {
-  // Re-enable the checkboxes
-  document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = false);
-  
-  // Re-enable the 'Revert to Applicant' button
-  document.getElementById('revertBtn').disabled = false;
-  
-  // Change the button back to Finalize
-  var revertBtn = document.getElementById('revertTriggerBtn');
-  revertBtn.textContent = 'Finalize List';
-  revertBtn.classList.remove('btn-warning');
-  revertBtn.classList.add('btn-success');
-  revertBtn.id = 'finalizeTriggerBtn';
-
-  // Remove event listener for revert and add event listener for finalize
-  revertBtn.removeEventListener('click', revertHandler);
-  revertBtn.addEventListener('click', finalizeHandler);
-}
-
-// Attach finalizeHandler initially to the Finalize button
-document.getElementById('finalizeTriggerBtn')?.addEventListener('click', finalizeHandler);
-
+  document.getElementById('generatePayrollBtn')?.addEventListener('click', function () {
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.style.display = 'none';
+    var input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'generate_payroll';
+    input.value = '1';
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+  });
 </script>
 
 </body>
 </html>
 
-<?php pg_close($connection); ?>
+<?php
+// Handle payroll number generation
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_payroll'])) {
+    // Get all active students ordered by last name ASC
+    $result = pg_query($connection, "SELECT student_id FROM students WHERE status = 'active' ORDER BY last_name ASC, first_name ASC, middle_name ASC");
+    $payroll_no = 1;
+    if ($result) {
+        while ($row = pg_fetch_assoc($result)) {
+            $sid = $row['student_id'];
+            pg_query_params($connection, "UPDATE students SET payroll_no = $1 WHERE student_id = $2", array($payroll_no, $sid));
+            $payroll_no++;
+        }
+    }
+    echo "<script>alert('Payroll numbers generated successfully!'); window.location.href = 'verify_students.php';</script>";
+    exit;
+}
+
+pg_close($connection);
+?>
