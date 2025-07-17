@@ -36,7 +36,7 @@ if (!isset($_SESSION['student_username'])) {
           </a>
         </li>
         <li class="nav-item">
-          <a href="#">
+          <a href="upload_document.php">
             <i class="bi bi-upload icon"></i>
             <span class="links_name">Upload Documents</span>
           </a>
@@ -184,7 +184,7 @@ if (!isset($_SESSION['student_username'])) {
         <div id="deadline-section" class="custom-card border border-2 border-danger-subtle shadow-sm section-spacing">
           <div class="p-3 d-flex justify-content-between align-items-center bg-danger-subtle border-bottom" data-bs-toggle="collapse" data-bs-target="#deadline-body" style="cursor: pointer;">
             <h5 class="mb-0 text-danger fw-bold">
-              <i class="bi bi-hourglass-top me-2"></i>Application Submission Deadlines
+              <i class="bi bi-hourglass-top me-2"></i>Document Submission Deadlines
             </h5>
             <span class="badge bg-light text-danger border border-danger" id="deadline-badge">Loading...</span>
           </div>
@@ -192,12 +192,12 @@ if (!isset($_SESSION['student_username'])) {
             <div class="custom-card-body">
               <div class="row gy-3">
                 <div class="col-md-6">
-                  <p><strong>Applicant Deadline:</strong><br>August 20, 2025
+                  <p><strong>Document Upload:</strong><br>August 20, 2025
                     <span class="badge bg-success ms-2"><i class="bi bi-check-circle me-1"></i>On Time</span>
                   </p>
                 </div>
                 <div class="col-md-6">
-                  <p><strong>Reapplicant Deadline:</strong><br>August 25, 2025
+                  <p><strong>Grades Submition for the current semester:</strong><br>August 20, 2025
                     <span class="badge bg-success ms-2"><i class="bi bi-check-circle me-1"></i>On Time</span>
                   </p>
                 </div>
@@ -206,8 +206,8 @@ if (!isset($_SESSION['student_username'])) {
                 <i class="bi bi-info-circle me-1"></i>You are still within the submission period.
               </p>
               <div class="text-end mt-3">
-                <a href="apply_now.html" class="btn btn-primary px-4">
-                  <i class="bi bi-pencil-square me-1"></i>Apply Now
+                <a href="upload_document.php" class="btn btn-primary px-4">
+                  <i class="bi bi-pencil-square me-1"></i>Upload Now
                 </a>
               </div>
             </div>
