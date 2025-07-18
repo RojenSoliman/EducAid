@@ -18,7 +18,7 @@
         <?php include('sidebar.php'); ?>
 
         <!-- Include Main Content -->
-        <?php include(' content.php'); ?>
+        <?php include('main-content.php'); ?>
     </div>
 
     <script src="script.js"></script> <!-- JavaScript for Sidebar Toggle -->

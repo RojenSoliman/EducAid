@@ -5,19 +5,10 @@
         <h2>Sidebar Title</h2>
     </div>
     <ul class="sidebar-links">
-        <li><a href="#">Dashboard</a></li>
-        <li><a href="#">Applications</a></li>
-        <li><a href="#">Documents</a></li>
-        <li><a href="#">My Profile</a></li>
-        <li><a href="#">Logout</a></li>
-
-        <?php
-        // Example PHP logic to show admin-specific content
-        $userRole = 'admin'; // Hardcoded role for experimentation
-
-        if ($userRole === 'admin'): ?>
-            <li><a href="#">Admin Panel</a></li>
-            <li><a href="#">Manage Users</a></li>
-        <?php endif; ?>
+        <li><a href="?page=dashboard">Dashboard</a></li>
+        <li><a href="?page=applications">Applications</a></li>
+        <li><a href="?page=documents">Documents</a></li>
+        <li><a href="?page=profile">My Profile</a></li>
+        <li><a href="?page=logout">Logout</a></li>
     </ul>
 </div>
