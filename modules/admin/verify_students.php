@@ -15,6 +15,13 @@ if ($configResult && $row = pg_fetch_assoc($configResult)) {
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+      // Revert students to applicants
+    if (isset($_POST['deactivate']) && isset($_POST['selected_actives'])) {
+        foreach ($_POST['selected_actives'] as $student_id) {
+            pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
+            $isFinalized = false; // Reset finalized state
+        }
+    }
     // Finalize list
     if (isset($_POST['finalize_list'])) {
         pg_query($connection, "UPDATE config SET value = '1' WHERE key = 'student_list_finalized'");
@@ -29,20 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             pg_query($connection, "UPDATE students SET payroll_no = 0");
         }
     }
-    // Mark students as active
-    if (isset($_POST['activate']) && isset($_POST['selected_applicants'])) {
-        foreach ($_POST['selected_applicants'] as $student_id) {
-            pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$student_id]);
-        }
-    }
-
-    // Revert students to applicants
-    if (isset($_POST['deactivate']) && isset($_POST['selected_actives'])) {
-        foreach ($_POST['selected_actives'] as $student_id) {
-            pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
-        }
-    }
-
 }
 
 // Get filter and sort parameters
