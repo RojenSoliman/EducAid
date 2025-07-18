@@ -29,6 +29,12 @@
         <span class="links_name">Verify Students</span>
       </a>
     </li>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_schedules.php' ? 'active' : ''; ?>">
+      <a href="manage_schedules.php">
+        <i class="bi bi-calendar icon"></i>
+        <span class="links_name">Scheduling</span>
+      </a>
+    </li>
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_announcements.php' ? 'active' : ''; ?>">
       <a href="manage_announcements.php">
         <i class="bi bi-megaphone icon"></i>
