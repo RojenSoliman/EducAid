@@ -92,6 +92,16 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
     $query .= " ORDER BY s.last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
     return pg_query_params($connection, $query, $params);
 }
+
+// Check if all active students have payroll_no > 0
+$allHavePayroll = false;
+if ($isFinalized) {
+    $payrollCheck = pg_query($connection, "SELECT COUNT(*) AS total, SUM(CASE WHEN payroll_no > 0 THEN 1 ELSE 0 END) AS with_payroll FROM students WHERE status = 'active'");
+    $row = pg_fetch_assoc($payrollCheck);
+    if ($row && $row['total'] > 0 && intval($row['total']) === intval($row['with_payroll'])) {
+        $allHavePayroll = true;
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -189,7 +199,7 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
             <!-- Finalize/Revert Button -->
             <?php if ($isFinalized): ?>
                 <button type="submit" name="revert_list" class="btn btn-warning mt-2" id="revertTriggerBtn">Revert List</button>
-                <button type="button" class="btn btn-primary mt-2 ms-2" id="generatePayrollBtn">Generate Payroll Numbers</button>
+                <button type="button" class="btn btn-primary mt-2 ms-2" id="generatePayrollBtn" <?= $allHavePayroll ? 'disabled' : '' ?>>Generate Payroll Numbers</button>
             <?php else: ?>
                 <button type="button" class="btn btn-success mt-2" id="finalizeTriggerBtn">Finalize List</button>
                 <input type="hidden" name="finalize_list" id="finalizeListInput" value="">
