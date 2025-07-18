@@ -64,29 +64,22 @@ if (!empty($params)) {
 <head>
     <title>Manage Applicants</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+    <link rel="stylesheet" href="../../assets/css/admin_homepage.css">
+    <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
 </head>
 <body class="bg-light">
-<div class="container py-4">
-    <!-- Sidebar -->
-    <nav class="col-md-2 d-flex flex-column bg-light sidebar mb-4">
-        <div class="sidebar-sticky">
-            <h4 class="text-center mt-3">Admin Dashboard</h4>
-            <ul class="nav flex-column">
-                <li class="nav-item">
-                    <a class="nav-link" href="homepage.php">Home</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link active" href="manage_applicants.php">Manage Applicants</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="logout.php">Logout</a>
-                </li>
-            </ul>
-        </div>
-    </nav>
 
-    <!-- Main Content -->
-    <div class="container mt-5">
+<div class="container-fluid">
+  <div class="row">
+    <!-- Sidebar -->
+    <?php include '../../includes/admin/admin_sidebar.php'; ?>
+
+    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+
+    <!-- Main -->
+    <main class="col-md-10 ms-sm-auto px-4 py-4">
+        <div class="container mt-5">
         <h1>Manage Applicants</h1>
         <div class="row mb-4">
             <!-- Sort and Search Form -->
@@ -177,6 +170,8 @@ if (!empty($params)) {
             </table>
         </div>
     </div>
+    </main>
+  </div>
 </div>
 
 <!-- JS -->

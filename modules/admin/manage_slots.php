@@ -76,156 +76,146 @@ if ($slotInfo) {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html>
 <head>
     <title>Manage Signup Slots</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+    <link rel="stylesheet" href="../../assets/css/admin_homepage.css">
+    <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
 </head>
 <body class="bg-light">
-    <nav class="col-md-2 d-flex flex-column bg-light sidebar">
-        <div class="sidebar-sticky">
-            <h4 class="text-center mt-3">Admin Dashboard</h4>
-            <ul class="nav flex-column">
-                <li class="nav-item">
-                    <a class="nav-link active" href="homepage.php">Home</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="verify_students.php">Verify Students</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="">Manage Applicants</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="manage_announcements.php">Manage Announcements</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="manage_slots.php">Manage Signup Slots</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link text-danger" href="logout.php" onclick="return confirm('Are you sure you want to logout?');">Logout</a>
-                </li>
-            </ul>
-        </div>
-    </nav>
-    <div class="container py-4">
-        <h2 class="mb-4">Manage Signup Slots</h2>
+<div class="container-fluid">
+  <div class="row">
+    <!-- Sidebar -->
+    <?php include '../../includes/admin/admin_sidebar.php'; ?>
 
-        <form id="releaseSlotsForm" method="POST" class="card p-4 mb-5 shadow-sm">
-            <div class="mb-3">
-                <label class="form-label">Enter number of new applicant slots</label>
-                <input type="number" name="slot_count" class="form-control" min="1" required>
-            </div>
+    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
 
-            <div class="mb-3">
-                <label class="form-label">Select Semester</label>
-                <select name="semester" class="form-select" required>
-                    <option value="1st Semester">1st Semester</option>
-                    <option value="2nd Semester">2nd Semester</option>
-                </select>
-            </div>
+    <!-- Main -->
+    <main class="col-md-10 ms-sm-auto px-4 py-4">
+        <div class="container py-4">
+                <h2 class="mb-4">Manage Signup Slots</h2>
 
-            <div class="mb-3">
-                <label class="form-label">Enter Academic Year (Format: 2025-2026)</label>
-                <input type="text" name="academic_year" class="form-control" pattern="^\d{4}-\d{4}$" required placeholder="2025-2026">
-            </div>
+                <form id="releaseSlotsForm" method="POST" class="card p-4 mb-5 shadow-sm">
+                    <div class="mb-3">
+                        <label class="form-label">Enter number of new applicant slots</label>
+                        <input type="number" name="slot_count" class="form-control" min="1" required>
+                    </div>
 
-            <button type="button" id="showPasswordModalBtn" class="btn btn-primary">Release New Slots</button>
-        </form>
+                    <div class="mb-3">
+                        <label class="form-label">Select Semester</label>
+                        <select name="semester" class="form-select" required>
+                            <option value="1st Semester">1st Semester</option>
+                            <option value="2nd Semester">2nd Semester</option>
+                        </select>
+                    </div>
 
-        <!-- Password Confirmation Modal -->
-        <div class="modal fade" id="passwordModal" tabindex="-1" aria-labelledby="passwordModalLabel" aria-hidden="true">
-          <div class="modal-dialog">
-            <div class="modal-content">
-              <div class="modal-header">
-                <h5 class="modal-title" id="passwordModalLabel">Confirm Your Password</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-              </div>
-              <div class="modal-body">
-                <div class="mb-3">
-                  <label class="form-label">Enter your password to confirm release</label>
-                  <input type="password" name="admin_password" id="modal_admin_password" class="form-control" required placeholder="Enter your password">
-                </div>
-              </div>
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" id="confirmReleaseBtn" class="btn btn-primary">Confirm Release</button>
-              </div>
-            </div>
-          </div>
-        </div>
+                    <div class="mb-3">
+                        <label class="form-label">Enter Academic Year (Format: 2025-2026)</label>
+                        <input type="text" name="academic_year" class="form-control" pattern="^\d{4}-\d{4}$" required placeholder="2025-2026">
+                    </div>
 
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-        <script>
-        // Show modal on button click
-        document.getElementById('showPasswordModalBtn').addEventListener('click', function() {
-            var passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
-            passwordModal.show();
-        });
+                    <button type="button" id="showPasswordModalBtn" class="btn btn-primary">Release New Slots</button>
+                </form>
 
-        // On confirm, copy password to form and submit
-        document.getElementById('confirmReleaseBtn').addEventListener('click', function() {
-            var modalPassword = document.getElementById('modal_admin_password').value;
-            if (!modalPassword) {
-                alert('Please enter your password.');
-                return;
-            }
-            var form = document.getElementById('releaseSlotsForm');
-            var hiddenInput = form.querySelector('input[name="admin_password"]');
-            if (!hiddenInput) {
-                hiddenInput = document.createElement('input');
-                hiddenInput.type = 'hidden';
-                hiddenInput.name = 'admin_password';
-                form.appendChild(hiddenInput);
-            }
-            hiddenInput.value = modalPassword;
-            form.submit();
-        });
-        </script>
-
-        <?php if ($slotInfo): ?>
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-primary text-white">Current Active Slot</div>
-                <div class="card-body">
-                    <p><strong>Activated:</strong> <?= htmlspecialchars($slotInfo['created_at']) ?></p>
-                    <p><strong>Slots Released:</strong> <?= htmlspecialchars($slotInfo['slot_count']) ?></p>
-                    <p><strong>Slots Used:</strong> <?= $slotsUsed ?></p>
-                    <p><strong>Slots Remaining:</strong> <?= max(0, $slotsLeft) ?></p>
-                    <p><strong>Semester:</strong> <?= htmlspecialchars($slotInfo['semester']) ?></p>
-                    <p><strong>Academic Year:</strong> <?= htmlspecialchars($slotInfo['academic_year']) ?></p>
-                </div>
-            </div>
-
-            <?php if (!empty($applicantList)): ?>
-                <div class="card shadow-sm">
-                    <div class="card-header bg-secondary text-white">Applicants Registered Under This Slot</div>
-                    <div class="card-body">
-                        <ul class="list-group">
-                            <?php foreach ($applicantList as $student): ?>
-                                <li class="list-group-item">
-                                    <?= htmlspecialchars($student['last_name']) ?>, 
-                                    <?= htmlspecialchars($student['first_name']) ?> 
-                                    <?= htmlspecialchars($student['middle_name']) ?> —
-                                    <small class="text-muted"><?= $student['application_date'] ?></small>
-                                    <?php if ($student['semester'] && $student['academic_year']): ?>
-                                        <p class="mt-1">
-                                            <strong>Semester:</strong> <?= htmlspecialchars($student['semester']) ?>, 
-                                            <strong>Academic Year:</strong> <?= htmlspecialchars($student['academic_year']) ?>
-                                        </p>
-                                    <?php endif; ?>
-                                </li>
-                            <?php endforeach; ?>
-                        </ul>
+                <!-- Password Confirmation Modal -->
+                <div class="modal fade" id="passwordModal" tabindex="-1" aria-labelledby="passwordModalLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="passwordModalLabel">Confirm Your Password</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                        <label class="form-label">Enter your password to confirm release</label>
+                        <input type="password" name="admin_password" id="modal_admin_password" class="form-control" required placeholder="Enter your password">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" id="confirmReleaseBtn" class="btn btn-primary">Confirm Release</button>
+                    </div>
                     </div>
                 </div>
-            <?php else: ?>
-                <div class="alert alert-info">No applicants yet under this slot.</div>
-            <?php endif; ?>
+                </div>
 
-        <?php else: ?>
-            <div class="alert alert-warning">No active slot found. Add one above.</div>
-        <?php endif; ?>
-    </div>
+                <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+                <script>
+                // Show modal on button click
+                document.getElementById('showPasswordModalBtn').addEventListener('click', function() {
+                    var passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
+                    passwordModal.show();
+                });
+
+                // On confirm, copy password to form and submit
+                document.getElementById('confirmReleaseBtn').addEventListener('click', function() {
+                    var modalPassword = document.getElementById('modal_admin_password').value;
+                    if (!modalPassword) {
+                        alert('Please enter your password.');
+                        return;
+                    }
+                    var form = document.getElementById('releaseSlotsForm');
+                    var hiddenInput = form.querySelector('input[name="admin_password"]');
+                    if (!hiddenInput) {
+                        hiddenInput = document.createElement('input');
+                        hiddenInput.type = 'hidden';
+                        hiddenInput.name = 'admin_password';
+                        form.appendChild(hiddenInput);
+                    }
+                    hiddenInput.value = modalPassword;
+                    form.submit();
+                });
+                </script>
+
+                <?php if ($slotInfo): ?>
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-primary text-white">Current Active Slot</div>
+                        <div class="card-body">
+                            <p><strong>Activated:</strong> <?= htmlspecialchars($slotInfo['created_at']) ?></p>
+                            <p><strong>Slots Released:</strong> <?= htmlspecialchars($slotInfo['slot_count']) ?></p>
+                            <p><strong>Slots Used:</strong> <?= $slotsUsed ?></p>
+                            <p><strong>Slots Remaining:</strong> <?= max(0, $slotsLeft) ?></p>
+                            <p><strong>Semester:</strong> <?= htmlspecialchars($slotInfo['semester']) ?></p>
+                            <p><strong>Academic Year:</strong> <?= htmlspecialchars($slotInfo['academic_year']) ?></p>
+                        </div>
+                    </div>
+
+                    <?php if (!empty($applicantList)): ?>
+                        <div class="card shadow-sm">
+                            <div class="card-header bg-secondary text-white">Applicants Registered Under This Slot</div>
+                            <div class="card-body">
+                                <ul class="list-group">
+                                    <?php foreach ($applicantList as $student): ?>
+                                        <li class="list-group-item">
+                                            <?= htmlspecialchars($student['last_name']) ?>, 
+                                            <?= htmlspecialchars($student['first_name']) ?> 
+                                            <?= htmlspecialchars($student['middle_name']) ?> —
+                                            <small class="text-muted"><?= $student['application_date'] ?></small>
+                                            <?php if ($student['semester'] && $student['academic_year']): ?>
+                                                <p class="mt-1">
+                                                    <strong>Semester:</strong> <?= htmlspecialchars($student['semester']) ?>, 
+                                                    <strong>Academic Year:</strong> <?= htmlspecialchars($student['academic_year']) ?>
+                                                </p>
+                                            <?php endif; ?>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <div class="alert alert-info">No applicants yet under this slot.</div>
+                    <?php endif; ?>
+
+                <?php else: ?>
+                    <div class="alert alert-warning">No active slot found. Add one above.</div>
+                <?php endif; ?>
+        </div>
+    </main>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

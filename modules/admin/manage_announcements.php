@@ -43,97 +43,94 @@ if (isset($_POST['toggle_status'])) {
 <head>
     <title>Manage Announcements</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+    <link rel="stylesheet" href="../../assets/css/admin_homepage.css">
+    <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
 </head>
 <body class="bg-light">
-<div class="container py-4">
+
+
+
+<div class="container-fluid">
+  <div class="row">
     <!-- Sidebar -->
-    <nav class="col-md-2 d-flex flex-column bg-light sidebar mb-4">
-        <div class="sidebar-sticky">
-            <h4 class="text-center mt-3">Admin Dashboard</h4>
-            <ul class="nav flex-column">
-                <li class="nav-item">
-                    <a class="nav-link" href="homepage.php">Home</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="verify_students.php">Verify Students</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link active" href="manage_announcements.php">Manage Announcements</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="">Manage Applicants</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="logout.php">Logout</a>
-                </li>
-            </ul>
-        </div>
-    </nav>
+    <?php include '../../includes/admin/admin_sidebar.php'; ?>
 
-    <!-- New Announcement Form -->
-    <h2>Post New Announcement</h2>
-    <form method="POST" class="card p-4 mb-5">
-        <input type="hidden" name="post_announcement" value="1">
-        <div class="mb-3">
-            <label class="form-label">Title</label>
-            <input type="text" name="title" class="form-control" required>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Location</label>
-            <input type="text" name="location" class="form-control" required>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Date</label>
-            <input type="date" name="announcement_date" class="form-control" required>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Time</label>
-            <input type="time" name="time" class="form-control" required>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Reminder</label>
-            <textarea name="reminder" class="form-control" rows="3"></textarea>
-        </div>
-        <button type="submit" class="btn btn-primary">Post Announcement</button>
-    </form>
+    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
 
-    <!-- Previous Announcements -->
-    <h3>Previous Announcements</h3>
-    <table class="table table-bordered">
-        <thead>
-            <tr>
-                <th>Title</th><th>Location</th><th>Date</th><th>Time</th><th>Reminder</th><th>Status</th><th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php
-            $res = pg_query($connection, "SELECT * FROM announcements WHERE municipality_id = 1 ORDER BY created_at DESC LIMIT 5");
-            while ($row = pg_fetch_assoc($res)) {
-                $id = $row['announcement_id'];
-                $is_active = $row['is_active'] === 't' || $row['is_active'] === true;
-                echo "<tr>
-                    <td>" . htmlspecialchars($row['title']) . "</td>
-                    <td>" . htmlspecialchars($row['location']) . "</td>
-                    <td>" . htmlspecialchars($row['announcement_date']) . "</td>
-                    <td>" . htmlspecialchars($row['time']) . "</td>
-                    <td>" . htmlspecialchars($row['reminder']) . "</td>
-                    <td>";
-                echo $is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-danger">Inactive</span>';
-                echo "</td>
-                    <td>
-                        <form method='POST'>
-                            <input type='hidden' name='announcement_id' value='$id'>
-                            <input type='hidden' name='new_status' value='" . ($is_active ? "1" : "0") . "'>
-                            <button type='submit' name='toggle_status' class='btn btn-sm btn-outline-" . ($is_active ? "danger" : "success") . "'>
-                                " . ($is_active ? "Disable" : "Enable") . "
-                            </button>
-                        </form>
-                    </td>
-                </tr>";
-            }
-            ?>
-        </tbody>
-    </table>
+    <!-- Main -->
+    <main class="col-md-10 ms-sm-auto px-4 py-4">
+        <div class="container py-4">
+            <!-- New Announcement Form -->
+            <h2>Post New Announcement</h2>
+            <form method="POST" class="card p-4 mb-5">
+                <input type="hidden" name="post_announcement" value="1">
+                <div class="mb-3">
+                    <label class="form-label">Title</label>
+                    <input type="text" name="title" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Location</label>
+                    <input type="text" name="location" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Date</label>
+                    <input type="date" name="announcement_date" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Time</label>
+                    <input type="time" name="time" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Reminder</label>
+                    <textarea name="reminder" class="form-control" rows="3"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Post Announcement</button>
+            </form>
+
+            <!-- Previous Announcements -->
+            <h3>Previous Announcements</h3>
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>Title</th><th>Location</th><th>Date</th><th>Time</th><th>Reminder</th><th>Status</th><th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    $res = pg_query($connection, "SELECT * FROM announcements WHERE municipality_id = 1 ORDER BY created_at DESC LIMIT 5");
+                    while ($row = pg_fetch_assoc($res)) {
+                        $id = $row['announcement_id'];
+                        $is_active = $row['is_active'] === 't' || $row['is_active'] === true;
+                        echo "<tr>
+                            <td>" . htmlspecialchars($row['title']) . "</td>
+                            <td>" . htmlspecialchars($row['location']) . "</td>
+                            <td>" . htmlspecialchars($row['announcement_date']) . "</td>
+                            <td>" . htmlspecialchars($row['time']) . "</td>
+                            <td>" . htmlspecialchars($row['reminder']) . "</td>
+                            <td>";
+                        echo $is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-danger">Inactive</span>';
+                        echo "</td>
+                            <td>
+                                <form method='POST'>
+                                    <input type='hidden' name='announcement_id' value='$id'>
+                                    <input type='hidden' name='new_status' value='" . ($is_active ? "1" : "0") . "'>
+                                    <button type='submit' name='toggle_status' class='btn btn-sm btn-outline-" . ($is_active ? "danger" : "success") . "'>
+                                        " . ($is_active ? "Disable" : "Enable") . "
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>";
+                    }
+                    ?>
+                </tbody>
+            </table>
+        </div>
+    </main>
+  </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+
 </body>
 </html>

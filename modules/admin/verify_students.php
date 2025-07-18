@@ -348,17 +348,20 @@ if ($isFinalized) {
 
   // On page load, set up UI based on PHP $isFinalized
   var isFinalized = <?= $isFinalized ? 'true' : 'false' ?>;
-  if (isFinalized) {
-    document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = true);
-    document.getElementById('revertBtn').disabled = true;
+  function setFinalizedUI(finalized) {
+  document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = finalized);
+  document.getElementById('revertBtn').disabled = finalized;
+  if (finalized) {
     document.getElementById('generatePayrollBtn').classList.remove('d-none');
     document.querySelectorAll('.payroll-col').forEach(col => col.classList.remove('d-none'));
   } else {
-    document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = false);
-    document.getElementById('revertBtn').disabled = false;
     document.getElementById('generatePayrollBtn').classList.add('d-none');
     document.querySelectorAll('.payroll-col').forEach(col => col.classList.add('d-none'));
   }
+}
+document.addEventListener('DOMContentLoaded', function() {
+  setFinalizedUI(isFinalized);
+});
 </script>
 
 </body>
