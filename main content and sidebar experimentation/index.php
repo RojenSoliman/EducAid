@@ -1,26 +1,37 @@
 <?php
-    // Simulate user role or session for demonstration purposes
-    session_start();
-    $userRole = 'admin'; // Hardcoded role for testing (this could be dynamic)
+$page = $_GET['page'] ?? 'dashboard';
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Content with PHP</title>
-    <link rel="stylesheet" href="style.css"> <!-- Link to your CSS file -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduAid - <?= ucfirst($page) ?></title>
+  <link rel="stylesheet" href="assets/style.css">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
 </head>
 <body>
+  <div class="wrapper">
+    <?php include 'includes/sidebar.php'; ?>
 
-    <div class="container">
-        <!-- Include Sidebar -->
-        <?php include('sidebar.php'); ?>
+    <div class="main-container">
+      <?php include 'includes/header.php'; ?>
 
-        <!-- Include Main Content -->
-        <?php include('main-content.php'); ?>
+      <main>
+        <?php
+          $pageFile = "includes/pages/$page.php";
+          if (file_exists($pageFile)) {
+            include $pageFile;
+          } else {
+            echo "<h2>404 - Page not found</h2>";
+          }
+        ?>
+      </main>
+
+      <?php include 'includes/footer.php'; ?>
     </div>
+  </div>
 
-    <script src="script.js"></script> <!-- JavaScript for Sidebar Toggle -->
+  <script src="scripts/sidebar.js"></script>
 </body>
 </html>
