@@ -6,6 +6,79 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 
+// Fetch maximum payroll number if PostgreSQL functions are available
+if (function_exists('pg_query')) {
+    // Get max payroll number
+    $result = pg_query($connection, "SELECT MAX(payroll_no) AS max_no FROM students");
+    $row = pg_fetch_assoc($result);
+    $maxPayroll = isset($row['max_no']) ? intval($row['max_no']) : 0;
+    pg_free_result($result);
+    // Get count of students with payroll numbers
+    $countRes = pg_query($connection, "SELECT COUNT(payroll_no) AS count_no FROM students WHERE payroll_no IS NOT NULL");
+    $rowCount = pg_fetch_assoc($countRes);
+    $countStudents = isset($rowCount['count_no']) ? intval($rowCount['count_no']) : 0;
+    pg_free_result($countRes);
+} else {
+    // Fallback if pgsql extension not available
+    $maxPayroll = 0;
+    $countStudents = 0;
+}
+
+// After fetching $maxPayroll and $countStudents
+$showSaved = false;
+// If editing schedule, delete previous entries for the date range
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_edit'])) {
+    $delStart = $_POST['start_date'];
+    $delEnd = $_POST['end_date'];
+    if (function_exists('pg_query')) {
+        pg_query($connection, "DELETE FROM schedules WHERE distribution_date BETWEEN '$delStart' AND '$delEnd'");
+    }
+}
+// If saving schedule, persist and show saved view
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
+    $showSaved = true;
+    $startDate = $_POST['start_date'];
+    $endDate = $_POST['end_date'];
+    $startTimes = $_POST['start_time'];
+    $endTimes = $_POST['end_time'];
+    $batch1Cap = intval($_POST['batch1_capacity']);
+    $batch2Cap = intval($_POST['batch2_capacity']);
+    // Persist schedule records to DB
+    if (function_exists('pg_query')) {
+        $counter = $maxPayroll + 1;
+        $curDate = $startDate;
+        while ($curDate <= $endDate) {
+            // Batch 1
+            for ($i = 0; $i < $batch1Cap; $i++) {
+                $pno = $counter;
+                // find student_id by payroll_no
+                $sidRes = pg_query($connection, "SELECT student_id FROM students WHERE payroll_no = $pno");
+                $sidRow = pg_fetch_assoc($sidRes);
+                $studentId = $sidRow ? intval($sidRow['student_id']) : null;
+                pg_free_result($sidRes);
+                // insert schedule
+                $timeSlot = pg_escape_literal($connection, "{$startTimes[0]} - {$endTimes[0]}");
+                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot) VALUES (".
+                    ($studentId !== null ? $studentId : 'NULL').", $pno, 1, '$curDate', $timeSlot)");
+                $counter++;
+            }
+            // Batch 2
+            for ($i = 0; $i < $batch2Cap; $i++) {
+                $pno = $counter;
+                $sidRes = pg_query($connection, "SELECT student_id FROM students WHERE payroll_no = $pno");
+                $sidRow = pg_fetch_assoc($sidRes);
+                $studentId = $sidRow ? intval($sidRow['student_id']) : null;
+                pg_free_result($sidRes);
+                $timeSlot = pg_escape_literal($connection, "{$startTimes[1]} - {$endTimes[1]}");
+                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot) VALUES (".
+                    ($studentId !== null ? $studentId : 'NULL').", $pno, 2, '$curDate', $timeSlot)");
+                $counter++;
+            }
+            // next date
+            $curDate = date('Y-m-d', strtotime($curDate . ' +1 day'));
+        }
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -28,8 +101,50 @@ if (!isset($_SESSION['admin_username'])) {
 
     <!-- Main -->
     <main class="col-md-10 ms-sm-auto px-4 py-4">
+    <?php if ($showSaved): ?>
+        <h4>Current Schedule</h4>
+        <!-- Hidden edit form -->
+        <form id="edit-form" method="POST" class="d-none">
+            <input type="hidden" name="confirm_edit" value="1">
+            <input type="hidden" name="start_date" value="<?php echo htmlspecialchars($startDate); ?>">
+            <input type="hidden" name="end_date" value="<?php echo htmlspecialchars($endDate); ?>">
+        </form>
+        <button type="button" class="btn btn-secondary mb-3" data-bs-toggle="modal" data-bs-target="#confirm-edit-modal">Edit Schedule</button>
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Batch 1 (<?php echo htmlspecialchars($startTimes[0] . ' - ' . $endTimes[0]); ?>)</th>
+              <th>Students</th>
+              <th>Batch 2 (<?php echo htmlspecialchars($startTimes[1] . ' - ' . $endTimes[1]); ?>)</th>
+              <th>Students</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php
+            $cnt = $maxPayroll + 1;
+            $current = $startDate;
+            while ($current <= $endDate) {
+                echo '<tr>';
+                echo '<td>' . htmlspecialchars($current) . '</td>';
+                echo '<td>' . htmlspecialchars($startTimes[0] . ' - ' . $endTimes[0]) . '</td>';
+                echo '<td>' . $cnt . ' - ' . ($cnt + $batch1Cap - 1) . '</td>';
+                $cnt += $batch1Cap;
+                echo '<td>' . htmlspecialchars($startTimes[1] . ' - ' . $endTimes[1]) . '</td>';
+                echo '<td>' . $cnt . ' - ' . ($cnt + $batch2Cap - 1) . '</td>';
+                $cnt += $batch2Cap;
+                echo '</tr>';
+                $current = date('Y-m-d', strtotime($current . ' +1 day'));
+            }
+            ?>
+          </tbody>
+        </table>
+    <?php else: ?>
     <h2 class="mb-4">Manage Student Schedules</h2>
+    <!-- Display current max payroll number -->
+    <p class="lead">Current maximum payroll number: <?php echo htmlspecialchars($maxPayroll); ?></p>
 
+    <!-- Step 1: Input Dates -->
     <!-- Step 1: Input Dates -->
     <div id="step-1">
         <h4>Step 1: Select Dates</h4>
@@ -87,9 +202,10 @@ if (!isset($_SESSION['admin_username'])) {
             <div id="payroll-allocation-container">
                 <!-- Dynamic content will be added here via JavaScript -->
             </div>
-            <button type="submit" class="btn btn-success">Save Schedule</button>
+            <button type="button" id="save-schedule-btn" class="btn btn-success d-none" data-bs-toggle="modal" data-bs-target="#confirm-save-modal">Save Schedule</button>
         </form>
     </div>
+    <?php endif; ?>
 </main>
   </div>
 </div>
@@ -277,7 +393,7 @@ if (!isset($_SESSION['admin_username'])) {
                 </table>
             `;
             const tbody = preview.querySelector('tbody');
-            let counter = 1;
+            let counter = <?php echo $maxPayroll + 1; ?>;
             let currentDate = new Date(dateStart);
             const endDateObj = new Date(dateEnd);
             while (currentDate <= endDateObj) {
@@ -302,6 +418,21 @@ if (!isset($_SESSION['admin_username'])) {
                 tbody.appendChild(tr);
                 currentDate.setDate(currentDate.getDate() + 1);
             }
+            // Insert hidden inputs into form for final submission
+            const form = document.getElementById('payroll-allocation-form');
+            form.insertAdjacentHTML('beforeend', `
+                <input type="hidden" name="start_date" value="${dateStart}">
+                <input type="hidden" name="end_date" value="${dateEnd}">
+                <input type="hidden" name="start_time[]" value="${intervalsData[0].start}">
+                <input type="hidden" name="end_time[]" value="${intervalsData[0].end}">
+                <input type="hidden" name="start_time[]" value="${intervalsData[1].start}">
+                <input type="hidden" name="end_time[]" value="${intervalsData[1].end}">
+                <input type="hidden" name="batch1_capacity" value="${b1}">
+                <input type="hidden" name="batch2_capacity" value="${b2}">
+                <input type="hidden" name="confirm_save" value="1">
+            `);
+            // Show Save Schedule button now that preview exists
+            document.getElementById('save-schedule-btn').classList.remove('d-none');
         });
     });
 
@@ -315,6 +446,56 @@ if (!isset($_SESSION['admin_username'])) {
     });
 
     document.getElementById('payroll-popup').prepend(returnToSchedulingButton);
+</script>
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirm-save-modal" tabindex="-1" aria-labelledby="confirmSaveModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmSaveModalLabel">Confirm Save Schedule</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        Are you sure you want to save this schedule? This action cannot be undone.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="confirm-save-btn" class="btn btn-primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Confirmation Modal -->
+<div class="modal fade" id="confirm-edit-modal" tabindex="-1" aria-labelledby="confirmEditModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmEditModalLabel">Confirm Edit Schedule</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        Editing the schedule will restart the process. Are you sure?
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="confirm-edit-btn" class="btn btn-primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('confirm-save-btn').addEventListener('click', function() {
+            document.getElementById('payroll-allocation-form').submit();
+        });
+        document.getElementById('confirm-edit-btn').addEventListener('click', function() {
+            // submit hidden edit form to clear schedules and restart
+            document.getElementById('edit-form').submit();
+        });
+    });
 </script>
 </body>
 </html>
