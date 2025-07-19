@@ -5,42 +5,20 @@ if (!isset($_SESSION['admin_username'])) {
     header("Location: index.php");
     exit;
 }
-
-// Handle form submission to post new announcement (date/time auto-filled)
+// Handle form submission for general announcements
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['post_announcement'])) {
-    $title = $_POST['title'];
-    $location = $_POST['location'];
-    $reminder = $_POST['reminder'];
-
-    // Deactivate all previous announcements
+    $title = trim($_POST['title']);
+    $remarks = trim($_POST['remarks']);
+    // Deactivate any previously active announcement
     pg_query($connection, "UPDATE announcements SET is_active = FALSE");
-
-    // Fetch all schedule entries to create new announcements
-    $scheduleRes = pg_query($connection, "SELECT schedule_id FROM schedules");
-    while ($sch = pg_fetch_assoc($scheduleRes)) {
-        $schId = intval($sch['schedule_id']);
-        pg_query_params(
-            $connection,
-            "INSERT INTO announcements (title, location, reminder, schedule_id) VALUES ($1, $2, $3, $4)",
-            [$title, $location, $reminder, $schId]
-        );
-    }
-    pg_free_result($scheduleRes);
+    // Insert new announcement as active
+    $query = "INSERT INTO announcements (title, remarks, is_active) VALUES ($1, $2, TRUE)";
+    pg_query_params($connection, $query, [$title, $remarks]);
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?posted=1');
+    exit;
 }
-
-// Handle toggle active/inactive
-if (isset($_POST['toggle_status'])) {
-    $announcement_id = $_POST['announcement_id'];
-    $new_status = $_POST['new_status'] === '1' ? 'FALSE' : 'TRUE';
-
-    // If enabling this one, disable others first
-    if ($new_status === 'TRUE') {
-        pg_query_params($connection, "UPDATE announcements SET is_active = FALSE WHERE municipality_id = $1", [1]);
-    }
-
-    // Update the selected one
-    pg_query_params($connection, "UPDATE announcements SET is_active = $new_status::BOOLEAN WHERE announcement_id = $1", [$announcement_id]);
-}
+// Check for success flag
+$posted = isset($_GET['posted']);
 ?>
 <!DOCTYPE html>
 <html>
@@ -65,26 +43,92 @@ if (isset($_POST['toggle_status'])) {
     <!-- Main -->
     <main class="col-md-10 ms-sm-auto px-4 py-4">
         <div class="container py-4">
-            <!-- Previous announcements listing removed; only form is shown -->
-                            <td>" . htmlspecialchars($row['time']) . "</td>
-                            <td>" . htmlspecialchars($row['reminder']) . "</td>
-                            <td>";
-                        echo $is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-danger">Inactive</span>';
-                        echo "</td>
-                            <td>
-                                <form method='POST'>
-                                    <input type='hidden' name='announcement_id' value='$id'>
-                                    <input type='hidden' name='new_status' value='" . ($is_active ? "1" : "0") . "'>
-                                    <button type='submit' name='toggle_status' class='btn btn-sm btn-outline-" . ($is_active ? "danger" : "success") . "'>
-                                        " . ($is_active ? "Disable" : "Enable") . "
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>";
-                    }
-                    ?>
-                </tbody>
-            </table>
+            <!-- New Announcement Form -->
+            <h2>Post New Announcement</h2>
+            <form method="POST" class="mb-4">
+                <div class="mb-3">
+                    <label class="form-label">Title</label>
+                    <input type="text" name="title" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Remarks</label>
+                    <textarea name="remarks" class="form-control" required></textarea>
+                </div>
+                <button type="submit" name="post_announcement" class="btn btn-primary">Post Announcement</button>
+            </form>
+
+            <!-- Success Message -->
+            <?php if (isset($_GET['posted']) && $_GET['posted'] == 1): ?>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    Announcements posted successfully!
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <?php endif; ?>
+
+            <!-- Existing Announcements Listing -->
+            <h2>Existing Announcements</h2>
+            <?php
+            // Fetch all announcements for pagination (include active status)
+            $annRes = pg_query($connection, "SELECT announcement_id, title, remarks, posted_at, is_active FROM announcements ORDER BY posted_at DESC");
+            $announcements = [];
+            while ($a = pg_fetch_assoc($annRes)) {
+                $announcements[] = $a;
+            }
+            pg_free_result($annRes);
+            ?>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <button id="prev-btn" class="btn btn-outline-secondary">&laquo;</button>
+                <span>Showing <span id="page-info"></span></span>
+                <button id="next-btn" class="btn btn-outline-secondary">&raquo;</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-bordered">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Remarks</th>
+                    <th>Posted At</th>
+                    <th>Active</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="ann-body"></tbody>
+              </table>
+            </div>
+            <script>
+            // Load announcements including active flag
+            const announcements = <?php echo json_encode($announcements); ?>;
+            let currentPage = 0;
+            const pageSize = 5;
+            const totalPages = Math.ceil(announcements.length / pageSize);
+            function renderPage() {
+              const start = currentPage * pageSize;
+              const slice = announcements.slice(start, start + pageSize);
+              const tbody = document.getElementById('ann-body');
+              tbody.innerHTML = '';
+              slice.forEach(a => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${a.title}</td>
+                    <td>${a.remarks}</td>
+                    <td>${a.posted_at}</td>
+                    <td>${a.is_active ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-danger">No</span>'}</td>
+                    <td>
+                      <button class="btn btn-sm btn-outline-${a.is_active ? 'danger' : 'success'} toggle-btn"
+                              data-id="${a.announcement_id}" data-new="${a.is_active ? 0 : 1}">
+                        ${a.is_active ? 'Unpost' : 'Post'}
+                      </button>
+                    </td>`;
+                tbody.appendChild(tr);
+              });
+              document.getElementById('page-info').textContent = `${start + 1}-${Math.min(start + pageSize, announcements.length)} of ${announcements.length}`;
+              document.getElementById('prev-btn').disabled = currentPage === 0;
+              document.getElementById('next-btn').disabled = currentPage >= totalPages - 1;
+            }
+            document.getElementById('prev-btn').addEventListener('click', () => { if (currentPage > 0) { currentPage--; renderPage(); } });
+            document.getElementById('next-btn').addEventListener('click', () => { if (currentPage < totalPages - 1) { currentPage++; renderPage(); } });
+            renderPage();
+            </script>
         </div>
     </main>
   </div>

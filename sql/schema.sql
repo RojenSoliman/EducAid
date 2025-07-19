@@ -62,16 +62,14 @@ CREATE TABLE documents (
 );
 
 -- Announcements (only one active per LGU)
+-- Announcements (general broadcasts)
 CREATE TABLE announcements (
     announcement_id SERIAL PRIMARY KEY,
     title TEXT NOT NULL,
-    location TEXT NOT NULL,
-    reminder TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    schedule_id INT REFERENCES schedules(schedule_id) ON DELETE CASCADE,
-    is_active BOOLEAN DEFAULT TRUE
+    remarks TEXT,
+    posted_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    is_active BOOLEAN NOT NULL DEFAULT FALSE
 );
--- Announcements tied to individual schedules
 
 -- Aid distribution tracking
 CREATE TABLE distributions (

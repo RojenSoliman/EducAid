@@ -1,6 +1,28 @@
 <?php
 include __DIR__ . '/../../config/database.php';
 session_start();
+// Load settings for publish state
+$settingsPath = __DIR__ . '/../../data/municipal_settings.json';
+$settings = file_exists($settingsPath) ? json_decode(file_get_contents($settingsPath), true) : [];
+
+// Handle publish schedule action
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) {
+    $settings['schedule_published'] = true;
+    file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
+}
+// Handle unpublish schedule action
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unpublish_schedule'])) {
+    $settings['schedule_published'] = false;
+    file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
+}
+
+// Determine if schedule is sent
+$schedulePublished = !empty($settings['schedule_published']);
+
 if (!isset($_SESSION['admin_username'])) {
     header("Location: index.php");
     exit;
@@ -79,6 +101,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
         }
     }
 }
+// Check for existing schedules on page load (GET)
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    // Determine existing schedule date range
+    $res = pg_query($connection, "SELECT MIN(distribution_date) AS start_date, MAX(distribution_date) AS end_date FROM schedules");
+    $row = pg_fetch_assoc($res);
+    if ($row && $row['start_date']) {
+        $showSaved = true;
+        $startDate = $row['start_date'];
+        $endDate = $row['end_date'];
+        // Fetch time intervals for batches
+        $intervalRes = pg_query($connection, "SELECT batch_no, time_slot FROM schedules WHERE distribution_date = '$startDate' GROUP BY batch_no, time_slot ORDER BY batch_no");
+        $startTimes = [];
+        $endTimes = [];
+        while ($interval = pg_fetch_assoc($intervalRes)) {
+            list($st, $et) = explode(' - ', $interval['time_slot']);
+            if ($interval['batch_no'] == 1) {
+                $startTimes[0] = $st;
+                $endTimes[0] = $et;
+            } else {
+                $startTimes[1] = $st;
+                $endTimes[1] = $et;
+            }
+        }
+        pg_free_result($intervalRes);
+        // Fetch capacities for the start date
+        $capRes1 = pg_query($connection, "SELECT COUNT(*) AS cap FROM schedules WHERE distribution_date = '$startDate' AND batch_no = 1");
+        $capRow1 = pg_fetch_assoc($capRes1);
+        $batch1Cap = intval($capRow1['cap']);
+        pg_free_result($capRes1);
+        $capRes2 = pg_query($connection, "SELECT COUNT(*) AS cap FROM schedules WHERE distribution_date = '$startDate' AND batch_no = 2");
+        $capRow2 = pg_fetch_assoc($capRes2);
+        $batch2Cap = intval($capRow2['cap']);
+        pg_free_result($capRes2);
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -110,6 +167,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
             <input type="hidden" name="end_date" value="<?php echo htmlspecialchars($endDate); ?>">
         </form>
         <button type="button" class="btn btn-secondary mb-3" data-bs-toggle="modal" data-bs-target="#confirm-edit-modal">Edit Schedule</button>
+        <?php if (!$schedulePublished): ?>
+        <form method="POST" class="d-inline mb-3">
+          <button type="submit" name="publish_schedule" class="btn btn-success">Send Schedule to Students</button>
+        </form>
+        <?php else: ?>
+        <span class="badge bg-success mb-3">Schedule Sent</span>
+        <form id="unpublish-form" method="POST" class="d-inline mb-3">
+          <input type="hidden" name="unpublish_schedule" value="1">
+          <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#confirm-unpublish-modal">Undo Send</button>
+        </form>
+        <?php endif; ?>
         <table class="table table-bordered">
           <thead>
             <tr>
@@ -486,6 +554,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
   </div>
 </div>
 
+<!-- Unpublish Confirmation Modal -->
+<div class="modal fade" id="confirm-unpublish-modal" tabindex="-1" aria-labelledby="confirmUnpublishModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmUnpublishModalLabel">Confirm Undo Send</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        Are you sure you want to undo sending the schedule to students? This will hide it from their homepage.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="confirm-unpublish-btn" class="btn btn-warning">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('confirm-save-btn').addEventListener('click', function() {
@@ -495,6 +582,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
             // submit hidden edit form to clear schedules and restart
             document.getElementById('edit-form').submit();
         });
+        var btn = document.getElementById('confirm-unpublish-btn');
+        if (btn) {
+          btn.addEventListener('click', function() {
+            document.getElementById('unpublish-form').submit();
+          });
+        }
     });
 </script>
 </body>
