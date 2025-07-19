@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['slot_count'])) {
 
     pg_query_params($connection, "UPDATE signup_slots SET is_active = FALSE WHERE is_active = TRUE AND municipality_id = $1", [$municipality_id]);
     pg_query_params($connection, "INSERT INTO signup_slots (municipality_id, slot_count, is_active, semester, academic_year) VALUES ($1, $2, TRUE, $3, $4)", [$municipality_id, $newSlotCount, $semester, $academic_year]);
-    echo "<script>alert('Slot has been created successfully!'); window.location.href = 'manage_slots.php';</script>";
+
     // Redirect to prevent resubmission on refresh
     header("Location: manage_slots.php");
     exit;

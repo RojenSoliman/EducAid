@@ -108,3 +108,20 @@ CREATE TABLE signup_slots (
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE config (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
+INSERT INTO config (key, value) VALUES ('student_list_finalized', '0');
+
+CREATE TABLE schedules (
+    schedule_id SERIAL PRIMARY KEY,
+    student_id INT REFERENCES students(student_id),
+    distribution_date DATE,
+    time_slot TEXT,
+    status TEXT CHECK (status IN ('scheduled', 'completed', 'missed')) DEFAULT 'scheduled',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
