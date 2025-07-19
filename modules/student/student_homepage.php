@@ -87,34 +87,6 @@ if (!isset($_SESSION['student_username'])) {
           </div>
         </div>
 
-        <!-- Educational Event -->
-        <?php
-          include '../../config/database.php';
-          $announcement = pg_query($connection, "SELECT * FROM announcements WHERE municipality_id = 1 AND is_active = TRUE ORDER BY created_at DESC LIMIT 1");
-          if ($announcement && pg_num_rows($announcement) > 0) {
-              $row = pg_fetch_assoc($announcement);
-              echo "<div class='custom-card mb-4 shadow-sm section-spacing'>
-                      <div class='custom-card-header bg-warning text-dark'>
-                        <h5 class='mb-0'><i class='bi bi-calendar-event me-2'></i>" . htmlspecialchars($row['title']) . "</h5>
-                      </div>
-                      <div class='custom-card-body'>
-                        <ul class='mb-0'>
-                          <li><strong>Location:</strong> " . htmlspecialchars($row['location']) . "</li>
-                          <li><strong>Date:</strong> " . htmlspecialchars($row['announcement_date']) . "</li>
-                          <li><strong>Time:</strong> " . htmlspecialchars($row['time']) . "</li>
-                          <li><strong>Reminder:</strong> " . htmlspecialchars($row['reminder']) . "</li>
-                        </ul>
-                      </div>
-                    </div>";
-          } else {
-              echo "<div class='custom-card mb-4 shadow-sm section-spacing'>
-                      <div class='custom-card-header bg-warning text-dark'>
-                        <h5 class='mb-0'><i class='bi bi-calendar-event me-2'></i>No current announcements.</h5>
-                      </div>
-                    </div>";
-          }
-        ?>
-
         <!-- Dashboard Cards -->
         <div class="row g-4 section-spacing">
           <div class="col-md-4">
@@ -226,6 +198,64 @@ if (!isset($_SESSION['student_username'])) {
             </ul>
           </div>
         </div>
+
+        <!-- Schedule Section -->
+        <?php
+        // Check if schedule has been published
+        $settings = file_exists(__DIR__ . '/../../data/municipal_settings.json')
+            ? json_decode(file_get_contents(__DIR__ . '/../../data/municipal_settings.json'), true)
+            : [];
+        if (!empty($settings['schedule_published'])) {
+            // Fetch this student's schedule
+            $studentId = $_SESSION['student_id'];
+            $schedRes = pg_query_params($connection,
+                'SELECT distribution_date, batch_no, time_slot FROM schedules WHERE student_id = $1 ORDER BY distribution_date, batch_no',
+                [$studentId]
+            );
+            if ($schedRes && pg_num_rows($schedRes) > 0) {
+                echo "<div class='custom-card mb-4'><div class='custom-card-header bg-info text-white'><h5 class='mb-0'><i class='bi bi-calendar3 me-2'></i>Your Schedule</h5></div><div class='custom-card-body'>";
+                echo "<table class='table'><thead><tr><th>Date</th><th>Batch</th><th>Time Slot</th></tr></thead><tbody>";
+                while ($s = pg_fetch_assoc($schedRes)) {
+                    echo '<tr>'
+                         . '<td>' . htmlspecialchars($s['distribution_date']) . '</td>'
+                         . '<td>' . htmlspecialchars($s['batch_no']) . '</td>'
+                         . '<td>' . htmlspecialchars($s['time_slot']) . '</td>'
+                         . '</tr>';
+                }
+                echo "</tbody></table></div></div>";
+            } else {
+                echo "<div class='custom-card mb-4'><div class='custom-card-body'>Your schedule will appear here once published.</div></div>";
+            }
+        }
+        ?>
+
+        <!-- Educational Event -->
+        <?php
+          include '../../config/database.php';
+          $announcement = pg_query($connection, "SELECT * FROM announcements WHERE municipality_id = 1 AND is_active = TRUE ORDER BY created_at DESC LIMIT 1");
+          if ($announcement && pg_num_rows($announcement) > 0) {
+              $row = pg_fetch_assoc($announcement);
+              echo "<div class='custom-card mb-4 shadow-sm section-spacing'>
+                      <div class='custom-card-header bg-warning text-dark'>
+                        <h5 class='mb-0'><i class='bi bi-calendar-event me-2'></i>" . htmlspecialchars($row['title']) . "</h5>
+                      </div>
+                      <div class='custom-card-body'>
+                        <ul class='mb-0'>
+                          <li><strong>Location:</strong> " . htmlspecialchars($row['location']) . "</li>
+                          <li><strong>Date:</strong> " . htmlspecialchars($row['announcement_date']) . "</li>
+                          <li><strong>Time:</strong> " . htmlspecialchars($row['time']) . "</li>
+                          <li><strong>Reminder:</strong> " . htmlspecialchars($row['reminder']) . "</li>
+                        </ul>
+                      </div>
+                    </div>";
+          } else {
+              echo "<div class='custom-card mb-4 shadow-sm section-spacing'>
+                      <div class='custom-card-header bg-warning text-dark'>
+                        <h5 class='mb-0'><i class='bi bi-calendar-event me-2'></i>No current announcements.</h5>
+                      </div>
+                    </div>";
+          }
+        ?>
       </div>
     </section>
   </div>
