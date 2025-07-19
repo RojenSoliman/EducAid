@@ -7,6 +7,48 @@ $settings = file_exists($settingsPath) ? json_decode(file_get_contents($settings
 
 // Handle publish schedule action
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) {
+    // If schedules table empty but we have saved parameters, recreate schedule
+    $count = pg_query($connection, "SELECT COUNT(*) AS cnt FROM schedules");
+    $cntRow = pg_fetch_assoc($count);
+    if (isset($settings['schedule_meta']) && intval($cntRow['cnt']) === 0) {
+        $meta = $settings['schedule_meta'];
+        $startDate = $meta['start_date'];
+        $endDate = $meta['end_date'];
+        $startTimes = $meta['start_times'];
+        $endTimes = $meta['end_times'];
+        $batch1Cap = intval($meta['batch1_capacity']);
+        $batch2Cap = intval($meta['batch2_capacity']);
+        // Persist schedule records
+        $counter = 1; // start assignment at first payroll number
+        $curDate = $startDate;
+        while ($curDate <= $endDate) {
+            // Batch 1
+            for ($i = 0; $i < $batch1Cap; $i++) {
+                $pno = $counter;
+                $sidRes = pg_query($connection, "SELECT student_id FROM students WHERE payroll_no = $pno");
+                $sid = pg_fetch_assoc($sidRes);
+                pg_free_result($sidRes);
+                $studentId = $sid ? intval($sid['student_id']) : null;
+                $timeSlot = pg_escape_literal($connection, "{$startTimes[0]} - {$endTimes[0]}");
+                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot) VALUES (" .
+                    ($studentId !== null ? $studentId : 'NULL') . ", $pno, 1, '$curDate', $timeSlot)");
+                $counter++;
+            }
+            // Batch 2
+            for ($i = 0; $i < $batch2Cap; $i++) {
+                $pno = $counter;
+                $sidRes = pg_query($connection, "SELECT student_id FROM students WHERE payroll_no = $pno");
+                $sid = pg_fetch_assoc($sidRes);
+                pg_free_result($sidRes);
+                $studentId = $sid ? intval($sid['student_id']) : null;
+                $timeSlot = pg_escape_literal($connection, "{$startTimes[1]} - {$endTimes[1]}");
+                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot) VALUES (" .
+                    ($studentId !== null ? $studentId : 'NULL') . ", $pno, 2, '$curDate', $timeSlot)");
+                $counter++;
+            }
+            $curDate = date('Y-m-d', strtotime("$curDate +1 day"));
+        }
+    }
     $settings['schedule_published'] = true;
     file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
     header('Location: ' . $_SERVER['PHP_SELF']);
@@ -67,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
     $batch2Cap = intval($_POST['batch2_capacity']);
     // Persist schedule records to DB
     if (function_exists('pg_query')) {
-        $counter = $maxPayroll + 1;
+        $counter = 1; // start assignment at first payroll number
         $curDate = $startDate;
         while ($curDate <= $endDate) {
             // Batch 1
@@ -99,6 +141,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
             // next date
             $curDate = date('Y-m-d', strtotime($curDate . ' +1 day'));
         }
+        // Save schedule parameters for reuse on publish
+        $settings['schedule_meta'] = [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'start_times' => $startTimes,
+            'end_times' => $endTimes,
+            'batch1_capacity' => $batch1Cap,
+            'batch2_capacity' => $batch2Cap
+        ];
+        file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
     }
 }
 // Check for existing schedules on page load (GET)
@@ -190,7 +242,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
           </thead>
           <tbody>
             <?php
-            $cnt = $maxPayroll + 1;
+            // Display numbering starts from 1 for UI
+            $cnt = 1;
             $current = $startDate;
             while ($current <= $endDate) {
                 echo '<tr>';
@@ -461,7 +514,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
                 </table>
             `;
             const tbody = preview.querySelector('tbody');
-            let counter = <?php echo $maxPayroll + 1; ?>;
+            let counter = 1; // start preview numbering from 1 independent of existing payroll numbers
             let currentDate = new Date(dateStart);
             const endDateObj = new Date(dateEnd);
             while (currentDate <= endDateObj) {
