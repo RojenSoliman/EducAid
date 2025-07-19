@@ -64,16 +64,14 @@ CREATE TABLE documents (
 -- Announcements (only one active per LGU)
 CREATE TABLE announcements (
     announcement_id SERIAL PRIMARY KEY,
-    municipality_id INT REFERENCES municipalities(municipality_id),
-    title TEXT,
-    location TEXT,
-    announcement_date DATE,
-    time TIME,
+    title TEXT NOT NULL,
+    location TEXT NOT NULL,
     reminder TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP,
+    schedule_id INT REFERENCES schedules(schedule_id) ON DELETE CASCADE,
     is_active BOOLEAN DEFAULT TRUE
 );
+-- Announcements tied to individual schedules
 
 -- Aid distribution tracking
 CREATE TABLE distributions (
