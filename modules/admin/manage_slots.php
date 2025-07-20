@@ -212,6 +212,53 @@ if ($slotInfo) {
                 <?php else: ?>
                     <div class="alert alert-warning">No active slot found. Add one above.</div>
                 <?php endif; ?>
+                <?php
+                // Past slot releases history
+                $historyRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE municipality_id = $1 AND is_active = FALSE ORDER BY created_at DESC", array($municipality_id));
+                $pastReleases = [];
+                while ($row = pg_fetch_assoc($historyRes)) {
+                    $pastReleases[] = $row;
+                }
+                // Calculate slots used per release
+                foreach ($pastReleases as $idx => $h) {
+                    $nextRes = pg_query_params($connection,
+                        "SELECT created_at FROM signup_slots WHERE municipality_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 1",
+                        array($municipality_id, $h['created_at'])
+                    );
+                    $nextRow = pg_fetch_assoc($nextRes);
+                    $endDate = $nextRow['created_at'] ?? date('Y-m-d H:i:s');
+                    $countRes = pg_query_params($connection,
+                        "SELECT COUNT(*) AS total FROM students WHERE (status = 'applicant' OR status = 'active') AND municipality_id = $1 AND application_date >= $2 AND application_date < $3",
+                        array($municipality_id, $h['created_at'], $endDate)
+                    );
+                    $countRow = pg_fetch_assoc($countRes);
+                    $pastReleases[$idx]['slots_used'] = intval($countRow['total']);
+                }
+                ?>
+                <h3 class="mt-5">Past Slot Releases</h3>
+                <?php if (!empty($pastReleases)): ?>
+                <div class="accordion" id="pastSlotsAccordion">
+                    <?php foreach ($pastReleases as $i => $h): ?>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingPast<?= $i ?>">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePast<?= $i ?>" aria-expanded="false" aria-controls="collapsePast<?= $i ?>">
+                                <?= htmlspecialchars($h['created_at']) ?> — Released <?= htmlspecialchars($h['slot_count']) ?> slots
+                            </button>
+                        </h2>
+                        <div id="collapsePast<?= $i ?>" class="accordion-collapse collapse" aria-labelledby="headingPast<?= $i ?>" data-bs-parent="#pastSlotsAccordion">
+                            <div class="accordion-body">
+                                <p><strong>Semester:</strong> <?= htmlspecialchars($h['semester']) ?></p>
+                                <p><strong>Academic Year:</strong> <?= htmlspecialchars($h['academic_year']) ?></p>
+                                <p><strong>Slots Used:</strong> <?= $h['slots_used'] ?></p>
+                                <p><strong>Slots Remaining:</strong> <?= max(0, $h['slot_count'] - $h['slots_used']) ?></p>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php else: ?>
+                    <div class="alert alert-info">No past slot releases.</div>
+                <?php endif; ?>
         </div>
     </main>
   </div>
