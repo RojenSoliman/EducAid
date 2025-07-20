@@ -282,13 +282,26 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
         ?>
 
         <!-- Reminders -->
+        <?php
+        // Load reminder date from deadlines JSON
+        $deadlineData = file_exists(__DIR__ . '/../../data/deadlines.json') ? json_decode(file_get_contents(__DIR__ . '/../../data/deadlines.json'), true) : [];
+        $reminderDate = '';
+        foreach ($deadlineData as $d) {
+            if (isset($d['key']) && $d['key'] === 'grades_submission' && !empty($d['active'])) {
+                $reminderDate = date('F j', strtotime($d['deadline_date']));
+                break;
+            }
+        }
+        ?>
+
+        <!-- Reminders -->
         <div class="custom-card shadow-sm section-spacing">
           <div class="custom-card-header bg-info text-white">
             <h5 class="mb-0"><i class="bi bi-bell-fill me-2"></i>Reminders</h5>
           </div>
           <div class="custom-card-body">
             <ul class="mb-0">
-              <li>Upload your updated grades by <strong>August 15</strong>.</li>
+              <li>Upload your updated grades by <strong><?php echo htmlspecialchars($reminderDate ?: 'TBD'); ?></strong>.</li>
               <li>Check notifications regularly for city updates.</li>
             </ul>
           </div>
