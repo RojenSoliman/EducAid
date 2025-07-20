@@ -1,16 +1,16 @@
 [
-  {
-    "key": "document_upload",
-    "label": "Document Upload",
-    "deadline_date": "2025-08-20",
-    "link": "upload_document.php",
-    "active": true
-  },
-  {
-    "key": "grades_submission",
-    "label": "Grades Submission for the current semester",
-    "deadline_date": "2025-08-20",
-    "link": "upload_document.php",
-    "active": true
-  }
+    {
+        "key": "document_upload",
+        "label": "Document Upload",
+        "deadline_date": "2025-08-20",
+        "link": "upload_document.php",
+        "active": true
+    },
+    {
+        "key": "grades_submission",
+        "label": "Grades Submission for the current semester",
+        "deadline_date": "2025-08-23",
+        "link": "upload_document.php",
+        "active": true
+    }
 ]

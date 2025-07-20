@@ -20,8 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $keys = $_POST['key'] ?? [];
     $labels = $_POST['label'] ?? [];
     $dates = $_POST['deadline_date'] ?? [];
-    $links = $_POST['link'] ?? [];
     $actives = $_POST['active'] ?? [];
+    // preserve existing links (admin cannot edit links)
+    $originalLinks = array_column($deadlines, 'link', 'key');
     foreach ($keys as $i => $key) {
         $label = trim($labels[$i] ?? '');
         $date = trim($dates[$i] ?? '');
@@ -30,23 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'key' => $key,
             'label' => $label,
             'deadline_date' => $date,
-            'link' => trim($links[$i] ?? ''),
+        'link' => $originalLinks[$key] ?? '',
             'active' => in_array($key, $actives, true)
-        ];
-    }
-    // New entry
-    if (!empty($_POST['new_label']) && !empty($_POST['new_deadline_date'])) {
-        $newLabel = trim($_POST['new_label']);
-        $newDate = trim($_POST['new_deadline_date']);
-        $newLink = trim($_POST['new_link'] ?? '');
-        // generate key
-        $newKey = preg_replace('/[^a-z0-9]+/', '_', strtolower($newLabel));
-        $out[] = [
-            'key' => $newKey,
-            'label' => $newLabel,
-            'deadline_date' => $newDate,
-            'link' => $newLink,
-            'active' => isset($_POST['new_active'])
         ];
     }
     // Save JSON
@@ -90,7 +76,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <tr>
                     <th>Label</th>
                     <th>Deadline Date</th>
-                    <th>Link</th>
                     <th>Active</th>
                 </tr>
                 </thead>
@@ -102,17 +87,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="text" name="label[]" class="form-control" value="<?php echo htmlspecialchars($d['label']); ?>" required>
                     </td>
                     <td><input type="date" name="deadline_date[]" class="form-control" value="<?php echo htmlspecialchars($d['deadline_date']); ?>" required></td>
-                    <td><input type="text" name="link[]" class="form-control" value="<?php echo htmlspecialchars($d['link']); ?>"></td>
                     <td class="text-center"><input type="checkbox" name="active[]" value="<?php echo htmlspecialchars($d['key']); ?>" <?php echo !empty($d['active']) ? 'checked' : ''; ?>></td>
                 </tr>
                 <?php endforeach; ?>
-                <!-- New entry row -->
-                <tr class="table-light">
-                    <td><input type="text" name="new_label" class="form-control" placeholder="New label"></td>
-                    <td><input type="date" name="new_deadline_date" class="form-control"></td>
-                    <td><input type="text" name="new_link" class="form-control" placeholder="Optional link"></td>
-                    <td class="text-center"><input type="checkbox" name="new_active"></td>
-                </tr>
                 </tbody>
             </table>
             <button type="submit" class="btn btn-primary">Save Changes</button>
