@@ -6,12 +6,25 @@ if (!isset($_SESSION['student_username'])) {
     header("Location: student_login.php");
     exit;
 }
+// Get student ID for operations
 $student_id = $_SESSION['student_id'];
-// Fetch student notifications
-$notifRes = pg_query_params($connection,
-    "SELECT message, created_at FROM notifications WHERE student_id = $1 ORDER BY created_at DESC",
-    [$student_id]
-);
+// Handle clear all notifications via POST and set flash
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_notifications'])) {
+    // Delete all notifications for this student
+    $deleteSql = "DELETE FROM notifications WHERE student_id = " . intval($student_id);
+    /** @phpstan-ignore-next-line */
+    @pg_query($connection, $deleteSql);
+    $_SESSION['notif_cleared'] = true;
+    // Redirect back to avoid form resubmission
+    header("Location: student_notifications.php");
+    exit;
+}
+// Flash for cleared notifications
+$flash_cleared = $_SESSION['notif_cleared'] ?? false;
+unset($_SESSION['notif_cleared']);
+$selectSql = "SELECT message, created_at FROM notifications WHERE student_id = " . intval($student_id) . " ORDER BY created_at DESC";
+/** @phpstan-ignore-next-line */
+@$notifRes = pg_query($connection, $selectSql);
 $notifications = $notifRes ? pg_fetch_all($notifRes) : [];
 ?>
 
@@ -38,30 +51,39 @@ $notifications = $notifRes ? pg_fetch_all($notifRes) : [];
             </div>
         </nav>
         <div class="container py-5">
-            <!-- Student Notifications -->
-            <div class="row mb-4">
-              <div class="col">
-                <div class="card">
-                  <div class="card-header">
-                    <h5 class="mb-0">Notifications</h5>
-                  </div>
-                  <div class="card-body">
-                    <?php if (empty($notifications)): ?>
-                      <p class="text-center">No notifications at this time.</p>
-                    <?php else: ?>
-                      <ul class="list-group list-group-flush">
-                        <?php foreach ($notifications as $note): ?>
-                          <li class="list-group-item">
-                            <?php echo htmlspecialchars($note['message']); ?><br>
-                            <small class="text-muted"><?php echo date("F j, Y, g:i a", strtotime($note['created_at'])); ?></small>
-                          </li>
-                        <?php endforeach; ?>
-                      </ul>
-                    <?php endif; ?>
-                  </div>
-                </div>
-              </div>
+        <?php if (!empty($flash_cleared)): ?>
+            <div class="alert alert-success text-center">
+                All notifications cleared.
             </div>
+        <?php endif; ?>
+         <!-- Student Notifications -->
+         <div class="row mb-4">
+           <div class="col">
+             <div class="card">
+               <div class="card-header d-flex align-items-center">
+                 <h5 class="mb-0">Notifications</h5>
+                 <form method="POST" class="ms-auto" onsubmit="return confirm('Are you sure you want to clear all notifications?');">
+                    <input type="hidden" name="clear_notifications" value="1" />
+                    <button type="submit" class="btn btn-sm btn-danger">Clear All</button>
+                  </form>
+               </div>
+               <div class="card-body">
+                <?php if (empty($notifications)): ?>
+                  <p class="text-center">No notifications at this time.</p>
+                <?php else: ?>
+                  <ul class="list-group list-group-flush">
+                    <?php foreach ($notifications as $note): ?>
+                      <li class="list-group-item">
+                        <?php echo htmlspecialchars($note['message']); ?><br>
+                        <small class="text-muted"><?php echo date("F j, Y, g:i a", strtotime($note['created_at'])); ?></small>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                <?php endif; ?>
+               </div>
+             </div>
+           </div>
+         </div>
         </div> 
         </section>
     </div>

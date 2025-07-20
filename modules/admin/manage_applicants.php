@@ -23,7 +23,8 @@ function check_documents($connection, $student_id) {
 
 // Handle form submissions to mark students as active
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['mark_verified']) && isset($_POST['student_id'])) {
+    // Check for verify action
+    if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
         $student_id = $_POST['student_id'];
 
         // Mark student as 'active' if all documents are uploaded
@@ -31,7 +32,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         echo "<script>alert('Student marked as verified and active.'); window.location.href = 'manage_applicants.php';</script>";
         exit;
-    } elseif (isset($_POST['reject_applicant']) && isset($_POST['student_id'])) {
+    // Check for reject action
+    } elseif (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
         $student_id = $_POST['student_id'];
         // Delete uploaded document files and records so student can re-upload
         $docsToDelete = pg_query_params($connection, "SELECT file_path FROM documents WHERE student_id = $1", [$student_id]);
@@ -170,10 +172,15 @@ if (!empty($params)) {
                                         </div>
                                         <div class="modal-footer">
                                             <?php if ($isComplete): ?>
-                                                <form method="POST" class="d-inline">
+                                                <form method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to mark this student as verified?');">
                                                     <input type="hidden" name="student_id" value="<?= $student_id ?>" />
-                                                    <button type="submit" name="mark_verified" class="btn btn-success">Mark as Verified</button>
-                                                    <button type="submit" name="reject_applicant" class="btn btn-danger ms-2">Reject</button>
+                                                    <input type="hidden" name="mark_verified" value="1" />
+                                                    <button type="submit" class="btn btn-success">Mark as Verified</button>
+                                                </form>
+                                                <form method="POST" class="d-inline ms-2" onsubmit="return confirm('Are you sure you want to reject this applicant? This will allow re-upload.');">
+                                                    <input type="hidden" name="student_id" value="<?= $student_id ?>" />
+                                                    <input type="hidden" name="reject_applicant" value="1" />
+                                                    <button type="submit" class="btn btn-danger">Reject</button>
                                                 </form>
                                             <?php else: ?>
                                                 <button class="btn btn-secondary" disabled>Not all documents uploaded</button>
@@ -194,5 +201,34 @@ if (!empty($params)) {
 
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    document.querySelectorAll('.verify-trigger').forEach(button => {
+        button.addEventListener('click', function() {
+            const studentId = this.getAttribute('data-student-id');
+            const form = document.getElementById('actionForm' + studentId);
+            const markVerifiedInput = document.getElementById('markVerifiedInput' + studentId);
+
+            // Show confirmation alert
+            if (confirm('Are you sure you want to mark this student as verified?')) {
+                markVerifiedInput.value = '1'; // Set value to indicate verification
+                form.submit();
+            }
+        });
+    });
+
+    document.querySelectorAll('.reject-trigger').forEach(button => {
+        button.addEventListener('click', function() {
+            const studentId = this.getAttribute('data-student-id');
+            const form = document.getElementById('actionForm' + studentId);
+            const rejectApplicantInput = document.getElementById('rejectApplicantInput' + studentId);
+
+            // Show confirmation alert
+            if (confirm('Are you sure you want to reject this applicant?')) {
+                rejectApplicantInput.value = '1'; // Set value to indicate rejection
+                form.submit();
+            }
+        });
+    });
+</script>
 </body>
 </html>
