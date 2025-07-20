@@ -1,0 +1,54 @@
+/* === verify_students.css === */
+
+/* Improve card visuals */
+.card {
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.035);
+}
+
+/* Card body spacing */
+.card-body {
+  padding-top: 1.25rem;
+  padding-bottom: 1.25rem;
+}
+
+/* Spacing for section title */
+h2.fw-bold {
+  font-size: 1.6rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Responsive filter form */
+@media (max-width: 767.98px) {
+  .card-body .row > div {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+}
+
+/* Table enhancements */
+.table thead th {
+  background-color: #f9f9f9;
+  font-weight: 600;
+}
+
+.table-hover tbody tr:hover {
+  background-color: #f1f5f9;
+}
+
+/* Empty state row */
+.table td.text-muted {
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+/* Button section spacing */
+.action-buttons {
+  padding-top: 1.5rem;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}

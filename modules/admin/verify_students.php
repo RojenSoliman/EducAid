@@ -1,118 +1,98 @@
 <?php
-include __DIR__ . '/../../config/database.php';
 session_start();
 if (!isset($_SESSION['admin_username'])) {
     header("Location: index.php");
     exit;
 }
 
-// Check finalized state from config table
+include '../../config/database.php';
+
+// Finalized status
 $isFinalized = false;
-$configResult = pg_query($connection, "SELECT value FROM config WHERE key = 'student_list_finalized'");
-if ($configResult && $row = pg_fetch_assoc($configResult)) {
-    $isFinalized = ($row['value'] === '1');
-}
+$res = pg_query($connection, "SELECT value FROM config WHERE key = 'student_list_finalized'");
+if ($res && $row = pg_fetch_assoc($res)) $isFinalized = $row['value'] === '1';
 
-// Handle form submissions
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-      // Revert students to applicants
-    if (isset($_POST['deactivate']) && isset($_POST['selected_actives'])) {
-        foreach ($_POST['selected_actives'] as $student_id) {
-            pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
-            $isFinalized = false;
-        }
-        // Also reset finalized flag in config and reload page
-        pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
-        header('Location: ' . $_SERVER['PHP_SELF']);
-        exit;
-    }
-    // Finalize list
-    if (isset($_POST['finalize_list'])) {
-        pg_query($connection, "UPDATE config SET value = '1' WHERE key = 'student_list_finalized'");
-        $isFinalized = true;
-    }
-    // Revert list
-    if (isset($_POST['revert_list'])) {
-        pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
-        $isFinalized = false;
-        // Reset all payroll numbers to 0 if requested
-        if (isset($_POST['reset_payroll'])) {
-            pg_query($connection, "UPDATE students SET payroll_no = 0");
-        }
-    }
-}
-
-// Get filter and sort parameters
+// Filters
 $sort = $_GET['sort'] ?? 'asc';
 $barangayFilter = $_GET['barangay'] ?? '';
-$searchSurname = trim($_GET['search_surname'] ?? '');
+$search = trim($_GET['search_surname'] ?? '');
 
-// Base query
-$query = "SELECT * FROM students WHERE status = 'active'";
+// Query students
+$query = "
+    SELECT s.student_id, s.first_name, s.middle_name, s.last_name, s.mobile, s.email, s.payroll_no, b.name AS barangay
+    FROM students s
+    JOIN barangays b ON s.barangay_id = b.barangay_id
+    WHERE s.status = 'active'";
 $params = [];
 
-// If searching by surname
-if (!empty($searchSurname)) {
-    $query .= " AND last_name ILIKE $1";
-    $params[] = "%$searchSurname%";
+if (!empty($search)) {
+    $query .= " AND s.last_name ILIKE $1";
+    $params[] = "%$search%";
 }
 
-// Add sorting
-$query .= " ORDER BY last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
-
-// Run the query
-if (!empty($params)) {
-    $actives = pg_query_params($connection, $query, $params);
-} else {
-    $actives = pg_query($connection, $query);
+if (!empty($barangayFilter)) {
+    $query .= empty($params) ? " AND b.barangay_id = $1" : " AND b.barangay_id = $2";
+    $params[] = $barangayFilter;
 }
 
-// Barangay list
+$query .= " ORDER BY s.last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
+$students = count($params) ? pg_query_params($connection, $query, $params) : pg_query($connection, $query);
+
+// Barangays
 $barangayOptions = [];
-$barangayResult = pg_query($connection, "SELECT barangay_id, name FROM barangays ORDER BY name ASC");
-while ($row = pg_fetch_assoc($barangayResult)) {
-    $barangayOptions[] = $row;
-}
+$res = pg_query($connection, "SELECT barangay_id, name FROM barangays ORDER BY name ASC");
+while ($row = pg_fetch_assoc($res)) $barangayOptions[] = $row;
 
+// Check payroll
+$payrollCheck = pg_query($connection, "SELECT COUNT(*) AS total, SUM(CASE WHEN payroll_no > 0 THEN 1 ELSE 0 END) AS with_payroll FROM students WHERE status = 'active'");
+$row = pg_fetch_assoc($payrollCheck);
+$allHavePayroll = $row && $row['total'] == $row['with_payroll'];
 
-function fetch_students($connection, $status, $sort, $barangayFilter) {
-    $query = "
-        SELECT s.student_id, s.first_name, s.middle_name, s.last_name, s.mobile, s.email, b.name AS barangay, s.payroll_no
-        FROM students s
-        JOIN barangays b ON s.barangay_id = b.barangay_id
-        WHERE s.status = $1";
-    $params = [$status];
-    if (!empty($barangayFilter)) {
-        $query .= " AND b.barangay_id = $2";
-        $params[] = $barangayFilter;
-    }
-    $query .= " ORDER BY s.last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
-    return pg_query_params($connection, $query, $params);
-}
-
-// Check if all active students have payroll_no > 0
-$allHavePayroll = false;
-if ($isFinalized) {
-    $payrollCheck = pg_query($connection, "SELECT COUNT(*) AS total, SUM(CASE WHEN payroll_no > 0 THEN 1 ELSE 0 END) AS with_payroll FROM students WHERE status = 'active'");
-    $row = pg_fetch_assoc($payrollCheck);
-    if ($row && $row['total'] > 0 && intval($row['total']) === intval($row['with_payroll'])) {
-        $allHavePayroll = true;
-    }
-}
-// Handle CSV export before any output
-if (
-    $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_csv'])
-) {
+// Export CSV
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_csv'])) {
     header('Content-Type: text/csv');
-    header('Content-Disposition: attachment; filename="active_students_' . date('Ymd_His') . '.csv"');
+    header('Content-Disposition: attachment; filename="active_students.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['student number','payroll number','lname','fname','mname','mobile number']);
-    $csvRes = pg_query($connection, "SELECT student_id, payroll_no, last_name, first_name, middle_name, mobile FROM students WHERE status = 'active' ORDER BY last_name ASC");
-    while ($r = pg_fetch_assoc($csvRes)) {
-        fputcsv($out, [$r['student_id'], $r['payroll_no'], $r['last_name'], $r['first_name'], $r['middle_name'], $r['mobile']]);
-    }
+    fputcsv($out, ['Student ID', 'Payroll No', 'Last Name', 'First Name', 'Middle Name', 'Mobile']);
+    $res = pg_query($connection, "SELECT student_id, payroll_no, last_name, first_name, middle_name, mobile FROM students WHERE status = 'active' ORDER BY last_name");
+    while ($r = pg_fetch_assoc($res)) fputcsv($out, $r);
     fclose($out);
     exit;
+}
+
+// Handle actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['deactivate']) && isset($_POST['selected'])) {
+        foreach ($_POST['selected'] as $sid) {
+            pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$sid]);
+        }
+        pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
+        header("Location: verify_students.php");
+        exit;
+    }
+
+    if (isset($_POST['finalize'])) {
+        pg_query($connection, "UPDATE config SET value = '1' WHERE key = 'student_list_finalized'");
+        header("Location: verify_students.php");
+        exit;
+    }
+
+    if (isset($_POST['revert'])) {
+        pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
+        pg_query($connection, "UPDATE students SET payroll_no = 0 WHERE status = 'active'");
+        header("Location: verify_students.php");
+        exit;
+    }
+
+    if (isset($_POST['generate_payroll'])) {
+        $res = pg_query($connection, "SELECT student_id FROM students WHERE status = 'active' ORDER BY last_name, first_name");
+        $num = 1;
+        while ($r = pg_fetch_assoc($res)) {
+            pg_query_params($connection, "UPDATE students SET payroll_no = $1 WHERE student_id = $2", [$num++, $r['student_id']]);
+        }
+        echo "<script>alert('Payroll numbers generated successfully.'); location.href='verify_students.php';</script>";
+        exit;
+    }
 }
 ?>
 
@@ -121,334 +101,139 @@ if (
 <head>
   <meta charset="UTF-8">
   <title>Verify Students</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
-  <link rel="stylesheet" href="../../assets/css/admin_homepage.css">
-  <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="../../assets/css/admin/homepage.css">
+  <link rel="stylesheet" href="../../assets/css/admin/sidebar.css">
+  <link rel="stylesheet" href="../../assets/css/admin/verify_students.css">
 </head>
 <body>
-<div class="container-fluid">
-  <div class="row">
-    <!-- Sidebar -->
-    <?php include '../../includes/admin/admin_sidebar.php'; ?>
+<div id="wrapper">
+  <?php include '../../includes/admin/admin_sidebar.php'; ?>
+  <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
 
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+  <section class="home-section" id="mainContent">
+    <nav>
+      <div class="sidebar-toggle px-4 py-3">
+        <i class="bi bi-list" id="menu-toggle"></i>
+      </div>
+    </nav>
 
-    <!-- Main -->
-    <main class="col-md-10 ms-sm-auto px-4 py-4">
-      <h2 class="mb-4">Manage Student Status</h2>
+    <div class="container-fluid px-4 py-4">
+      <h2 class="fw-bold mb-1">Manage Verified Students</h2>
+      <p class="text-muted mb-4">View and manage students who have been verified for payroll assignment.</p>
 
-      <!-- Filter -->
-      <form method="GET" class="row mb-4 g-3">
-        <div class="col-md-4">
-          <label for="sort" class="form-label">Sort by Name</label>
-          <select name="sort" id="sort" class="form-select">
-            <option value="asc" <?= $sort === 'asc' ? 'selected' : '' ?>>A to Z</option>
-            <option value="desc" <?= $sort === 'desc' ? 'selected' : '' ?>>Z to A</option>
-          </select>
+      <!-- Filter Card -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <form class="row g-3" method="GET">
+            <div class="col-12 col-md-3">
+              <label class="form-label">Sort by Surname</label>
+              <select name="sort" class="form-select">
+                <option value="asc" <?= $sort === 'asc' ? 'selected' : '' ?>>A to Z</option>
+                <option value="desc" <?= $sort === 'desc' ? 'selected' : '' ?>>Z to A</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label">Search by Surname</label>
+              <input type="text" name="search_surname" class="form-control" value="<?= htmlspecialchars($search) ?>">
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label">Filter by Barangay</label>
+              <select name="barangay" class="form-select">
+                <option value="">All</option>
+                <?php foreach ($barangayOptions as $b): ?>
+                  <option value="<?= $b['barangay_id'] ?>" <?= $barangayFilter == $b['barangay_id'] ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($b['name']) ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-12 col-md-3 d-flex align-items-end">
+              <button type="submit" class="btn btn-primary w-100"><i class="bi bi-filter"></i> Apply</button>
+            </div>
+          </form>
         </div>
-        <div class="col-md-4">
-          <label for="search_surname" class="form-label">Search by Surname</label>
-          <input type="text" name="search_surname" class="form-control" value="<?= htmlspecialchars($searchSurname) ?>" />
-        </div>
-        <div class="col-md-4">
-          <label for="barangay" class="form-label">Filter by Barangay</label>
-          <select name="barangay" id="barangay" class="form-select">
-            <option value="">All Barangays</option>
-            <?php foreach ($barangayOptions as $b): ?>
-              <option value="<?= $b['barangay_id'] ?>" <?= $barangayFilter == $b['barangay_id'] ? 'selected' : '' ?>><?= htmlspecialchars($b['name']) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        <div class="col-md-4 d-flex align-items-end">
-          <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
-        </div>
-        <?php if ($allHavePayroll): ?>
-        <div class="col-md-4 d-flex align-items-end">
-          <button type="button" class="btn btn-secondary w-100" id="exportCsvBtn">Export to .csv</button>
-        </div>
-        <?php endif; ?>
-      </form>
+      </div>
 
-      <!-- Active Students Table -->
-      <form method="POST" id="activeStudentsForm">
-        <div class="card">
-          <div class="card-header bg-success text-white">Active Students</div>
-          <div class="card-body">
-            <table class="table table-hover table-bordered">
-              <thead>
-                <tr>
-                  <th><input type="checkbox" id="selectAllActive" <?= $isFinalized ? 'disabled' : '' ?>></th>
-                  <th>Full Name</th>
-                  <th>Email</th>
-                  <th>Mobile Number</th>
-                  <th>Barangay</th>
-                  <th class="payroll-col<?= $isFinalized ? '' : ' d-none' ?>">Payroll Number</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php
-                $actives = fetch_students($connection, 'active', $sort, $barangayFilter);
-                if (pg_num_rows($actives) > 0):
-                  while ($row = pg_fetch_assoc($actives)):
-                    $id = $row['student_id'];
-                    $name = htmlspecialchars($row['last_name'] . ', ' . $row['first_name'] . ' ' . $row['middle_name']);
-                    $email = htmlspecialchars($row['email']);
-                    $mobile = htmlspecialchars($row['mobile']);
-                    $barangay = htmlspecialchars($row['barangay']);
-                    $payroll_no = isset($row['payroll_no']) ? $row['payroll_no'] : '';
-                    echo "<tr>
-                            <td><input type='checkbox' name='selected_actives[]' value='$id'" . ($isFinalized ? " disabled" : "") . "></td>
-                            <td>$name</td>
-                            <td>$email</td>
-                            <td>$mobile</td>
-                            <td>$barangay</td>
-                            <td class='payroll-col'" . ($isFinalized ? "" : " style='display:none'") . ">$payroll_no</td>
-                          </tr>";
-                  endwhile;
-                else:
-                  echo "<tr><td colspan='6'>No active students found.</td></tr>";
-                endif;
-                ?>
-              </tbody>
-            </table>
-            <button type="submit" name="deactivate" class="btn btn-danger mt-2" id="revertBtn"<?= $isFinalized ? ' disabled' : '' ?>>Revert to Applicant</button>
-            <!-- Finalize/Revert Button -->
-            <?php if ($isFinalized): ?>
-                <button type="submit" name="revert_list" class="btn btn-warning mt-2" id="revertTriggerBtn">Revert List</button>
-                <button type="button" class="btn btn-primary mt-2 ms-2" id="generatePayrollBtn" <?= $allHavePayroll ? 'disabled' : '' ?>>Generate Payroll Numbers</button>
-            <?php else: ?>
-                <button type="button" class="btn btn-success mt-2" id="finalizeTriggerBtn">Finalize List</button>
-                <input type="hidden" name="finalize_list" id="finalizeListInput" value="">
-                <button type="button" class="btn btn-primary mt-2 ms-2 d-none" id="generatePayrollBtn">Generate Payroll Numbers</button>
-            <?php endif; ?>
+      <!-- Students Table -->
+      <form method="POST">
+        <div class="card shadow-sm">
+          <div class="card-header bg-light text-dark fw-semibold">Active Students</div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width: 40px"><input type="checkbox" id="selectAll" <?= $isFinalized ? 'disabled' : '' ?>></th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Mobile</th>
+                    <th>Barangay</th>
+                    <th>Payroll #</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php if (pg_num_rows($students) > 0): ?>
+                    <?php while ($s = pg_fetch_assoc($students)): ?>
+                      <tr>
+                        <td><input type="checkbox" name="selected[]" value="<?= $s['student_id'] ?>" <?= $isFinalized ? 'disabled' : '' ?>></td>
+                        <td><?= htmlspecialchars("{$s['last_name']}, {$s['first_name']} {$s['middle_name']}") ?></td>
+                        <td><?= htmlspecialchars($s['email']) ?></td>
+                        <td><?= htmlspecialchars($s['mobile']) ?></td>
+                        <td><?= htmlspecialchars($s['barangay']) ?></td>
+                        <td><?= $s['payroll_no'] > 0 ? $s['payroll_no'] : '-' ?></td>
+                      </tr>
+                    <?php endwhile; ?>
+                  <?php else: ?>
+                    <tr><td colspan="6" class="text-center py-4 text-muted">
+                      <i class="bi bi-info-circle me-2"></i>No students found for the current filters.
+                    </td></tr>
+                  <?php endif; ?>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+          <button type="submit" name="deactivate" class="btn btn-danger" <?= $isFinalized ? 'disabled' : '' ?>>
+            <i class="bi bi-arrow-counterclockwise"></i> Revert to Applicant
+          </button>
+
+          <?php if ($isFinalized): ?>
+            <button type="submit" name="revert" class="btn btn-warning">
+              <i class="bi bi-x-circle"></i> Revert Finalization
+            </button>
+            <button type="submit" name="generate_payroll" class="btn btn-primary" <?= $allHavePayroll ? 'disabled' : '' ?>>
+              <i class="bi bi-gear-fill"></i> Generate Payroll Numbers
+            </button>
+            <button type="submit" name="export_csv" class="btn btn-success">
+              <i class="bi bi-download"></i> Export to CSV
+            </button>
+          <?php else: ?>
+            <button type="submit" name="finalize" class="btn btn-success">
+              <i class="bi bi-check-circle"></i> Finalize List
+            </button>
+          <?php endif; ?>
+        </div>
       </form>
-    </main>
-  </div>
-</div>
-
-<!-- Modal for Finalize Confirmation -->
-<div class="modal fade" id="finalizeModal" tabindex="-1" aria-labelledby="finalizeModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="finalizeModalLabel">Finalize Student List</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        Are you sure you want to finalize the student list for payroll number generation?
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="finalizeConfirmBtnModal">Finalize</button>
-      </div>
     </div>
-  </div>
-</div>
-
-<!-- Modal for Generate Payroll Confirmation -->
-<div class="modal fade" id="generatePayrollModal" tabindex="-1" aria-labelledby="generatePayrollModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="generatePayrollModalLabel">Generate Payroll Numbers</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        Are you sure you want to generate payroll numbers for all active students? This will overwrite any existing payroll numbers.
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="generatePayrollConfirmBtnModal">Generate</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal for Revert Confirmation -->
-<div class="modal fade" id="revertListModal" tabindex="-1" aria-labelledby="revertListModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="revertListModalLabel">Revert List</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        Are you sure you want to revert? All payroll numbers will reset if they have already been generated.
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="revertListConfirmBtnModal">Yes, Revert</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal for Export CSV Confirmation -->
-<div class="modal fade" id="exportCsvModal" tabindex="-1" aria-labelledby="exportCsvModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="exportCsvModalLabel">Export Active Students to CSV</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        This will download a CSV of all active students with payroll numbers. Continue?
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="exportCsvConfirmBtnModal">Export</button>
-      </div>
-    </div>
-  </div>
+  </section>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../assets/js/admin/sidebar.js"></script>
 <script>
-  // Handler to show finalize confirmation modal
-  function finalizeHandler(e) {
-    e.preventDefault();
-    var finalizeModal = new bootstrap.Modal(document.getElementById('finalizeModal'));
-    finalizeModal.show();
-  }
-  // Attach handler to Finalize button
-  document.getElementById('finalizeTriggerBtn')?.addEventListener('click', finalizeHandler);
-  document.getElementById('finalizeConfirmBtnModal')?.addEventListener('click', function () {
-    // Set hidden input to trigger finalize on submit
-    document.getElementById('finalizeListInput').value = '1';
-    document.getElementById('activeStudentsForm').submit();
-  });
-
-  // Generate Payroll Numbers confirmation
-  document.getElementById('generatePayrollBtn')?.addEventListener('click', function () {
-    var generatePayrollModal = new bootstrap.Modal(document.getElementById('generatePayrollModal'));
-    generatePayrollModal.show();
-  });
-  document.getElementById('generatePayrollConfirmBtnModal')?.addEventListener('click', function () {
-    // Submit hidden form to generate payroll numbers
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.style.display = 'none';
-    var input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'generate_payroll';
-    input.value = '1';
-    form.appendChild(input);
-    document.body.appendChild(form);
-    form.submit();
-  });
-
-  // Revert List confirmation
-  document.getElementById('revertTriggerBtn')?.addEventListener('click', function (e) {
-    e.preventDefault();
-    var revertListModal = new bootstrap.Modal(document.getElementById('revertListModal'));
-    revertListModal.show();
-  });
-  document.getElementById('revertListConfirmBtnModal')?.addEventListener('click', function () {
-    // Submit hidden form to revert and reset payroll numbers
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.style.display = 'none';
-    var input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'revert_list';
-    input.value = '1';
-    form.appendChild(input);
-    var resetInput = document.createElement('input');
-    resetInput.type = 'hidden';
-    resetInput.name = 'reset_payroll';
-    resetInput.value = '1';
-    form.appendChild(resetInput);
-    document.body.appendChild(form);
-    form.submit();
-  });
-
-  // Export CSV button
-  document.getElementById('exportCsvBtn')?.addEventListener('click', function() {
-    var exportModal = new bootstrap.Modal(document.getElementById('exportCsvModal'));
-    exportModal.show();
-  });
-  document.getElementById('exportCsvConfirmBtnModal')?.addEventListener('click', function() {
-    var form = document.createElement('form');
-    form.method = 'POST';
-    form.style.display = 'none';
-    var input = document.createElement('input');
-    input.type = 'hidden'; input.name = 'export_csv'; input.value = '1';
-    form.appendChild(input);
-    document.body.appendChild(form);
-    form.submit();
-  });
-
-  // Revert handler to re-enable checkboxes and revert button
-  function revertHandler() {
-    document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = false);
-    document.getElementById('revertBtn').disabled = false;
-    var revertBtn = document.getElementById('revertTriggerBtn');
-    revertBtn.textContent = 'Finalize List';
-    revertBtn.classList.remove('btn-warning');
-    revertBtn.classList.add('btn-success');
-    revertBtn.id = 'finalizeTriggerBtn';
-    revertBtn.removeEventListener('click', revertHandler);
-    revertBtn.addEventListener('click', finalizeHandler);
-    // Hide Generate Payroll Numbers button
-    document.getElementById('generatePayrollBtn').classList.add('d-none');
-    // Hide payroll number column
-    document.querySelectorAll('.payroll-col').forEach(col => col.classList.add('d-none'));
-  }
-
-
-  // On page load, set up UI based on PHP $isFinalized
-  var isFinalized = <?= $isFinalized ? 'true' : 'false' ?>;
-  function setFinalizedUI(finalized) {
-  document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = finalized);
-  document.getElementById('revertBtn').disabled = finalized;
-  if (finalized) {
-    document.getElementById('generatePayrollBtn').classList.remove('d-none');
-    document.querySelectorAll('.payroll-col').forEach(col => col.classList.remove('d-none'));
-  } else {
-    document.getElementById('generatePayrollBtn').classList.add('d-none');
-    document.querySelectorAll('.payroll-col').forEach(col => col.classList.add('d-none'));
-  }
-}
-window.addEventListener('load', function() {
-  setFinalizedUI(isFinalized);
-  // Select-all checkbox functionality
-  var selectAll = document.getElementById('selectAllActive');
-  if (selectAll) {
-    selectAll.addEventListener('change', function() {
-      var cbs = document.getElementsByName('selected_actives[]');
-      for (var i = 0; i < cbs.length; i++) {
-        if (!cbs[i].disabled) {
-          cbs[i].checked = selectAll.checked;
-        }
-      }
+  document.getElementById('selectAll')?.addEventListener('change', function () {
+    document.querySelectorAll("input[name='selected[]']").forEach(cb => {
+      if (!cb.disabled) cb.checked = this.checked;
     });
-  }
-});
+  });
 </script>
-
 </body>
 </html>
 
-<?php
-// Handle payroll number generation
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_payroll'])) {
-    // Get all active students ordered by last name ASC
-    $result = pg_query($connection, "SELECT student_id FROM students WHERE status = 'active' ORDER BY last_name ASC, first_name ASC, middle_name ASC");
-    $payroll_no = 1;
-    if ($result) {
-        while ($row = pg_fetch_assoc($result)) {
-            $sid = $row['student_id'];
-            pg_query_params($connection, "UPDATE students SET payroll_no = $1 WHERE student_id = $2", array($payroll_no, $sid));
-            $payroll_no++;
-        }
-    }
-    echo "<script>alert('Payroll numbers generated successfully!'); window.location.href = 'verify_students.php';</script>";
-    exit;
-}
-
-// Close DB connection
-pg_close($connection);
-?>
+<?php pg_close($connection); ?>
