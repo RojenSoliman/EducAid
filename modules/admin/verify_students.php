@@ -99,6 +99,21 @@ if ($isFinalized) {
         $allHavePayroll = true;
     }
 }
+// Handle CSV export before any output
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_csv'])
+) {
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="active_students_' . date('Ymd_His') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['student number','payroll number','lname','fname','mname','mobile number']);
+    $csvRes = pg_query($connection, "SELECT student_id, payroll_no, last_name, first_name, middle_name, mobile FROM students WHERE status = 'active' ORDER BY last_name ASC");
+    while ($r = pg_fetch_assoc($csvRes)) {
+        fputcsv($out, [$r['student_id'], $r['payroll_no'], $r['last_name'], $r['first_name'], $r['middle_name'], $r['mobile']]);
+    }
+    fclose($out);
+    exit;
+}
 ?>
 
 <!DOCTYPE html>
@@ -148,6 +163,11 @@ if ($isFinalized) {
         <div class="col-md-4 d-flex align-items-end">
           <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
         </div>
+        <?php if ($allHavePayroll): ?>
+        <div class="col-md-4 d-flex align-items-end">
+          <button type="button" class="btn btn-secondary w-100" id="exportCsvBtn">Export to .csv</button>
+        </div>
+        <?php endif; ?>
       </form>
 
       <!-- Active Students Table -->
@@ -266,6 +286,25 @@ if ($isFinalized) {
   </div>
 </div>
 
+<!-- Modal for Export CSV Confirmation -->
+<div class="modal fade" id="exportCsvModal" tabindex="-1" aria-labelledby="exportCsvModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="exportCsvModalLabel">Export Active Students to CSV</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        This will download a CSV of all active students with payroll numbers. Continue?
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="exportCsvConfirmBtnModal">Export</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   // Handler to show finalize confirmation modal
@@ -322,6 +361,22 @@ if ($isFinalized) {
     resetInput.name = 'reset_payroll';
     resetInput.value = '1';
     form.appendChild(resetInput);
+    document.body.appendChild(form);
+    form.submit();
+  });
+
+  // Export CSV button
+  document.getElementById('exportCsvBtn')?.addEventListener('click', function() {
+    var exportModal = new bootstrap.Modal(document.getElementById('exportCsvModal'));
+    exportModal.show();
+  });
+  document.getElementById('exportCsvConfirmBtnModal')?.addEventListener('click', function() {
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.style.display = 'none';
+    var input = document.createElement('input');
+    input.type = 'hidden'; input.name = 'export_csv'; input.value = '1';
+    form.appendChild(input);
     document.body.appendChild(form);
     form.submit();
   });
@@ -394,5 +449,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate_payroll'])) 
     exit;
 }
 
+// Close DB connection
 pg_close($connection);
 ?>
