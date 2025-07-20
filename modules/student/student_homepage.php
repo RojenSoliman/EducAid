@@ -6,6 +6,13 @@ if (!isset($_SESSION['student_username'])) {
 }
 // Include database connection
 include __DIR__ . '/../../config/database.php';
+
+if (!isset($_SESSION['schedule_modal_shown'])) {
+    $_SESSION['schedule_modal_shown'] = true;
+    $showScheduleModal = true;
+} else {
+    $showScheduleModal = false;
+}
 ?>
 
 <!DOCTYPE html>
@@ -161,6 +168,8 @@ include __DIR__ . '/../../config/database.php';
         $settings = file_exists(__DIR__ . '/../../data/municipal_settings.json')
             ? json_decode(file_get_contents(__DIR__ . '/../../data/municipal_settings.json'), true)
             : [];
+        // Load scheduled location
+        $location = isset($settings['schedule_meta']['location']) ? $settings['schedule_meta']['location'] : '';
         if (!empty($settings['schedule_published'])) {
             // Fetch this student's schedule
             $studentId = $_SESSION['student_id'];
@@ -177,9 +186,41 @@ include __DIR__ . '/../../config/database.php';
                 [$studentId]
             );
             if ($schedRes && pg_num_rows($schedRes) > 0) {
+                $rows = pg_fetch_all($schedRes);
+                // Show modal on first login instead of alert
+                if ($showScheduleModal) {
+                    echo '<div class="modal fade" id="scheduleModal" tabindex="-1" aria-labelledby="scheduleModalLabel" aria-hidden="true">'
+                       . '<div class="modal-dialog modal-dialog-centered">'
+                       . '<div class="modal-content">'
+                       . '<div class="modal-header">'
+                       . '<h5 class="modal-title" id="scheduleModalLabel">Your Distribution Schedule</h5>'
+                       . '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>'
+                       . '</div>'
+                       . '<div class="modal-body">';
+                    // Display location
+                    if ($location !== '') {
+                        echo '<p><strong>Location:</strong> ' . htmlspecialchars($location) . '</p>';
+                    }
+                    foreach ($rows as $r) {
+                        echo htmlspecialchars($r['distribution_date']) . ' (Batch ' . htmlspecialchars($r['batch_no']) . '): ' . htmlspecialchars($r['time_slot']) . '<br>';
+                    }
+                    echo '</div><div class="modal-footer">'
+                       . '<button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>'
+                       . '</div></div></div></div>';
+                    // JS trigger for modal
+                    echo '<script>document.addEventListener("DOMContentLoaded", function() {'
+                        . 'var modal = new bootstrap.Modal(document.getElementById("scheduleModal"));'
+                        . 'modal.show();'
+                        . '});</script>';
+                }
+                // Render schedule card
                 echo "<div class='custom-card mb-4'><div class='custom-card-header bg-info text-white'><h5 class='mb-0'><i class='bi bi-calendar3 me-2'></i>Your Schedule</h5></div><div class='custom-card-body'>";
+                // Show location in card
+                if ($location !== '') {
+                    echo '<p><strong>Location:</strong> ' . htmlspecialchars($location) . '</p>';
+                }
                 echo "<table class='table'><thead><tr><th>Date</th><th>Batch</th><th>Time Slot</th></tr></thead><tbody>";
-                while ($s = pg_fetch_assoc($schedRes)) {
+                foreach ($rows as $s) {
                     echo '<tr>'
                          . '<td>' . htmlspecialchars($s['distribution_date']) . '</td>'
                          . '<td>' . htmlspecialchars($s['batch_no']) . '</td>'

@@ -119,6 +119,7 @@ CREATE TABLE schedules (
     batch_no INT NOT NULL,
     distribution_date DATE NOT NULL,
     time_slot TEXT NOT NULL,
+    location TEXT NOT NULL DEFAULT '',
     status TEXT CHECK (status IN ('scheduled', 'completed', 'missed')) DEFAULT 'scheduled',
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()

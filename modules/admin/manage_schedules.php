@@ -4,6 +4,8 @@ session_start();
 // Load settings for publish state
 $settingsPath = __DIR__ . '/../../data/municipal_settings.json';
 $settings = file_exists($settingsPath) ? json_decode(file_get_contents($settingsPath), true) : [];
+// Load location from previous settings or default
+$location = $settings['schedule_meta']['location'] ?? '';
 
 // Handle publish schedule action
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) {
@@ -18,6 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) 
         $endTimes = $meta['end_times'];
         $batch1Cap = intval($meta['batch1_capacity']);
         $batch2Cap = intval($meta['batch2_capacity']);
+        // Load location for republish
+        $location = $meta['location'];
+        $locLit = pg_escape_literal($connection, $location);
         // Persist schedule records
         $counter = 1; // start assignment at first payroll number
         $curDate = $startDate;
@@ -30,8 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) 
                 pg_free_result($sidRes);
                 $studentId = $sid ? intval($sid['student_id']) : null;
                 $timeSlot = pg_escape_literal($connection, "{$startTimes[0]} - {$endTimes[0]}");
-                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot) VALUES (" .
-                    ($studentId !== null ? $studentId : 'NULL') . ", $pno, 1, '$curDate', $timeSlot)");
+                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot, location) VALUES (" .
+                    ($studentId !== null ? $studentId : 'NULL') . ", $pno, 1, '$curDate', $timeSlot, $locLit)");
                 $counter++;
             }
             // Batch 2
@@ -42,8 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) 
                 pg_free_result($sidRes);
                 $studentId = $sid ? intval($sid['student_id']) : null;
                 $timeSlot = pg_escape_literal($connection, "{$startTimes[1]} - {$endTimes[1]}");
-                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot) VALUES (" .
-                    ($studentId !== null ? $studentId : 'NULL') . ", $pno, 2, '$curDate', $timeSlot)");
+                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot, location) VALUES (" .
+                    ($studentId !== null ? $studentId : 'NULL') . ", $pno, 2, '$curDate', $timeSlot, $locLit)");
                 $counter++;
             }
             $curDate = date('Y-m-d', strtotime("$curDate +1 day"));
@@ -107,6 +112,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
     $endTimes = $_POST['end_time'];
     $batch1Cap = intval($_POST['batch1_capacity']);
     $batch2Cap = intval($_POST['batch2_capacity']);
+    // Capture location
+    $location = trim($_POST['location']);
+    $locLit = pg_escape_literal($connection, $location);
     // Persist schedule records to DB
     if (function_exists('pg_query')) {
         $counter = 1; // start assignment at first payroll number
@@ -122,8 +130,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
                 pg_free_result($sidRes);
                 // insert schedule
                 $timeSlot = pg_escape_literal($connection, "{$startTimes[0]} - {$endTimes[0]}");
-                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot) VALUES (".
-                    ($studentId !== null ? $studentId : 'NULL').", $pno, 1, '$curDate', $timeSlot)");
+                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot, location) VALUES (".
+                    ($studentId !== null ? $studentId : 'NULL').", $pno, 1, '$curDate', $timeSlot, $locLit)");
                 $counter++;
             }
             // Batch 2
@@ -134,8 +142,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
                 $studentId = $sidRow ? intval($sidRow['student_id']) : null;
                 pg_free_result($sidRes);
                 $timeSlot = pg_escape_literal($connection, "{$startTimes[1]} - {$endTimes[1]}");
-                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot) VALUES (".
-                    ($studentId !== null ? $studentId : 'NULL').", $pno, 2, '$curDate', $timeSlot)");
+                pg_query($connection, "INSERT INTO schedules (student_id, payroll_no, batch_no, distribution_date, time_slot, location) VALUES (".
+                    ($studentId !== null ? $studentId : 'NULL').", $pno, 2, '$curDate', $timeSlot, $locLit)");
                 $counter++;
             }
             // next date
@@ -148,7 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_save'])) {
             'start_times' => $startTimes,
             'end_times' => $endTimes,
             'batch1_capacity' => $batch1Cap,
-            'batch2_capacity' => $batch2Cap
+            'batch2_capacity' => $batch2Cap,
+            'location' => $location
         ];
         file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
     }
@@ -212,6 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     <main class="col-md-10 ms-sm-auto px-4 py-4">
     <?php if ($showSaved): ?>
         <h4>Current Schedule</h4>
+        <p><strong>Location:</strong> <?php echo htmlspecialchars($location); ?></p>
         <!-- Hidden edit form -->
         <form id="edit-form" method="POST" class="d-none">
             <input type="hidden" name="confirm_edit" value="1">
@@ -266,7 +276,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     <p class="lead">Current maximum payroll number: <?php echo htmlspecialchars($maxPayroll); ?></p>
 
     <!-- Step 1: Input Dates -->
-    <!-- Step 1: Input Dates -->
     <div id="step-1">
         <h4>Step 1: Select Dates</h4>
         <form id="dates-form" method="POST" class="mb-4">
@@ -278,6 +287,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
                 <div class="col-md-6">
                     <label for="end_date" class="form-label">End Date</label>
                     <input type="date" class="form-control" name="end_date" required>
+                </div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-12">
+                    <label for="location" class="form-label">Location</label>
+                    <input type="text" class="form-control" name="location" required placeholder="Enter location">
                 </div>
             </div>
             <button type="button" id="next-to-step-2" class="btn btn-primary">Next</button>
@@ -541,17 +556,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             }
             // Insert hidden inputs into form for final submission
             const form = document.getElementById('payroll-allocation-form');
-            form.insertAdjacentHTML('beforeend', `
-                <input type="hidden" name="start_date" value="${dateStart}">
-                <input type="hidden" name="end_date" value="${dateEnd}">
-                <input type="hidden" name="start_time[]" value="${intervalsData[0].start}">
-                <input type="hidden" name="end_time[]" value="${intervalsData[0].end}">
-                <input type="hidden" name="start_time[]" value="${intervalsData[1].start}">
-                <input type="hidden" name="end_time[]" value="${intervalsData[1].end}">
-                <input type="hidden" name="batch1_capacity" value="${b1}">
-                <input type="hidden" name="batch2_capacity" value="${b2}">
-                <input type="hidden" name="confirm_save" value="1">
-            `);
+            // Capture location from Step 1
+            const locationVal = document.querySelector('input[name="location"]').value;
+form.insertAdjacentHTML('beforeend', `
+    <input type="hidden" name="start_date" value="${dateStart}">
+    <input type="hidden" name="end_date" value="${dateEnd}">
+    <input type="hidden" name="start_time[]" value="${intervalsData[0].start}">
+    <input type="hidden" name="end_time[]" value="${intervalsData[0].end}">
+    <input type="hidden" name="start_time[]" value="${intervalsData[1].start}">
+    <input type="hidden" name="end_time[]" value="${intervalsData[1].end}">
+    <input type="hidden" name="batch1_capacity" value="${b1}">
+    <input type="hidden" name="batch2_capacity" value="${b2}">
+    <input type="hidden" name="location" value="${locationVal}">
+    <input type="hidden" name="confirm_save" value="1">
+`);
             // Show Save Schedule button now that preview exists
             document.getElementById('save-schedule-btn').classList.remove('d-none');
         });
