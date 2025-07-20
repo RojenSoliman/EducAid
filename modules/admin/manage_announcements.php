@@ -17,6 +17,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['post_announcement']))
     header('Location: ' . $_SERVER['PHP_SELF'] . '?posted=1');
     exit;
 }
+// Handle toggle (unpost/repost) actions for announcements
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_active'])) {
+    $aid = (int) $_POST['announcement_id'];
+    if ($_POST['toggle_active'] == '1') {
+        // Repost: deactivate all then activate this
+        pg_query($connection, "UPDATE announcements SET is_active = FALSE");
+        pg_query_params($connection, "UPDATE announcements SET is_active = TRUE WHERE announcement_id = $1", [$aid]);
+    } else {
+        // Unpost: deactivate this only
+        pg_query_params($connection, "UPDATE announcements SET is_active = FALSE WHERE announcement_id = $1", [$aid]);
+    }
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
+}
 // Check for success flag
 $posted = isset($_GET['posted']);
 ?>
@@ -117,23 +131,32 @@ $posted = isset($_GET['posted']);
             let currentPage = 0;
             const pageSize = 5;
             const totalPages = Math.ceil(announcements.length / pageSize);
+            const latestId = announcements.length ? announcements[0].announcement_id : null;
             function renderPage() {
               const start = currentPage * pageSize;
               const slice = announcements.slice(start, start + pageSize);
               const tbody = document.getElementById('ann-body');
               tbody.innerHTML = '';
               slice.forEach(a => {
+                const isLatest = a.announcement_id === latestId;
+                const badge = isLatest
+                  ? '<span class="badge bg-success">Active</span>'
+                  : '<span class="badge bg-danger">Inactive</span>';
+                const btnLabel = isLatest ? 'Unpost' : 'Repost';
+                const btnClass = isLatest ? 'danger' : 'success';
+                const toggleValue = isLatest ? 0 : 1;
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>${a.title}</td>
                     <td>${a.remarks}</td>
                     <td>${a.posted_at}</td>
-                    <td>${a.is_active ? '<span class="badge bg-success">Yes</span>' : '<span class="badge bg-danger">No</span>'}</td>
+                    <td>${badge}</td>
                     <td>
-                      <button class="btn btn-sm btn-outline-${a.is_active ? 'danger' : 'success'} toggle-btn"
-                              data-id="${a.announcement_id}" data-new="${a.is_active ? 0 : 1}">
-                        ${a.is_active ? 'Unpost' : 'Post'}
-                      </button>
+                      <form method="POST" class="d-inline">
+                        <input type="hidden" name="announcement_id" value="${a.announcement_id}">
+                        <input type="hidden" name="toggle_active" value="${toggleValue}">
+                        <button type="submit" class="btn btn-sm btn-outline-${btnClass}">${btnLabel}</button>
+                      </form>
                     </td>`;
                 tbody.appendChild(tr);
               });
