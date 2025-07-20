@@ -5,6 +5,22 @@ if (!isset($_SESSION['admin_username'])) {
   header("Location: index.php");
   exit;
 }
+// Fetch barangay distribution (only barangays with students)
+$barangayRes = pg_query($connection, "SELECT b.name AS barangay, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS verified, SUM(CASE WHEN status='applicant' THEN 1 ELSE 0 END) AS applicant FROM students st JOIN barangays b ON st.barangay_id = b.barangay_id GROUP BY b.name HAVING COUNT(*)>0 ORDER BY b.name");
+$barangayLabels = $barangayVerified = $barangayApplicant = [];
+while ($row = pg_fetch_assoc($barangayRes)) {
+    $barangayLabels[] = $row['barangay'];
+    $barangayVerified[] = intval($row['verified']);
+    $barangayApplicant[] = intval($row['applicant']);
+}
+// Fetch gender distribution
+$genderRes = pg_query($connection, "SELECT sex AS gender, SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS verified, SUM(CASE WHEN status='applicant' THEN 1 ELSE 0 END) AS applicant FROM students GROUP BY sex HAVING COUNT(*)>0 ORDER BY sex");
+$genderLabels = $genderVerified = $genderApplicant = [];
+while ($row = pg_fetch_assoc($genderRes)) {
+    $genderLabels[] = $row['gender'];
+    $genderVerified[] = intval($row['verified']);
+    $genderApplicant[] = intval($row['applicant']);
+}
 ?>
 
 <!DOCTYPE html>
@@ -18,6 +34,8 @@ if (!isset($_SESSION['admin_username'])) {
   <link rel="stylesheet" href="../../assets/css/admin/homepage.css" />
   <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
+  <!-- Chart.js for dashboard charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div id="wrapper">
@@ -86,12 +104,102 @@ if (!isset($_SESSION['admin_username'])) {
             </div>
           </div>
         </div>
+
+        <div class="row g-4 mt-4">
+          <div class="col-md-6">
+            <div class="custom-card">
+              <div class="custom-card-header bg-info text-white">
+                <h5><i class="bi bi-house-door-fill me-2"></i>Barangay Distribution</h5>
+              </div>
+              <div class="custom-card-body">
+                <canvas id="barangayChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="custom-card">
+              <div class="custom-card-header bg-danger text-white">
+                <h5><i class="bi bi-gender-ambiguous me-2"></i>Gender Distribution</h5>
+              </div>
+              <div class="custom-card-body">
+                <canvas id="genderChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/admin/sidebar.js"></script>
+  <script>
+    // Barangay Distribution Chart
+    const barangayCtx = document.getElementById('barangayChart').getContext('2d');
+    const barangayChart = new Chart(barangayCtx, {
+      type: 'bar',
+      data: {
+        labels: <?php echo json_encode($barangayLabels); ?>,
+        datasets: [{
+          label: 'Verified',
+          data: <?php echo json_encode($barangayVerified); ?>,
+          backgroundColor: 'rgba(25, 135, 84, 0.7)',
+          borderColor: 'rgba(25, 135, 84, 1)',
+          borderWidth: 1
+        }, {
+          label: 'Pending',
+          data: <?php echo json_encode($barangayApplicant); ?>,
+          backgroundColor: 'rgba(255, 193, 7, 0.7)',
+          borderColor: 'rgba(255, 193, 7, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            beginAtZero: true
+          },
+          y: {
+            beginAtZero: true
+          }
+        }
+      }
+    });
+
+    // Gender Distribution Chart
+    const genderCtx = document.getElementById('genderChart').getContext('2d');
+    const genderChart = new Chart(genderCtx, {
+      type: 'bar',
+      data: {
+        labels: <?php echo json_encode($genderLabels); ?>,
+        datasets: [
+          {
+            label: 'Verified',
+            data: <?php echo json_encode($genderVerified); ?>,
+            backgroundColor: 'rgba(25, 135, 84, 0.7)',
+            borderColor: 'rgba(25, 135, 84, 1)',
+            borderWidth: 1
+          },
+          {
+            label: 'Applicant',
+            data: <?php echo json_encode($genderApplicant); ?>,
+            backgroundColor: 'rgba(255, 193, 7, 0.7)',
+            borderColor: 'rgba(255, 193, 7, 1)',
+            borderWidth: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { beginAtZero: true },
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  </script>
 </body>
 </html>
 
