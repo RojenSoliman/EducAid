@@ -29,8 +29,8 @@
         <span class="links_name">Notifications</span>
       </a>
     </li>
-    <li class="nav-item <?php echo ($_SERVER['PHP_SELF'] == '/path/to/profile_page.php') ? 'active' : ''; ?>">
-      <a href="#">
+    <li class="nav-item <?php echo ($_SERVER['PHP_SELF'] == 'odules/student/student_profile.php') ? 'active' : ''; ?>">
+      <a href="student_profile.php">
         <i class="bi bi-person icon"></i>
         <span class="links_name">Profile</span>
       </a>

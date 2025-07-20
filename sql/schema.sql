@@ -132,3 +132,10 @@ CREATE TABLE schedules (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
+
+-- Admin notifications for system events (e.g. profile updates)
+CREATE TABLE IF NOT EXISTS admin_notifications (
+    admin_notification_id SERIAL PRIMARY KEY,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
