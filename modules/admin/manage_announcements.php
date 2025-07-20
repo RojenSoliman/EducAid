@@ -45,7 +45,7 @@ $posted = isset($_GET['posted']);
         <div class="container py-4">
             <!-- New Announcement Form -->
             <h2>Post New Announcement</h2>
-            <form method="POST" class="mb-4">
+            <form id="announcementForm" method="POST" class="mb-4">
                 <div class="mb-3">
                     <label class="form-label">Title</label>
                     <input type="text" name="title" class="form-control" required>
@@ -54,8 +54,24 @@ $posted = isset($_GET['posted']);
                     <label class="form-label">Remarks</label>
                     <textarea name="remarks" class="form-control" required></textarea>
                 </div>
-                <button type="submit" name="post_announcement" class="btn btn-primary">Post Announcement</button>
-            </form>
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#confirmPostModal">Post Announcement</button>
+                <!-- Confirmation Modal -->
+                <div class="modal fade" id="confirmPostModal" tabindex="-1" aria-labelledby="confirmPostModalLabel" aria-hidden="true">
+                  <div class="modal-dialog">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title" id="confirmPostModalLabel">Confirm Post</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                      </div>
+                      <div class="modal-body">Are you sure you want to post this announcement?</div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="post_announcement" class="btn btn-primary">Yes, Post</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+             </form>
 
             <!-- Success Message -->
             <?php if (isset($_GET['posted']) && $_GET['posted'] == 1): ?>
