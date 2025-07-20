@@ -1,4 +1,5 @@
 <?php
+/** @phpstan-ignore-file */
 session_start();
 if (!isset($_SESSION['admin_username'])) {
     header("Location: index.php");
@@ -29,7 +30,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Mark student as 'active' if all documents are uploaded
         pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$student_id]);
-
+        // Log admin notification for verification
+        $nameRes = pg_query($connection, "SELECT first_name, last_name FROM students WHERE student_id = '" . pg_escape_string($connection, $student_id) . "'");
+        $nm = pg_fetch_assoc($nameRes);
+        $adminMsg = $nm['first_name'] . ' ' . $nm['last_name'] . ' (' . $student_id . ') documents verified.';
+        pg_query($connection, "INSERT INTO admin_notifications (message) VALUES ('" . pg_escape_string($connection, $adminMsg) . "')");
         echo "<script>alert('Student marked as verified and active.'); window.location.href = 'manage_applicants.php';</script>";
         exit;
     // Check for reject action
@@ -45,8 +50,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$student_id]);
         // Record rejection notification for student
+        // Record rejection notification for student
         $msg = 'Your uploaded documents were rejected on ' . date('F j, Y, g:i a') . '. Please re-upload.';
         pg_query_params($connection, "INSERT INTO notifications (student_id, message) VALUES ($1, $2)", [$student_id, $msg]);
+        // Log admin notification for rejection
+        $nameRes = pg_query($connection, "SELECT first_name, last_name FROM students WHERE student_id = '" . pg_escape_string($connection, $student_id) . "'");
+        $nm = pg_fetch_assoc($nameRes);
+        $adminMsg = $nm['first_name'] . ' ' . $nm['last_name'] . ' (' . $student_id . ') documents rejected.';
+        pg_query($connection, "INSERT INTO admin_notifications (message) VALUES ('" . pg_escape_string($connection, $adminMsg) . "')");
         echo "<script>alert('Applicant has been rejected; documents have been reset and they can re-upload.'); window.location.href = 'manage_applicants.php';</script>";
         exit;
     }

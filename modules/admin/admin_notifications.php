@@ -7,8 +7,13 @@ if (!isset($_SESSION['admin_username'])) {
   header("Location: index.php");
   exit;
 }
-// Fetch admin notifications: announcements, slots, schedules
-$adminNotifSql = "
+// Pagination setup
+$page = isset($_GET['page']) && is_numeric($_GET['page']) && $_GET['page'] > 0 ? (int)
+    $_GET['page'] : 1;
+$limit = 20;
+$offset = ($page - 1) * $limit;
+// Base notifications union
+$baseSql = "
   SELECT 'Announcement: ' || title AS message, posted_at AS created_at
     FROM announcements
   UNION ALL
@@ -17,9 +22,19 @@ $adminNotifSql = "
   UNION ALL
   SELECT 'Schedule created for student ' || student_id || ' on ' || distribution_date::text AS message, created_at
     FROM schedules
-  ORDER BY created_at DESC
+  UNION ALL
+  SELECT 'Admin Event: ' || message AS message, created_at FROM admin_notifications
 ";
-// @phpstan-ignore-next-line
+// Count total notifications
+$countSql = "SELECT COUNT(*) AS total FROM (" . $baseSql . ") AS sub";
+/** @phpstan-ignore-next-line */
+$countRes = pg_query($connection, $countSql);
+$total = $countRes ? (int)pg_fetch_assoc($countRes)['total'] : 0;
+$lastPage = (int)ceil($total / $limit);
+// Paginated query
+$adminNotifSql = $baseSql . " ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
+// Suppress static analysis for pg_query with connection arg
+/** @phpstan-ignore-next-line */
 @$adminNotifRes = pg_query($connection, $adminNotifSql);
 $adminNotifs = $adminNotifRes ? pg_fetch_all($adminNotifRes) : [];
 ?>
@@ -59,6 +74,21 @@ $adminNotifs = $adminNotifRes ? pg_fetch_all($adminNotifRes) : [];
                 </li>
               <?php endforeach; ?>
             </ul>
+            <!-- New Pagination controls -->
+            <nav class="mt-3 d-flex justify-content-center">
+              <ul class="pagination mb-0">
+                <?php if ($page > 1): ?>
+                  <li class="page-item">
+                    <a class="page-link" href="?page=<?php echo $page - 1; ?>"><i class="bi bi-chevron-left"></i></a>
+                  </li>
+                <?php endif; ?>
+                <?php if ($page < $lastPage): ?>
+                  <li class="page-item">
+                    <a class="page-link" href="?page=<?php echo $page + 1; ?>"><i class="bi bi-chevron-right"></i></a>
+                  </li>
+                <?php endif; ?>
+              </ul>
+            </nav>
           <?php endif; ?>
         </div>
       </div>
