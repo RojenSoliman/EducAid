@@ -11,7 +11,7 @@
         <span class="links_name">Dashboard</span>
       </a>
     </li>
-    <li class="nav-item <?php echo ($_SERVER['PHP_SELF'] == 'upload_document.php') ? 'active' : ''; ?>">
+    <li class="nav-item <?php echo ($_SERVER['PHP_SELF'] == 'modules/student/upload_document.php') ? 'active' : ''; ?>">
       <a href="upload_document.php">
         <i class="bi bi-upload icon"></i>
         <span class="links_name">Upload Documents</span>
@@ -23,8 +23,8 @@
         <span class="links_name">My QR Code</span>
       </a>
     </li>
-    <li class="nav-item <?php echo ($_SERVER['PHP_SELF'] == '/path/to/notification_page.php') ? 'active' : ''; ?>">
-      <a href="notificaton.html">
+    <li class="nav-item <?php echo ($_SERVER['PHP_SELF'] == 'modules/student/student_notifications.php') ? 'active' : ''; ?>">
+      <a href="student_notifications.php">
         <i class="bi bi-bell icon"></i>
         <span class="links_name">Notifications</span>
       </a>

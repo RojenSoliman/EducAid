@@ -112,6 +112,14 @@ CREATE TABLE config (
 
 INSERT INTO config (key, value) VALUES ('student_list_finalized', '0');
 
+-- Notifications for students (rejections, announcements, schedule postings)
+CREATE TABLE IF NOT EXISTS notifications (
+    notification_id SERIAL PRIMARY KEY,
+    student_id INT REFERENCES students(student_id),
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE schedules (
     schedule_id SERIAL PRIMARY KEY,
     student_id INT REFERENCES students(student_id),

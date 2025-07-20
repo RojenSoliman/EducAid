@@ -30,6 +30,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$student_id]);
 
         echo "<script>alert('Student marked as verified and active.'); window.location.href = 'manage_applicants.php';</script>";
+        exit;
+    } elseif (isset($_POST['reject_applicant']) && isset($_POST['student_id'])) {
+        $student_id = $_POST['student_id'];
+        // Delete uploaded documents so student can re-upload
+        pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$student_id]);
+        // Record rejection notification for student
+        $msg = 'Your uploaded documents were rejected on ' . date('F j, Y, g:i a') . '. Please re-upload.';
+        pg_query_params($connection, "INSERT INTO notifications (student_id, message) VALUES ($1, $2)", [$student_id, $msg]);
+        echo "<script>alert('Applicant has been rejected; documents have been reset and they can re-upload.'); window.location.href = 'manage_applicants.php';</script>";
+        exit;
     }
 }
 
@@ -153,9 +163,10 @@ if (!empty($params)) {
                                         </div>
                                         <div class="modal-footer">
                                             <?php if ($isComplete): ?>
-                                                <form method="POST">
+                                                <form method="POST" class="d-inline">
                                                     <input type="hidden" name="student_id" value="<?= $student_id ?>" />
                                                     <button type="submit" name="mark_verified" class="btn btn-success">Mark as Verified</button>
+                                                    <button type="submit" name="reject_applicant" class="btn btn-danger ms-2">Reject</button>
                                                 </form>
                                             <?php else: ?>
                                                 <button class="btn btn-secondary" disabled>Not all documents uploaded</button>

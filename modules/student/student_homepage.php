@@ -57,7 +57,7 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
           </a>
         </li>
         <li class="nav-item">
-          <a href="notificaton.html">
+          <a href="student_notifications.php">
             <i class="bi bi-bell icon"></i>
             <span class="links_name">Notifications</span>
           </a>
