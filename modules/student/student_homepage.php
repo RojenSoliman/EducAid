@@ -254,38 +254,32 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
         ?>
 
         <!-- Deadline Section -->
-        <div id="deadline-section" class="custom-card border border-2 border-danger-subtle shadow-sm section-spacing">
-          <div class="p-3 d-flex justify-content-between align-items-center bg-danger-subtle border-bottom" data-bs-toggle="collapse" data-bs-target="#deadline-body" style="cursor: pointer;">
-            <h5 class="mb-0 text-danger fw-bold">
-              <i class="bi bi-hourglass-top me-2"></i>Document Submission Deadlines
-            </h5>
-            <span class="badge bg-light text-danger border border-danger" id="deadline-badge">Loading...</span>
-          </div>
-          <div id="deadline-body" class="collapse show">
-            <div class="custom-card-body">
-              <div class="row gy-3">
-                <div class="col-md-6">
-                  <p><strong>Document Upload:</strong><br>August 20, 2025
-                    <span class="badge bg-success ms-2"><i class="bi bi-check-circle me-1"></i>On Time</span>
-                  </p>
-                </div>
-                <div class="col-md-6">
-                  <p><strong>Grades Submition for the current semester:</strong><br>August 20, 2025
-                    <span class="badge bg-success ms-2"><i class="bi bi-check-circle me-1"></i>On Time</span>
-                  </p>
-                </div>
-              </div>
-              <p class="text-success fw-semibold mt-3">
-                <i class="bi bi-info-circle me-1"></i>You are still within the submission period.
-              </p>
-              <div class="text-end mt-3">
-                <a href="upload_document.php" class="btn btn-primary px-4">
-                  <i class="bi bi-pencil-square me-1"></i>Upload Now
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
+        <?php
+        // Load deadlines from JSON file
+        $deadlinesPath = __DIR__ . '/../../data/deadlines.json';
+        $deadlines = file_exists($deadlinesPath) ? json_decode(file_get_contents($deadlinesPath), true) : [];
+        $today = date('Y-m-d');
+        echo '<div id="deadline-section" class="custom-card border border-2 border-danger-subtle shadow-sm section-spacing">';
+        echo '<div class="p-3 d-flex justify-content-between align-items-center bg-danger-subtle border-bottom" data-bs-toggle="collapse" data-bs-target="#deadline-body" style="cursor: pointer;">';
+        echo '<h5 class="mb-0 text-danger fw-bold"><i class="bi bi-hourglass-top me-2"></i>Submission Deadlines</h5>';
+        echo '<span class="badge bg-light text-danger border border-danger">' . count(array_filter($deadlines, fn($d) => $d['active'])) . ' item(s)</span>';
+        echo '</div><div id="deadline-body" class="collapse show"><div class="custom-card-body"><ul class="list-unstyled mb-0">';
+        foreach ($deadlines as $d) {
+            if (empty($d['active'])) continue;
+            $due = $d['deadline_date'];
+            $onTime = ($today <= $due);
+            $badgeClass = $onTime ? 'bg-success' : 'bg-danger';
+            $badgeIcon = $onTime ? 'bi-check-circle' : 'bi-exclamation-triangle';
+            echo '<li class="mb-3">';
+            echo '<strong>' . htmlspecialchars($d['label']) . ':</strong><br>' . date('F j, Y', strtotime($due));
+            echo ' <span class="badge ' . $badgeClass . ' ms-2"><i class="' . $badgeIcon . ' me-1"></i>' . ($onTime ? 'On Time' : 'Overdue') . '</span>';
+            if (!empty($d['link'])) {
+                echo ' <a href="' . htmlspecialchars($d['link']) . '" class="btn btn-primary btn-sm float-end">Go</a>';
+            }
+            echo '</li>';
+        }
+        echo '</ul></div></div></div>';
+        ?>
 
         <!-- Reminders -->
         <div class="custom-card shadow-sm section-spacing">

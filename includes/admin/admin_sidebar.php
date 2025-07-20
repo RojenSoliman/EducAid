@@ -41,6 +41,12 @@
         <span class="links_name">Scheduling</span>
       </a>
     </li>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'settings.php' ? 'active' : ''; ?>">
+      <a href="settings.php">
+        <i class="bi bi-gear icon"></i>
+        <span class="links_name">Settings</span>
+      </a>
+    </li>
     <li class="nav-item logout">
       <a href="logout.php" onclick="return confirm('Are you sure you want to logout?');">
         <i class="bi bi-box-arrow-right icon"></i>
