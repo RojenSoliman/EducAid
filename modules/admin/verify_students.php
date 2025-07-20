@@ -19,8 +19,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['deactivate']) && isset($_POST['selected_actives'])) {
         foreach ($_POST['selected_actives'] as $student_id) {
             pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
-            $isFinalized = false; // Reset finalized state
+            $isFinalized = false;
         }
+        // Also reset finalized flag in config and reload page
+        pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
     }
     // Finalize list
     if (isset($_POST['finalize_list'])) {
@@ -264,11 +268,14 @@ if ($isFinalized) {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  // Finalize modal confirm button disables checkboxes and revert button, then toggles button to Revert
-  document.getElementById('finalizeTriggerBtn')?.addEventListener('click', function () {
+  // Handler to show finalize confirmation modal
+  function finalizeHandler(e) {
+    e.preventDefault();
     var finalizeModal = new bootstrap.Modal(document.getElementById('finalizeModal'));
     finalizeModal.show();
-  });
+  }
+  // Attach handler to Finalize button
+  document.getElementById('finalizeTriggerBtn')?.addEventListener('click', finalizeHandler);
   document.getElementById('finalizeConfirmBtnModal')?.addEventListener('click', function () {
     // Set hidden input to trigger finalize on submit
     document.getElementById('finalizeListInput').value = '1';
@@ -336,8 +343,6 @@ if ($isFinalized) {
     document.querySelectorAll('.payroll-col').forEach(col => col.classList.add('d-none'));
   }
 
-  // Attach finalizeHandler initially to the Finalize button
-  document.getElementById('finalizeTriggerBtn')?.addEventListener('click', finalizeHandler);
 
   // On page load, set up UI based on PHP $isFinalized
   var isFinalized = <?= $isFinalized ? 'true' : 'false' ?>;
@@ -352,8 +357,20 @@ if ($isFinalized) {
     document.querySelectorAll('.payroll-col').forEach(col => col.classList.add('d-none'));
   }
 }
-document.addEventListener('DOMContentLoaded', function() {
+window.addEventListener('load', function() {
   setFinalizedUI(isFinalized);
+  // Select-all checkbox functionality
+  var selectAll = document.getElementById('selectAllActive');
+  if (selectAll) {
+    selectAll.addEventListener('change', function() {
+      var cbs = document.getElementsByName('selected_actives[]');
+      for (var i = 0; i < cbs.length; i++) {
+        if (!cbs[i].disabled) {
+          cbs[i].checked = selectAll.checked;
+        }
+      }
+    });
+  }
 });
 </script>
 
