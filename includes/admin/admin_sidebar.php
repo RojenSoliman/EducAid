@@ -41,6 +41,12 @@
         <span class="links_name">Scheduling</span>
       </a>
     </li>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'admin_notifications.php' ? 'active' : ''; ?>">
+      <a href="admin_notifications.php">
+        <i class="bi bi-bell icon"></i>
+        <span class="links_name">Notifications</span>
+      </a>
+    </li>
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'settings.php' ? 'active' : ''; ?>">
       <a href="settings.php">
         <i class="bi bi-gear icon"></i>
