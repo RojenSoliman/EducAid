@@ -50,9 +50,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
             $query = "INSERT INTO documents (student_id, type, file_path) VALUES ($1, $2, $3)";
             pg_query_params($connection, $query, [$student_id, $fileType, $filePath]);
 
-            echo "<script>alert('Document uploaded successfully.');</script>";
+            echo "<script>alert('Document uploaded successfully.'); window.location.reload();</script>";
         } else {
-            echo "<script>alert('Failed to upload document.');</script>";
+            echo "<script>alert('Failed to upload document.'); window.location.reload();</script>";
         }
     }
 }

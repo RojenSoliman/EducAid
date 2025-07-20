@@ -33,7 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     } elseif (isset($_POST['reject_applicant']) && isset($_POST['student_id'])) {
         $student_id = $_POST['student_id'];
-        // Delete uploaded documents so student can re-upload
+        // Delete uploaded document files and records so student can re-upload
+        $docsToDelete = pg_query_params($connection, "SELECT file_path FROM documents WHERE student_id = $1", [$student_id]);
+        while ($d = pg_fetch_assoc($docsToDelete)) {
+            $path = $d['file_path'];
+            if ($path && file_exists($path)) {
+                @unlink($path);
+            }
+        }
         pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$student_id]);
         // Record rejection notification for student
         $msg = 'Your uploaded documents were rejected on ' . date('F j, Y, g:i a') . '. Please re-upload.';
