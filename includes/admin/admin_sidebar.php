@@ -11,6 +11,12 @@
         <span class="links_name">Dashboard</span>
       </a>
     </li>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_announcements.php' ? 'active' : ''; ?>">
+      <a href="manage_announcements.php">
+        <i class="bi bi-megaphone icon"></i>
+        <span class="links_name">Announcements</span>
+      </a>
+    </li>
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_slots.php' ? 'active' : ''; ?>">
       <a href="manage_slots.php">
         <i class="bi bi-sliders icon"></i>
@@ -33,12 +39,6 @@
       <a href="manage_schedules.php">
         <i class="bi bi-calendar icon"></i>
         <span class="links_name">Scheduling</span>
-      </a>
-    </li>
-    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_announcements.php' ? 'active' : ''; ?>">
-      <a href="manage_announcements.php">
-        <i class="bi bi-megaphone icon"></i>
-        <span class="links_name">Announcements</span>
       </a>
     </li>
     <li class="nav-item logout">
