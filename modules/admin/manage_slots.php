@@ -141,6 +141,7 @@ foreach ($pastReleases as $i => $slot) {
       <div class="container-fluid p-4">
         <h2 class="fw-bold mb-4">Manage Signup Slots</h2>
 
+        <!-- Slot release form -->
         <form id="releaseSlotsForm" method="POST" class="card p-4 shadow-sm mb-4">
           <div class="row g-3">
             <div class="col-md-4">
@@ -162,20 +163,30 @@ foreach ($pastReleases as $i => $slot) {
           <button type="button" id="showPasswordModalBtn" class="btn btn-primary mt-3">Release</button>
         </form>
 
+        <!-- Current slot summary -->
         <?php if ($slotInfo): ?>
           <div class="card mb-4 shadow-sm">
             <div class="card-header bg-primary text-white">Current Slot</div>
             <div class="card-body">
               <p><strong>Released:</strong> <?= $slotInfo['slot_count'] ?> (<?= $slotInfo['created_at'] ?>)</p>
               <p><strong>Used:</strong> <?= $slotsUsed ?> / <?= $slotInfo['slot_count'] ?></p>
-              <div class="progress mb-3" style="height: 20px;">
-                <div class="progress-bar" style="width: <?= ($slotsUsed / max(1, $slotInfo['slot_count'])) * 100 ?>%"></div>
+              <?php
+                $percentage = ($slotsUsed / max(1, $slotInfo['slot_count'])) * 100;
+                $barClass = 'bg-success';
+                if ($percentage >= 80) $barClass = 'bg-danger';
+                elseif ($percentage >= 50) $barClass = 'bg-warning';
+              ?>
+              <div class="progress mb-3 slot-progress">
+                <div class="progress-bar <?= $barClass ?>" style="width: <?= $percentage ?>%">
+                  <?= round($percentage) ?>%
+                </div>
               </div>
               <p><strong>Remaining:</strong> <?= max(0, $slotsLeft) ?></p>
             </div>
           </div>
         <?php endif; ?>
 
+        <!-- Export & applicant list -->
         <?php if (!empty($applicantList)): ?>
           <form method="POST" class="mb-3">
             <input type="hidden" name="export_csv" value="1">
@@ -197,6 +208,7 @@ foreach ($pastReleases as $i => $slot) {
           </div>
         <?php endif; ?>
 
+        <!-- Past Releases -->
         <h4 class="mt-4">Past Releases</h4>
         <?php if (!empty($pastReleases)): ?>
           <div class="accordion" id="pastSlotsAccordion">

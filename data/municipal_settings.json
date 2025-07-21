@@ -1,0 +1,22 @@
+{
+    "schedule_meta": {
+        "start_date": "2025-07-26",
+        "end_date": "2025-07-31",
+        "start_times": [
+            "07:55",
+            "10:57",
+            "07:55",
+            "10:57"
+        ],
+        "end_times": [
+            "07:58",
+            "11:58",
+            "07:58",
+            "11:58"
+        ],
+        "batch1_capacity": 99,
+        "batch2_capacity": 99,
+        "location": "asdasda"
+    },
+    "schedule_published": true
+}
