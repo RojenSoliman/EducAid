@@ -125,6 +125,7 @@ foreach ($pastReleases as $i => $slot) {
   <link rel="stylesheet" href="../../assets/css/admin/homepage.css" />
   <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
   <link rel="stylesheet" href="../../assets/css/admin/manage_slots.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
 </head>
 <body>
   <div id="wrapper">
