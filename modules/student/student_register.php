@@ -274,3 +274,5 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
   <script src="../../assets/js/registration.js"></script>
 </body>
 </html>
+
+        <!-- test email modal -->
