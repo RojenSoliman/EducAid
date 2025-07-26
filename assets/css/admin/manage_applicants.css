@@ -1,0 +1,200 @@
+/* manage_applicants.css */
+
+/* ===== Global Styles ===== */
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f8f9fa;
+  color: #333;
+}
+
+/* ===== Cards ===== */
+.card {
+  border-radius: 0.85rem;
+  border: none;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+}
+
+.card-header {
+  font-weight: 600;
+  border-bottom: none;
+  font-size: 1rem;
+  background-color: #007BFF; /* Default Bright Blue */
+  color: #fff;
+}
+
+/* ===== Filter Card ===== */
+.filter-card .card-header {
+  background-color: #007BFF; /* Bright Blue */
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.85rem 0.85rem 0 0;
+}
+
+.card-body .form-control,
+.card-body .form-select {
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  padding: 6px 10px;
+  transition: border 0.2s ease;
+}
+
+.card-body .form-control:focus,
+.card-body .form-select:focus {
+  border-color: #007BFF;
+  box-shadow: 0 0 0 0.15rem rgba(0, 123, 255, 0.25);
+}
+
+/* ===== Table ===== */
+.table-responsive {
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.table thead th {
+  font-weight: 600;
+  background-color: #007BFF;  /* Bright Blue */
+  color: #fff;
+  padding: 12px;
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.table td {
+  padding: 10px 12px;
+  color: #444;
+  vertical-align: middle;
+  font-size: 0.95rem;
+}
+
+.table-striped tbody tr:nth-child(odd) {
+  background-color: #f9f9f9;
+}
+
+.table-striped tbody tr:nth-child(even) {
+  background-color: #ffffff;
+}
+
+.table tbody tr:hover {
+  background-color: #f1f3f6;
+  transition: background-color 0.2s ease;
+}
+
+/* ===== Badges ===== */
+.badge {
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  border-radius: 12px;
+  text-transform: capitalize;
+}
+
+.badge.bg-success {
+  background-color: #007BFF !important; /* Bright Blue */
+  color: #fff;
+}
+
+.badge.bg-secondary {
+  background-color: #9e9e9e !important;
+  color: #fff;
+}
+
+/* ===== Buttons ===== */
+.btn-info {
+  background-color: #007BFF;   /* Bright Blue */
+  border: none;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  color: #fff;
+  transition: background 0.2s ease;
+}
+
+.btn-info:hover {
+  background-color: #0069D9;   /* Darker Blue */
+}
+
+.btn-primary {
+  background-color: #007BFF;
+  border: none;
+}
+
+.btn-primary:hover {
+  background-color: #0069D9;
+}
+
+.btn-success {
+  background-color: #3FBF64;
+}
+
+.btn-danger {
+  background-color: #FF6B6B;
+}
+
+/* ===== Pagination ===== */
+.pagination {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.pagination .page-item .page-link {
+  border: none;
+  background-color: #f1f3f6;
+  color: #333;
+  padding: 6px 12px;
+  border-radius: 20px;
+  transition: all 0.2s ease;
+}
+
+.pagination .page-item.active .page-link {
+  background-color: #007BFF; /* Bright Blue */
+  color: #fff;
+  font-weight: 600;
+}
+
+.pagination .page-item .page-link:hover {
+  background-color: #0069D9;
+  color: #fff;
+}
+
+/* ===== Modal ===== */
+.modal-header {
+  border-bottom: 1px solid #e4e4e4;
+}
+
+.modal-body p {
+  margin-bottom: 0.5rem;
+}
+
+.modal-footer {
+  border-top: 1px solid #e4e4e4;
+}
+
+/* ===== Fade-in Animation for Table Rows ===== */
+#applicantsTableBody tr {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+#applicantsTableBody tr.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+    /* Fade-in animation for table rows */
+    #applicantsTableBody tr {
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    #applicantsTableBody tr.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
