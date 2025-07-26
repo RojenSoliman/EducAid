@@ -1,4 +1,4 @@
-/* manage_slots.css */
+/* manage_slots.css - Enhanced with Badges, Accordion, Typography & Alerts */
 
 body {
   font-family: 'Poppins', sans-serif;
@@ -6,90 +6,90 @@ body {
   color: #333;
 }
 
-/* Card appearance */
+/* --- Cards --- */
 .card {
   border: none;
-  border-radius: 0.75rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  border-radius: 0.85rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   transition: transform 0.2s ease-in-out;
 }
 .card:hover {
-  transform: scale(1.01);
+  transform: translateY(-3px);
 }
-
 .card-header {
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: none;
+  padding: 0.75rem 1rem;
+  border-radius: 0.85rem 0.85rem 0 0;
+  background-color: #4BA3C3;
+  color: #fff;
 }
 
-/* Form inputs */
-form.card input,
-form.card select {
-  border-radius: 0.5rem;
+/* --- 4. Visual Badges --- */
+.badge-pill {
+  border-radius: 50rem;
+  padding: 0.35em 0.75em;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.badge-green {
+  background-color: #3FBF64;
+  color: #fff;
+}
+.badge-red {
+  background-color: #FF6B6B;
+  color: #fff;
+}
+.badge-blue {
+  background-color: #3399FF;
+  color: #fff;
 }
 
-/* Buttons */
+/* --- Buttons --- */
 .btn-primary {
-  background-color: #3b8efc;
+  background-color: #3399FF;
   border: none;
 }
 .btn-primary:hover {
-  background-color: #2e7de3;
+  background-color: #1d7fe6;
 }
 .btn-success {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
+  background-color: #3FBF64;
+  border: none;
+}
+.btn-success:hover {
+  background-color: #34a655;
+}
+.btn-danger {
+  background-color: #FF6B6B;
+  border: none;
+}
+.btn-danger:hover {
+  background-color: #e35d5d;
 }
 
-/* Alerts */
-.alert {
-  border-radius: 0.5rem;
-}
-
-/* Slot progress bar */
-.slot-progress {
-  margin-top: 1rem;
-}
-
-.slot-progress .progress {
-  height: 1.2rem;
+/* --- 5. Accordion Redesign --- */
+.accordion-item {
+  border: 1px solid #e2e6ea;
   border-radius: 0.5rem;
   overflow: hidden;
+  margin-bottom: 0.5rem;
 }
-
-.slot-progress .progress-bar {
-  font-weight: 500;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Progress bar color variants */
-.progress-bar.bg-success {
-  background-color: #198754 !important;
-}
-.progress-bar.bg-warning {
-  background-color: #ffc107 !important;
-}
-.progress-bar.bg-danger {
-  background-color: #dc3545 !important;
-}
-.progress-bar {
-  text-align: center;
-  font-weight: bold;
-}
-
-/* Accordion */
 .accordion-button {
   font-weight: 500;
-  background-color: #f1f4f9;
-  border-bottom: 1px solid #ddd;
-  transition: background-color 0.2s ease-in-out;
+  background-color: #eef6f9;
+  transition: background-color 0.3s ease;
+  color: #333;
 }
 .accordion-button:hover {
-  background-color: #e9ecf1;
+  background-color: #dceef3;
+}
+.accordion-button:not(.collapsed) {
+  background-color: #cfe4ea;
 }
 .accordion-button::after {
   transition: transform 0.2s ease-in-out;
@@ -97,48 +97,66 @@ form.card select {
 .accordion-button:not(.collapsed)::after {
   transform: rotate(180deg);
 }
-.accordion-body p {
-  margin-bottom: 0.25rem;
+.accordion-body {
+  background-color: #fff;
+  padding: 1rem;
+  border-top: 1px solid #dee2e6;
 }
 
-/* Applicants list */
-.list-group-item {
-  border: 1px solid #e4e4e4;
-  border-radius: 0.5rem;
-  margin-bottom: 0.5rem;
-  font-size: 0.95rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.list-group-item:nth-child(even) {
-  background-color: #f9f9f9;
-}
-.list-group-item:nth-child(odd) {
-  background-color: #ffffff;
-}
-
-/* Typography */
-h2, h3 {
+/* --- 6. Typography & Icons --- */
+h2, h4, h5, h6 {
   font-weight: 600;
   color: #2d2d2d;
 }
+h2 i, h4 i, h5 i {
+  margin-right: 8px;
+  color: #3399FF;
+}
+.table thead th {
+  background-color: #f5f8fb;
+  font-weight: 600;
+}
+.table tbody tr:hover {
+  background-color: #f0f6f9;
+}
 
-/* Responsive spacing */
+/* --- 7. Feedback & Alerts --- */
+.alert {
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: fadeIn 0.4s ease;
+}
+.alert-warning {
+  background-color: #fff3cd;
+  color: #856404;
+}
+.alert i {
+  font-size: 1.2rem;
+}
+
+/* Fade-in animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Pagination --- */
+.pagination .page-item.active .page-link {
+  background-color: #3399FF;
+  border-color: #3399FF;
+}
+.pagination .page-link {
+  color: #3399FF;
+}
+.pagination .page-link:hover {
+  background-color: #e7f1ff;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
   .card {
     margin-bottom: 1.5rem;
   }
-
-  .container {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
-}
-
-/* Toasts */
-.toast {
-  min-width: 300px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  z-index: 9999;
 }

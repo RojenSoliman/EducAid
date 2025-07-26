@@ -159,36 +159,39 @@ while ($row = pg_fetch_assoc($res)) {
     </nav>
 
     <div class="container-fluid p-4">
-      <h2 class="fw-bold mb-4">Manage Signup Slots</h2>
+      <h2 class="fw-bold mb-4 text-primary"><i class="bi bi-calendar-week"></i> Manage Signup Slots</h2>
 
+      <!-- Release New Slot -->
       <form id="releaseSlotsForm" method="POST" class="card p-4 shadow-sm mb-4">
+        <h5 class="fw-semibold mb-3 text-secondary"><i class="bi bi-plus-circle"></i> Release New Slot</h5>
         <div class="row g-3">
           <div class="col-md-4">
-            <label>Slot Count</label>
+            <label class="form-label">Slot Count</label>
             <input type="number" name="slot_count" class="form-control" required min="1">
           </div>
           <div class="col-md-4">
-            <label>Semester</label>
+            <label class="form-label">Semester</label>
             <select name="semester" class="form-select" required>
               <option value="1st Semester">1st Semester</option>
               <option value="2nd Semester">2nd Semester</option>
             </select>
           </div>
           <div class="col-md-4">
-            <label>Academic Year</label>
-            <input type="text" name="academic_year" class="form-control" pattern="^\d{4}-\d{4}$" required>
+            <label class="form-label">Academic Year</label>
+            <input type="text" name="academic_year" class="form-control" pattern="^\d{4}-\d{4}$" placeholder="2025-2026" required>
           </div>
         </div>
-        <button type="button" id="showPasswordModalBtn" class="btn btn-primary mt-3">Release</button>
+        <button type="button" id="showPasswordModalBtn" class="btn btn-primary mt-3">
+          <i class="bi bi-upload"></i> Release
+        </button>
       </form>
 
+      <!-- Current Slot -->
       <?php if ($slotInfo): ?>
         <div class="card shadow-sm mb-4">
           <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <span>Current Slot</span>
-            <button class="btn btn-light btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#currentSlotBody">
-              Toggle
-            </button>
+            <span><i class="bi bi-clock-history"></i> Current Slot</span>
+            <span class="badge badge-pill badge-blue"><?= $slotInfo['semester'] ?> | AY <?= $slotInfo['academic_year'] ?></span>
           </div>
           <div id="currentSlotBody" class="collapse show card-body">
             <p><strong>Released:</strong> <?= date('F j, Y — h:i A', strtotime($slotInfo['created_at'])) ?></p>
@@ -207,17 +210,17 @@ while ($row = pg_fetch_assoc($res)) {
               </div>
             </div>
             <?php if ($expired): ?>
-              <div class="alert alert-warning">⚠️ This slot is more than 14 days old.</div>
+              <div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill"></i> This slot is more than 14 days old.</div>
             <?php endif; ?>
-            <p><strong>Remaining:</strong> <?= max(0, $slotsLeft) ?></p>
+            <p><strong>Remaining:</strong> <span class="badge badge-pill <?= $slotsLeft > 0 ? 'badge-green' : 'badge-red' ?>"><?= max(0, $slotsLeft) ?> slots left</span></p>
 
             <?php if (!empty($applicantList)): ?>
               <form method="POST" class="mb-3">
                 <input type="hidden" name="export_csv" value="1">
-                <button class="btn btn-success btn-sm"><i class="bi bi-download"></i> Export Applicants to CSV</button>
+                <button class="btn btn-success btn-sm"><i class="bi bi-download"></i> Export Applicants</button>
               </form>
 
-              <h6 class="fw-semibold mt-4">Applicants</h6>
+              <h6 class="fw-semibold mt-4"><i class="bi bi-people"></i> Applicants</h6>
               <div class="table-responsive">
                 <table class="table table-bordered table-sm table-striped align-middle">
                   <thead class="table-light">
@@ -256,7 +259,8 @@ while ($row = pg_fetch_assoc($res)) {
         </div>
       <?php endif; ?>
 
-      <h4 class="mt-4">Past Releases</h4>
+      <!-- Past Releases -->
+      <h4 class="mt-4 text-primary"><i class="bi bi-archive"></i> Past Releases</h4>
       <?php if (!empty($pastReleases)): ?>
         <div class="accordion" id="pastSlotsAccordion">
           <?php foreach ($pastReleases as $i => $h): ?>
@@ -264,6 +268,7 @@ while ($row = pg_fetch_assoc($res)) {
               <h2 class="accordion-header" id="heading<?= $i ?>">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
                         data-bs-target="#collapse<?= $i ?>" aria-expanded="false" aria-controls="collapse<?= $i ?>">
+                  <i class="bi bi-calendar-event"></i>
                   <?= date('F j, Y — h:i A', strtotime($h['created_at'])) ?> — <?= $h['slot_count'] ?> slots
                 </button>
               </h2>
@@ -271,7 +276,7 @@ while ($row = pg_fetch_assoc($res)) {
                 <div class="accordion-body">
                   <p><strong>Semester:</strong> <?= $h['semester'] ?> | <strong>AY:</strong> <?= $h['academic_year'] ?></p>
                   <p><strong>Used:</strong> <?= $h['slots_used'] ?> / <?= $h['slot_count'] ?></p>
-                  <form method="POST">
+                  <form method="POST" onsubmit="return confirm('Are you sure you want to delete this slot?')">
                     <input type="hidden" name="delete_slot_id" value="<?= $h['slot_id'] ?>">
                     <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-trash"></i> Delete</button>
                   </form>
@@ -281,7 +286,7 @@ while ($row = pg_fetch_assoc($res)) {
           <?php endforeach; ?>
         </div>
       <?php else: ?>
-        <div class="alert alert-info">No past releases found.</div>
+        <div class="alert alert-info"><i class="bi bi-info-circle-fill"></i> No past releases found.</div>
       <?php endif; ?>
     </div>
   </section>
