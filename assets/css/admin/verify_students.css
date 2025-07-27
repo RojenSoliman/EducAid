@@ -116,6 +116,7 @@ h2.fw-bold {
   display: flex;
   flex-wrap: wrap;
   gap: 0.85rem;
+  justify-content: flex-end;
 }
 
 /* Table */
@@ -151,7 +152,11 @@ h2.fw-bold {
   background: #fff;
 }
 
-
+/* Remove hover for a flat look */
+.table-hover tbody tr:hover {
+  background: inherit !important;
+  transition: none !important;
+}
 
 /* Checkbox column */
 .table th:first-child,
@@ -160,16 +165,61 @@ h2.fw-bold {
   text-align: center;
 }
 
-/* Responsive filter form */
-@media (max-width: 991.98px) {
-  .filter-card .row > div {
-    flex: 0 0 100%;
-    max-width: 100%;
-    margin-bottom: 0.7rem;
+/* Mobile Responsive Card Table */
+@media (max-width: 767.98px) {
+  .table-responsive {
+    border-radius: 0.5rem;
+    box-shadow: none;
+    background: transparent;
   }
-  .action-buttons {
-    flex-direction: column;
-    gap: 0.7rem;
+  .table thead {
+    display: none;
+  }
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+  .table tr {
+    margin-bottom: 1.1rem;
+    background: #fff;
+    border-radius: 0.65rem;
+    box-shadow: 0 2px 8px rgba(17,130,255,0.10);
+    padding: 6px 0 10px 0;
+    position: relative;
+    border: 1px solid #e8e9fa;
+  }
+  .table td {
+    padding: 10px 12px 10px 44%;
+    text-align: left;
+    border: none;
+    border-bottom: 1px solid #f2f2f2;
+    min-height: 36px;
+    font-size: 1rem;
+    background: none;
+    word-break: break-word;
+    position: relative;
+  }
+  .table td:last-child {
+    border-bottom: none;
+  }
+  .table td::before {
+    content: attr(data-label) ": ";
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40%;
+    min-width: 82px;
+    color: #1182FF;
+    font-weight: 600;
+    font-size: 0.98rem;
+    text-align: left;
+    white-space: nowrap;
+    padding-right: 7px;
+    letter-spacing: 0.01em;
   }
 }
 
@@ -178,4 +228,29 @@ h2.fw-bold {
   font-style: italic;
   font-size: 0.96rem;
   color: #999 !important;
+}
+
+/* Thumb-friendly action buttons: Side by side on mobile */
+@media (max-width: 767.98px) {
+  .action-buttons {
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding-bottom: 1rem;
+  }
+  .action-buttons .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    width: auto;
+    margin: 0;
+    border-radius: 0.7rem;
+    font-size: 1.08rem;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(17,130,255,0.06);
+  }
+  .action-buttons .btn + .btn {
+    margin-left: 0.6rem;
+  }
 }

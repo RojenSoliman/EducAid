@@ -2,82 +2,142 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Dashboard Card Mockup</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Active Students Responsive Table</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <style>
     body {
-      background-color: #f4f6f9;
       font-family: 'Poppins', sans-serif;
-      padding: 40px;
+      background: #f8f9fa;
+      padding: 40px 0;
     }
-
-    .info-card-enhanced {
-      background: linear-gradient(135deg, #007bff, #0056b3);
+    .card {
+      border-radius: 0.8rem;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+      max-width: 600px;
+      margin: auto;
+    }
+    .card-header {
+      background: #1182FF;
       color: #fff;
-      border-radius: 1rem;
-      padding: 2rem;
-      position: relative;
-      text-align: center;
-      overflow: hidden;
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      cursor: pointer;
-    }
-
-    .info-card-enhanced:hover {
-      transform: translateY(-6px);
-      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.15);
-    }
-
-    .info-card-enhanced .icon-bg {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      font-size: 4rem;
-      opacity: 0.1;
-      pointer-events: none;
-    }
-
-    .info-card-enhanced h2 {
       font-weight: 700;
-      font-size: 2.5rem;
-      margin-bottom: 0.5rem;
+      font-size: 1.2rem;
+      border-radius: 0.8rem 0.8rem 0 0;
+      padding: 1rem 1.5rem;
     }
-
-    .info-card-enhanced p {
-      margin-bottom: 1rem;
-      font-size: 1.1rem;
+    /* Table styles */
+    .table th, .table td {
+      vertical-align: middle;
+      font-size: 1rem;
     }
-
-    .info-card-enhanced a {
-      color: #fff;
-      text-decoration: underline;
-      font-size: 0.875rem;
-      z-index: 1;
-      position: relative;
+    .table th {
+      background: #f7faff;
+      font-weight: 700;
+      color: #222;
+      border-bottom: 2px solid #e2e8f0;
     }
-
-    .info-card-enhanced a:hover {
-      color: #dbe9ff;
+    .table td {
+      background: #fff;
+    }
+    /* Responsive table for mobile */
+    @media (max-width: 768px) {
+      .table thead {
+        display: none;
+      }
+      .table,
+      .table tbody,
+      .table tr,
+      .table td {
+        display: block;
+        width: 100%;
+      }
+      .table tr {
+        margin-bottom: 1.1rem;
+        background: #fff;
+        border-radius: 0.6rem;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        padding: 0.9rem 0.7rem;
+        border: 1px solid #e2e8f0;
+      }
+      .table td {
+        text-align: left;
+        padding: 10px 12px 10px 44%;
+        position: relative;
+        border: none;
+        border-bottom: 1px solid #f3f3f3;
+        min-height: 36px;
+        font-size: 1rem;
+        background: none;
+        word-break: break-all;
+      }
+      .table td::before {
+        content: attr(data-label) ": ";
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 38%;
+        min-width: 90px;
+        color: #1182FF;
+        font-weight: 600;
+        font-size: 0.98rem;
+        text-align: left;
+        white-space: nowrap;
+        padding-right: 6px;
+      }
     }
   </style>
 </head>
 <body>
-
-  <div class="container">
-    <div class="row justify-content-center">
-      <div class="col-md-4">
-        <div class="info-card-enhanced">
-          <i class="bi bi-people-fill icon-bg"></i>
-          <h2>0</h2>
-          <p>Total Students</p>
-          <a href="#">More info</a>
-        </div>
+  <div class="card">
+    <div class="card-header">
+      <i class="bi bi-person-lines-fill me-2"></i>Active Students
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead>
+            <tr>
+              <th>Select</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Mobile</th>
+              <th>Barangay</th>
+              <th>Payroll #</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-label="Select"><input type="checkbox"></td>
+              <td data-label="Name">Dela Cruz, Juan</td>
+              <td data-label="Email">juan@email.com</td>
+              <td data-label="Mobile">091234567</td>
+              <td data-label="Barangay">San Roque</td>
+              <td data-label="Payroll #">1</td>
+            </tr>
+            <tr>
+              <td data-label="Select"><input type="checkbox"></td>
+              <td data-label="Name">Santos, Maria L.</td>
+              <td data-label="Email">maria@email.com</td>
+              <td data-label="Mobile">0917854321</td>
+              <td data-label="Barangay">Biclatan</td>
+              <td data-label="Payroll #">2</td>
+            </tr>
+            <tr>
+              <td data-label="Select"><input type="checkbox"></td>
+              <td data-label="Name">Reyes, Anne</td>
+              <td data-label="Email">anne@email.com</td>
+              <td data-label="Mobile">0919123456</td>
+              <td data-label="Barangay">Manggahan</td>
+              <td data-label="Payroll #">3</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
-
+  <!-- Optional Bootstrap Icons CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </body>
 </html>
