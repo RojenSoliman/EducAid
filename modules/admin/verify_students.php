@@ -7,7 +7,7 @@ if (!isset($_SESSION['admin_username'])) {
 
 include '../../config/database.php';
 
-// Finalized status
+// Check if finalized
 $isFinalized = false;
 $res = pg_query($connection, "SELECT value FROM config WHERE key = 'student_list_finalized'");
 if ($res && $row = pg_fetch_assoc($res)) $isFinalized = $row['value'] === '1';
@@ -106,8 +106,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
   <link rel="stylesheet" href="../../assets/css/admin/homepage.css">
   <link rel="stylesheet" href="../../assets/css/admin/sidebar.css">
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../../assets/css/admin/verify_students.css">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
 </head>
 <body>
 <div id="wrapper">
@@ -122,11 +122,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </nav>
 
     <div class="container-fluid px-4 py-4">
-      <h2 class="fw-bold mb-1">Manage Verified Students</h2>
+      <h2 class="fw-bold">Manage Verified Students</h2>
       <p class="text-muted mb-4">View and manage students who have been verified for payroll assignment.</p>
 
       <!-- Filter Card -->
-      <div class="card shadow-sm mb-4">
+      <div class="card filter-card shadow-sm mb-4">
         <div class="card-body">
           <form class="row g-3" method="GET">
             <div class="col-12 col-md-3">
@@ -161,13 +161,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <!-- Students Table -->
       <form method="POST">
         <div class="card shadow-sm">
-          <div class="card-header bg-light text-dark fw-semibold">Active Students</div>
+          <div class="card-header section-title-bar">
+            <i class="bi bi-person-badge me-2"></i> Active Students
+          </div>
           <div class="card-body p-0">
             <div class="table-responsive">
-              <table class="table table-bordered table-hover mb-0">
-                <thead class="table-light">
+              <table class="table table-bordered table-striped table-hover mb-0">
+                <thead>
                   <tr>
-                    <th style="width: 40px"><input type="checkbox" id="selectAll" <?= $isFinalized ? 'disabled' : '' ?>></th>
+                    <th><input type="checkbox" id="selectAll" <?= $isFinalized ? 'disabled' : '' ?>></th>
                     <th>Name</th>
                     <th>Email</th>
                     <th>Mobile</th>
@@ -188,7 +190,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                       </tr>
                     <?php endwhile; ?>
                   <?php else: ?>
-                    <tr><td colspan="6" class="text-center py-4 text-muted">
+                    <tr><td colspan="6" class="text-center text-muted py-4">
                       <i class="bi bi-info-circle me-2"></i>No students found for the current filters.
                     </td></tr>
                   <?php endif; ?>
@@ -203,7 +205,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <button type="submit" name="deactivate" class="btn btn-danger" <?= $isFinalized ? 'disabled' : '' ?>>
             <i class="bi bi-arrow-counterclockwise"></i> Revert to Applicant
           </button>
-
           <?php if ($isFinalized): ?>
             <button type="submit" name="revert" class="btn btn-warning">
               <i class="bi bi-x-circle"></i> Revert Finalization

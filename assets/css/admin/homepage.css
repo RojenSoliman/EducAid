@@ -121,9 +121,6 @@ body {
   border-radius: 8px;
 }
 
-.card:hover {
-  transform: scale(1.02);
-}
 
 .card-title {
   font-weight: 600;
