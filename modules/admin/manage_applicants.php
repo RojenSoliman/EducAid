@@ -35,7 +35,7 @@ $totalPages = max(1, ceil($totalApplicants / $perPage));
 $query = "SELECT * FROM students WHERE $where ORDER BY last_name " . ($sort === 'desc' ? 'DESC' : 'ASC') . " LIMIT $perPage OFFSET $offset";
 $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query($connection, $query);
 
-// Table rendering function
+// Table rendering function with live preview
 function render_table($applicants, $connection) {
     ob_start();
     ?>
@@ -92,7 +92,23 @@ function render_table($applicants, $connection) {
                                 if (pg_num_rows($docs)) {
                                     while ($doc = pg_fetch_assoc($docs)) {
                                         $label = ucfirst(str_replace('_', ' ', $doc['type']));
-                                        echo "<p><strong>$label:</strong> <a href='" . htmlspecialchars($doc['file_path']) . "' target='_blank'>View</a></p>";
+                                        $filePath = htmlspecialchars($doc['file_path']);
+                                        if (preg_match('/\.(jpg|jpeg|png|gif)$/i', $filePath)) {
+                                            // Show image preview
+                                            echo "<div class='doc-preview mb-3'>
+                                                    <strong>$label:</strong><br>
+                                                    <img src='$filePath' alt='$label' class='img-fluid rounded border' style='max-height: 200px; max-width: 100%;'>
+                                                  </div>";
+                                        } elseif (preg_match('/\.pdf$/i', $filePath)) {
+                                            // Show embedded PDF
+                                            echo "<div class='doc-preview mb-3'>
+                                                    <strong>$label:</strong><br>
+                                                    <iframe src='$filePath' width='100%' height='400' style='border: 1px solid #ccc;'></iframe>
+                                                  </div>";
+                                        } else {
+                                            // Fallback link
+                                            echo "<p><strong>$label:</strong> <a href='$filePath' target='_blank'>View</a></p>";
+                                        }
                                     }
                                 } else echo "<p class='text-muted'>No documents uploaded.</p>";
                                 ?>

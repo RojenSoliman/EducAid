@@ -261,3 +261,10 @@ h2.fw-bold {
 .table tbody tr.animated-row {
   animation: fadeInRow 0.5s;
 }
+.doc-preview img {
+  display: block;
+  margin-top: 5px;
+  max-width: 100%;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
