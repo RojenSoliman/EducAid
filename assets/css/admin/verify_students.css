@@ -1,54 +1,256 @@
 /* === verify_students.css === */
 
-/* Improve card visuals */
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f8f9fa;
+  color: #333;
+}
+
+/* Card Style */
 .card {
-  border-radius: 0.75rem;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.035);
+  border-radius: 0.85rem;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  background: #fff;
+  margin-bottom: 2rem;
 }
 
-/* Card body spacing */
-.card-body {
-  padding-top: 1.25rem;
-  padding-bottom: 1.25rem;
+/* Card Header for Section Titles */
+.card-header,
+.section-title-bar {
+  background-color: #1182FF;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1.07rem;
+  border-radius: 0.85rem 0.85rem 0 0;
+  padding: 0.9rem 1.25rem;
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
 }
 
-/* Spacing for section title */
 h2.fw-bold {
-  font-size: 1.6rem;
+  color: #1182FF;
+  font-size: 2rem;
+  margin-bottom: 1.4rem;
+  font-weight: 700;
+}
+
+/* Filter Card */
+.filter-card {
+  border-radius: 0.75rem;
+  border: none;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.05);
   margin-bottom: 1.5rem;
 }
-
-/* Responsive filter form */
-@media (max-width: 767.98px) {
-  .card-body .row > div {
-    flex: 0 0 100%;
-    max-width: 100%;
-  }
+.filter-card .card-body {
+  padding: 1.2rem 1.25rem;
 }
 
-/* Table enhancements */
-.table thead th {
-  background-color: #f9f9f9;
+.filter-card .form-label {
   font-weight: 600;
+  color: #222;
+  margin-bottom: 6px;
 }
 
-.table-hover tbody tr:hover {
-  background-color: #f1f5f9;
+.filter-card .form-select,
+.filter-card .form-control {
+  border-radius: 0.45rem;
+  border: 1px solid #e2e8f0;
 }
 
-/* Empty state row */
-.table td.text-muted {
-  font-style: italic;
-  font-size: 0.95rem;
+/* Button Styles */
+.btn-primary,
+.btn-success,
+.btn-danger,
+.btn-warning {
+  border-radius: 0.4rem;
+  font-weight: 600;
+  font-size: 0.99rem;
+  padding: 8px 18px;
+  transition: background 0.15s;
 }
 
-/* Button section spacing */
+.btn-primary {
+  background: #1182FF;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: #157AFF;
+}
+
+.btn-success {
+  background: #20C997;
+  border: none;
+}
+
+.btn-success:hover {
+  background: #19ad7c;
+}
+
+.btn-danger {
+  background: #FF4D4F;
+  border: none;
+}
+
+.btn-danger:hover {
+  background: #d6373a;
+}
+
+.btn-warning {
+  background: #FFC107;
+  border: none;
+  color: #333;
+}
+
+.btn-warning:hover {
+  background: #e2a900;
+  color: #222;
+}
+
 .action-buttons {
   padding-top: 1.5rem;
   border-top: 1px solid #e2e8f0;
-  margin-top: 1rem;
+  margin-top: 1.5rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.85rem;
+  justify-content: flex-end;
+}
+
+/* Table */
+.table-responsive {
+  border-radius: 0 0 0.85rem 0.85rem;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: none;
+}
+
+.table thead th,
+.table-light th {
+  background-color: #1182FF;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1.01rem;
+  border: none;
+}
+
+.table th,
+.table td {
+  border: none;
+  vertical-align: middle;
+  font-size: 0.99rem;
+  padding: 11px 13px;
+}
+
+.table-striped tbody tr:nth-child(odd) {
+  background: #f9fafd;
+}
+
+.table-striped tbody tr:nth-child(even) {
+  background: #fff;
+}
+
+/* Remove hover for a flat look */
+.table-hover tbody tr:hover {
+  background: inherit !important;
+  transition: none !important;
+}
+
+/* Checkbox column */
+.table th:first-child,
+.table td:first-child {
+  width: 38px;
+  text-align: center;
+}
+
+/* Mobile Responsive Card Table */
+@media (max-width: 767.98px) {
+  .table-responsive {
+    border-radius: 0.5rem;
+    box-shadow: none;
+    background: transparent;
+  }
+  .table thead {
+    display: none;
+  }
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+  .table tr {
+    margin-bottom: 1.1rem;
+    background: #fff;
+    border-radius: 0.65rem;
+    box-shadow: 0 2px 8px rgba(17,130,255,0.10);
+    padding: 6px 0 10px 0;
+    position: relative;
+    border: 1px solid #e8e9fa;
+  }
+  .table td {
+    padding: 10px 12px 10px 44%;
+    text-align: left;
+    border: none;
+    border-bottom: 1px solid #f2f2f2;
+    min-height: 36px;
+    font-size: 1rem;
+    background: none;
+    word-break: break-word;
+    position: relative;
+  }
+  .table td:last-child {
+    border-bottom: none;
+  }
+  .table td::before {
+    content: attr(data-label) ": ";
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40%;
+    min-width: 82px;
+    color: #1182FF;
+    font-weight: 600;
+    font-size: 0.98rem;
+    text-align: left;
+    white-space: nowrap;
+    padding-right: 7px;
+    letter-spacing: 0.01em;
+  }
+}
+
+/* No students found state */
+.table td.text-muted {
+  font-style: italic;
+  font-size: 0.96rem;
+  color: #999 !important;
+}
+
+/* Thumb-friendly action buttons: Side by side on mobile */
+@media (max-width: 767.98px) {
+  .action-buttons {
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding-bottom: 1rem;
+  }
+  .action-buttons .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    width: auto;
+    margin: 0;
+    border-radius: 0.7rem;
+    font-size: 1.08rem;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(17,130,255,0.06);
+  }
+  .action-buttons .btn + .btn {
+    margin-left: 0.6rem;
+  }
 }

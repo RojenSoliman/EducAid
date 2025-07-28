@@ -4,10 +4,9 @@ if (!isset($_SESSION['admin_username'])) {
     header("Location: index.php");
     exit;
 }
-
 include '../../config/database.php';
 
-// Finalized status
+// Check if finalized
 $isFinalized = false;
 $res = pg_query($connection, "SELECT value FROM config WHERE key = 'student_list_finalized'");
 if ($res && $row = pg_fetch_assoc($res)) $isFinalized = $row['value'] === '1';
@@ -29,12 +28,10 @@ if (!empty($search)) {
     $query .= " AND s.last_name ILIKE $1";
     $params[] = "%$search%";
 }
-
 if (!empty($barangayFilter)) {
     $query .= empty($params) ? " AND b.barangay_id = $1" : " AND b.barangay_id = $2";
     $params[] = $barangayFilter;
 }
-
 $query .= " ORDER BY s.last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
 $students = count($params) ? pg_query_params($connection, $query, $params) : pg_query($connection, $query);
 
@@ -70,20 +67,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header("Location: verify_students.php");
         exit;
     }
-
     if (isset($_POST['finalize'])) {
         pg_query($connection, "UPDATE config SET value = '1' WHERE key = 'student_list_finalized'");
         header("Location: verify_students.php");
         exit;
     }
-
     if (isset($_POST['revert'])) {
         pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
         pg_query($connection, "UPDATE students SET payroll_no = 0 WHERE status = 'active'");
         header("Location: verify_students.php");
         exit;
     }
-
     if (isset($_POST['generate_payroll'])) {
         $res = pg_query($connection, "SELECT student_id FROM students WHERE status = 'active' ORDER BY last_name, first_name");
         $num = 1;
@@ -106,8 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
   <link rel="stylesheet" href="../../assets/css/admin/homepage.css">
   <link rel="stylesheet" href="../../assets/css/admin/sidebar.css">
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../../assets/css/admin/verify_students.css">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
 </head>
 <body>
 <div id="wrapper">
@@ -122,11 +116,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </nav>
 
     <div class="container-fluid px-4 py-4">
-      <h2 class="fw-bold mb-1">Manage Verified Students</h2>
+      <h2 class="fw-bold">Manage Verified Students</h2>
       <p class="text-muted mb-4">View and manage students who have been verified for payroll assignment.</p>
 
       <!-- Filter Card -->
-      <div class="card shadow-sm mb-4">
+      <div class="card filter-card shadow-sm mb-4">
         <div class="card-body">
           <form class="row g-3" method="GET">
             <div class="col-12 col-md-3">
@@ -161,13 +155,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <!-- Students Table -->
       <form method="POST">
         <div class="card shadow-sm">
-          <div class="card-header bg-light text-dark fw-semibold">Active Students</div>
+          <div class="card-header section-title-bar">
+            <i class="bi bi-person-badge me-2"></i> Active Students
+          </div>
           <div class="card-body p-0">
             <div class="table-responsive">
-              <table class="table table-bordered table-hover mb-0">
-                <thead class="table-light">
+              <table class="table table-bordered table-striped mb-0">
+                <thead>
                   <tr>
-                    <th style="width: 40px"><input type="checkbox" id="selectAll" <?= $isFinalized ? 'disabled' : '' ?>></th>
+                    <th><input type="checkbox" id="selectAll" <?= $isFinalized ? 'disabled' : '' ?>></th>
                     <th>Name</th>
                     <th>Email</th>
                     <th>Mobile</th>
@@ -179,18 +175,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                   <?php if (pg_num_rows($students) > 0): ?>
                     <?php while ($s = pg_fetch_assoc($students)): ?>
                       <tr>
-                        <td><input type="checkbox" name="selected[]" value="<?= $s['student_id'] ?>" <?= $isFinalized ? 'disabled' : '' ?>></td>
-                        <td><?= htmlspecialchars("{$s['last_name']}, {$s['first_name']} {$s['middle_name']}") ?></td>
-                        <td><?= htmlspecialchars($s['email']) ?></td>
-                        <td><?= htmlspecialchars($s['mobile']) ?></td>
-                        <td><?= htmlspecialchars($s['barangay']) ?></td>
-                        <td><?= $s['payroll_no'] > 0 ? $s['payroll_no'] : '-' ?></td>
+                        <td data-label="Select"><input type="checkbox" name="selected[]" value="<?= $s['student_id'] ?>" <?= $isFinalized ? 'disabled' : '' ?>></td>
+                        <td data-label="Name"><?= htmlspecialchars("{$s['last_name']}, {$s['first_name']} {$s['middle_name']}") ?></td>
+                        <td data-label="Email"><?= htmlspecialchars($s['email']) ?></td>
+                        <td data-label="Mobile"><?= htmlspecialchars($s['mobile']) ?></td>
+                        <td data-label="Barangay"><?= htmlspecialchars($s['barangay']) ?></td>
+                        <td data-label="Payroll #"><?= $s['payroll_no'] > 0 ? $s['payroll_no'] : '-' ?></td>
                       </tr>
                     <?php endwhile; ?>
                   <?php else: ?>
-                    <tr><td colspan="6" class="text-center py-4 text-muted">
-                      <i class="bi bi-info-circle me-2"></i>No students found for the current filters.
-                    </td></tr>
+                    <tr>
+                      <td colspan="6" class="text-center text-muted py-4">
+                        <i class="bi bi-info-circle me-2"></i>No students found for the current filters.
+                      </td>
+                    </tr>
                   <?php endif; ?>
                 </tbody>
               </table>
@@ -203,7 +201,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <button type="submit" name="deactivate" class="btn btn-danger" <?= $isFinalized ? 'disabled' : '' ?>>
             <i class="bi bi-arrow-counterclockwise"></i> Revert to Applicant
           </button>
-
           <?php if ($isFinalized): ?>
             <button type="submit" name="revert" class="btn btn-warning">
               <i class="bi bi-x-circle"></i> Revert Finalization
@@ -236,5 +233,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </script>
 </body>
 </html>
-
 <?php pg_close($connection); ?>
