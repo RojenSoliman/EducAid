@@ -4,7 +4,6 @@ if (!isset($_SESSION['admin_username'])) {
     header("Location: index.php");
     exit;
 }
-
 include '../../config/database.php';
 
 // Function to check if all required documents are uploaded
@@ -53,7 +52,6 @@ if ($search) {
     $query .= " AND last_name ILIKE $1";
     $params[] = "%$search%";
 }
-
 $query .= " ORDER BY last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
 $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query($connection, $query);
 ?>
@@ -67,37 +65,58 @@ $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css"/>
   <link rel="stylesheet" href="../../assets/css/admin/homepage.css"/>
-  <link rel="stylesheet" href="../../assets/css/admin/sidebar.css"/>]
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../assets/css/admin/sidebar.css"/>
+  <link rel="stylesheet" href="../../assets/css/admin/manage_applicants.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"/>
+  <style>
+    /* (Optional) Quick override for icon+header alignment and icon size if you want it here instead of CSS file */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      margin-bottom: 2.1rem;
+    }
+    .section-header .bi {
+      font-size: 2.25rem;
+      color: #1182FF;
+    }
+    .section-header h2 {
+      color: #1182FF;
+      font-weight: 700;
+      font-size: 2.2rem;
+      margin: 0;
+      line-height: 1.1;
+    }
+  </style>
 </head>
 <body>
 <div id="wrapper">
   <?php include '../../includes/admin/admin_sidebar.php'; ?>
   <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
-
   <section class="home-section" id="mainContent">
     <nav>
       <div class="sidebar-toggle px-4 py-3">
         <i class="bi bi-list" id="menu-toggle"></i>
       </div>
     </nav>
-
     <div class="container-fluid py-4 px-4">
-      <h2 class="fw-bold mb-4">Manage Applicants</h2>
-
+      <div class="section-header mb-3">
+        <i class="bi bi-person-vcard"></i>
+        <h2>Manage Applicants</h2>
+      </div>
       <!-- Filter Block -->
       <div class="card shadow-sm mb-4">
         <div class="card-body">
           <form class="row g-3" method="GET">
             <div class="col-sm-4">
-              <label class="form-label">Sort by Surname</label>
+              <label class="form-label fw-bold" style="color:#1182FF;">Sort by Surname</label>
               <select name="sort" class="form-select">
                 <option value="asc" <?= $sort === 'asc' ? 'selected' : '' ?>>A to Z</option>
                 <option value="desc" <?= $sort === 'desc' ? 'selected' : '' ?>>Z to A</option>
               </select>
             </div>
             <div class="col-sm-4">
-              <label class="form-label">Search by Surname</label>
+              <label class="form-label fw-bold" style="color:#1182FF;">Search by Surname</label>
               <input type="text" name="search_surname" class="form-control" value="<?= htmlspecialchars($search) ?>" placeholder="Enter surname...">
             </div>
             <div class="col-sm-4 d-flex align-items-end">
@@ -106,11 +125,10 @@ $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query
           </form>
         </div>
       </div>
-
       <!-- Applicants Table -->
       <div class="table-responsive">
         <table class="table table-bordered table-hover align-middle">
-          <thead class="table-light">
+          <thead>
             <tr>
               <th>Name</th>
               <th>Contact</th>
@@ -121,28 +139,33 @@ $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query
           </thead>
           <tbody>
             <?php if (pg_num_rows($applicants) === 0): ?>
-              <tr><td colspan="5" class="text-center text-muted">No applicants found.</td></tr>
+              <tr><td colspan="5" class="text-center no-applicants">No applicants found.</td></tr>
             <?php else: ?>
               <?php while ($applicant = pg_fetch_assoc($applicants)) {
                 $student_id = $applicant['student_id'];
                 $isComplete = check_documents($connection, $student_id);
               ?>
               <tr>
-                <td><?= htmlspecialchars("{$applicant['last_name']}, {$applicant['first_name']} {$applicant['middle_name']}") ?></td>
-                <td><?= htmlspecialchars($applicant['mobile']) ?></td>
-                <td><?= htmlspecialchars($applicant['email']) ?></td>
-                <td>
-                  <span class="badge <?= $isComplete ? 'bg-success' : 'bg-secondary' ?>">
+                <td data-label="Name">
+                  <?= htmlspecialchars("{$applicant['last_name']}, {$applicant['first_name']} {$applicant['middle_name']}") ?>
+                </td>
+                <td data-label="Contact">
+                  <?= htmlspecialchars($applicant['mobile']) ?>
+                </td>
+                <td data-label="Email">
+                  <?= htmlspecialchars($applicant['email']) ?>
+                </td>
+                <td data-label="Documents">
+                  <span class="badge <?= $isComplete ? 'badge-success' : 'badge-secondary' ?>">
                     <?= $isComplete ? 'Complete' : 'Incomplete' ?>
                   </span>
                 </td>
-                <td>
+                <td data-label="Action">
                   <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#modal<?= $student_id ?>">
                     <i class="bi bi-eye"></i> View
                   </button>
                 </td>
               </tr>
-
               <!-- Modal -->
               <div class="modal fade" id="modal<?= $student_id ?>" tabindex="-1">
                 <div class="modal-dialog modal-lg">
@@ -189,7 +212,6 @@ $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query
     </div>
   </section>
 </div>
-
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
