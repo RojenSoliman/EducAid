@@ -210,3 +210,10 @@ h2.fw-bold {
 .text-primary-em, .fw-bold, b, strong {
   color: #1182FF !important;
 }
+@keyframes fadeInRow {
+  from { opacity: 0; transform: translateY(20px);}
+  to   { opacity: 1; transform: translateY(0);}
+}
+.table tbody tr.animated-row {
+  animation: fadeInRow 0.5s;
+}
