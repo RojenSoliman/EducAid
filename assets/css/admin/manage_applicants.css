@@ -4,12 +4,32 @@ body {
   background: #f8f9fa;
   color: #222;
 }
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 2.1rem;
+}
+.section-header .bi {
+  font-size: 2.25rem;
+  color: #1182FF;
+}
+.section-header h2 {
+  color: #1182FF;
+  font-weight: 700;
+  font-size: 2.2rem;
+  margin: 0;
+  line-height: 1.1;
+}
+
 h2.fw-bold {
-  color: #242424;
+  color: #1182FF;
   font-weight: 700;
   font-size: 2.2rem;
   letter-spacing: 0.01em;
 }
+
 .card {
   border-radius: 0.9rem;
   border: none;
@@ -18,11 +38,13 @@ h2.fw-bold {
 .card-body {
   padding: 1.4rem 1.5rem;
 }
+
 .form-label {
   font-weight: 600;
-  color: #222;
+  color: #1182FF;
   margin-bottom: 5px;
 }
+
 .form-select,
 .form-control {
   border-radius: 0.5rem;
@@ -30,6 +52,7 @@ h2.fw-bold {
   font-size: 1rem;
   padding: 9px 13px;
 }
+
 .btn-primary {
   background: #1182FF;
   border: none;
@@ -39,12 +62,16 @@ h2.fw-bold {
   padding: 10px 0;
   transition: background 0.18s;
 }
-.btn-primary:hover { background: #0869cc; }
+.btn-primary:hover,
+.btn-primary:focus { background: #0869cc; }
+
 .table-responsive {
   border-radius: 0.9rem;
   overflow: hidden;
   margin-top: 10px;
+  background: #fff;
 }
+
 .table {
   background: #fff;
   border-radius: 0.85rem;
@@ -52,40 +79,77 @@ h2.fw-bold {
 }
 .table th, .table td {
   vertical-align: middle;
-  font-size: 1.01rem;
+  font-size: 1.04rem;
   padding: 13px 14px;
   border: none;
 }
 .table thead th {
   background: #eaf3ff;
-  color: #003f7d;
+  color: #1182FF;
   font-weight: 700;
-  font-size: 1.04rem;
+  font-size: 1.06rem;
 }
 .table-hover tbody tr:hover {
   background: #f1f6ff;
   transition: background 0.15s;
 }
-.badge.bg-success { background: #20c997; font-size: 0.97rem; }
-.badge.bg-secondary { background: #ced4da; color: #555; font-size: 0.97rem; }
-.btn-info.btn-sm { background: #e5f1fc; color: #157AFF; border: none; }
-.btn-info.btn-sm:hover { background: #d0e8fb; color: #09417a; }
+
+.badge-success, .badge.bg-success {
+  background: #20c997 !important;
+  font-size: 0.97rem;
+  color: #fff !important;
+}
+.badge-secondary, .badge.bg-secondary {
+  background: #ced4da !important;
+  color: #555 !important;
+  font-size: 0.97rem;
+}
+
+.btn-info.btn-sm {
+  background: #e5f1fc;
+  color: #157AFF;
+  border: none;
+  font-weight: 500;
+  border-radius: 0.35rem;
+  font-size: 0.99rem;
+  padding: 7px 16px;
+  transition: background 0.17s;
+}
+.btn-info.btn-sm:hover, .btn-info.btn-sm:focus {
+  background: #d0e8fb;
+  color: #09417a;
+}
+
 .modal-header {
   background: #f2f6fa;
   border-bottom: 1px solid #dde8f2;
 }
-.modal-title { color: #003f7d; font-weight: 600; }
-.modal-footer { background: #f9fbfc; border-top: 1px solid #dde8f2; }
+.modal-title {
+  color: #003f7d;
+  font-weight: 600;
+}
+.modal-footer {
+  background: #f9fbfc;
+  border-top: 1px solid #dde8f2;
+}
 .btn-success.btn-sm, .btn-danger.btn-sm {
   font-size: 0.97rem;
   font-weight: 500;
   border-radius: 0.35rem;
   padding: 7px 15px;
 }
+
 .text-muted {
   color: #8a939b !important;
   font-style: italic;
 }
+.no-applicants {
+  color: #adb5bd;
+  font-style: italic;
+  font-size: 1.07rem;
+}
+
+/* Responsive Table as Cards for Mobile */
 @media (max-width: 991.98px) {
   .container-fluid {
     padding: 14px !important;
@@ -97,17 +161,26 @@ h2.fw-bold {
   .card-body {
     padding: 1rem 0.7rem;
   }
+  .section-header h2 { font-size: 1.08rem; }
+  .section-header .bi { font-size: 1.4rem; }
 }
 @media (max-width: 600px) {
   .card, .table-responsive { border-radius: 0.5rem; }
   .table thead { display: none; }
   .table, .table tbody, .table tr, .table td { display: block; width: 100%; }
-  .table tr { margin-bottom: 1.1rem; background: #fff; border-radius: 0.6rem; box-shadow: 0 1px 6px rgba(17,130,255,0.08); }
+  .table tr {
+    margin-bottom: 1.1rem;
+    background: #fff;
+    border-radius: 0.6rem;
+    box-shadow: 0 1px 6px rgba(17,130,255,0.08);
+    border: none;
+    padding: 0;
+  }
   .table td {
     border: none;
     border-bottom: 1px solid #f2f2f2;
     min-height: 36px;
-    font-size: 1rem;
+    font-size: 1.03rem;
     background: none;
     word-break: break-word;
     position: relative;
@@ -132,64 +205,8 @@ h2.fw-bold {
     letter-spacing: 0.01em;
   }
 }
-/* Highlighted blue for bold/section titles */
+
+/* Blue emphasis for important/bold/section text */
 .text-primary-em, .fw-bold, b, strong {
   color: #1182FF !important;
 }
-
-/* Optional: More emphasis on section blocks */
-.section-header {
-  font-weight: 700;
-  color: #1182FF;
-  letter-spacing: 0.01em;
-  display: flex;
-  align-items: center;
-  font-size: 1.25rem;
-  margin-bottom: 1rem;
-}
-.section-header i {
-  font-size: 1.5rem;
-  margin-right: 0.6rem;
-}
-    .text-primary-em, .fw-bold, b, strong { color: #1182FF !important; }
-    .section-header {
-      font-weight: 700; color: #1182FF; letter-spacing: 0.01em;
-      display: flex; align-items: center; font-size: 1.25rem; margin-bottom: 1rem;
-    }
-    .section-header i { font-size: 1.5rem; margin-right: 0.7rem; }
-    .badge-success { background-color: #20C997 !important; }
-    .badge-secondary { background-color: #adb5bd !important; }
-    .modal-header { background: #f7f9fb; }
-    .modal-footer { background: #f9fafd; }
-    .btn-info { background: #1182FF; border: none; color: #fff; }
-    .btn-info:hover { background: #157AFF; }
-    .table thead { background: #f7f9fb; }
-    .table th { font-weight: 600; color: #1182FF; }
-    .table td, .table th { vertical-align: middle; }
-    .no-applicants { color: #adb5bd; font-style: italic; }
-    @media (max-width: 991.98px) {
-      .table-responsive { font-size: 0.97rem; }
-      .section-header { font-size: 1rem; }
-    }
-    .section-header h2 {
-      font-size: 2.3rem;
-      font-weight: 700;
-      letter-spacing: 0.01em;
-      color: #1182FF;
-      display: flex;
-      align-items: center;
-      margin-bottom: 0;
-    }
-    .section-header h2 i {
-      font-size: 2.6rem;
-      margin-right: 0.7rem;
-      vertical-align: middle;
-    }
-    @media (max-width: 600px) {
-      .section-header h2 {
-        font-size: 1.3rem;
-      }
-      .section-header h2 i {
-        font-size: 1.5rem;
-      }
-    }
