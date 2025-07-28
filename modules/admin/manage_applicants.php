@@ -58,15 +58,21 @@ function render_table($applicants, $connection) {
                 $isComplete = check_documents($connection, $student_id);
                 ?>
                 <tr>
-                    <td><?= htmlspecialchars("{$applicant['last_name']}, {$applicant['first_name']} {$applicant['middle_name']}") ?></td>
-                    <td><?= htmlspecialchars($applicant['mobile']) ?></td>
-                    <td><?= htmlspecialchars($applicant['email']) ?></td>
-                    <td>
+                    <td data-label="Name">
+                        <?= htmlspecialchars("{$applicant['last_name']}, {$applicant['first_name']} {$applicant['middle_name']}") ?>
+                    </td>
+                    <td data-label="Contact">
+                        <?= htmlspecialchars($applicant['mobile']) ?>
+                    </td>
+                    <td data-label="Email">
+                        <?= htmlspecialchars($applicant['email']) ?>
+                    </td>
+                    <td data-label="Documents">
                         <span class="badge <?= $isComplete ? 'badge-success' : 'badge-secondary' ?>">
                             <?= $isComplete ? 'Complete' : 'Incomplete' ?>
                         </span>
                     </td>
-                    <td>
+                    <td data-label="Action">
                         <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#modal<?= $student_id ?>">
                             <i class="bi bi-eye"></i> View
                         </button>
@@ -179,24 +185,26 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest') {
           Manage Applicants
         </h2>
       </div>
-      <!-- Filter Block -->
-      <form class="row g-3 mb-3" id="filterForm" method="GET">
-        <div class="col-sm-4">
-          <label class="form-label fw-bold" style="color:#1182FF;">Sort by Surname</label>
-          <select name="sort" class="form-select">
-            <option value="asc" <?= $sort === 'asc' ? 'selected' : '' ?>>A to Z</option>
-            <option value="desc" <?= $sort === 'desc' ? 'selected' : '' ?>>Z to A</option>
-          </select>
-        </div>
-        <div class="col-sm-4">
-          <label class="form-label fw-bold" style="color:#1182FF;">Search by Surname</label>
-          <input type="text" name="search_surname" class="form-control" value="<?= htmlspecialchars($search) ?>" placeholder="Enter surname...">
-        </div>
-        <div class="col-sm-4 d-flex align-items-end gap-2">
-          <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search me-1"></i> Apply Filters</button>
-          <button type="button" class="btn btn-secondary w-100" id="clearFiltersBtn">Clear</button>
-        </div>
-      </form>
+      <!-- Filter Container -->
+      <div class="filter-container card shadow-sm mb-4 p-3">
+        <form class="row g-3" id="filterForm" method="GET">
+          <div class="col-sm-4">
+            <label class="form-label fw-bold" style="color:#1182FF;">Sort by Surname</label>
+            <select name="sort" class="form-select">
+              <option value="asc" <?= $sort === 'asc' ? 'selected' : '' ?>>A to Z</option>
+              <option value="desc" <?= $sort === 'desc' ? 'selected' : '' ?>>Z to A</option>
+            </select>
+          </div>
+          <div class="col-sm-4">
+            <label class="form-label fw-bold" style="color:#1182FF;">Search by Surname</label>
+            <input type="text" name="search_surname" class="form-control" value="<?= htmlspecialchars($search) ?>" placeholder="Enter surname...">
+          </div>
+          <div class="col-sm-4 d-flex align-items-end gap-2">
+            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search me-1"></i> Apply Filters</button>
+            <button type="button" class="btn btn-secondary w-100" id="clearFiltersBtn">Clear</button>
+          </div>
+        </form>
+      </div>
       <!-- Applicants Table -->
       <div class="table-responsive" id="tableWrapper">
         <?= render_table($applicants, $connection) ?>
