@@ -110,3 +110,18 @@ body {
 .card + .card {
   margin-top: 2rem;
 }
+/* Large blue bold header like signup slots */
+h2.fw-bold.mb-4 {
+  font-size: 2.1rem;
+  font-weight: 700;
+  color: #1182FF;
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+h2.fw-bold.mb-4 i {
+  font-size: 2.1rem;
+  color: #3399FF;
+  margin-right: 0.5rem;
+}

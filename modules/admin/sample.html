@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Manage Signup Slots</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+  <link rel="stylesheet" href="../../assets/css/admin/homepage.css" />
+  <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
+  <link rel="stylesheet" href="../../assets/css/admin/manage_slots.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    .card-header { font-weight: 600; font-size: 1.1rem; }
+    .badge { font-size: 0.85rem; }
+    .progress { height: 25px; }
+    .progress-bar { font-weight: 600; }
+    .slot-summary { font-size: 0.9rem; }
+    .table thead th { background-color: #f7f7f7; }
+    .accordion-button { font-size: 0.95rem; }
+    .btn-icon {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+  </style>
+</head>
+<body>
+<div id="wrapper">
+  <?php include '../../includes/admin/admin_sidebar.php'; ?>
+  <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+
+  <section class="home-section" id="mainContent">
+    <nav>
+      <div class="sidebar-toggle px-4 py-3">
+        <i class="bi bi-list" id="menu-toggle"></i>
+      </div>
+    </nav>
+
+    <div class="container-fluid p-4">
+      <h2 class="fw-bold mb-4"><i class="bi bi-calendar-check"></i> Manage Signup Slots</h2>
+
+      <!-- Release New Slot -->
+      <form id="releaseSlotsForm" method="POST" class="card p-4 shadow-sm mb-4">
+        <h5 class="mb-3"><i class="bi bi-plus-circle"></i> Release New Slot</h5>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Slot Count</label>
+            <input type="number" name="slot_count" class="form-control" required min="1">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Semester</label>
+            <select name="semester" class="form-select" required>
+              <option value="1st Semester">1st Semester</option>
+              <option value="2nd Semester">2nd Semester</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Academic Year</label>
+            <input type="text" name="academic_year" class="form-control" pattern="^\d{4}-\d{4}$" placeholder="2025-2026" required>
+          </div>
+        </div>
+        <button type="button" id="showPasswordModalBtn" class="btn btn-primary mt-3 btn-icon">
+          <i class="bi bi-upload"></i> Release
+        </button>
+      </form>
+
+      <!-- Current Slot -->
+      <?php if ($slotInfo): ?>
+        <div class="card shadow-sm mb-4">
+          <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-clock-history"></i> Current Slot</span>
+            <span class="badge bg-light text-dark"><?= $slotInfo['semester'] ?> | AY <?= $slotInfo['academic_year'] ?></span>
+            <button class="btn btn-light btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#currentSlotBody">
+              Toggle
+            </button>
+          </div>
+          <div id="currentSlotBody" class="collapse show card-body">
+            <div class="slot-summary mb-2">
+              <p><strong>Released:</strong> <?= date('F j, Y — h:i A', strtotime($slotInfo['created_at'])) ?></p>
+              <p><strong>Used:</strong> <?= $slotsUsed ?> / <?= $slotInfo['slot_count'] ?></p>
+              <?php
+                $percentage = ($slotsUsed / max(1, $slotInfo['slot_count'])) * 100;
+                $barClass = 'bg-success';
+                if ($percentage >= 80) $barClass = 'bg-danger';
+                elseif ($percentage >= 50) $barClass = 'bg-warning';
+              ?>
+              <div class="progress mb-3">
+                <div class="progress-bar <?= $barClass ?>" style="width: <?= $percentage ?>%">
+                  <?= round($percentage) ?>%
+                </div>
+              </div>
+              <p><strong>Remaining:</strong> <?= max(0, $slotsLeft) ?></p>
+            </div>
+
+            <?php if (!empty($applicantList)): ?>
+              <form method="POST" class="mb-3">
+                <input type="hidden" name="export_csv" value="1">
+                <button class="btn btn-success btn-sm btn-icon">
+                  <i class="bi bi-download"></i> Export Applicants to CSV
+                </button>
+              </form>
+
+              <h6 class="fw-semibold mt-4"><i class="bi bi-people"></i> Applicants</h6>
+              <div class="table-responsive">
+                <table class="table table-bordered table-sm table-striped align-middle">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Name</th>
+                      <th>Application Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <?php foreach ($applicantList as $a): ?>
+                      <tr>
+                        <td><?= htmlspecialchars(formatName($a['last_name'], $a['first_name'], $a['middle_name'])) ?></td>
+                        <td><?= date('M d, Y — h:i A', strtotime($a['application_date'])) ?></td>
+                      </tr>
+                    <?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+            <?php else: ?>
+              <p class="text-center text-muted border rounded py-3">No applicants for this slot.</p>
+            <?php endif; ?>
+          </div>
+        </div>
+      <?php endif; ?>
+
+      <!-- Past Releases -->
+      <h4 class="mt-4"><i class="bi bi-archive"></i> Past Releases</h4>
+      <?php if (!empty($pastReleases)): ?>
+        <div class="accordion" id="pastSlotsAccordion">
+          <?php foreach ($pastReleases as $i => $h): ?>
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="heading<?= $i ?>">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#collapse<?= $i ?>" aria-expanded="false" aria-controls="collapse<?= $i ?>">
+                  <?= date('F j, Y — h:i A', strtotime($h['created_at'])) ?> — 
+                  <span class="badge bg-secondary"><?= $h['slot_count'] ?> slots</span>
+                </button>
+              </h2>
+              <div id="collapse<?= $i ?>" class="accordion-collapse collapse" data-bs-parent="#pastSlotsAccordion">
+                <div class="accordion-body">
+                  <p><strong>Semester:</strong> <?= $h['semester'] ?> | <strong>AY:</strong> <?= $h['academic_year'] ?></p>
+                  <p><strong>Used:</strong> <?= $h['slots_used'] ?> / <?= $h['slot_count'] ?></p>
+                  <form method="POST" onsubmit="return confirm('Are you sure you want to delete this slot?')">
+                    <input type="hidden" name="delete_slot_id" value="<?= $h['slot_id'] ?>">
+                    <button type="submit" class="btn btn-sm btn-danger btn-icon">
+                      <i class="bi bi-trash"></i> Delete
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      <?php else: ?>
+        <div class="alert alert-info">No past releases found.</div>
+      <?php endif; ?>
+    </div>
+  </section>
+</div>
+
+<!-- Password Modal -->
+<div class="modal fade" id="passwordModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Confirm Password</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="password" id="modal_admin_password" class="form-control" placeholder="Enter password" required>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="confirmReleaseBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../assets/js/admin/sidebar.js"></script>
+<script>
+  document.getElementById('showPasswordModalBtn').addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('passwordModal')).show();
+  });
+
+  document.getElementById('confirmReleaseBtn').addEventListener('click', () => {
+    const pass = document.getElementById('modal_admin_password').value;
+    if (!pass) return alert('Please enter your password.');
+    const form = document.getElementById('releaseSlotsForm');
+    let input = form.querySelector('input[name="admin_password"]');
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'admin_password';
+      form.appendChild(input);
+    }
+    input.value = pass;
+    form.submit();
+  });
+</script>
+</body>
+</html>

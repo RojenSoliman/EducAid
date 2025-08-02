@@ -95,7 +95,7 @@ $posted = isset($_GET['posted']);
         <?php endif; ?>
       </div>
 
-      <h2 class="fw-bold mb-3"><i class="bi bi-card-text text-primary me-2"></i>Existing Announcements</h2>
+      <h2 class="fw-bold mb-4"><i class="bi bi-card-text text-primary me-2"></i>Existing Announcements</h2>
       <div class="card p-4">
         <?php
         $annRes = pg_query($connection, "SELECT announcement_id, title, remarks, posted_at, is_active FROM announcements ORDER BY posted_at DESC");
