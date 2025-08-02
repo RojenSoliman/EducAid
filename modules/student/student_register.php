@@ -199,7 +199,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             <input type="date" class="form-control" name="bdate" required />
           </div>
           <div class="mb-3">
-            <label class="form-label d-block">Sex</label>
+            <label class="form-label d-block">Gender</label>
             <div class="form-check form-check-inline">
               <input type="radio" class="form-check-input" name="sex" value="Male" required />
               <label class="form-check-label">Male</label>
