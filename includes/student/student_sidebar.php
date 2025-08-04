@@ -19,8 +19,8 @@
         <span class="links_name">Upload Documents</span>
       </a>
     </li>
-    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'student_qr.php' ? 'active' : ''; ?>">
-      <a href="student_qr.php">
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'qr_code.php' ? 'active' : ''; ?>">
+      <a href="qr_code.php">
         <i class="bi bi-qr-code-scan icon"></i>
         <span class="links_name">My QR Code</span>
       </a>

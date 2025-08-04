@@ -41,6 +41,10 @@ if (isset($_POST['scan'])) {
   <meta charset="UTF-8">
   <title>Generate Unique QR Code</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../../assets/css/student/homepage.css">
+  <link rel="stylesheet" href="../../assets/css/student/sidebar.css">
+  <link rel="stylesheet" href="../../assets/css/student/qr_code.css">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -121,60 +125,73 @@ if (isset($_POST['scan'])) {
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Generate Unique QR Code</h1>
+  <div id="wrapper">
+    <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
+    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+    <section class="home-section" id="page-content-wrapper">
+      <nav>
+        <div class="sidebar-toggle px-4 py-3">
+          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
+        </div>
+      </nav>
+      <div class="container py-5">
+        <h1>Generate Unique QR Code</h1>
 
-    <form method="post">
-      <button type="submit" name="generate">Generate QR Code</button>
-    </form>
+        <form method="post">
+          <button type="submit" name="generate">Generate QR Code</button>
+        </form>
 
-    <?php if (isset($_POST['generate'])): ?>
-      <?php
-        $last = $_SESSION['qr_codes'][count($_SESSION['qr_codes']) - 1];
-        $qr_url = "phpqrcode/generate_qr.php?data=" . urlencode($last['unique_id']);
-      ?>
-      <div class="qr-container fade-in">
-        <div class="payroll-number">Payroll Number: <?= $last['payroll_number'] ?></div>
-        <h2>Your Unique QR Code</h2>
-        <img src="<?= $qr_url ?>" alt="Generated QR Code">
-        <a href="<?= $qr_url ?>" download="qr_<?= $last['payroll_number'] ?>.png" class="download-button">Download QR</a>
+        <?php if (isset($_POST['generate'])): ?>
+          <?php
+            $last = $_SESSION['qr_codes'][count($_SESSION['qr_codes']) - 1];
+            $qr_url = "phpqrcode/generate_qr.php?data=" . urlencode($last['unique_id']);
+          ?>
+          <div class="qr-container fade-in">
+            <div class="payroll-number">Payroll Number: <?= $last['payroll_number'] ?></div>
+            <h2>Your Unique QR Code</h2>
+            <img src="<?= $qr_url ?>" alt="Generated QR Code">
+            <a href="<?= $qr_url ?>" download="qr_<?= $last['payroll_number'] ?>.png" class="download-button">Download QR</a>
+          </div>
+        <?php endif; ?>
+
+        <h2>Generated QR Codes List</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Payroll Number</th>
+              <th>Unique ID</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($_SESSION['qr_codes'] as $index => $qr): ?>
+              <tr class="<?= ($qr['status'] == 'Done') ? 'done-status' : ''; ?>">
+                <td><?= $qr['payroll_number'] ?></td>
+                <td><?= $qr['unique_id'] ?></td>
+                <td><?= $qr['status'] ?></td>
+                <td>
+                  <?php if ($qr['status'] != 'Done'): ?>
+                    <form method="post" style="display:inline;">
+                      <button type="submit" name="scan" value="<?= $index ?>" class="scan-button">Scan</button>
+                    </form>
+                  <?php endif; ?>
+                  <form method="post" style="display:inline;">
+                    <button type="submit" name="remove" value="<?= $index ?>" class="remove-button">Remove</button>
+                  </form>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+
+        <form method="post">
+          <button type="submit" name="reset" class="reset-button">Reset All</button>
+        </form>
       </div>
-    <?php endif; ?>
-
-    <h2>Generated QR Codes List</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Payroll Number</th>
-          <th>Unique ID</th>
-          <th>Status</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php foreach ($_SESSION['qr_codes'] as $index => $qr): ?>
-          <tr class="<?= ($qr['status'] == 'Done') ? 'done-status' : ''; ?>">
-            <td><?= $qr['payroll_number'] ?></td>
-            <td><?= $qr['unique_id'] ?></td>
-            <td><?= $qr['status'] ?></td>
-            <td>
-              <?php if ($qr['status'] != 'Done'): ?>
-                <form method="post" style="display:inline;">
-                  <button type="submit" name="scan" value="<?= $index ?>" class="scan-button">Scan</button>
-                </form>
-              <?php endif; ?>
-              <form method="post" style="display:inline;">
-                <button type="submit" name="remove" value="<?= $index ?>" class="remove-button">Remove</button>
-              </form>
-            </td>
-          </tr>
-        <?php endforeach; ?>
-      </tbody>
-    </table>
-
-    <form method="post">
-      <button type="submit" name="reset" class="reset-button">Reset All</button>
-    </form>
+    </section>
   </div>
+  <script src="../../assets/js/homepage.js"></script>
+  <script src="../../assets/js/student/sidebar.js"></script>
 </body>
 </html>
