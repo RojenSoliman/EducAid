@@ -1,3 +1,4 @@
+<!-- student_login.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -26,23 +27,36 @@
         <h2 class="fw-bold">Welcome Back</h2>
         <p class="text-muted mb-4">Your gateway to simplified scholarship services.</p>
 
-        <form action="student_login.php" method="post" class="form">
+        <!-- Login Form (handled via JS) -->
+        <form id="loginForm" class="form" autocomplete="off" novalidate>
           <div class="mb-3 text-start">
             <label for="firstname" class="form-label">First Name</label>
-            <input type="text" id="firstname" name="firstname" class="form-control input-field" required />
+            <input type="text" id="firstname" name="firstname"
+                   class="form-control input-field"
+                   autocomplete="given-name"
+                   required />
           </div>
           <div class="mb-3 text-start">
             <label for="lastname" class="form-label">Last Name</label>
-            <input type="text" id="lastname" name="lastname" class="form-control input-field" required />
+            <input type="text" id="lastname" name="lastname"
+                   class="form-control input-field"
+                   autocomplete="family-name"
+                   required />
           </div>
           <div class="mb-3 text-start">
             <label for="email" class="form-label">Email</label>
-            <input type="email" id="email" name="email" class="form-control input-field" required autocomplete="email" />
+            <input type="email" id="email" name="email"
+                   class="form-control input-field"
+                   autocomplete="email"
+                   required />
           </div>
           <div class="mb-3 text-start">
             <label for="password" class="form-label">Password</label>
             <div class="input-group">
-              <input type="password" id="password" name="password" class="form-control input-field" required autocomplete="current-password" />
+              <input type="password" id="password" name="password"
+                     class="form-control input-field"
+                     autocomplete="current-password"
+                     required />
               <span class="input-group-text bg-white toggle-password" style="cursor: pointer;">
                 <i class="bi bi-eye" id="toggleIcon"></i>
               </span>
@@ -50,26 +64,55 @@
           </div>
           <div class="d-flex justify-content-between align-items-center mb-4">
             <div class="form-check">
-              <input type="checkbox" class="form-check-input" id="rememberMe" />
+              <input type="checkbox" class="form-check-input" id="rememberMe" autocomplete="off" />
               <label class="form-check-label" for="rememberMe">Remember me</label>
             </div>
             <a href="#" id="forgotPassBtn" class="text-decoration-none text-primary">Forgot Password?</a>
           </div>
-          <button type="submit" name="student_login" class="btn btn-success w-100 mb-3">Sign In</button>
+          <button type="submit" class="btn btn-success w-100 mb-3">Sign In</button>
           <div class="separator"><span>Or</span></div>
           <button type="button" class="btn btn-outline-dark w-100">
             <i class="bi bi-google me-2"></i> Sign In with Google
           </button>
         </form>
-        <p class="mt-4 small">Don’t have an account? <a href="student_register.php" class="text-decoration-none text-primary fw-semibold">Sign Up</a></p>
+        <p class="mt-4 small">
+          Don’t have an account?
+          <a href="student_register.php" class="text-decoration-none text-primary fw-semibold">Sign Up</a>
+        </p>
       </div>
     </div>
   </div>
 
-  <!-- Forgot Password Modal -->
+  <!-- Login-OTP Modal -->
+  <div class="modal fade" id="loginOtpModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Enter Login OTP</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="loginOtpInput" class="form-label">OTP sent to your email:</label>
+            <input type="text" id="loginOtpInput"
+                   class="form-control"
+                   maxlength="6"
+                   autocomplete="one-time-code" />
+          </div>
+          <div class="form-text text-danger" id="loginOtpStatus"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="loginVerifyOtpBtn">Verify OTP</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Forgot-Password Modal -->
   <div class="modal fade" id="forgotPassModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
-      <form id="forgotPassForm" class="modal-content" method="post" autocomplete="off">
+      <form id="forgotPassForm" class="modal-content" autocomplete="off" novalidate>
         <div class="modal-header">
           <h5 class="modal-title">Forgot Password</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -77,15 +120,24 @@
         <div class="modal-body">
           <div class="mb-3">
             <label for="forgotEmail" class="form-label">Enter your email:</label>
-            <input type="email" id="forgotEmail" class="form-control" required />
+            <input type="email" id="forgotEmail"
+                   class="form-control"
+                   autocomplete="email"
+                   required />
           </div>
           <div class="mb-3" id="otpSection" style="display:none;">
             <label for="otpInput" class="form-label">Enter OTP:</label>
-            <input type="text" id="otpInput" class="form-control" maxlength="6" />
+            <input type="text" id="otpInput"
+                   class="form-control"
+                   maxlength="6"
+                   autocomplete="one-time-code" />
           </div>
           <div class="mb-3" id="newPasswordSection" style="display:none;">
             <label for="newPassword" class="form-label">New Password:</label>
-            <input type="password" id="newPassword" class="form-control" minlength="12" autocomplete="new-password" />
+            <input type="password" id="newPassword"
+                   class="form-control"
+                   minlength="12"
+                   autocomplete="new-password" />
           </div>
           <div class="form-text text-danger" id="forgotPassStatus"></div>
         </div>
@@ -100,32 +152,80 @@
   </div>
 
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
+  <script src="../../assets/js/preloader.js"></script>
   <script>
-    document.addEventListener("DOMContentLoaded", function () {
-      const forgotPassBtn = document.getElementById("forgotPassBtn");
-      const forgotEmail = document.getElementById("forgotEmail");
-      const otpInput = document.getElementById("otpInput");
-      const newPassword = document.getElementById("newPassword");
-      const forgotPassStatus = document.getElementById("forgotPassStatus");
-
-      const otpSection = document.getElementById("otpSection");
-      const newPasswordSection = document.getElementById("newPasswordSection");
-      const sendOtpBtn = document.getElementById("sendOtpBtn");
-      const verifyOtpBtn = document.getElementById("verifyOtpBtn");
-      const resetPasswordBtn = document.getElementById("resetPasswordBtn");
-
-      forgotPassBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        new bootstrap.Modal(document.getElementById("forgotPassModal")).show();
-      });
-
+    document.addEventListener("DOMContentLoaded", () => {
+      // Toggle password visibility
       document.querySelector(".toggle-password").addEventListener("click", () => {
-        const password = document.getElementById("password");
-        const icon = document.getElementById("toggleIcon");
-        password.type = password.type === "password" ? "text" : "password";
+        const pwd = document.getElementById("password"), icon = document.getElementById("toggleIcon");
+        pwd.type = pwd.type === "password" ? "text" : "password";
         icon.classList.toggle("bi-eye");
         icon.classList.toggle("bi-eye-slash");
       });
+
+      //
+      // — LOGIN PHASE 1: credentials → send login-OTP —
+      //
+      const loginForm = document.getElementById("loginForm");
+      loginForm.addEventListener("submit", e => {
+        e.preventDefault();
+        const data = new URLSearchParams(new FormData(loginForm));
+        fetch("student_login.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: data
+        })
+        .then(res => res.json())
+        .then(json => {
+          if (json.status === "otp_sent") {
+            new bootstrap.Modal(document.getElementById("loginOtpModal")).show();
+          } else {
+            alert(json.message);
+          }
+        })
+        .catch(() => alert("Server error — please try again."));
+      });
+
+      //
+      // — LOGIN PHASE 2: verify login-OTP —
+      //
+      document.getElementById("loginVerifyOtpBtn").addEventListener("click", () => {
+        const otp = document.getElementById("loginOtpInput").value.trim();
+        fetch("student_login.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            login_action: "verify_otp",
+            login_otp: otp
+          })
+        })
+        .then(res => res.json())
+        .then(json => {
+          const statusEl = document.getElementById("loginOtpStatus");
+          statusEl.textContent = json.message;
+          if (json.status === "success") {
+            window.location.href = json.redirect;
+          }
+        })
+        .catch(() => alert("Server error — please try again."));
+      });
+
+      //
+      // — FORGOT-PASSWORD OTP FLOW (unchanged) —
+      //
+      document.getElementById("forgotPassBtn").addEventListener("click", e => {
+        e.preventDefault();
+        new bootstrap.Modal(document.getElementById("forgotPassModal")).show();
+      });
+      const forgotEmail = document.getElementById("forgotEmail"),
+            sendOtpBtn = document.getElementById("sendOtpBtn"),
+            verifyOtpBtn = document.getElementById("verifyOtpBtn"),
+            resetPasswordBtn = document.getElementById("resetPasswordBtn"),
+            otpSection = document.getElementById("otpSection"),
+            newPasswordSection = document.getElementById("newPasswordSection"),
+            forgotPassStatus = document.getElementById("forgotPassStatus"),
+            otpInput = document.getElementById("otpInput"),
+            newPassword = document.getElementById("newPassword");
 
       sendOtpBtn.addEventListener("click", () => {
         fetch("student_login.php", {
@@ -133,16 +233,19 @@
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({
             forgot_action: "send_otp",
-            forgot_email: forgotEmail.value
+            forgot_email: forgotEmail.value.trim()
           })
-        }).then(res => res.json()).then(data => {
+        })
+        .then(res => res.json())
+        .then(data => {
           forgotPassStatus.textContent = data.message;
           if (data.status === "success") {
             otpSection.style.display = "block";
             verifyOtpBtn.style.display = "inline-block";
             sendOtpBtn.style.display = "none";
           }
-        });
+        })
+        .catch(() => forgotPassStatus.textContent = "Server error, try again.");
       });
 
       verifyOtpBtn.addEventListener("click", () => {
@@ -151,16 +254,19 @@
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({
             forgot_action: "verify_otp",
-            forgot_otp: otpInput.value
+            forgot_otp: otpInput.value.trim()
           })
-        }).then(res => res.json()).then(data => {
+        })
+        .then(res => res.json())
+        .then(data => {
           forgotPassStatus.textContent = data.message;
           if (data.status === "success") {
             newPasswordSection.style.display = "block";
             resetPasswordBtn.style.display = "inline-block";
             verifyOtpBtn.style.display = "none";
           }
-        });
+        })
+        .catch(() => forgotPassStatus.textContent = "Server error, try again.");
       });
 
       resetPasswordBtn.addEventListener("click", () => {
@@ -171,15 +277,17 @@
             forgot_action: "set_new_password",
             forgot_new_password: newPassword.value
           })
-        }).then(res => res.json()).then(data => {
+        })
+        .then(res => res.json())
+        .then(data => {
           forgotPassStatus.textContent = data.message;
           if (data.status === "success") {
             setTimeout(() => location.reload(), 1500);
           }
-        });
+        })
+        .catch(() => forgotPassStatus.textContent = "Server error, try again.");
       });
     });
   </script>
-  <script src="../../assets/js/preloader.js"></script>
 </body>
 </html>
