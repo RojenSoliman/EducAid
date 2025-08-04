@@ -315,3 +315,9 @@ h5 {
 body.no-scroll {
   overflow: hidden;
 }
+
+/* Disable sidebar transition until JS is ready */
+body:not(.js-ready) .sidebar {
+  visibility: hidden;
+  transition: none !important;
+}

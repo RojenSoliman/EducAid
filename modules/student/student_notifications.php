@@ -37,37 +37,40 @@ $notifications = $notifRes ? pg_fetch_all($notifRes) : [];
   <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
+  <style>
+    body:not(.js-ready) .sidebar { visibility: hidden; transition: none !important; }
+  </style>
 </head>
 <body>
-  <div class="container-fluid">
-    <div class="row">
-      <!-- Include Sidebar -->
-      <?php include '../../includes/student/student_sidebar.php' ?>
-      <!-- Main Content Area -->
-      <section class="home-section" id="page-content-wrapper">
-        <nav>
-            <div class="sidebar-toggle px-4 py-3">
-            <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
-            </div>
-        </nav>
-        <div class="container py-5">
+  <div id="wrapper">
+    <!-- Sidebar -->
+    <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
+    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+    <!-- Page Content -->
+    <section class="home-section" id="page-content-wrapper">
+      <nav>
+        <div class="sidebar-toggle px-4 py-3">
+          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
+        </div>
+      </nav>
+      <div class="container py-5">
         <?php if (!empty($flash_cleared)): ?>
-            <div class="alert alert-success text-center">
-                All notifications cleared.
-            </div>
+          <div class="alert alert-success text-center">
+            All notifications cleared.
+          </div>
         <?php endif; ?>
-         <!-- Student Notifications -->
-         <div class="row mb-4">
-           <div class="col">
-             <div class="card">
-               <div class="card-header d-flex align-items-center">
-                 <h5 class="mb-0">Notifications</h5>
-                 <form method="POST" class="ms-auto" onsubmit="return confirm('Are you sure you want to clear all notifications?');">
-                    <input type="hidden" name="clear_notifications" value="1" />
-                    <button type="submit" class="btn btn-sm btn-danger">Clear All</button>
-                  </form>
-               </div>
-               <div class="card-body">
+        <!-- Student Notifications -->
+        <div class="row mb-4">
+          <div class="col">
+            <div class="card">
+              <div class="card-header d-flex align-items-center">
+                <h5 class="mb-0">Notifications</h5>
+                <form method="POST" class="ms-auto" onsubmit="return confirm('Are you sure you want to clear all notifications?');">
+                  <input type="hidden" name="clear_notifications" value="1" />
+                  <button type="submit" class="btn btn-sm btn-danger">Clear All</button>
+                </form>
+              </div>
+              <div class="card-body">
                 <?php if (empty($notifications)): ?>
                   <p class="text-center">No notifications at this time.</p>
                 <?php else: ?>
@@ -80,15 +83,14 @@ $notifications = $notifRes ? pg_fetch_all($notifRes) : [];
                     <?php endforeach; ?>
                   </ul>
                 <?php endif; ?>
-               </div>
-             </div>
-           </div>
-         </div>
-        </div> 
-        </section>
-    </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
-    <script src="../../assets/js/homepage.js"></script>
+  <script src="../../assets/js/homepage.js"></script>
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

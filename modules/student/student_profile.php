@@ -278,7 +278,6 @@ $flash = $_SESSION['profile_flash'] ?? '';
 $flash_type = $_SESSION['profile_flash_type'] ?? '';
 unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -289,128 +288,128 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
   <style>
+    body:not(.js-ready) .sidebar { visibility: hidden; transition: none !important; }
     .verified-indicator { color: #28a745; font-weight: bold; }
     .form-error { color:#e14343; font-size: 0.92em; font-weight: 500; min-width: 90px; text-align: left; }
     .form-success { color:#41d87d; font-size: 0.92em; font-weight: 500; min-width: 90px; text-align: left; }
   </style>
 </head>
 <body>
-  <div class="container-fluid">
-    <div class="row">
-      <!-- Include Sidebar -->
-      <?php include '../../includes/student/student_sidebar.php' ?>
-      <!-- Main Content Area -->
-      <section class="home-section" id="page-content-wrapper">
-        <nav class="px-4 py-3"><i class="bi bi-list" id="menu-toggle"></i></nav>
-        <div class="container py-5">
-          <div class="card mb-4 p-4">
-            <h4>Profile Information</h4>
-            <table class="table borderless">
-              <tr><th>Full Name</th><td><?php echo htmlspecialchars($student['last_name'] . ', ' . $student['first_name'] . ' ' . $student['middle_name']); ?></td></tr>
-              <tr><th>Date of Birth</th><td><?php echo htmlspecialchars($student['bdate']); ?></td></tr>
-              <tr>
-                <th>Email</th>
-                <td>
-                  <?php echo htmlspecialchars($student['email']); ?>
-                  <button class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#emailModal">Edit</button>
-                </td>
-              </tr>
-              <tr><th>Mobile</th><td><?php echo htmlspecialchars($student['mobile']); ?> <button class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#mobileModal">Edit</button></td></tr>
-              <tr>
-                <th>Password</th>
-                <td>
-                  ************
-                  <button class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#passwordModal">Change Password</button>
-                </td>
-              </tr>
-            </table>
-          </div>
-          <!-- Email Modal with OTP -->
-          <div class="modal fade" id="emailModal" tabindex="-1">
-            <div class="modal-dialog">
-              <form id="emailUpdateForm" method="POST" class="modal-content">
-                <div class="modal-header">
-                  <h5>Edit Email</h5>
-                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  <div id="wrapper">
+    <!-- Sidebar -->
+    <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
+    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+    <!-- Main Content Area -->
+    <section class="home-section" id="page-content-wrapper">
+      <nav class="px-4 py-3"><i class="bi bi-list" id="menu-toggle"></i></nav>
+      <div class="container py-5">
+        <div class="card mb-4 p-4">
+          <h4>Profile Information</h4>
+          <table class="table borderless">
+            <tr><th>Full Name</th><td><?php echo htmlspecialchars($student['last_name'] . ', ' . $student['first_name'] . ' ' . $student['middle_name']); ?></td></tr>
+            <tr><th>Date of Birth</th><td><?php echo htmlspecialchars($student['bdate']); ?></td></tr>
+            <tr>
+              <th>Email</th>
+              <td>
+                <?php echo htmlspecialchars($student['email']); ?>
+                <button class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#emailModal">Edit</button>
+              </td>
+            </tr>
+            <tr><th>Mobile</th><td><?php echo htmlspecialchars($student['mobile']); ?> <button class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#mobileModal">Edit</button></td></tr>
+            <tr>
+              <th>Password</th>
+              <td>
+                ************
+                <button class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#passwordModal">Change Password</button>
+              </td>
+            </tr>
+          </table>
+        </div>
+        <!-- Email Modal with OTP -->
+        <div class="modal fade" id="emailModal" tabindex="-1">
+          <div class="modal-dialog">
+            <form id="emailUpdateForm" method="POST" class="modal-content">
+              <div class="modal-header">
+                <h5>Edit Email</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <div class="mb-3 position-relative">
+                  <label>New Email Address</label>
+                  <input type="email" name="new_email" id="newEmailInput" class="form-control" required>
+                  <span id="emailOtpStatus" class="form-error position-absolute" style="right:15px;top:35px;"></span>
                 </div>
-                <div class="modal-body">
+                <div id="otpSection" style="display:none;">
                   <div class="mb-3 position-relative">
-                    <label>New Email Address</label>
-                    <input type="email" name="new_email" id="newEmailInput" class="form-control" required>
-                    <span id="emailOtpStatus" class="form-error position-absolute" style="right:15px;top:35px;"></span>
+                    <label>Enter OTP</label>
+                    <input type="text" id="otpInput" class="form-control" maxlength="6" autocomplete="off">
+                    <span id="otpInputError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
                   </div>
-                  <div id="otpSection" style="display:none;">
-                    <div class="mb-3 position-relative">
-                      <label>Enter OTP</label>
-                      <input type="text" id="otpInput" class="form-control" maxlength="6" autocomplete="off">
-                      <span id="otpInputError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                    </div>
-                    <button type="button" class="btn btn-info w-100 mb-2" id="verifyOtpBtn">Verify OTP</button>
-                    <div id="otpTimer" class="text-danger mt-2"></div>
-                    <button type="button" class="btn btn-link" id="resendOtpBtn" style="display:none;">Resend OTP</button>
-                  </div>
+                  <button type="button" class="btn btn-info w-100 mb-2" id="verifyOtpBtn">Verify OTP</button>
+                  <div id="otpTimer" class="text-danger mt-2"></div>
+                  <button type="button" class="btn btn-link" id="resendOtpBtn" style="display:none;">Resend OTP</button>
                 </div>
-                <div class="modal-footer">
-                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                  <button type="button" id="sendOtpBtn" class="btn btn-primary">Send OTP</button>
-                  <button type="submit" name="update_email" id="saveEmailBtn" class="btn btn-success" style="display:none;">Save</button>
-                </div>
-              </form>
-            </div>
-          </div>
-          <!-- Mobile Modal -->
-          <div class="modal fade" id="mobileModal" tabindex="-1"><div class="modal-dialog"><form method="POST" class="modal-content">
-            <div class="modal-header"><h5>Edit Mobile</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body"><input type="text" name="new_mobile" class="form-control" value="<?php echo htmlspecialchars($student['mobile']); ?>" required></div>
-            <div class="modal-footer"><button type="submit" name="update_mobile" class="btn btn-primary" onclick="return confirm('Change mobile number?');">Save</button></div>
-          </form></div></div>
-          <!-- Change Password Modal with OTP -->
-          <div class="modal fade" id="passwordModal" tabindex="-1">
-            <div class="modal-dialog">
-              <form id="passwordUpdateForm" method="POST" class="modal-content" autocomplete="off">
-                <div class="modal-header">
-                  <h5>Change Password</h5>
-                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                  <div class="mb-3 position-relative">
-                    <label>Current Password</label>
-                    <input type="password" name="current_password" id="currentPwdInput" class="form-control" required minlength="8">
-                    <span id="currentPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                  </div>
-                  <div class="mb-3 position-relative">
-                    <label>New Password</label>
-                    <input type="password" name="new_password" id="newPwdInput" class="form-control" required minlength="12">
-                    <span id="newPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                  </div>
-                  <div class="mb-3 position-relative">
-                    <label>Confirm New Password</label>
-                    <input type="password" name="confirm_password" id="confirmPwdInput" class="form-control" required minlength="12">
-                    <span id="confirmPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                  </div>
-                  <div id="otpPwdSection" style="display:none;">
-                    <div class="mb-3 position-relative">
-                      <label>Enter OTP</label>
-                      <input type="text" id="otpPwdInput" class="form-control" maxlength="6" autocomplete="off">
-                      <span id="otpPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                    </div>
-                    <button type="button" class="btn btn-info w-100 mb-2" id="verifyOtpPwdBtn">Verify OTP</button>
-                    <div id="otpPwdTimer" class="text-danger mt-2"></div>
-                    <button type="button" class="btn btn-link" id="resendOtpPwdBtn" style="display:none;">Resend OTP</button>
-                  </div>
-                </div>
-                <div class="modal-footer">
-                  <span id="otpPwdStatus" class="ms-2"></span>
-                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                  <button type="button" id="sendOtpPwdBtn" class="btn btn-primary">Send OTP</button>
-                  <button type="submit" name="update_password" id="savePwdBtn" class="btn btn-success" style="display:none;">Save</button>
-                </div>
-              </form>
-            </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="sendOtpBtn" class="btn btn-primary">Send OTP</button>
+                <button type="submit" name="update_email" id="saveEmailBtn" class="btn btn-success" style="display:none;">Save</button>
+              </div>
+            </form>
           </div>
         </div>
-      </section>
-    </div>
+        <!-- Mobile Modal -->
+        <div class="modal fade" id="mobileModal" tabindex="-1"><div class="modal-dialog"><form method="POST" class="modal-content">
+          <div class="modal-header"><h5>Edit Mobile</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-body"><input type="text" name="new_mobile" class="form-control" value="<?php echo htmlspecialchars($student['mobile']); ?>" required></div>
+          <div class="modal-footer"><button type="submit" name="update_mobile" class="btn btn-primary" onclick="return confirm('Change mobile number?');">Save</button></div>
+        </form></div></div>
+        <!-- Change Password Modal with OTP -->
+        <div class="modal fade" id="passwordModal" tabindex="-1">
+          <div class="modal-dialog">
+            <form id="passwordUpdateForm" method="POST" class="modal-content" autocomplete="off">
+              <div class="modal-header">
+                <h5>Change Password</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <div class="mb-3 position-relative">
+                  <label>Current Password</label>
+                  <input type="password" name="current_password" id="currentPwdInput" class="form-control" required minlength="8">
+                  <span id="currentPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
+                </div>
+                <div class="mb-3 position-relative">
+                  <label>New Password</label>
+                  <input type="password" name="new_password" id="newPwdInput" class="form-control" required minlength="12">
+                  <span id="newPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
+                </div>
+                <div class="mb-3 position-relative">
+                  <label>Confirm New Password</label>
+                  <input type="password" name="confirm_password" id="confirmPwdInput" class="form-control" required minlength="12">
+                  <span id="confirmPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
+                </div>
+                <div id="otpPwdSection" style="display:none;">
+                  <div class="mb-3 position-relative">
+                    <label>Enter OTP</label>
+                    <input type="text" id="otpPwdInput" class="form-control" maxlength="6" autocomplete="off">
+                    <span id="otpPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
+                  </div>
+                  <button type="button" class="btn btn-info w-100 mb-2" id="verifyOtpPwdBtn">Verify OTP</button>
+                  <div id="otpPwdTimer" class="text-danger mt-2"></div>
+                  <button type="button" class="btn btn-link" id="resendOtpPwdBtn" style="display:none;">Resend OTP</button>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <span id="otpPwdStatus" class="ms-2"></span>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="sendOtpPwdBtn" class="btn btn-primary">Send OTP</button>
+                <button type="submit" name="update_password" id="savePwdBtn" class="btn btn-success" style="display:none;">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/homepage.js"></script>
