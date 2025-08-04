@@ -1,3 +1,6 @@
+<?php
+// admin_sidebar.php
+?>
 <!-- admin_sidebar.php -->
 <div class="sidebar" id="sidebar">
   <div class="logo-details">

@@ -6,6 +6,8 @@ body {
   overflow-x: hidden;
   margin: 0;
   padding: 0;
+  -webkit-text-size-adjust: 100%; /* For Safari/iOS */
+  text-size-adjust: 100%;         /* Standard property */
 }
 
 /* ===== Sidebar ===== */
