@@ -7,16 +7,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Camera QR Code Scanner</title>
-  <link rel="stylesheet" href="../../assets/css/bootstrap.min.css">
-  <link rel="stylesheet" href="../../assets/css/admin/homepage.css">
-  <link rel="stylesheet" href="../../assets/css/admin/sidebar.css">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <style>
     body {
       font-family: sans-serif;
+      text-align: center;
       background: #f0f0f0;
-      margin: 0;
-      padding: 0;
+      margin: 0; padding: 1rem;
     }
     h1 {
       margin-bottom: 1rem;
@@ -30,7 +26,6 @@
     }
     .controls {
       margin: 1rem 0;
-      text-align: center;
     }
     button, select {
       padding: 0.5rem 1rem;
@@ -45,32 +40,23 @@
   </style>
 </head>
 <body>
-  <div id="wrapper">
-    <?php include __DIR__ . '/../../includes/admin/admin_sidebar.php'; ?>
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
-    <section class="home-section" id="page-content-wrapper">
-      <nav>
-        <div class="sidebar-toggle px-4 py-3">
-          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
-        </div>
-      </nav>
-      <div class="container py-5">
-        <h1>QR Code Scanner</h1>
-        <div id="reader"></div>
-        <div class="controls">
-          <select id="camera-select">
-            <option value="">Select Camera</option>
-          </select>
-          <br />
-          <button id="start-button">Start Scanner</button>
-          <button id="stop-button" disabled>Stop Scanner</button>
-        </div>
-        <p><strong>Result:</strong> <span id="result">—</span></p>
-      </div>
-    </section>
+  <h1>QR Code Scanner</h1>
+
+  <div id="reader"></div>
+
+  <div class="controls">
+    <select id="camera-select">
+      <option value="">Select Camera</option>
+    </select>
+    <br />
+    <button id="start-button">Start Scanner</button>
+    <button id="stop-button" disabled>Stop Scanner</button>
   </div>
+
+  <p><strong>Result:</strong> <span id="result">—</span></p>
+
   <script src="https://unpkg.com/html5-qrcode"></script>
-  <script src="../../assets/js/admin/sidebar.js"></script>
+
   <script>
     const startButton = document.getElementById('start-button');
     const stopButton = document.getElementById('stop-button');
