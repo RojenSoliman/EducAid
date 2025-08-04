@@ -289,6 +289,7 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
   <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
+  <link rel="stylesheet" href="../../assets/css/student/sidebar.css" />
   <style>
     .verified-indicator { color: #28a745; font-weight: bold; }
     .form-error { color:#e14343; font-size: 0.92em; font-weight: 500; min-width: 90px; text-align: left; }
