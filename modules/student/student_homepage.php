@@ -28,6 +28,7 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
 
   <!-- Custom CSS -->
   <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
+  <link rel="stylesheet" href="../../assets/css/student/sidebar.css" />
   <style>
     body:not(.js-ready) .sidebar { visibility: hidden; transition: none !important; }
   </style>

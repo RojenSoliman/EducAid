@@ -37,6 +37,7 @@ $notifications = $notifRes ? pg_fetch_all($notifRes) : [];
   <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
+  <link rel="stylesheet" href="../../assets/css/student/sidebar.css" />
   <style>
     body:not(.js-ready) .sidebar { visibility: hidden; transition: none !important; }
   </style>
