@@ -100,7 +100,6 @@ INSERT INTO universities (name, code) VALUES
 ('Jose Rizal University - Cavite', 'JRU_CAVITE'),
 ('Colegio ng Lungsod ng Lipa', 'CLL'),
 ('University of Caloocan City - Cavite Extension', 'UCC_CAVITE'),
-('Philippine Women\'s University - Cavite', 'PWU_CAVITE'),
 ('Centro Escolar University - Laguna', 'CEU_LAGUNA'),
 ('Trinity University of Asia - Quezon', 'TUA_QUEZON'),
 ('Manuel S. Enverga University Foundation', 'MSEUF'),
