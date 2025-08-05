@@ -1,9 +1,18 @@
 <?php
-
 // scan_qr.php
 session_start();
 if (!isset($_SESSION['admin_username'])) {
     header("Location: admin_login.php");
+    exit;
+}
+
+include '../../config/database.php';
+include '../../includes/workflow_control.php';
+
+// Check workflow status - prevent access if payroll/QR not ready
+$workflow_status = getWorkflowStatus($connection);
+if (!$workflow_status['can_scan_qr']) {
+    echo "<script>alert('Access denied: Please generate payroll numbers and QR codes first.'); window.location.href = 'verify_students.php';</script>";
     exit;
 }
 ?>

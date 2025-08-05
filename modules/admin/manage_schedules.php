@@ -5,6 +5,14 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 include '../../config/database.php';
+include '../../includes/workflow_control.php';
+
+// Check workflow status - prevent access if payroll/QR not ready
+$workflow_status = getWorkflowStatus($connection);
+if (!$workflow_status['can_schedule']) {
+    echo "<script>alert('Access denied: Please generate payroll numbers and QR codes first.'); window.location.href = 'verify_students.php';</script>";
+    exit;
+}
 
 // Load settings for publish state
 $settingsPath = __DIR__ . '/../../data/municipal_settings.json';
@@ -59,9 +67,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) 
     $settings['schedule_published'] = true;
     file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
     
-    // Add admin notification for schedule publishing
+    // Add admin notification for schedule publishing and workflow change
     $notification_msg = "Distribution schedule published from " . $startDate . " to " . $endDate . " at " . $location;
     pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+    
+    $workflow_msg = "IMPORTANT: Payroll numbers are now locked because schedules have been created. To modify payroll, remove all schedules first.";
+    pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$workflow_msg]);
     
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
@@ -71,9 +82,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unpublish_schedule'])
     $settings['schedule_published'] = false;
     file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
     
-    // Add admin notification for schedule unpublishing
+    // Delete all schedules
+    pg_query($connection, "DELETE FROM schedules");
+    
+    // Add admin notification for schedule unpublishing and workflow change
     $notification_msg = "Distribution schedule unpublished and reset";
     pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+    
+    $workflow_msg = "Payroll numbers are now unlocked - schedules have been removed. You can now modify payroll settings.";
+    pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$workflow_msg]);
     
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;

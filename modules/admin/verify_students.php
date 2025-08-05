@@ -1,5 +1,6 @@
 <?php
 include __DIR__ . '/../../config/database.php';
+include __DIR__ . '/../../includes/workflow_control.php';
 session_start();
 if (!isset($_SESSION['admin_username'])) {
     header("Location: ../../unified_login.php");
@@ -14,6 +15,10 @@ $configResult = pg_query($connection, "SELECT value FROM config WHERE key = 'stu
 if ($configResult && $row = pg_fetch_assoc($configResult)) {
     $isFinalized = ($row['value'] === '1');
 }
+
+// Get workflow status
+$workflow_status = getWorkflowStatus($connection);
+$student_counts = getStudentCounts($connection);
 
 /* ---------------------------
    HELPERS
@@ -88,6 +93,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Revert list (optionally reset payroll numbers)
     if (isset($_POST['revert_list'])) {
+        // Check if schedules exist - prevent reverting if schedules are created
+        if ($workflow_status['has_schedules']) {
+            echo "<script>alert('Cannot revert payroll numbers because schedules have been created. Please remove all schedules first.'); window.location.href='verify_students.php';</script>";
+            exit;
+        }
+        
         pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
         $isFinalized = false;
         // Delete all QR code DB records (unconditional wipe)
@@ -165,6 +176,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Get workflow status after all POST actions
+$workflow_status = getWorkflowStatus($connection);
+$student_counts = getStudentCounts($connection);
+
 /* ---------------------------
    FILTERS
 ----------------------------*/
@@ -189,20 +204,8 @@ while ($row = pg_fetch_assoc($barangayResult)) {
     $barangayOptions[] = $row;
 }
 
-/* Check if all actives have payroll numbers when finalized */
-$allHavePayroll = false;
-if ($isFinalized) {
-    $payrollCheck = pg_query($connection, "
-        SELECT COUNT(*) AS total,
-               SUM(CASE WHEN payroll_no > 0 THEN 1 ELSE 0 END) AS with_payroll
-        FROM students
-        WHERE status = 'active'
-    ");
-    $row = pg_fetch_assoc($payrollCheck);
-    if ($row && (int)$row['total'] > 0 && (int)$row['total'] === (int)$row['with_payroll']) {
-        $allHavePayroll = true;
-    }
-}
+/* Check workflow status for UI decisions */
+// This is now calculated after POST actions above
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -235,6 +238,32 @@ if ($isFinalized) {
           <i class="bi bi-clipboard-check me-2"></i> Manage Student Status
         </h2>
         <p class="text-muted mb-0">Finalize the active list for payroll generation, or revert students back to applicants.</p>
+        
+        <!-- Workflow Status Indicators -->
+        <div class="row mt-3">
+          <div class="col-md-12">
+            <div class="d-flex flex-wrap gap-2">
+              <span class="badge <?= $workflow_status['list_finalized'] ? 'bg-success' : 'bg-secondary' ?> p-2">
+                <i class="bi <?= $workflow_status['list_finalized'] ? 'bi-check-circle' : 'bi-clock' ?> me-1"></i>
+                List <?= $workflow_status['list_finalized'] ? 'Finalized' : 'Not Finalized' ?>
+              </span>
+              <span class="badge <?= $workflow_status['has_payroll_qr'] ? 'bg-success' : 'bg-secondary' ?> p-2">
+                <i class="bi <?= $workflow_status['has_payroll_qr'] ? 'bi-check-circle' : 'bi-clock' ?> me-1"></i>
+                Payroll & QR <?= $workflow_status['has_payroll_qr'] ? 'Generated' : 'Pending' ?>
+              </span>
+              <span class="badge <?= $workflow_status['has_schedules'] ? 'bg-primary' : 'bg-secondary' ?> p-2">
+                <i class="bi <?= $workflow_status['has_schedules'] ? 'bi-calendar-check' : 'bi-calendar' ?> me-1"></i>
+                Schedules <?= $workflow_status['has_schedules'] ? 'Created' : 'Not Created' ?>
+              </span>
+              <?php if ($workflow_status['has_schedules']): ?>
+              <span class="badge bg-warning text-dark p-2">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                Payroll locked due to schedules
+              </span>
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Filters -->
@@ -306,37 +335,14 @@ if ($isFinalized) {
                       $email    = htmlspecialchars($row['email'] ?? '');
                       $mobile   = htmlspecialchars($row['mobile'] ?? '');
                       $barangay = htmlspecialchars($row['barangay'] ?? '');
-                  $payroll  = htmlspecialchars((string)($row['payroll_no'] ?? ''));
-                  $qr_img = '';
-                  $unique_id = $row['unique_id'];
-                  // If either payroll_no or QR code is missing, assign both at the same time
-                  if (empty($row['payroll_no']) || empty($unique_id)) {
-                    // Find the next available payroll number (max + 1)
-                    $payrollResult = pg_query($connection, "SELECT MAX(payroll_no) AS max_payroll FROM students WHERE status = 'active'");
-                    $maxPayroll = 0;
-                    if ($payrollResult && $pr = pg_fetch_assoc($payrollResult)) {
-                      $maxPayroll = (int)($pr['max_payroll'] ?? 0);
-                    }
-                    $newPayroll = $maxPayroll + 1;
-                    // Assign payroll number if missing
-                    if (empty($row['payroll_no'])) {
-                      pg_query_params($connection, "UPDATE students SET payroll_no = $1 WHERE student_id = $2", [$newPayroll, $id]);
-                      $payroll = htmlspecialchars((string)$newPayroll);
-                    }
-                    // Assign QR code if missing
-                    if (empty($unique_id)) {
-                      $unique_id = 'qr_' . uniqid();
-                      pg_query_params(
-                        $connection,
-                        "INSERT INTO qr_codes (payroll_number, student_unique_id, unique_id, status, created_at) VALUES ($1, $2, $3, 'Pending', NOW())",
-                        [$newPayroll, $row['unique_student_id'], $unique_id]
-                      );
-                    }
-                    // No need to fetch again, unique_id is now correct for this payroll
-                  }
-                  if (!empty($payroll) && !empty($unique_id)) {
-                    $qr_img = '../../modules/admin/phpqrcode/generate_qr.php?data=' . urlencode($unique_id);
-                  }
+                      $payroll  = htmlspecialchars((string)($row['payroll_no'] ?? ''));
+                      $qr_img = '';
+                      $unique_id = $row['unique_id'];
+                      
+                      // Only show QR image if payroll and unique_id exist (no automatic generation)
+                      if (!empty($payroll) && !empty($unique_id)) {
+                        $qr_img = '../../modules/admin/phpqrcode/generate_qr.php?data=' . urlencode($unique_id);
+                      }
                   ?>
                       <tr>
                         <td>
@@ -346,7 +352,13 @@ if ($isFinalized) {
                         <td><?= $email ?></td>
                         <td><?= $mobile ?></td>
                         <td><?= $barangay ?></td>
-                        <td class="payroll-col"><?php if ($isFinalized) { echo $payroll; } else { echo '<span class="text-muted">N/A</span>'; } ?></td>
+                        <td class="payroll-col">
+                          <?php if ($isFinalized && !empty($payroll)): ?>
+                            <?= $payroll ?>
+                          <?php else: ?>
+                            <span class="text-muted">N/A</span>
+                          <?php endif; ?>
+                        </td>
                         <td class="qr-col">
                           <?php if ($isFinalized && $qr_img): ?>
                             <img src="<?= $qr_img ?>" alt="QR Code" style="width:60px;height:60px;" onerror="this.onerror=null;this.src='';this.nextElementSibling.style.display='inline';" />
@@ -372,20 +384,57 @@ if ($isFinalized) {
               </button>
 
               <?php if ($isFinalized): ?>
+                <?php if ($workflow_status['has_schedules']): ?>
+                <button type="button" class="btn btn-warning" disabled title="Cannot revert - schedules exist">
+                  <i class="bi bi-backspace-reverse-fill me-1"></i> Revert List
+                  <small class="d-block">Remove schedules first</small>
+                </button>
+                <?php else: ?>
                 <button type="button" class="btn btn-warning" id="revertTriggerBtn">
                   <i class="bi bi-backspace-reverse-fill me-1"></i> Revert List
                 </button>
-                <button type="button" class="btn btn-primary ms-auto" id="generatePayrollBtn" <?= $allHavePayroll ? 'disabled' : '' ?>>
+                <?php endif; ?>
+                <?php if (!$workflow_status['has_payroll_qr']): ?>
+                <button type="button" class="btn btn-primary ms-auto" id="generatePayrollBtn">
                   <i class="bi bi-gear me-1"></i> Generate Payroll Numbers
                 </button>
+                <?php else: ?>
+                <button type="button" class="btn btn-primary ms-auto" id="generatePayrollBtn" disabled title="Payroll numbers already generated">
+                  <i class="bi bi-check me-1"></i> Payroll Generated
+                </button>
+                <?php endif; ?>
               <?php else: ?>
                 <button type="button" class="btn btn-success" id="finalizeTriggerBtn">
                   <i class="bi bi-check2-circle me-1"></i> Finalize List
                 </button>
                 <input type="hidden" name="finalize_list" id="finalizeListInput" value="">
-                <button type="button" class="btn btn-primary ms-auto d-none" id="generatePayrollBtn">
-                  <i class="bi bi-gear me-1"></i> Generate Payroll Numbers
-                </button>
+              <?php endif; ?>
+              
+              <!-- Next Steps Information -->
+              <?php if ($isFinalized && !$workflow_status['has_payroll_qr']): ?>
+              <div class="alert alert-warning mt-3 w-100">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Next Step:</strong> Click "Generate Payroll Numbers" to create payroll numbers and QR codes. 
+                This will unlock <strong>Scheduling</strong> and <strong>QR Scanning</strong> features.
+              </div>
+              <?php elseif ($workflow_status['has_payroll_qr'] && !$workflow_status['has_schedules']): ?>
+              <div class="alert alert-info mt-3 w-100">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>Ready:</strong> Payroll numbers and QR codes are generated! You can now access 
+                <a href="manage_schedules.php" class="alert-link">Scheduling</a> and 
+                <a href="scan_qr.php" class="alert-link">QR Scanning</a> features.
+              </div>
+              <?php elseif ($workflow_status['has_schedules']): ?>
+              <div class="alert alert-success mt-3 w-100">
+                <i class="bi bi-check-circle me-2"></i>
+                <strong>System Ready:</strong> All features are now available. 
+                Schedules have been created - manage them in <a href="manage_schedules.php" class="alert-link">Scheduling</a>.
+              </div>
+              <?php elseif (!$isFinalized): ?>
+              <div class="alert alert-primary mt-3 w-100">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>Getting Started:</strong> Finalize the student list first, then generate payroll numbers to unlock all features.
+              </div>
               <?php endif; ?>
             </div>
           </div>
