@@ -94,10 +94,12 @@ function render_table($applicants, $connection) {
                                         $label = ucfirst(str_replace('_', ' ', $doc['type']));
                                         $filePath = htmlspecialchars($doc['file_path']);
                                         if (preg_match('/\.(jpg|jpeg|png|gif)$/i', $filePath)) {
-                                            // Show image preview
+                                            // Show image preview with zoom functionality
                                             echo "<div class='doc-preview mb-3'>
                                                     <strong>$label:</strong><br>
-                                                    <img src='$filePath' alt='$label' class='img-fluid rounded border' style='max-height: 200px; max-width: 100%;'>
+                                                    <img src='$filePath' alt='$label' class='img-fluid rounded border zoomable-image' 
+                                                         style='max-height: 200px; max-width: 100%;' 
+                                                         onclick='openImageZoom(this.src, \"$label\")'>
                                                   </div>";
                                         } elseif (preg_match('/\.pdf$/i', $filePath)) {
                                             // Show embedded PDF
@@ -269,6 +271,71 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest') {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
 <script src="../../assets/js/admin/manage_applicants.js"></script>
+<script>
+// Image Zoom Functionality
+function openImageZoom(imageSrc, imageTitle) {
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('imageZoomModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'imageZoomModal';
+        modal.className = 'image-zoom-modal';
+        modal.innerHTML = `
+            <span class="image-zoom-close" onclick="closeImageZoom()">&times;</span>
+            <div class="image-zoom-content">
+                <div class="image-loading">Loading...</div>
+                <img id="zoomedImage" style="display: none;" alt="${imageTitle}">
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    // Show modal
+    modal.style.display = 'block';
+    
+    // Load image
+    const img = document.getElementById('zoomedImage');
+    const loading = modal.querySelector('.image-loading');
+    
+    img.onload = function() {
+        loading.style.display = 'none';
+        img.style.display = 'block';
+    };
+    
+    img.onerror = function() {
+        loading.textContent = 'Failed to load image';
+    };
+    
+    img.src = imageSrc;
+    
+    // Close on background click
+    modal.onclick = function(event) {
+        if (event.target === modal) {
+            closeImageZoom();
+        }
+    };
+}
+
+function closeImageZoom() {
+    const modal = document.getElementById('imageZoomModal');
+    if (modal) {
+        modal.style.display = 'none';
+        // Reset image
+        const img = document.getElementById('zoomedImage');
+        const loading = modal.querySelector('.image-loading');
+        img.style.display = 'none';
+        loading.style.display = 'block';
+        loading.textContent = 'Loading...';
+    }
+}
+
+// Close zoom on Escape key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeImageZoom();
+    }
+});
+</script>
 </body>
 </html>
 <?php pg_close($connection); ?>
