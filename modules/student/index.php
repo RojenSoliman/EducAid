@@ -121,13 +121,6 @@
         </div>
         <div class="col-md-3 mb-4">
           <div class="p-4">
-            <i class="bi bi-currency-dollar text-trias-gold fs-1 mb-3"></i>
-            <h3 class="fw-bold text-trias-gold">₱25M+</h3>
-            <p class="text-muted">Scholarships Awarded Locally</p>
-          </div>
-        </div>
-        <div class="col-md-3 mb-4">
-          <div class="p-4">
             <i class="bi bi-building text-trias-light-blue fs-1 mb-3"></i>
             <h3 class="fw-bold text-trias-light-blue">50+</h3>
             <p class="text-muted">Partner Schools in Cavite</p>

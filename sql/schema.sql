@@ -190,3 +190,16 @@ ADD COLUMN IF NOT EXISTS unique_student_id TEXT UNIQUE;
 
 -- Create index for faster lookups
 CREATE INDEX IF NOT EXISTS idx_students_unique_id ON students(unique_student_id);
+
+CREATE TABLE qr_codes (
+    qr_id SERIAL PRIMARY KEY,
+    payroll_number INT NOT NULL,
+    unique_id TEXT UNIQUE NOT NULL,
+    student_unique_id TEXT REFERENCES students(unique_student_id),
+    status TEXT CHECK (status IN ('Pending', 'Done')) DEFAULT 'Pending',
+    created_at TIMESTAMP DEFAULT NOW(),
+    -- Optionally, you can add admin_id if you want to track who generated it
+    admin_id INT REFERENCES admins(admin_id),
+    -- Optionally, you can add a name field if you want to store a name
+    name TEXT
+);
