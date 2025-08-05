@@ -17,7 +17,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     if ($slotInfo) {
         $countRes = pg_query_params($connection, "
             SELECT COUNT(*) AS total FROM students
-            WHERE (status = 'applicant' OR status = 'active')
+            WHERE (status = 'under_registration' OR status = 'applicant' OR status = 'active')
             AND application_date >= $1
         ", [$slotInfo['created_at']]);
         $countRow = pg_fetch_assoc($countRes);
@@ -404,7 +404,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
     $countRes = pg_query_params($connection, "
         SELECT COUNT(*) AS total FROM students
-        WHERE (status = 'applicant' OR status = 'active')
+        WHERE (status = 'under_registration' OR status = 'applicant' OR status = 'active')
         AND application_date >= $1
     ", [$slotInfo['created_at']]);
     $countRow = pg_fetch_assoc($countRes);

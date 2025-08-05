@@ -71,20 +71,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     } elseif (isset($_POST['export_csv']) && $_POST['export_csv'] === '1') {
         header('Content-Type: text/csv');
-        header('Content-Disposition: attachment; filename="applicants.csv"');
+        header('Content-Disposition: attachment; filename="registrations.csv"');
         $output = fopen('php://output', 'w');
-        fputcsv($output, ['Name', 'Application Date', 'Semester', 'Academic Year']);
+        fputcsv($output, ['Name', 'Application Date', 'Status', 'Semester', 'Academic Year']);
         $exportQuery = pg_query_params($connection, "
-            SELECT s.first_name, s.middle_name, s.last_name, s.application_date, a.semester, a.academic_year
+            SELECT s.first_name, s.middle_name, s.last_name, s.application_date, s.status, a.semester, a.academic_year
             FROM students s
             LEFT JOIN applications a ON s.student_id = a.student_id
-            WHERE s.status = 'applicant' AND s.municipality_id = $1
-            ORDER BY s.application_date DESC
+            WHERE (s.status = 'under_registration' OR s.status = 'applicant') AND s.municipality_id = $1
+            ORDER BY s.status DESC, s.application_date DESC
         ", [$municipality_id]);
         while ($row = pg_fetch_assoc($exportQuery)) {
+            $statusLabel = $row['status'] === 'under_registration' ? 'Pending Approval' : 'Approved';
             fputcsv($output, [
                 formatName($row['last_name'], $row['first_name'], $row['middle_name']),
                 date('M d, Y — h:i A', strtotime($row['application_date'])),
+                $statusLabel,
                 $row['semester'],
                 $row['academic_year']
             ]);
@@ -101,24 +103,41 @@ $slotInfo = pg_fetch_assoc(pg_query_params($connection, "
 
 $slotsUsed = 0;
 $slotsLeft = 0;
+$pendingCount = 0;
+$approvedCount = 0;
 $applicantList = [];
 $totalApplicants = 0;
 
 if ($slotInfo) {
     $createdAt = $slotInfo['created_at'];
 
+    // Count total registrations (pending + approved)
     $countResult = pg_query_params($connection, "
         SELECT COUNT(*) FROM students 
-        WHERE status = 'applicant' AND municipality_id = $1 AND application_date >= $2
+        WHERE (status = 'under_registration' OR status = 'applicant') AND municipality_id = $1 AND application_date >= $2
     ", [$municipality_id, $createdAt]);
     $totalApplicants = intval(pg_fetch_result($countResult, 0, 0));
 
+    // Count pending registrations
+    $pendingCountResult = pg_query_params($connection, "
+        SELECT COUNT(*) FROM students 
+        WHERE status = 'under_registration' AND municipality_id = $1 AND application_date >= $2
+    ", [$municipality_id, $createdAt]);
+    $pendingCount = intval(pg_fetch_result($pendingCountResult, 0, 0));
+
+    // Count approved registrations
+    $approvedCountResult = pg_query_params($connection, "
+        SELECT COUNT(*) FROM students 
+        WHERE status = 'applicant' AND municipality_id = $1 AND application_date >= $2
+    ", [$municipality_id, $createdAt]);
+    $approvedCount = intval(pg_fetch_result($approvedCountResult, 0, 0));
+
     $res = pg_query_params($connection, "
-        SELECT s.first_name, s.middle_name, s.last_name, s.application_date, a.semester, a.academic_year
+        SELECT s.first_name, s.middle_name, s.last_name, s.application_date, s.status, a.semester, a.academic_year
         FROM students s
         LEFT JOIN applications a ON s.student_id = a.student_id
-        WHERE s.status = 'applicant' AND s.municipality_id = $1 AND s.application_date >= $2
-        ORDER BY s.application_date DESC
+        WHERE (s.status = 'under_registration' OR s.status = 'applicant') AND s.municipality_id = $1 AND s.application_date >= $2
+        ORDER BY s.status DESC, s.application_date DESC
         LIMIT $3 OFFSET $4
     ", [$municipality_id, $createdAt, $limit, $offset]);
 
@@ -248,7 +267,15 @@ while ($row = pg_fetch_assoc($res)) {
           </div>
           <div id="currentSlotBody" class="collapse show card-body">
             <p><strong>Released:</strong> <?= date('F j, Y — h:i A', strtotime($slotInfo['created_at'])) ?></p>
-            <p><strong>Used:</strong> <?= $slotsUsed ?> / <?= $slotInfo['slot_count'] ?></p>
+            <p><strong>Total Used:</strong> <?= $slotsUsed ?> / <?= $slotInfo['slot_count'] ?></p>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <p><strong>Pending Approval:</strong> <span class="badge bg-warning"><?= $pendingCount ?></span></p>
+              </div>
+              <div class="col-md-6">
+                <p><strong>Approved:</strong> <span class="badge bg-success"><?= $approvedCount ?></span></p>
+              </div>
+            </div>
             <?php
               $percentage = ($slotsUsed / max(1, $slotInfo['slot_count'])) * 100;
               $barClass = 'bg-success';
@@ -270,16 +297,17 @@ while ($row = pg_fetch_assoc($res)) {
             <?php if (!empty($applicantList)): ?>
               <form method="POST" class="mb-3">
                 <input type="hidden" name="export_csv" value="1">
-                <button class="btn btn-success btn-sm"><i class="bi bi-download"></i> Export Applicants</button>
+                <button class="btn btn-success btn-sm"><i class="bi bi-download"></i> Export All Registrations</button>
               </form>
 
-              <h6 class="fw-semibold mt-4"><i class="bi bi-people"></i> Applicants</h6>
+              <h6 class="fw-semibold mt-4"><i class="bi bi-people"></i> All Registrations (Pending + Approved)</h6>
               <div class="table-responsive">
                 <table class="table table-bordered table-sm table-striped align-middle">
                   <thead class="table-light">
                     <tr>
                       <th>Name</th>
                       <th>Application Date</th>
+                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -287,6 +315,13 @@ while ($row = pg_fetch_assoc($res)) {
                       <tr>
                         <td><?= htmlspecialchars(formatName($a['last_name'], $a['first_name'], $a['middle_name'])) ?></td>
                         <td><?= date('M d, Y — h:i A', strtotime($a['application_date'])) ?></td>
+                        <td>
+                          <?php if ($a['status'] === 'under_registration'): ?>
+                            <span class="badge bg-warning">Pending Approval</span>
+                          <?php elseif ($a['status'] === 'applicant'): ?>
+                            <span class="badge bg-success">Approved</span>
+                          <?php endif; ?>
+                        </td>
                       </tr>
                     <?php endforeach; ?>
                   </tbody>
