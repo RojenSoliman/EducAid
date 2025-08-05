@@ -21,7 +21,12 @@ if ($configResult && $row = pg_fetch_assoc($configResult)) {
 function fetch_students($connection, $status, $sort, $barangayFilter) {
     $query = "
         SELECT s.student_id, s.first_name, s.middle_name, s.last_name, s.mobile, s.email,
-               b.name AS barangay, s.payroll_no
+               b.name AS barangay, s.payroll_no, s.unique_student_id,
+               (
+                 SELECT unique_id FROM qr_codes q2
+                 WHERE q2.student_unique_id = s.unique_student_id AND q2.payroll_number = s.payroll_no
+                 ORDER BY q2.qr_id DESC LIMIT 1
+               ) AS unique_id
         FROM students s
         JOIN barangays b ON s.barangay_id = b.barangay_id
         WHERE s.status = $1";
@@ -82,22 +87,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
     }
 
-    // Generate payroll numbers (sorted A→Z by full name)
+    // Generate payroll numbers (sorted A→Z by full name) and QR codes
     if (isset($_POST['generate_payroll'])) {
+        // 1. Assign payroll numbers
         $result = pg_query($connection, "
-            SELECT student_id
+            SELECT student_id, unique_student_id
             FROM students
             WHERE status = 'active'
             ORDER BY last_name ASC, first_name ASC, middle_name ASC
         ");
         $payroll_no = 1;
+        $student_payrolls = [];
         if ($result) {
             while ($row = pg_fetch_assoc($result)) {
+                $student_id = $row['student_id'];
+                $unique_student_id = $row['unique_student_id'];
+                // Assign payroll number
                 pg_query_params(
                     $connection,
                     "UPDATE students SET payroll_no = $1 WHERE student_id = $2",
-                    [$payroll_no, $row['student_id']]
+                    [$payroll_no, $student_id]
                 );
+                $student_payrolls[] = [
+                    'unique_student_id' => $unique_student_id,
+                    'payroll_no' => $payroll_no
+                ];
                 $payroll_no++;
             }
             
@@ -106,7 +120,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notification_msg = "Payroll numbers generated for " . $total_assigned . " active students";
             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
         }
-        echo "<script>alert('Payroll numbers generated successfully!'); window.location.href='verify_students.php';</script>";
+        // 2. Immediately create QR code records for each student/payroll with a unique_id
+        foreach ($student_payrolls as $sp) {
+            $qr_exists = pg_query_params(
+                $connection,
+                "SELECT qr_id FROM qr_codes WHERE student_unique_id = $1 AND payroll_number = $2",
+                [$sp['unique_student_id'], $sp['payroll_no']]
+            );
+            if (!pg_fetch_assoc($qr_exists)) {
+                $unique_id = 'qr_' . uniqid();
+                pg_query_params(
+                    $connection,
+                    "INSERT INTO qr_codes (payroll_number, student_unique_id, unique_id, status, created_at) VALUES ($1, $2, $3, 'Pending', NOW())",
+                    [$sp['payroll_no'], $sp['unique_student_id'], $unique_id]
+                );
+            }
+        }
+        echo "<script>alert('Payroll numbers and QR codes generated successfully!'); window.location.href='verify_students.php';</script>";
         exit;
     }
 }
@@ -238,6 +268,7 @@ if ($isFinalized) {
                     <th>Mobile Number</th>
                     <th>Barangay</th>
                     <th class="payroll-col<?= $isFinalized ? '' : ' d-none' ?>">Payroll #</th>
+                    <th class="qr-col<?= $isFinalized ? '' : ' d-none' ?>">QR Code</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -251,7 +282,37 @@ if ($isFinalized) {
                       $email    = htmlspecialchars($row['email'] ?? '');
                       $mobile   = htmlspecialchars($row['mobile'] ?? '');
                       $barangay = htmlspecialchars($row['barangay'] ?? '');
-                      $payroll  = htmlspecialchars((string)($row['payroll_no'] ?? ''));
+                  $payroll  = htmlspecialchars((string)($row['payroll_no'] ?? ''));
+                  $qr_img = '';
+                  $unique_id = $row['unique_id'];
+                  // If either payroll_no or QR code is missing, assign both at the same time
+                  if (empty($row['payroll_no']) || empty($unique_id)) {
+                    // Find the next available payroll number (max + 1)
+                    $payrollResult = pg_query($connection, "SELECT MAX(payroll_no) AS max_payroll FROM students WHERE status = 'active'");
+                    $maxPayroll = 0;
+                    if ($payrollResult && $pr = pg_fetch_assoc($payrollResult)) {
+                      $maxPayroll = (int)($pr['max_payroll'] ?? 0);
+                    }
+                    $newPayroll = $maxPayroll + 1;
+                    // Assign payroll number if missing
+                    if (empty($row['payroll_no'])) {
+                      pg_query_params($connection, "UPDATE students SET payroll_no = $1 WHERE student_id = $2", [$newPayroll, $id]);
+                      $payroll = htmlspecialchars((string)$newPayroll);
+                    }
+                    // Assign QR code if missing
+                    if (empty($unique_id)) {
+                      $unique_id = 'qr_' . uniqid();
+                      pg_query_params(
+                        $connection,
+                        "INSERT INTO qr_codes (payroll_number, student_unique_id, unique_id, status, created_at) VALUES ($1, $2, $3, 'Pending', NOW())",
+                        [$newPayroll, $row['unique_student_id'], $unique_id]
+                      );
+                    }
+                    // No need to fetch again, unique_id is now correct for this payroll
+                  }
+                  if (!empty($payroll) && !empty($unique_id)) {
+                    $qr_img = '../../modules/admin/phpqrcode/generate_qr.php?data=' . urlencode($unique_id);
+                  }
                   ?>
                       <tr>
                         <td>
@@ -261,12 +322,20 @@ if ($isFinalized) {
                         <td><?= $email ?></td>
                         <td><?= $mobile ?></td>
                         <td><?= $barangay ?></td>
-                        <td class="payroll-col" <?= $isFinalized ? '' : 'style="display:none;"' ?>><?= $payroll ?></td>
+                        <td class="payroll-col" <?= $isFinalized ? '' : 'style=\"display:none;\"' ?>><?= $payroll ?></td>
+                        <td class="qr-col" <?= $isFinalized ? '' : 'style=\"display:none;\"' ?>>
+                          <?php if ($qr_img): ?>
+                            <img src="<?= $qr_img ?>" alt="QR Code" style="width:60px;height:60px;" onerror="this.onerror=null;this.src='';this.nextElementSibling.style.display='inline';" />
+                            <span class="text-danger" style="display:none;">QR Error</span>
+                          <?php else: ?>
+                            <span class="text-muted">N/A</span>
+                          <?php endif; ?>
+                        </td>
                       </tr>
                   <?php
                     endwhile;
                   else:
-                      echo '<tr><td colspan="6" class="text-center text-muted">No active students found.</td></tr>';
+                      echo '<tr><td colspan="7" class="text-center text-muted">No active students found.</td></tr>';
                   endif;
                   ?>
                 </tbody>
@@ -443,3 +512,4 @@ if ($isFinalized) {
 </body>
 </html>
 <?php pg_close($connection); ?>
+
