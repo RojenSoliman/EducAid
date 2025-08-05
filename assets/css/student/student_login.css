@@ -1,13 +1,21 @@
 :root {
-  --trias-blue: #1e3a8a;
-  --trias-light-blue: #3b82f6;
-  --trias-gold: #f59e0b;
-  --trias-dark-blue: #1e40af;
+  /* Primary Color Palette */
+  --trias-primary: #0068DA;        /* Bold Blue - Main brand color */
+  --trias-secondary: #00B1C6;      /* Aqua Blue - Secondary accent */
+  --trias-accent: #0088C8;         /* Bright Cyan - Interactive elements */
+  --trias-success: #3DAD10;        /* Deep Green - Success states */
+  --trias-light: #67D6C6;          /* Soft Mint Green - Light accents */
+  --trias-fresh: #6CC748;          /* Light Leaf Green - Fresh highlights */
+  
+  /* Gradient combinations */
+  --gradient-primary: linear-gradient(135deg, var(--trias-primary) 0%, var(--trias-secondary) 100%);
+  --gradient-accent: linear-gradient(135deg, var(--trias-accent) 0%, var(--trias-light) 100%);
+  --gradient-success: linear-gradient(135deg, var(--trias-success) 0%, var(--trias-fresh) 100%);
 }
 
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, var(--trias-blue) 0%, var(--trias-dark-blue) 100%);
+  background: var(--gradient-primary);
   min-height: 100vh;
   margin: 0;
 }
@@ -33,7 +41,7 @@ body {
 
 .login-left {
   flex: 1;
-  background: linear-gradient(135deg, var(--trias-light-blue) 0%, var(--trias-blue) 100%);
+  background: var(--trias-primary);
   color: white;
   padding: 3rem;
   display: flex;
@@ -60,16 +68,18 @@ body {
   z-index: 2;
 }
 
-.brand-logo {
-  width: 100px;
-  height: 100px;
-  background: white;
-  border-radius: 50%;
+.brand-logo-container {
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 1.5rem;
-  box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+}
+
+.brand-logo-img {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 20px rgba(0,0,0,0.2));
 }
 
 .login-right {
@@ -96,8 +106,8 @@ body {
 }
 
 .form-control:focus {
-  border-color: var(--trias-light-blue);
-  box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+  border-color: var(--trias-accent);
+  box-shadow: 0 0 0 0.2rem rgba(0, 136, 200, 0.25);
   background: white;
 }
 
@@ -122,7 +132,7 @@ body {
 }
 
 .btn-login {
-  background: linear-gradient(135deg, var(--trias-gold) 0%, #f97316 100%);
+  background: var(--gradient-success);
   border: none;
   border-radius: 10px;
   padding: 14px;
@@ -131,22 +141,34 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(249, 115, 22, 0.3);
+  box-shadow: 0 4px 15px rgba(61, 173, 16, 0.3);
 }
 
 .btn-login:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(249, 115, 22, 0.4);
-  background: linear-gradient(135deg, #f97316 0%, var(--trias-gold) 100%);
+  box-shadow: 0 6px 20px rgba(61, 173, 16, 0.4);
+  background: linear-gradient(135deg, var(--trias-fresh) 0%, var(--trias-success) 100%);
 }
 
 .quick-links {
-  background: #f8fafc;
+  background: linear-gradient(135deg, #f8fafc 0%, rgba(103, 214, 198, 0.1) 100%);
   border-radius: 10px;
   padding: 1.5rem;
   margin-top: 1.5rem;
   text-align: center;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(103, 214, 198, 0.3);
+}
+
+.quick-links .btn-outline-primary {
+  border-color: var(--trias-accent);
+  color: var(--trias-accent);
+  transition: all 0.3s ease;
+}
+
+.quick-links .btn-outline-primary:hover {
+  background-color: var(--trias-accent);
+  border-color: var(--trias-accent);
+  color: white;
 }
 
 .form-label {
@@ -162,7 +184,7 @@ body {
 }
 
 .toggle-password:hover {
-  color: var(--trias-blue) !important;
+  color: var(--trias-primary) !important;
 }
 
 .mb-3 {
@@ -171,6 +193,33 @@ body {
 
 .mb-4 {
   margin-bottom: 1.5rem !important;
+}
+
+/* Link styling */
+a[href="#forgotPassBtn"], 
+#forgotPassBtn {
+  color: var(--trias-accent) !important;
+}
+
+#forgotPassBtn:hover {
+  color: var(--trias-primary) !important;
+}
+
+/* Modal styling */
+.modal-header {
+  background: var(--gradient-primary) !important;
+}
+
+.modal-header.text-white[style*="trias-gold"] {
+  background: var(--gradient-accent) !important;
+}
+
+.btn[style*="trias-blue"] {
+  background: var(--trias-primary) !important;
+}
+
+.btn[style*="trias-blue"]:hover {
+  background: var(--trias-secondary) !important;
 }
 
 /* Desktop specific adjustments */
@@ -188,9 +237,9 @@ body {
     padding: 4rem;
   }
   
-  .brand-logo {
-    width: 120px;
-    height: 120px;
+  .brand-logo-img {
+    width: 140px;
+    height: 140px;
   }
   
   .form-control {
@@ -229,9 +278,9 @@ body {
     padding: 2.5rem;
   }
   
-  .brand-logo {
-    width: 80px;
-    height: 80px;
+  .brand-logo-img {
+    width: 100px;
+    height: 100px;
   }
 }
 
