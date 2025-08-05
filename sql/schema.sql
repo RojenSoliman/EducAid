@@ -203,3 +203,13 @@ CREATE TABLE qr_codes (
     -- Optionally, you can add a name field if you want to store a name
     name TEXT
 );
+CREATE TABLE qr_codes (
+    qr_id SERIAL PRIMARY KEY,
+    payroll_number INT NOT NULL,
+    student_unique_id TEXT REFERENCES students(unique_student_id),
+    status TEXT CHECK (status IN ('Pending', 'Done')) DEFAULT 'Pending',
+    created_at TIMESTAMP DEFAULT NOW()
+    -- Optionally, you can add admin_id if you want to track who generated it
+);
+
+ALTER TABLE qr_codes ADD COLUMN unique_id TEXT;
