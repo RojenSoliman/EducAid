@@ -158,26 +158,29 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
             
             <!-- Universities Management -->
             <div class="card mb-4">
-                <div class="card-header bg-primary text-white">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-building me-2"></i>Universities Management</h5>
+                    <span class="badge bg-light text-dark"><?= count($universities) ?> universities</span>
                 </div>
                 <div class="card-body">
-                    <!-- Add University Form -->
+                    <!-- Controls Row -->
                     <div class="row mb-3">
-                        <div class="col-md-12">
-                            <form method="POST" class="d-flex gap-2">
-                                <input type="text" class="form-control" name="university_name" placeholder="University Name" required>
-                                <input type="text" class="form-control" name="university_code" placeholder="Code (e.g., UST)" maxlength="10" required>
-                                <button type="submit" name="add_university" class="btn btn-primary">
-                                    <i class="bi bi-plus"></i> Add
-                                </button>
-                            </form>
+                        <div class="col-md-6">
+                            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUniversityModal">
+                                <i class="bi bi-plus"></i> Add University
+                            </button>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="universitySearch" placeholder="Search universities...">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            </div>
                         </div>
                     </div>
                     
                     <!-- Universities List -->
                     <div class="table-responsive">
-                        <table class="table table-striped">
+                        <table class="table table-striped" id="universitiesTable">
                             <thead>
                                 <tr>
                                     <th>University Name</th>
@@ -196,12 +199,9 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
                                         <td><?= date('M d, Y', strtotime($university['created_at'])) ?></td>
                                         <td>
                                             <?php if ($university['student_count'] == 0): ?>
-                                                <form method="POST" style="display: inline;">
-                                                    <input type="hidden" name="university_id" value="<?= $university['university_id'] ?>">
-                                                    <button type="submit" name="delete_university" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this university?')">
-                                                        <i class="bi bi-trash"></i> Delete
-                                                    </button>
-                                                </form>
+                                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="showDeleteUniversityModal(<?= $university['university_id'] ?>, '<?= htmlspecialchars($university['name'], ENT_QUOTES) ?>')">
+                                                    <i class="bi bi-trash"></i> Delete
+                                                </button>
                                             <?php else: ?>
                                                 <span class="text-muted">Cannot delete (has students)</span>
                                             <?php endif; ?>
@@ -211,30 +211,54 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
                             </tbody>
                         </table>
                     </div>
+                    
+                    <!-- Pagination Controls -->
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <div>
+                            <select id="universitiesPerPage" class="form-select form-select-sm" style="width: auto;">
+                                <option value="10">10 per page</option>
+                                <option value="25" selected>25 per page</option>
+                                <option value="50">50 per page</option>
+                                <option value="100">100 per page</option>
+                            </select>
+                        </div>
+                        <div>
+                            <span id="universitiesInfo" class="text-muted"></span>
+                        </div>
+                        <div>
+                            <nav>
+                                <ul class="pagination pagination-sm mb-0" id="universitiesPagination"></ul>
+                            </nav>
+                        </div>
+                    </div>
                 </div>
             </div>
             
             <!-- Barangays Management -->
             <div class="card mb-4">
-                <div class="card-header bg-success text-white">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-geo-alt me-2"></i>Barangays Management</h5>
+                    <span class="badge bg-light text-dark"><?= count($barangays) ?> barangays</span>
                 </div>
                 <div class="card-body">
-                    <!-- Add Barangay Form -->
+                    <!-- Controls Row -->
                     <div class="row mb-3">
-                        <div class="col-md-12">
-                            <form method="POST" class="d-flex gap-2">
-                                <input type="text" class="form-control" name="barangay_name" placeholder="Barangay Name" required>
-                                <button type="submit" name="add_barangay" class="btn btn-success">
-                                    <i class="bi bi-plus"></i> Add
-                                </button>
-                            </form>
+                        <div class="col-md-6">
+                            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addBarangayModal">
+                                <i class="bi bi-plus"></i> Add Barangay
+                            </button>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="barangaySearch" placeholder="Search barangays...">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            </div>
                         </div>
                     </div>
                     
                     <!-- Barangays List -->
                     <div class="table-responsive">
-                        <table class="table table-striped">
+                        <table class="table table-striped" id="barangaysTable">
                             <thead>
                                 <tr>
                                     <th>Barangay Name</th>
@@ -249,12 +273,9 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
                                         <td><?= $barangay['student_count'] ?> students</td>
                                         <td>
                                             <?php if ($barangay['student_count'] == 0): ?>
-                                                <form method="POST" style="display: inline;">
-                                                    <input type="hidden" name="barangay_id" value="<?= $barangay['barangay_id'] ?>">
-                                                    <button type="submit" name="delete_barangay" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this barangay?')">
-                                                        <i class="bi bi-trash"></i> Delete
-                                                    </button>
-                                                </form>
+                                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="showDeleteBarangayModal(<?= $barangay['barangay_id'] ?>, '<?= htmlspecialchars($barangay['name'], ENT_QUOTES) ?>')">
+                                                    <i class="bi bi-trash"></i> Delete
+                                                </button>
                                             <?php else: ?>
                                                 <span class="text-muted">Cannot delete (has students)</span>
                                             <?php endif; ?>
@@ -263,6 +284,26 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
+                    </div>
+                    
+                    <!-- Pagination Controls -->
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <div>
+                            <select id="barangaysPerPage" class="form-select form-select-sm" style="width: auto;">
+                                <option value="10">10 per page</option>
+                                <option value="25" selected>25 per page</option>
+                                <option value="50">50 per page</option>
+                                <option value="100">100 per page</option>
+                            </select>
+                        </div>
+                        <div>
+                            <span id="barangaysInfo" class="text-muted"></span>
+                        </div>
+                        <div>
+                            <nav>
+                                <ul class="pagination pagination-sm mb-0" id="barangaysPagination"></ul>
+                            </nav>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -300,8 +341,331 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
     </section>
 </div>
 
+<!-- Add University Modal -->
+<div class="modal fade" id="addUniversityModal" tabindex="-1" aria-labelledby="addUniversityModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addUniversityModalLabel"><i class="bi bi-building me-2"></i>Add New University</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="addUniversityForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="university_name" class="form-label">University Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="university_name" name="university_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="university_code" class="form-label">University Code <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="university_code" name="university_code" placeholder="e.g., UST" maxlength="10" required>
+                        <small class="text-muted">Short code/abbreviation for the university</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" name="add_university" class="btn btn-primary">
+                        <i class="bi bi-plus"></i> Add University
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Barangay Modal -->
+<div class="modal fade" id="addBarangayModal" tabindex="-1" aria-labelledby="addBarangayModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addBarangayModalLabel"><i class="bi bi-geo-alt me-2"></i>Add New Barangay</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="addBarangayForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="barangay_name" class="form-label">Barangay Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="barangay_name" name="barangay_name" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" name="add_barangay" class="btn btn-success">
+                        <i class="bi bi-plus"></i> Add Barangay
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete University Modal -->
+<div class="modal fade" id="deleteUniversityModal" tabindex="-1" aria-labelledby="deleteUniversityModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteUniversityModalLabel"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="deleteUniversityForm">
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> This action cannot be undone.
+                    </div>
+                    <p>Are you sure you want to delete the university <strong id="deleteUniversityName"></strong>?</p>
+                    <input type="hidden" id="deleteUniversityId" name="university_id">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" name="delete_university" class="btn btn-danger">
+                        <i class="bi bi-trash"></i> Delete University
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Barangay Modal -->
+<div class="modal fade" id="deleteBarangayModal" tabindex="-1" aria-labelledby="deleteBarangayModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteBarangayModalLabel"><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Confirm Deletion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="deleteBarangayForm">
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> This action cannot be undone.
+                    </div>
+                    <p>Are you sure you want to delete the barangay <strong id="deleteBarangayName"></strong>?</p>
+                    <input type="hidden" id="deleteBarangayId" name="barangay_id">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" name="delete_barangay" class="btn btn-danger">
+                        <i class="bi bi-trash"></i> Delete Barangay
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
+
+<script>
+// Pagination and Search functionality
+class TableManager {
+    constructor(tableId, searchId, perPageId, paginationId, infoId) {
+        this.table = document.getElementById(tableId);
+        this.searchInput = document.getElementById(searchId);
+        this.perPageSelect = document.getElementById(perPageId);
+        this.pagination = document.getElementById(paginationId);
+        this.info = document.getElementById(infoId);
+        
+        this.rows = Array.from(this.table.querySelectorAll('tbody tr'));
+        this.filteredRows = [...this.rows];
+        this.currentPage = 1;
+        this.perPage = parseInt(this.perPageSelect.value);
+        
+        this.init();
+    }
+    
+    init() {
+        this.searchInput.addEventListener('input', () => this.handleSearch());
+        this.perPageSelect.addEventListener('change', () => this.handlePerPageChange());
+        this.update();
+    }
+    
+    handleSearch() {
+        const query = this.searchInput.value.toLowerCase();
+        this.filteredRows = this.rows.filter(row => {
+            return row.textContent.toLowerCase().includes(query);
+        });
+        this.currentPage = 1;
+        this.update();
+    }
+    
+    handlePerPageChange() {
+        this.perPage = parseInt(this.perPageSelect.value);
+        this.currentPage = 1;
+        this.update();
+    }
+    
+    update() {
+        this.showRows();
+        this.updatePagination();
+        this.updateInfo();
+    }
+    
+    showRows() {
+        // Hide all rows first
+        this.rows.forEach(row => row.style.display = 'none');
+        
+        // Calculate start and end indices
+        const start = (this.currentPage - 1) * this.perPage;
+        const end = start + this.perPage;
+        
+        // Show filtered rows for current page
+        this.filteredRows.slice(start, end).forEach(row => {
+            row.style.display = '';
+        });
+    }
+    
+    updatePagination() {
+        const totalPages = Math.ceil(this.filteredRows.length / this.perPage);
+        this.pagination.innerHTML = '';
+        
+        if (totalPages <= 1) return;
+        
+        // Previous button
+        const prevLi = document.createElement('li');
+        prevLi.className = 'page-item' + (this.currentPage === 1 ? ' disabled' : '');
+        prevLi.innerHTML = '<a class="page-link" href="#" data-page="prev">Previous</a>';
+        this.pagination.appendChild(prevLi);
+        
+        // Page numbers
+        const startPage = Math.max(1, this.currentPage - 2);
+        const endPage = Math.min(totalPages, this.currentPage + 2);
+        
+        if (startPage > 1) {
+            const firstLi = document.createElement('li');
+            firstLi.className = 'page-item';
+            firstLi.innerHTML = '<a class="page-link" href="#" data-page="1">1</a>';
+            this.pagination.appendChild(firstLi);
+            
+            if (startPage > 2) {
+                const ellipsisLi = document.createElement('li');
+                ellipsisLi.className = 'page-item disabled';
+                ellipsisLi.innerHTML = '<span class="page-link">...</span>';
+                this.pagination.appendChild(ellipsisLi);
+            }
+        }
+        
+        for (let i = startPage; i <= endPage; i++) {
+            const pageLi = document.createElement('li');
+            pageLi.className = 'page-item' + (i === this.currentPage ? ' active' : '');
+            pageLi.innerHTML = '<a class="page-link" href="#" data-page="' + i + '">' + i + '</a>';
+            this.pagination.appendChild(pageLi);
+        }
+        
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                const ellipsisLi = document.createElement('li');
+                ellipsisLi.className = 'page-item disabled';
+                ellipsisLi.innerHTML = '<span class="page-link">...</span>';
+                this.pagination.appendChild(ellipsisLi);
+            }
+            
+            const lastLi = document.createElement('li');
+            lastLi.className = 'page-item';
+            lastLi.innerHTML = '<a class="page-link" href="#" data-page="' + totalPages + '">' + totalPages + '</a>';
+            this.pagination.appendChild(lastLi);
+        }
+        
+        // Next button
+        const nextLi = document.createElement('li');
+        nextLi.className = 'page-item' + (this.currentPage === totalPages ? ' disabled' : '');
+        nextLi.innerHTML = '<a class="page-link" href="#" data-page="next">Next</a>';
+        this.pagination.appendChild(nextLi);
+        
+        // Add click handlers
+        this.pagination.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (e.target.classList.contains('page-link')) {
+                const page = e.target.getAttribute('data-page');
+                this.goToPage(page);
+            }
+        });
+    }
+    
+    goToPage(page) {
+        const totalPages = Math.ceil(this.filteredRows.length / this.perPage);
+        
+        if (page === 'prev' && this.currentPage > 1) {
+            this.currentPage--;
+        } else if (page === 'next' && this.currentPage < totalPages) {
+            this.currentPage++;
+        } else if (!isNaN(page)) {
+            this.currentPage = parseInt(page);
+        }
+        
+        this.update();
+    }
+    
+    updateInfo() {
+        const start = Math.min((this.currentPage - 1) * this.perPage + 1, this.filteredRows.length);
+        const end = Math.min(this.currentPage * this.perPage, this.filteredRows.length);
+        const total = this.filteredRows.length;
+        
+        if (total === 0) {
+            this.info.textContent = 'No results found';
+        } else {
+            this.info.textContent = 'Showing ' + start + '-' + end + ' of ' + total + ' entries';
+        }
+    }
+}
+
+// Initialize table managers
+document.addEventListener('DOMContentLoaded', function() {
+    new TableManager('universitiesTable', 'universitySearch', 'universitiesPerPage', 'universitiesPagination', 'universitiesInfo');
+    new TableManager('barangaysTable', 'barangaySearch', 'barangaysPerPage', 'barangaysPagination', 'barangaysInfo');
+});
+
+// Functions for delete modals
+function showDeleteUniversityModal(universityId, universityName) {
+    document.getElementById('deleteUniversityId').value = universityId;
+    document.getElementById('deleteUniversityName').textContent = universityName;
+    new bootstrap.Modal(document.getElementById('deleteUniversityModal')).show();
+}
+
+function showDeleteBarangayModal(barangayId, barangayName) {
+    document.getElementById('deleteBarangayId').value = barangayId;
+    document.getElementById('deleteBarangayName').textContent = barangayName;
+    new bootstrap.Modal(document.getElementById('deleteBarangayModal')).show();
+}
+
+// Form validation
+document.getElementById('addUniversityForm').addEventListener('submit', function(e) {
+    const name = document.getElementById('university_name').value.trim();
+    const code = document.getElementById('university_code').value.trim();
+    
+    if (!name || !code) {
+        e.preventDefault();
+        alert('Please fill in all required fields.');
+        return false;
+    }
+    
+    if (code.length > 10) {
+        e.preventDefault();
+        alert('University code must be 10 characters or less.');
+        return false;
+    }
+});
+
+document.getElementById('addBarangayForm').addEventListener('submit', function(e) {
+    const name = document.getElementById('barangay_name').value.trim();
+    
+    if (!name) {
+        e.preventDefault();
+        alert('Please enter a barangay name.');
+        return false;
+    }
+});
+
+// Clear form when modal is closed
+document.getElementById('addUniversityModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('addUniversityForm').reset();
+});
+
+document.getElementById('addBarangayModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('addBarangayForm').reset();
+});
+</script>
 </body>
 </html>
 

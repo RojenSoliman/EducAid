@@ -117,62 +117,9 @@ $admins = pg_fetch_all($adminsResult) ?: [];
                     <h5 class="mb-0"><i class="bi bi-person-plus me-2"></i>Create New Admin</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST">
-                        <div class="row">
-                            <div class="col-md-4">
-                                <div class="mb-3">
-                                    <label for="first_name" class="form-label">First Name <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" id="first_name" name="first_name" required>
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="mb-3">
-                                    <label for="middle_name" class="form-label">Middle Name</label>
-                                    <input type="text" class="form-control" id="middle_name" name="middle_name">
-                                </div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="mb-3">
-                                    <label for="last_name" class="form-label">Last Name <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" id="last_name" name="last_name" required>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
-                                    <input type="email" class="form-control" id="email" name="email" required>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" id="username" name="username" required>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="password" class="form-label">Password <span class="text-danger">*</span></label>
-                                    <input type="password" class="form-control" id="password" name="password" required minlength="6">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="role" class="form-label">Role <span class="text-danger">*</span></label>
-                                    <select class="form-select" id="role" name="role" required>
-                                        <option value="sub_admin">Sub Admin (Limited Access)</option>
-                                        <option value="super_admin">Super Admin (Full Access)</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                        <button type="submit" name="create_admin" class="btn btn-success">
-                            <i class="bi bi-person-plus me-1"></i> Create Admin
-                        </button>
-                    </form>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createAdminModal">
+                        <i class="bi bi-person-plus"></i> Create New Admin
+                    </button>
                 </div>
             </div>
             
@@ -216,14 +163,10 @@ $admins = pg_fetch_all($adminsResult) ?: [];
                                         <td><?= $admin['last_login'] ? date('M d, Y H:i', strtotime($admin['last_login'])) : 'Never' ?></td>
                                         <td>
                                             <?php if ($admin['admin_id'] != ($_SESSION['admin_id'] ?? 0)): ?>
-                                                <form method="POST" style="display: inline;">
-                                                    <input type="hidden" name="admin_id" value="<?= $admin['admin_id'] ?>">
-                                                    <input type="hidden" name="new_status" value="<?= $admin['is_active'] === 't' ? 'false' : 'true' ?>">
-                                                    <button type="submit" name="toggle_status" class="btn btn-sm <?= $admin['is_active'] === 't' ? 'btn-outline-danger' : 'btn-outline-success' ?>" onclick="return confirm('Are you sure you want to <?= $admin['is_active'] === 't' ? 'deactivate' : 'activate' ?> this admin?')">
-                                                        <i class="bi <?= $admin['is_active'] === 't' ? 'bi-person-x' : 'bi-person-check' ?>"></i>
-                                                        <?= $admin['is_active'] === 't' ? 'Deactivate' : 'Activate' ?>
-                                                    </button>
-                                                </form>
+                                                <button type="button" class="btn btn-sm <?= $admin['is_active'] === 't' ? 'btn-outline-danger' : 'btn-outline-success' ?>" onclick="showToggleStatusModal(<?= $admin['admin_id'] ?>, '<?= htmlspecialchars($admin['first_name'] . ' ' . $admin['last_name'], ENT_QUOTES) ?>', '<?= $admin['is_active'] === 't' ? 'deactivate' : 'activate' ?>')">
+                                                    <i class="bi <?= $admin['is_active'] === 't' ? 'bi-person-x' : 'bi-person-check' ?>"></i>
+                                                    <?= $admin['is_active'] === 't' ? 'Deactivate' : 'Activate' ?>
+                                                </button>
                                             <?php else: ?>
                                                 <span class="text-muted">Current User</span>
                                             <?php endif; ?>
@@ -275,8 +218,207 @@ $admins = pg_fetch_all($adminsResult) ?: [];
     </section>
 </div>
 
+<!-- Create Admin Modal -->
+<div class="modal fade" id="createAdminModal" tabindex="-1" aria-labelledby="createAdminModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createAdminModalLabel"><i class="bi bi-person-plus me-2"></i>Create New Admin</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="createAdminForm">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="first_name" class="form-label">First Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="first_name" name="first_name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="middle_name" class="form-label">Middle Name</label>
+                                <input type="text" class="form-control" id="middle_name" name="middle_name">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="last_name" class="form-label">Last Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="last_name" name="last_name" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
+                                <input type="email" class="form-control" id="email" name="email" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="username" name="username" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Password <span class="text-danger">*</span></label>
+                                <input type="password" class="form-control" id="password" name="password" required minlength="6">
+                                <small class="text-muted">Minimum 6 characters</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="confirm_password" class="form-label">Confirm Password <span class="text-danger">*</span></label>
+                                <input type="password" class="form-control" id="confirm_password" required minlength="6">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="mb-3">
+                                <label for="role" class="form-label">Role <span class="text-danger">*</span></label>
+                                <select class="form-select" id="role" name="role" required>
+                                    <option value="sub_admin">Sub Admin (Limited Access)</option>
+                                    <option value="super_admin">Super Admin (Full Access)</option>
+                                </select>
+                                <small class="text-muted">Choose carefully - this determines what features the admin can access</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" name="create_admin" class="btn btn-success">
+                        <i class="bi bi-person-plus me-1"></i> Create Admin
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Toggle Status Modal -->
+<div class="modal fade" id="toggleStatusModal" tabindex="-1" aria-labelledby="toggleStatusModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="toggleStatusModalLabel"><i class="bi bi-exclamation-triangle me-2 text-warning"></i>Confirm Action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="toggleStatusForm">
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <span id="statusMessage"></span>
+                    </div>
+                    <p id="confirmationText"></p>
+                    <input type="hidden" id="toggleAdminId" name="admin_id">
+                    <input type="hidden" id="toggleNewStatus" name="new_status">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" name="toggle_status" class="btn" id="confirmActionBtn">
+                        <i id="confirmActionIcon"></i> <span id="confirmActionText"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
+
+<script>
+// Function for toggle status modal
+function showToggleStatusModal(adminId, adminName, action) {
+    const isDeactivate = action === 'deactivate';
+    
+    document.getElementById('toggleAdminId').value = adminId;
+    document.getElementById('toggleNewStatus').value = isDeactivate ? 'false' : 'true';
+    
+    const statusMessage = document.getElementById('statusMessage');
+    const confirmationText = document.getElementById('confirmationText');
+    const confirmBtn = document.getElementById('confirmActionBtn');
+    const confirmIcon = document.getElementById('confirmActionIcon');
+    const confirmText = document.getElementById('confirmActionText');
+    
+    if (isDeactivate) {
+        statusMessage.textContent = 'This will prevent the admin from logging in and accessing the system.';
+        confirmationText.innerHTML = `Are you sure you want to <strong>deactivate</strong> ${adminName}?`;
+        confirmBtn.className = 'btn btn-danger';
+        confirmIcon.className = 'bi bi-person-x';
+        confirmText.textContent = 'Deactivate';
+    } else {
+        statusMessage.textContent = 'This will allow the admin to log in and access the system again.';
+        confirmationText.innerHTML = `Are you sure you want to <strong>activate</strong> ${adminName}?`;
+        confirmBtn.className = 'btn btn-success';
+        confirmIcon.className = 'bi bi-person-check';
+        confirmText.textContent = 'Activate';
+    }
+    
+    new bootstrap.Modal(document.getElementById('toggleStatusModal')).show();
+}
+
+// Form validation for create admin
+document.getElementById('createAdminForm').addEventListener('submit', function(e) {
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirm_password').value;
+    
+    if (password !== confirmPassword) {
+        e.preventDefault();
+        alert('Passwords do not match. Please try again.');
+        return false;
+    }
+    
+    if (password.length < 6) {
+        e.preventDefault();
+        alert('Password must be at least 6 characters long.');
+        return false;
+    }
+    
+    // Check required fields
+    const requiredFields = ['first_name', 'last_name', 'email', 'username'];
+    for (let field of requiredFields) {
+        if (!document.getElementById(field).value.trim()) {
+            e.preventDefault();
+            alert('Please fill in all required fields.');
+            return false;
+        }
+    }
+});
+
+// Clear form when modal is closed
+document.getElementById('createAdminModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('createAdminForm').reset();
+});
+
+// Real-time password confirmation check
+document.getElementById('confirm_password').addEventListener('input', function() {
+    const password = document.getElementById('password').value;
+    const confirmPassword = this.value;
+    const submitBtn = document.querySelector('#createAdminForm button[type="submit"]');
+    
+    if (password && confirmPassword) {
+        if (password === confirmPassword) {
+            this.classList.remove('is-invalid');
+            this.classList.add('is-valid');
+            submitBtn.disabled = false;
+        } else {
+            this.classList.remove('is-valid');
+            this.classList.add('is-invalid');
+            submitBtn.disabled = true;
+        }
+    } else {
+        this.classList.remove('is-valid', 'is-invalid');
+        submitBtn.disabled = false;
+    }
+});
+</script>
 </body>
 </html>
 
