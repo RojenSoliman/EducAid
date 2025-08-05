@@ -99,10 +99,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Document Upload</title>
+  <title>Document Upload - EducAid</title>
   <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
+  <link rel="stylesheet" href="../../assets/css/student/sidebar.css" />
+  <link rel="stylesheet" href="../../assets/css/student/upload.css" />
 </head>
 <body>
   <div id="wrapper">
@@ -110,53 +112,223 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
     <!-- Main Content Area -->
-    <section class="home-section" id="page-content-wrapper">
-      <nav>
-        <div class="sidebar-toggle px-4 py-3">
-          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
+    <section class="home-section upload-container with-sidebar" id="page-content-wrapper">
+      <nav class="px-4 py-3 d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+          <i class="bi bi-list" id="menu-toggle"></i>
+          
         </div>
+      
       </nav>
-      <div class="container py-5">
-        <h2 class="text-center">Upload Required Documents</h2>
+      
+      <div class="container py-4">
+        <div class="upload-card">
+          <!-- Header Section -->
+          <div class="upload-header">
+            <h1>
+              <i class="bi bi-cloud-upload-fill me-3"></i>
+              Upload Documents
+            </h1>
+            <p>Complete your application by uploading all required documents</p>
+          </div>
 
-        <?php if (!empty($flash_success)): ?>
-          <div class="alert alert-success text-center">
-            Document uploaded successfully.
-          </div>
-        <?php elseif (!empty($flash_fail)): ?>
-          <div class="alert alert-danger text-center">
-            Failed to upload document.
-          </div>
-        <?php endif; ?>
+          <!-- Flash Messages -->
+          <?php if (!empty($flash_success)): ?>
+            <div class="alert alert-success mx-4 mt-4 success-animation">
+              <i class="bi bi-check-circle-fill me-2"></i>
+              <strong>Success!</strong> Documents uploaded successfully.
+            </div>
+          <?php elseif (!empty($flash_fail)): ?>
+            <div class="alert alert-danger mx-4 mt-4">
+              <i class="bi bi-exclamation-triangle-fill me-2"></i>
+              <strong>Error!</strong> Failed to upload documents. Please try again.
+            </div>
+          <?php endif; ?>
 
-        <?php if ($allDocumentsUploaded): ?>
-          <div class="alert alert-success text-center">
-            <strong>All documents have been uploaded!</strong> You cannot upload documents anymore unless the admin denies your submission.
+          <!-- Progress Section -->
+          <div class="progress-section">
+            <h3 class="progress-title">Upload Progress</h3>
+            
+            <div class="document-progress">
+              <div class="progress-item">
+                <div class="progress-icon <?php echo $row['total_uploaded'] >= 1 ? 'completed' : 'pending'; ?>">
+                  <i class="bi bi-person-badge-fill"></i>
+                </div>
+                <div class="progress-label">ID Picture</div>
+                <div class="progress-status">
+                  <?php echo $row['total_uploaded'] >= 1 ? 'Uploaded' : 'Required'; ?>
+                </div>
+              </div>
+              
+              <div class="progress-item">
+                <div class="progress-icon <?php echo $row['total_uploaded'] >= 2 ? 'completed' : 'pending'; ?>">
+                  <i class="bi bi-file-text-fill"></i>
+                </div>
+                <div class="progress-label">Letter to Mayor</div>
+                <div class="progress-status">
+                  <?php echo $row['total_uploaded'] >= 2 ? 'Uploaded' : 'Required'; ?>
+                </div>
+              </div>
+              
+              <div class="progress-item">
+                <div class="progress-icon <?php echo $row['total_uploaded'] >= 3 ? 'completed' : 'pending'; ?>">
+                  <i class="bi bi-award-fill"></i>
+                </div>
+                <div class="progress-label">Certificate of Indigency</div>
+                <div class="progress-status">
+                  <?php echo $row['total_uploaded'] >= 3 ? 'Uploaded' : 'Required'; ?>
+                </div>
+              </div>
+            </div>
+
+            <!-- Overall Progress Bar -->
+            <div class="overall-progress">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-bold">Overall Progress</span>
+                <span class="text-muted"><?php echo $row['total_uploaded']; ?> of 3 completed</span>
+              </div>
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill" style="width: <?php echo ($row['total_uploaded'] / 3) * 100; ?>%"></div>
+              </div>
+            </div>
           </div>
-        <?php else: ?>
-          <form method="POST" enctype="multipart/form-data">
-            <div class="mb-3">
-              <label for="id_picture" class="form-label">ID Picture</label>
-              <input type="file" class="form-control" name="documents[]" id="id_picture" required />
-              <input type="hidden" name="document_type[]" value="id_picture" />
+
+          <?php if ($allDocumentsUploaded): ?>
+            <!-- Completion State -->
+            <div class="completion-state">
+              <div class="completion-icon">
+                <i class="bi bi-check-circle-fill"></i>
+              </div>
+              <h3>All Documents Uploaded!</h3>
+              <p>
+                Congratulations! You have successfully uploaded all required documents. 
+                Your application is now complete and under review by our administration team.
+                <br><br>
+                <strong>Next Steps:</strong><br>
+                • Wait for admin review<br>
+                • Check your notifications for updates<br>
+                • You can re-upload if admin requests changes
+              </p>
             </div>
-            <div class="mb-3">
-              <label for="letter_to_mayor" class="form-label">Letter to Mayor</label>
-              <input type="file" class="form-control" name="documents[]" id="letter_to_mayor" required />
-              <input type="hidden" name="document_type[]" value="letter_to_mayor" />
-            </div>
-            <div class="mb-3">
-              <label for="certificate_of_indigency" class="form-label">Certificate of Indigency</label>
-              <input type="file" class="form-control" name="documents[]" id="certificate_of_indigency" required />
-              <input type="hidden" name="document_type[]" value="certificate_of_indigency" />
-            </div>
-            <button type="submit" class="btn btn-success w-100">Upload Documents</button>
-          </form>
-        <?php endif; ?>
+          <?php else: ?>
+            <!-- Upload Form -->
+            <form method="POST" enctype="multipart/form-data" id="uploadForm">
+              <div class="upload-form-section">
+                <!-- ID Picture -->
+                <div class="upload-form-item" data-document="id_picture">
+                  <div class="upload-item-header">
+                    <div class="upload-item-icon">
+                      <i class="bi bi-person-badge-fill"></i>
+                    </div>
+                    <div class="upload-item-info">
+                      <h4>ID Picture</h4>
+                      <p>Upload a clear photo of your government-issued ID</p>
+                    </div>
+                  </div>
+                  
+                  <div class="custom-file-input">
+                    <input type="file" name="documents[]" id="id_picture_input" accept=".pdf,.jpg,.jpeg,.png" required>
+                    <input type="hidden" name="document_type[]" value="id_picture">
+                    <div class="file-input-label">
+                      <i class="bi bi-cloud-upload"></i>
+                      <span>Choose file or drag and drop</span>
+                    </div>
+                  </div>
+                  
+                  <div class="file-preview" id="preview_id_picture"></div>
+                </div>
+
+                <!-- Letter to Mayor -->
+                <div class="upload-form-item" data-document="letter_to_mayor">
+                  <div class="upload-item-header">
+                    <div class="upload-item-icon">
+                      <i class="bi bi-file-text-fill"></i>
+                    </div>
+                    <div class="upload-item-info">
+                      <h4>Letter to Mayor</h4>
+                      <p>Official letter addressed to the mayor</p>
+                    </div>
+                  </div>
+                  
+                  <div class="custom-file-input">
+                    <input type="file" name="documents[]" id="letter_to_mayor_input" accept="image/*,.pdf" required>
+                    <input type="hidden" name="document_type[]" value="letter_to_mayor">
+                    <div class="file-input-label">
+                      <i class="bi bi-cloud-upload"></i>
+                      <span>Choose file or drag and drop</span>
+                    </div>
+                  </div>
+                  
+                  <div class="file-preview" id="preview_letter_to_mayor"></div>
+                </div>
+
+                <!-- Certificate of Indigency -->
+                <div class="upload-form-item" data-document="certificate_of_indigency">
+                  <div class="upload-item-header">
+                    <div class="upload-item-icon">
+                      <i class="bi bi-award-fill"></i>
+                    </div>
+                    <div class="upload-item-info">
+                      <h4>Certificate of Indigency</h4>
+                      <p>Official certificate from your barangay</p>
+                    </div>
+                  </div>
+                  
+                  <div class="custom-file-input">
+                    <input type="file" name="documents[]" id="certificate_of_indigency_input_unique" accept=".pdf,.jpg,.jpeg,.png" required>
+                    <input type="hidden" name="document_type[]" value="certificate_of_indigency">
+                    <div class="file-input-label">
+                      <i class="bi bi-cloud-upload"></i>
+                      <span>Choose file or drag and drop</span>
+                    </div>
+                  </div>
+                  
+                  <div class="file-preview" id="preview_certificate_of_indigency_unique"></div>
+                </div>
+              </div>
+
+              <!-- Submit Section -->
+              <div class="submit-section">
+                <button type="submit" class="submit-btn" id="submit-documents">
+                    <i class="bi bi-cloud-upload me-2"></i>
+                    Submit All Documents
+                </button>
+                <p class="mt-2 mb-0 text-muted small">
+                    Please ensure all required documents are uploaded before submitting.
+                </p>
+              </div>
+            </form>
+          <?php endif; ?>
+        </div>
       </div>
     </section>
   </div>
-  <script src="../../assets/js/homepage.js"></script>
+
+  <!-- Enhanced Modal -->
+  <div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="previewModalLabel">
+            <i class="bi bi-eye-fill me-2"></i>
+            Document Preview
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="previewContent">
+          <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-muted">Loading preview...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
-    <script src="../../assets/js/homepage.js"></script>
-  <script src="../../assets/js/bootstrap.bundle.min.js"></script></body></html>
+  <script src="../../assets/js/homepage.js"></script>
+  <script src="../../assets/js/student/upload.js"></script>
+</body>
+</html>
