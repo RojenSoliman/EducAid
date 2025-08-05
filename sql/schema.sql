@@ -21,7 +21,11 @@ CREATE TABLE admins (
     last_name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL
+    password TEXT NOT NULL,
+    role TEXT CHECK (role IN ('super_admin', 'sub_admin')) DEFAULT 'super_admin',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    last_login TIMESTAMP
 );
 
 -- Students
