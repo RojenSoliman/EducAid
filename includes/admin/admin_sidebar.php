@@ -44,9 +44,9 @@
         <span class="links_name">Scheduling</span>
       </a>
     </li>
-    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'scanner.php' ? 'active' : ''; ?>">
-      <a href="scanner.php">
-        <i class="bi bi-qr-code-scan icon"></i>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'scan_qr.php' ? 'active' : ''; ?>">
+      <a href="scan_qr.php">
+        <i class="bi bi-qr-code-scan icon"></i> 
         <span class="links_name">Scan QR</span>
       </a>
     </li>
