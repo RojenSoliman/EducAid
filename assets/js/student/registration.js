@@ -700,6 +700,180 @@ function checkSubmitButtonStatus() {
     }
 }
 
+// ---- PHILIPPINES PHONE NUMBER VALIDATION ----
+function initializePhoneValidation() {
+    const phoneInput = document.getElementById('phoneInput');
+    const phoneValidation = document.getElementById('phoneValidation');
+    
+    if (!phoneInput) {
+        console.warn('Phone input not found');
+        return;
+    }
+    
+    // Real-time input validation
+    phoneInput.addEventListener('input', function(e) {
+        let value = e.target.value;
+        
+        // Remove all non-digit characters
+        value = value.replace(/\D/g, '');
+        
+        // Ensure it starts with 9
+        if (value.length > 0 && value[0] !== '9') {
+            value = '9' + value.replace(/9/g, '').substring(0, 9);
+        }
+        
+        // Limit to 10 digits
+        if (value.length > 10) {
+            value = value.substring(0, 10);
+        }
+        
+        // Update the input value
+        e.target.value = value;
+        
+        // Show validation feedback
+        showPhoneValidation(value, phoneValidation);
+    });
+    
+    // Prevent pasting invalid content
+    phoneInput.addEventListener('paste', function(e) {
+        e.preventDefault();
+        
+        // Get pasted content
+        const paste = (e.clipboardData || window.clipboardData).getData('text');
+        
+        // Clean the pasted content
+        let cleanValue = paste.replace(/\D/g, '');
+        
+        // Ensure it starts with 9
+        if (cleanValue.length > 0 && cleanValue[0] !== '9') {
+            cleanValue = '9' + cleanValue.replace(/9/g, '').substring(0, 9);
+        }
+        
+        // Limit to 10 digits
+        if (cleanValue.length > 10) {
+            cleanValue = cleanValue.substring(0, 10);
+        }
+        
+        // Set the cleaned value
+        this.value = cleanValue;
+        
+        // Show validation feedback
+        showPhoneValidation(cleanValue, phoneValidation);
+    });
+    
+    // Prevent keyboard input of letters and special characters
+    phoneInput.addEventListener('keypress', function(e) {
+        // Allow backspace, delete, tab, escape, enter
+        if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
+            // Allow Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+            (e.keyCode === 65 && e.ctrlKey === true) ||
+            (e.keyCode === 67 && e.ctrlKey === true) ||
+            (e.keyCode === 86 && e.ctrlKey === true) ||
+            (e.keyCode === 88 && e.ctrlKey === true)) {
+            return;
+        }
+        
+        // Ensure that it is a number and stop the keypress
+        if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+            e.preventDefault();
+        }
+        
+        // If input already has 10 digits, prevent more input
+        if (this.value.length >= 10) {
+            e.preventDefault();
+        }
+        
+        // If first digit is not 9, and we're typing at position 0
+        if (this.selectionStart === 0 && e.key !== '9' && this.value.length === 0) {
+            e.preventDefault();
+        }
+    });
+    
+    // Handle focus out validation
+    phoneInput.addEventListener('blur', function() {
+        const value = this.value;
+        if (value.length > 0 && value.length < 10) {
+            showPhoneValidation(value, phoneValidation);
+        }
+    });
+}
+
+function showPhoneValidation(phoneNumber, validationElement) {
+    if (!validationElement) return;
+    
+    if (phoneNumber.length === 0) {
+        validationElement.innerHTML = '';
+        return;
+    }
+    
+    if (phoneNumber.length < 10) {
+        validationElement.innerHTML = `
+            <small class="text-warning">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                Phone number must be exactly 10 digits (${phoneNumber.length}/10)
+            </small>
+        `;
+        return;
+    }
+    
+    if (phoneNumber.length === 10 && phoneNumber[0] === '9') {
+        // Validate against Philippines mobile prefixes
+        const prefix = phoneNumber.substring(0, 3);
+        const validPrefixes = [
+            // Globe/TM
+            '905', '906', '915', '916', '917', '925', '926', '927', '935', '936', '937',
+            '945', '953', '954', '955', '956', '965', '966', '967', '975', '976', '977',
+            '978', '979', '994', '995', '996', '997',
+            // Smart/TNT  
+            '908', '909', '910', '911', '912', '913', '914', '918', '919', '920', '921',
+            '928', '929', '930', '938', '939', '946', '947', '948', '949', '950', '951',
+            '998', '999',
+            // Sun Cellular
+            '922', '923', '924', '931', '932', '933', '934', '940', '941', '942', '943',
+            // DITO
+            '895', '896', '897', '898',
+            // Cherry Mobile
+            '992', '993'
+        ];
+        
+        if (validPrefixes.includes(prefix)) {
+            let provider = 'Unknown';
+            if (['905', '906', '915', '916', '917', '925', '926', '927', '935', '936', '937', '945', '953', '954', '955', '956', '965', '966', '967', '975', '976', '977', '978', '979', '994', '995', '996', '997'].includes(prefix)) {
+                provider = 'Globe/TM';
+            } else if (['908', '909', '910', '911', '912', '913', '914', '918', '919', '920', '921', '928', '929', '930', '938', '939', '946', '947', '948', '949', '950', '951', '998', '999'].includes(prefix)) {
+                provider = 'Smart/TNT';
+            } else if (['922', '923', '924', '931', '932', '933', '934', '940', '941', '942', '943'].includes(prefix)) {
+                provider = 'Sun Cellular';
+            } else if (['895', '896', '897', '898'].includes(prefix)) {
+                provider = 'DITO';
+            } else if (['992', '993'].includes(prefix)) {
+                provider = 'Cherry Mobile';
+            }
+            
+            validationElement.innerHTML = `
+                <small class="text-success">
+                    <i class="bi bi-check-circle me-1"></i>
+                    Valid ${provider} number (+63${phoneNumber})
+                </small>
+            `;
+        } else {
+            validationElement.innerHTML = `
+                <small class="text-danger">
+                    <i class="bi bi-x-circle me-1"></i>
+                    Invalid Philippines mobile number prefix (${prefix})
+                </small>
+            `;
+        }
+    } else {
+        validationElement.innerHTML = `
+            <small class="text-danger">
+                <i class="bi bi-x-circle me-1"></i>
+                Invalid phone number format
+            </small>
+        `;
+    }
+}
+
 // ---- MAIN INITIALIZATION ----
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize the registration form
@@ -718,6 +892,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeNameFieldListeners();
     initializeTermsAndConditions();
     addVerificationStyles();
+    initializePhoneValidation();
     
     console.log('Student registration system initialized successfully');
 });

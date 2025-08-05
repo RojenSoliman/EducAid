@@ -216,6 +216,70 @@ body::before {
     border-color: var(--trias-accent);
 }
 
+/* Enhanced phone input styling */
+.input-group-text {
+    background-color: #f8f9fa;
+    border-color: #ced4da;
+    color: #495057;
+    font-weight: 500;
+    min-width: 60px;
+    justify-content: center;
+}
+
+.input-group .form-control:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.input-group .form-control:focus + .input-group-text,
+.input-group .input-group-text:has(+ .form-control:focus) {
+    border-color: #80bdff;
+}
+
+/* Phone validation styling */
+#phoneValidation {
+    transition: all 0.3s ease;
+}
+
+#phoneValidation small {
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    margin-top: 0.25rem;
+}
+
+#phoneValidation .text-success {
+    color: #28a745 !important;
+}
+
+#phoneValidation .text-danger {
+    color: #dc3545 !important;
+}
+
+#phoneValidation .text-warning {
+    color: #ffc107 !important;
+}
+
+#phoneValidation .text-info {
+    color: #17a2b8 !important;
+}
+
+/* Improved form layout */
+.form-label {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 0.5rem;
+}
+
+.form-control {
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.form-control:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
 /* Buttons */
 .btn {
     border-radius: 12px;

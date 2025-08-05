@@ -366,6 +366,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $pass = $_POST['password'];
     $confirm = $_POST['confirm_password'];
 
+    // Convert mobile number to correct format
+    if (strlen($mobile) === 10 && $mobile[0] === '9') {
+        $mobile = '0' . $mobile;
+    }
+
+    // Validate Philippines mobile number format
+    if (!preg_match('/^09[0-9]{9}$/', $mobile)) {
+        echo "<script>alert('Invalid Philippines mobile number format.'); history.back();</script>";
+        exit;
+    }
+
     if (empty($firstname) || empty($lastname) || empty($bdate) || empty($sex) || empty($barangay) || empty($university) || empty($year_level) || empty($mobile) || empty($email) || empty($pass) || empty($confirm)) {
         echo "<script>alert('Please fill in all required fields.'); history.back();</script>";
         exit;
@@ -705,8 +716,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                         <span id="emailStatus" class="text-success d-none">Verified</span>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Phone Number</label>
-                        <input type="tel" class="form-control" name="phone" maxlength="11" pattern="09[0-9]{9}" placeholder="e.g., 09123456789" required />
+                        <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text">+63</span>
+                            <input type="tel" class="form-control" name="phone" id="phoneInput" maxlength="10" pattern="9[0-9]{8}" placeholder="9123456789" required />
+                        </div>
+                        <div id="phoneValidation" class="mt-1"></div>
                     </div>
                     <div class="mb-3">
                         <button type="button" class="btn btn-info" id="sendOtpBtn">Send OTP (Email)</button>
@@ -905,5 +920,29 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/student/registration.js"></script>
+    <script>
+    // ---- MAIN INITIALIZATION ----
+    document.addEventListener('DOMContentLoaded', () => {
+        // Initialize the registration form
+        showStep(1);
+        updateRequiredFields();
+        
+        // Disable next button for step 5 initially
+        document.getElementById('nextStep5Btn').disabled = true;
+        document.getElementById('nextStep5Btn').addEventListener('click', nextStep);
+        
+        // Initialize all handlers
+        initializeOTPHandlers();
+        initializePasswordHandlers();
+        initializeDocumentHandlers();
+        initializeFormSubmission();
+        initializeNameFieldListeners();
+        initializeTermsAndConditions();
+        initializePhoneValidation(); // Add this line
+        addVerificationStyles();
+        
+        console.log('Student registration system initialized successfully');
+    });
+    </script>
 </body>
 </html>
