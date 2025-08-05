@@ -17,7 +17,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     if ($slotInfo) {
         $countRes = pg_query_params($connection, "
             SELECT COUNT(*) AS total FROM students
-            WHERE (status = 'under_registration' OR status = 'applicant' OR status = 'active')
+            WHERE (status = 'applicant' OR status = 'active')
             AND application_date >= $1
         ", [$slotInfo['created_at']]);
         $countRow = pg_fetch_assoc($countRes);
@@ -404,7 +404,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
     $countRes = pg_query_params($connection, "
         SELECT COUNT(*) AS total FROM students
-        WHERE (status = 'under_registration' OR status = 'applicant' OR status = 'active')
+        WHERE (status = 'applicant' OR status = 'active')
         AND application_date >= $1
     ", [$slotInfo['created_at']]);
     $countRow = pg_fetch_assoc($countRes);
@@ -466,7 +466,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     }
 
     $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'under_registration', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $municipality_id,
@@ -488,31 +488,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $student_id_row = pg_fetch_assoc($result);
         $student_id = $student_id_row['student_id'];
 
-        // Save enrollment form if it exists in temp folder
-        $tempFormPath = 'assets/uploads/temp/';
-        $tempFiles = glob($tempFormPath . '*');
-        if (!empty($tempFiles)) {
-            // Create permanent upload directory
-            $permanentDir = '../../assets/uploads/enrollment_forms/';
-            if (!file_exists($permanentDir)) {
-                mkdir($permanentDir, 0777, true);
-            }
-            
-            // Move the file to permanent location
-            $tempFile = $tempFiles[0]; // Get the first (and should be only) file
-            $filename = basename($tempFile);
-            $permanentPath = $permanentDir . $student_id . '_' . $filename;
-            
-            if (copy($tempFile, $permanentPath)) {
-                // Save form record to database
-                $formQuery = "INSERT INTO enrollment_forms (student_id, file_path, original_filename) VALUES ($1, $2, $3)";
-                pg_query_params($connection, $formQuery, [$student_id, $permanentPath, $filename]);
-                
-                // Clean up temp file
-                unlink($tempFile);
-            }
-        }
-
         $semester = $slotInfo['semester'];
         $academic_year = $slotInfo['academic_year'];
         $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";
@@ -520,7 +495,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
         unset($_SESSION['otp_verified']);
 
-        echo "<script>alert('Registration submitted successfully! Your application is under review. You will receive an email notification once approved.'); window.location.href = '../../unified_login.php';</script>";
+        echo "<script>alert('Registration successful!'); window.location.href = '../../unified_login.php';</script>";
         exit;
     } else {
         echo "<script>alert('Registration failed due to a database error. Please try again.');</script>";
@@ -751,14 +726,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 <!-- Step 6: Password and Confirmation -->
                 <div class="step-panel d-none" id="step-6">
                     <div class="mb-3">
-                        <label class="form-label">Password</label>
+                        <label class="form-label">Password <span class="text-danger">*</span></label>
                         <input type="password" class="form-control" name="password" id="password" minlength="12" required />
                     </div>
                     <div class="form-text">
                         Must be at least 12 characters long with letters, numbers, and symbols.
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Confirm Password</label>
+                        <label class="form-label">Confirm Password <span class="text-danger">*</span></label>
                         <input type="password" class="form-control" name="confirm_password" id="confirmPassword" minlength="12" required />
                     </div>
                     <div class="mb-3">
@@ -769,563 +744,166 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                         <small id="strengthText" class="text-muted"></small>
                     </div>
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" name="agree_terms" required />
-                        <label class="form-check-label">I agree to the Terms</label>
+                        <input type="checkbox" class="form-check-input" name="agree_terms" id="agreeTerms" required disabled />
+                        <label class="form-check-label">
+                            I agree to the <button type="button" class="btn btn-link p-0 text-decoration-underline" id="showTermsBtn">Terms and Conditions</button> <span class="text-danger">*</span>
+                        </label>
+                        <div id="termsStatus" class="mt-1">
+                            <small class="text-muted">Click "Terms and Conditions" to read and accept</small>
+                        </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="submit" name="register" class="btn btn-success w-100">Submit</button>
+                    <button type="submit" name="register" class="btn btn-success w-100" id="submitBtn" disabled>Submit</button>
                 </div>
             </form>
         </div>
     </div>
     <div id="notifier" class="notifier"></div>
-    <script>
-        let countdown;
-        let currentStep = 1;
-        let otpVerified = false;
 
-        function updateRequiredFields() {
-            // Disable all required fields initially
-            document.querySelectorAll('.step-panel input[required], .step-panel select[required], .step-panel textarea[required]').forEach(el => {
-                el.disabled = true;
-            });
-            // Enable required fields in the visible panel only
-            document.querySelectorAll(`#step-${currentStep} input[required], #step-${currentStep} select[required], #step-${currentStep} textarea[required]`).forEach(el => {
-                el.disabled = false;
-            });
-        }
+    <!-- Terms and Conditions Modal -->
+    <div class="modal fade" id="termsModal" tabindex="-1" aria-labelledby="termsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="termsModalLabel">
+                        <i class="bi bi-file-text me-2"></i>Terms and Conditions - EducAid
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="termsContent" style="height: 400px; overflow-y: auto;">
+                    <div class="terms-content">
+                        <h6><strong>1. ACCEPTANCE OF TERMS</strong></h6>
+                        <p>By registering for EducAid, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions. If you do not agree to these terms, please do not use our services.</p>
 
-        function showStep(stepNumber) {
-            document.querySelectorAll('.step-panel').forEach(panel => {
-                panel.classList.add('d-none');
-            });
-            document.getElementById(`step-${stepNumber}`).classList.remove('d-none');
+                        <h6><strong>2. ELIGIBILITY REQUIREMENTS</strong></h6>
+                        <p>To be eligible for EducAid financial assistance, you must:</p>
+                        <ul>
+                            <li>Be a bonafide resident of the municipality</li>
+                            <li>Be currently enrolled in an accredited educational institution</li>
+                            <li>Provide accurate and complete information during registration</li>
+                            <li>Meet the academic and financial criteria as determined by the program</li>
+                            <li>Submit all required documentation within specified deadlines</li>
+                        </ul>
 
-            document.querySelectorAll('.step').forEach((step, index) => {
-                if (index + 1 === stepNumber) {
-                    step.classList.add('active');
-                } else {
-                    step.classList.remove('active');
-                }
-            });
-            currentStep = stepNumber;
-            updateRequiredFields();
-        }
+                        <h6><strong>3. APPLICATION PROCESS</strong></h6>
+                        <p>The application process includes:</p>
+                        <ul>
+                            <li>Online registration with personal and academic information</li>
+                            <li>Submission of required documents (Enrollment Assessment Form, etc.)</li>
+                            <li>Document verification through OCR technology</li>
+                            <li>Email verification for account security</li>
+                            <li>Review and approval by program administrators</li>
+                        </ul>
 
-        function showNotifier(message, type = 'error') {
-            const notifier = document.getElementById('notifier');
-            notifier.textContent = message;
-            notifier.classList.remove('success', 'error');
-            notifier.classList.add(type);
-            notifier.style.display = 'block';
+                        <h6><strong>4. PRIVACY AND DATA PROTECTION</strong></h6>
+                        <p>We are committed to protecting your privacy:</p>
+                        <ul>
+                            <li>Personal information is collected solely for program administration</li>
+                            <li>Data is stored securely and protected against unauthorized access</li>
+                            <li>Information will not be shared with third parties without consent</li>
+                            <li>You have the right to access and correct your personal data</li>
+                            <li>Data retention follows government regulations and policies</li>
+                        </ul>
 
-            setTimeout(() => {
-                notifier.style.display = 'none';
-            }, 3000);
-        }
+                        <h6><strong>5. OBLIGATIONS AND RESPONSIBILITIES</strong></h6>
+                        <p>As a beneficiary, you agree to:</p>
+                        <ul>
+                            <li>Provide truthful and accurate information</li>
+                            <li>Maintain satisfactory academic performance</li>
+                            <li>Notify the program of any changes in your status</li>
+                            <li>Use assistance funds solely for educational purposes</li>
+                            <li>Comply with all program requirements and deadlines</li>
+                            <li>Participate in program evaluation and feedback activities</li>
+                        </ul>
 
-        function nextStep() {
-            if (currentStep === 6) return;
+                        <h6><strong>6. PROHIBITED ACTIVITIES</strong></h6>
+                        <p>The following activities are strictly prohibited:</p>
+                        <ul>
+                            <li>Providing false or misleading information</li>
+                            <li>Creating multiple accounts or applications</li>
+                            <li>Sharing account credentials with others</li>
+                            <li>Attempting to circumvent system security measures</li>
+                            <li>Using assistance for non-educational purposes</li>
+                        </ul>
 
-            let isValid = true;
-            const currentPanel = document.getElementById(`step-${currentStep}`);
-            const inputs = currentPanel.querySelectorAll('input[required], select[required], textarea[required]');
+                        <h6><strong>7. PROGRAM BENEFITS AND LIMITATIONS</strong></h6>
+                        <p>Financial assistance benefits:</p>
+                        <ul>
+                            <li>Assistance amounts are determined by available funding</li>
+                            <li>Benefits are subject to annual review and renewal</li>
+                            <li>Assistance may be suspended or terminated for non-compliance</li>
+                            <li>The program reserves the right to modify benefit amounts</li>
+                            <li>No guarantee of continued assistance beyond current term</li>
+                        </ul>
 
-            inputs.forEach(input => {
-                if (input.type === 'radio') {
-                    const radioGroupName = input.name;
-                    if (!document.querySelector(`input[name="${radioGroupName}"]:checked`)) {
-                        isValid = false;
-                    }
-                } else if (input.type === 'checkbox') {
-                    if (!input.checked) {
-                        isValid = false;
-                    }
-                } else if (!input.value.trim()) {
-                    isValid = false;
-                }
-            });
+                        <h6><strong>8. ACADEMIC REQUIREMENTS</strong></h6>
+                        <p>To maintain eligibility:</p>
+                        <ul>
+                            <li>Maintain minimum GPA as specified by program guidelines</li>
+                            <li>Complete required credit hours per semester</li>
+                            <li>Submit academic progress reports when requested</li>
+                            <li>Notify program of any academic difficulties</li>
+                        </ul>
 
-            if (!isValid) {
-                showNotifier('Please fill in all required fields for the current step.', 'error');
-                return;
-            }
+                        <h6><strong>9. TERMINATION AND APPEALS</strong></h6>
+                        <p>Program participation may be terminated for:</p>
+                        <ul>
+                            <li>Violation of terms and conditions</li>
+                            <li>Academic non-performance</li>
+                            <li>Fraudulent activity</li>
+                            <li>Failure to comply with program requirements</li>
+                        </ul>
+                        <p>You have the right to appeal termination decisions through the established appeals process.</p>
 
-            if (currentStep === 5) {
-                if (!otpVerified) {
-                    showNotifier('Please verify your OTP before proceeding.', 'error');
-                    return;
-                }
-                showStep(currentStep + 1);
-            } else if (currentStep < 6) {
-                showStep(currentStep + 1);
-            }
-        }
+                        <h6><strong>10. LIMITATION OF LIABILITY</strong></h6>
+                        <p>The EducAid program and its administrators shall not be liable for:</p>
+                        <ul>
+                            <li>Delays in processing applications or payments</li>
+                            <li>Technical issues with the registration system</li>
+                            <li>Changes in program funding or policies</li>
+                            <li>Indirect or consequential damages</li>
+                        </ul>
 
-        function prevStep() {
-            if (currentStep > 1) {
-                showStep(currentStep - 1);
-            }
-        }
+                        <h6><strong>11. MODIFICATIONS TO TERMS</strong></h6>
+                        <p>These terms may be updated periodically. Continued participation in the program constitutes acceptance of any modifications. You will be notified of significant changes via email or system notifications.</p>
 
-        document.addEventListener('DOMContentLoaded', () => {
-            showStep(1);
-            updateRequiredFields();
-            document.getElementById('nextStep5Btn').disabled = true;
-            document.getElementById('nextStep5Btn').addEventListener('click', nextStep);
-            
-            // Add listeners to name fields to re-validate filename if changed
-            document.querySelector('input[name="first_name"]').addEventListener('input', function() {
-                if (document.getElementById('enrollmentForm').files.length > 0) {
-                    // Trigger filename re-validation if file is already selected
-                    const event = new Event('change');
-                    document.getElementById('enrollmentForm').dispatchEvent(event);
-                }
-            });
-            
-            document.querySelector('input[name="last_name"]').addEventListener('input', function() {
-                if (document.getElementById('enrollmentForm').files.length > 0) {
-                    // Trigger filename re-validation if file is already selected
-                    const event = new Event('change');
-                    document.getElementById('enrollmentForm').dispatchEvent(event);
-                }
-            });
-        });
+                        <h6><strong>12. CONTACT INFORMATION</strong></h6>
+                        <p>For questions or concerns regarding these terms:</p>
+                        <ul>
+                            <li>Email: support@educaid.gov.ph</li>
+                            <li>Phone: (123) 456-7890</li>
+                            <li>Address: Municipal Building, Education Office</li>
+                            <li>Office Hours: Monday-Friday, 8:00 AM - 5:00 PM</li>
+                        </ul>
 
-        // ---- OTP BUTTON HANDLING ----
+                        <h6><strong>13. GOVERNING LAW</strong></h6>
+                        <p>These terms are governed by the laws of the Republic of the Philippines. Any disputes shall be resolved through appropriate legal channels within the jurisdiction.</p>
 
-        document.getElementById("sendOtpBtn").addEventListener("click", function() {
-            const emailInput = document.getElementById('emailInput');
-            const email = emailInput.value;
+                        <div class="alert alert-info mt-4">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Important:</strong> By checking the agreement box, you acknowledge that you have read, understood, and agree to comply with all terms and conditions outlined above.
+                        </div>
 
-            if (!email || !/\S+@\S+\.\S+/.test(email)) {
-                showNotifier('Please enter a valid email address before sending OTP.', 'error');
-                return;
-            }
+                        <div class="text-center mt-4 mb-4">
+                            <p class="text-muted">--- End of Terms and Conditions ---</p>
+                            <div id="scrollIndicator" class="alert alert-warning">
+                                <i class="bi bi-arrow-down me-2"></i>
+                                Please scroll down to read all terms and conditions
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-success" id="acceptTermsBtn" disabled>
+                        <i class="bi bi-check-circle me-2"></i>I Accept Terms and Conditions
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-            const sendOtpBtn = this;
-            sendOtpBtn.disabled = true;
-            sendOtpBtn.textContent = 'Sending OTP...';
-            document.getElementById("resendOtpBtn").disabled = true;
-
-            const formData = new FormData();
-            formData.append('sendOtp', 'true');
-            formData.append('email', email);
-
-            fetch('student_register.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showNotifier(data.message, 'success');
-                    document.getElementById("otpSection").classList.remove("d-none");
-                    document.getElementById("sendOtpBtn").classList.add("d-none");
-                    document.getElementById("resendOtpBtn").style.display = 'block';
-                    startOtpTimer();
-                } else {
-                    showNotifier(data.message, 'error');
-                    sendOtpBtn.disabled = false;
-                    sendOtpBtn.textContent = "Send OTP (Email)";
-                    document.getElementById("resendOtpBtn").disabled = true;
-                }
-            })
-            .catch(error => {
-                console.error('Error sending OTP:', error);
-                showNotifier('Failed to send OTP. Please try again.', 'error');
-                sendOtpBtn.disabled = false;
-                sendOtpBtn.textContent = "Send OTP (Email)";
-                document.getElementById("resendOtpBtn").disabled = true;
-            });
-        });
-
-        document.getElementById("resendOtpBtn").addEventListener("click", function() {
-            const emailInput = document.getElementById('emailInput');
-            const email = emailInput.value;
-
-            if (document.getElementById('timer').textContent !== "OTP expired. Please request a new OTP.") {
-                return;
-            }
-
-            const resendOtpBtn = this;
-            resendOtpBtn.disabled = true;
-            resendOtpBtn.textContent = 'Resending OTP...';
-
-            const formData = new FormData();
-            formData.append('sendOtp', 'true');
-            formData.append('email', email);
-
-            fetch('student_register.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showNotifier(data.message, 'success');
-                    startOtpTimer();
-                } else {
-                    showNotifier(data.message, 'error');
-                    resendOtpBtn.disabled = false;
-                    resendOtpBtn.textContent = "Resend OTP";
-                }
-            })
-            .catch(error => {
-                console.error('Error sending OTP:', error);
-                showNotifier('Failed to send OTP. Please try again.', 'error');
-                resendOtpBtn.disabled = false;
-                resendOtpBtn.textContent = "Resend OTP";
-            });
-        });
-
-        document.getElementById("verifyOtpBtn").addEventListener("click", function() {
-            const enteredOtp = document.getElementById('otp').value;
-            const emailForOtpVerification = document.getElementById('emailInput').value;
-
-            if (!enteredOtp) {
-                showNotifier('Please enter the OTP.', 'error');
-                return;
-            }
-
-            const verifyOtpBtn = this;
-            verifyOtpBtn.disabled = true;
-            verifyOtpBtn.textContent = 'Verifying...';
-
-            const formData = new FormData();
-            formData.append('verifyOtp', 'true');
-            formData.append('otp', enteredOtp);
-            formData.append('email', emailForOtpVerification);
-
-            fetch('student_register.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showNotifier(data.message, 'success');
-                    otpVerified = true;
-                    document.getElementById('otp').disabled = true;
-                    verifyOtpBtn.classList.add('btn-success');
-                    verifyOtpBtn.textContent = 'Verified!';
-                    verifyOtpBtn.disabled = true;
-                    clearInterval(countdown);
-                    document.getElementById('timer').textContent = '';
-                    document.getElementById('resendOtpBtn').style.display = 'none';
-                    document.getElementById('nextStep5Btn').disabled = false;
-                    document.getElementById('emailInput').disabled = true;
-                    document.getElementById('emailInput').classList.add('verified-email');
-                } else {
-                    showNotifier(data.message, 'error');
-                    verifyOtpBtn.disabled = false;
-                    verifyOtpBtn.textContent = "Verify OTP";
-                    otpVerified = false;
-                }
-            })
-            .catch(error => {
-                console.error('Error verifying OTP:', error);
-                showNotifier('Failed to verify OTP. Please try again.', 'error');
-                verifyOtpBtn.disabled = false;
-                verifyOtpBtn.textContent = "Verify OTP";
-                otpVerified = false;
-            });
-        });
-
-        function startOtpTimer() {
-            let timeLeft = 40;
-            clearInterval(countdown);
-            document.getElementById('timer').textContent = `Time left: ${timeLeft} seconds`;
-
-            countdown = setInterval(function() {
-                timeLeft--;
-                document.getElementById('timer').textContent = `Time left: ${timeLeft} seconds`;
-
-                if (timeLeft <= 0) {
-                    clearInterval(countdown);
-                    document.getElementById('timer').textContent = "OTP expired. Please request a new OTP.";
-                    document.getElementById('otp').disabled = false;
-                    document.getElementById('verifyOtpBtn').disabled = false;
-                    document.getElementById('verifyOtpBtn').textContent = 'Verify OTP';
-                    document.getElementById('verifyOtpBtn').classList.remove('btn-success');
-                    document.getElementById('resendOtpBtn').disabled = false;
-                    document.getElementById('resendOtpBtn').style.display = 'block';
-                    document.getElementById('sendOtpBtn').classList.add('d-none');
-                    otpVerified = false;
-                    document.getElementById('nextStep5Btn').disabled = true;
-                }
-            }, 1000);
-        }
-
-        const passwordInput = document.getElementById('password');
-        const confirmPasswordInput = document.getElementById('confirmPassword');
-        const strengthBar = document.getElementById('strengthBar');
-        const strengthText = document.getElementById('strengthText');
-
-        function updatePasswordStrength() {
-            const password = passwordInput.value;
-            let strength = 0;
-
-            if (password.length >= 12) strength += 25;
-            if (/[A-Z]/.test(password)) strength += 25;
-            if (/[a-z]/.test(password)) strength += 25;
-            if (/[0-9]/.test(password)) strength += 25;
-            if (/[^A-Za-z0-9]/.test(password)) strength += 25;
-
-            strength = Math.min(strength, 100);
-
-            strengthBar.style.width = strength + '%';
-            strengthBar.className = 'progress-bar';
-
-            if (strength < 50) {
-                strengthBar.classList.add('bg-danger');
-                strengthText.textContent = 'Weak';
-            } else if (strength < 75) {
-                strengthBar.classList.add('bg-warning');
-                strengthText.textContent = 'Medium';
-            } else {
-                strengthBar.classList.add('bg-success');
-                strengthText.textContent = 'Strong';
-            }
-
-            if (password.length === 0) {
-                strengthBar.style.width = '0%';
-                strengthText.textContent = '';
-            }
-        }
-
-        passwordInput.addEventListener('input', updatePasswordStrength);
-
-        confirmPasswordInput.addEventListener('input', function() {
-            if (passwordInput.value !== confirmPasswordInput.value) {
-                confirmPasswordInput.setCustomValidity('Passwords do not match');
-            } else {
-                confirmPasswordInput.setCustomValidity('');
-            }
-        });
-
-        // ----- FIX FOR REQUIRED FIELD ERROR -----
-        document.getElementById('multiStepForm').addEventListener('submit', function(e) {
-            if (currentStep !== 6) {
-                e.preventDefault();
-                showNotifier('Please complete all steps first.', 'error');
-                return;
-            }
-            // Show all panels and enable all fields for browser validation
-            document.querySelectorAll('.step-panel').forEach(panel => {
-                panel.classList.remove('d-none');
-                panel.style.display = '';
-            });
-            document.querySelectorAll('input, select, textarea').forEach(el => {
-                el.disabled = false;
-            });
-        });
-
-        // ----- DOCUMENT UPLOAD AND OCR FUNCTIONALITY -----
-        let documentVerified = false;
-        let filenameValid = false;
-
-        function validateFilename(filename, firstName, lastName) {
-            // Remove file extension for validation
-            const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
-            
-            // Expected format: Lastname_Firstname_EAF
-            const expectedFormat = `${lastName}_${firstName}_EAF`;
-            
-            // Case-insensitive comparison
-            return nameWithoutExt.toLowerCase() === expectedFormat.toLowerCase();
-        }
-
-        function updateProcessButtonState() {
-            const processBtn = document.getElementById('processOcrBtn');
-            const fileInput = document.getElementById('enrollmentForm');
-            
-            if (fileInput.files.length > 0 && filenameValid) {
-                processBtn.disabled = false;
-            } else {
-                processBtn.disabled = true;
-            }
-        }
-
-        document.getElementById('enrollmentForm').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            const filenameError = document.getElementById('filenameError');
-            
-            if (file) {
-                // Get form data for filename validation
-                const firstName = document.querySelector('input[name="first_name"]').value.trim();
-                const lastName = document.querySelector('input[name="last_name"]').value.trim();
-                
-                if (!firstName || !lastName) {
-                    showNotifier('Please fill in your first and last name first.', 'error');
-                    this.value = '';
-                    return;
-                }
-                
-                // Validate filename format
-                filenameValid = validateFilename(file.name, firstName, lastName);
-                
-                if (!filenameValid) {
-                    filenameError.style.display = 'block';
-                    filenameError.innerHTML = `
-                        <small><i class="bi bi-exclamation-triangle me-1"></i>
-                        Filename must be: <strong>${lastName}_${firstName}_EAF.${file.name.split('.').pop()}</strong>
-                        </small>
-                    `;
-                    document.getElementById('uploadPreview').classList.add('d-none');
-                    document.getElementById('ocrSection').classList.add('d-none');
-                } else {
-                    filenameError.style.display = 'none';
-                    
-                    const previewContainer = document.getElementById('uploadPreview');
-                    const previewImage = document.getElementById('previewImage');
-                    const pdfPreview = document.getElementById('pdfPreview');
-                    
-                    previewContainer.classList.remove('d-none');
-                    document.getElementById('ocrSection').classList.remove('d-none');
-                    
-                    if (file.type.startsWith('image/')) {
-                        const reader = new FileReader();
-                        reader.onload = function(e) {
-                            previewImage.src = e.target.result;
-                            previewImage.style.display = 'block';
-                            pdfPreview.style.display = 'none';
-                        };
-                        reader.readAsDataURL(file);
-                    } else if (file.type === 'application/pdf') {
-                        previewImage.style.display = 'none';
-                        pdfPreview.style.display = 'block';
-                    }
-                }
-                
-                // Reset verification status
-                documentVerified = false;
-                document.getElementById('nextStep4Btn').disabled = true;
-                document.getElementById('ocrResults').classList.add('d-none');
-                updateProcessButtonState();
-            } else {
-                filenameError.style.display = 'none';
-                filenameValid = false;
-                updateProcessButtonState();
-            }
-        });
-
-        document.getElementById('processOcrBtn').addEventListener('click', function() {
-            const fileInput = document.getElementById('enrollmentForm');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                showNotifier('Please select a file first.', 'error');
-                return;
-            }
-
-            if (!filenameValid) {
-                showNotifier('Please rename your file to follow the required format: Lastname_Firstname_EAF', 'error');
-                return;
-            }
-
-            const processBtn = this;
-            processBtn.disabled = true;
-            processBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
-            
-            // Get form data for verification
-            const formData = new FormData();
-            formData.append('processOcr', 'true');
-            formData.append('enrollment_form', file);
-            formData.append('first_name', document.querySelector('input[name="first_name"]').value);
-            formData.append('middle_name', document.querySelector('input[name="middle_name"]').value);
-            formData.append('last_name', document.querySelector('input[name="last_name"]').value);
-            formData.append('university_id', document.querySelector('select[name="university_id"]').value);
-            formData.append('year_level_id', document.querySelector('select[name="year_level_id"]').value);
-
-            fetch('student_register.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                processBtn.disabled = false;
-                processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
-                
-                if (data.status === 'success') {
-                    displayVerificationResults(data.verification);
-                } else {
-                    showNotifier(data.message, 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Error processing OCR:', error);
-                showNotifier('Failed to process document. Please try again.', 'error');
-                processBtn.disabled = false;
-                processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
-            });
-        });
-
-        function displayVerificationResults(verification) {
-            const resultsContainer = document.getElementById('ocrResults');
-            const feedbackContainer = document.getElementById('ocrFeedback');
-            
-            resultsContainer.classList.remove('d-none');
-            
-            // Update checklist items
-            const checks = ['firstname', 'middlename', 'lastname', 'yearlevel', 'university', 'document'];
-            const checkMap = {
-                'firstname': 'first_name',
-                'middlename': 'middle_name', 
-                'lastname': 'last_name',
-                'yearlevel': 'year_level',
-                'university': 'university',
-                'document': 'document_keywords'
-            };
-            
-            checks.forEach(check => {
-                const element = document.getElementById(`check-${check}`);
-                const icon = element.querySelector('i');
-                const isValid = verification[checkMap[check]];
-                
-                if (isValid) {
-                    icon.className = 'bi bi-check-circle text-success me-2';
-                } else {
-                    icon.className = 'bi bi-x-circle text-danger me-2';
-                }
-            });
-            
-            if (verification.overall_success) {
-                feedbackContainer.style.display = 'none';
-                feedbackContainer.className = 'alert alert-success mt-3';
-                feedbackContainer.innerHTML = '<strong>Verification Successful!</strong> Your document has been validated.';
-                feedbackContainer.style.display = 'block';
-                documentVerified = true;
-                document.getElementById('nextStep4Btn').disabled = false;
-                showNotifier('Document verification successful!', 'success');
-            } else {
-                feedbackContainer.style.display = 'none';
-                feedbackContainer.className = 'alert alert-warning mt-3';
-                feedbackContainer.innerHTML = '<strong>Verification Failed:</strong> Please ensure your document is clear and contains all required information. Upload a clearer image or check that the document matches your registration details.';
-                feedbackContainer.style.display = 'block';
-                documentVerified = false;
-                document.getElementById('nextStep4Btn').disabled = true;
-                showNotifier('Document verification failed. Please try again with a clearer document.', 'error');
-            }
-        }
-
-        // Add CSS for verification checklist
-        const style = document.createElement('style');
-        style.textContent = `
-            .verification-checklist .form-check {
-                display: flex;
-                align-items: center;
-                padding: 8px 0;
-                border-bottom: 1px solid #eee;
-            }
-            .verification-checklist .form-check:last-child {
-                border-bottom: none;
-            }
-            .verification-checklist .form-check span {
-                font-size: 14px;
-            }
-        `;
-        document.head.appendChild(style);
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/student/registration.js"></script>
 </body>
 </html>
