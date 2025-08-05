@@ -35,7 +35,7 @@ CREATE TABLE students (
     mobile TEXT,
     password TEXT NOT NULL,
     sex TEXT CHECK (sex IN ('Male', 'Female')),
-    status TEXT CHECK (status IN ('applicant', 'active', 'disabled', 'given')) DEFAULT 'applicant',
+    status TEXT CHECK (status IN ('under_registration', 'applicant', 'active', 'disabled', 'given')) DEFAULT 'under_registration',
     payroll_no INT,
     qr_code TEXT,
     has_received BOOLEAN DEFAULT FALSE,
@@ -63,6 +63,15 @@ CREATE TABLE documents (
     upload_date TIMESTAMP DEFAULT NOW(),
     is_valid BOOLEAN DEFAULT FALSE,  -- Set to FALSE by default, to be validated by admin
     validation_notes TEXT
+);
+
+-- Enrollment Assessment Forms uploaded during registration
+CREATE TABLE enrollment_forms (
+    form_id SERIAL PRIMARY KEY,
+    student_id INT REFERENCES students(student_id),
+    file_path TEXT NOT NULL,
+    original_filename TEXT NOT NULL,
+    upload_date TIMESTAMP DEFAULT NOW()
 );
 
 -- Announcements (only one active per LGU)

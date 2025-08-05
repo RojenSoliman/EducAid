@@ -466,7 +466,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     }
 
     $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'under_registration', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $municipality_id,
@@ -488,6 +488,31 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $student_id_row = pg_fetch_assoc($result);
         $student_id = $student_id_row['student_id'];
 
+        // Save enrollment form if it exists in temp folder
+        $tempFormPath = 'assets/uploads/temp/';
+        $tempFiles = glob($tempFormPath . '*');
+        if (!empty($tempFiles)) {
+            // Create permanent upload directory
+            $permanentDir = '../../assets/uploads/enrollment_forms/';
+            if (!file_exists($permanentDir)) {
+                mkdir($permanentDir, 0777, true);
+            }
+            
+            // Move the file to permanent location
+            $tempFile = $tempFiles[0]; // Get the first (and should be only) file
+            $filename = basename($tempFile);
+            $permanentPath = $permanentDir . $student_id . '_' . $filename;
+            
+            if (copy($tempFile, $permanentPath)) {
+                // Save form record to database
+                $formQuery = "INSERT INTO enrollment_forms (student_id, file_path, original_filename) VALUES ($1, $2, $3)";
+                pg_query_params($connection, $formQuery, [$student_id, $permanentPath, $filename]);
+                
+                // Clean up temp file
+                unlink($tempFile);
+            }
+        }
+
         $semester = $slotInfo['semester'];
         $academic_year = $slotInfo['academic_year'];
         $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";
@@ -495,7 +520,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
         unset($_SESSION['otp_verified']);
 
-        echo "<script>alert('Registration successful!'); window.location.href = '../../unified_login.php';</script>";
+        echo "<script>alert('Registration submitted successfully! Your application is under review. You will receive an email notification once approved.'); window.location.href = '../../unified_login.php';</script>";
         exit;
     } else {
         echo "<script>alert('Registration failed due to a database error. Please try again.');</script>";

@@ -35,8 +35,8 @@ body {
 }
 
 .dashboard-tile-row .dashboard-tile {
-  flex: 1 1 calc(33.333% - 1rem);
-  min-width: 250px;
+  flex: 1 1 calc(25% - 1rem);
+  min-width: 200px;
   max-width: 100%;
 }
 
@@ -77,6 +77,10 @@ body {
 
 .tile-blue {
   background-color: #007bff;
+}
+
+.tile-orange {
+  background-color: #fd7e14;
 }
 
 .tile-yellow {

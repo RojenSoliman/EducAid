@@ -75,12 +75,24 @@ while ($row = pg_fetch_assoc($genderRes)) {
             <div class="tile-icon"><i class="bi bi-people-fill"></i></div>
             <div class="tile-number">
               <?php
-                $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students");
+                $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status IN ('applicant', 'active')");
                 $row = pg_fetch_assoc($result);
                 echo $row['total'];
               ?>
             </div>
             <div class="tile-label">Total Students</div>
+          </div>
+
+          <div class="dashboard-tile tile-orange">
+            <div class="tile-icon"><i class="bi bi-clipboard-check"></i></div>
+            <div class="tile-number">
+              <?php
+                $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'under_registration'");
+                $row = pg_fetch_assoc($result);
+                echo $row['total'];
+              ?>
+            </div>
+            <div class="tile-label">Pending Review</div>
           </div>
 
           <div class="dashboard-tile tile-yellow">

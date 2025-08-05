@@ -24,7 +24,7 @@ if (
 
     // Check if user is a student
     $studentRes = pg_query_params($connection,
-        "SELECT student_id, password, 'student' as role FROM students
+        "SELECT student_id, password, status, 'student' as role FROM students
          WHERE first_name = $1 AND last_name = $2 AND email = $3",
         [$fn, $ln, $em]
     );
@@ -52,6 +52,24 @@ if (
     
     if (!password_verify($pw, $user['password'])) {
         echo json_encode(['status'=>'error','message'=>'Invalid password.']);
+        exit;
+    }
+
+    // Check if student is under registration (not yet approved)
+    if ($user['role'] === 'student' && isset($user['status']) && $user['status'] === 'under_registration') {
+        echo json_encode([
+            'status'=>'error',
+            'message'=>'Your registration is still under review. Please wait for admin approval before logging in. You will receive an email notification once approved.'
+        ]);
+        exit;
+    }
+
+    // Check if student registration was rejected
+    if ($user['role'] === 'student' && isset($user['status']) && $user['status'] === 'disabled') {
+        echo json_encode([
+            'status'=>'error',
+            'message'=>'Your registration has been declined. Please contact the administrator for more information.'
+        ]);
         exit;
     }
 

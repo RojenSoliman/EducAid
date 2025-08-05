@@ -26,6 +26,12 @@
         <span class="links_name">Signup Slots</span>
       </a>
     </li>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'review_registrations.php' ? 'active' : ''; ?>">
+      <a href="review_registrations.php">
+        <i class="bi bi-clipboard-check icon"></i>
+        <span class="links_name">Review Registrations</span>
+      </a>
+    </li>
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_applicants.php' ? 'active' : ''; ?>">
       <a href="manage_applicants.php">
         <i class="bi bi-people icon"></i>
