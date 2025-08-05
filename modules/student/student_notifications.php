@@ -3,7 +3,7 @@ include '../../config/database.php';
 // Check if student is logged in
 session_start();
 if (!isset($_SESSION['student_username'])) {
-    header("Location: student_login.php");
+    header("Location: ../../unified_login.php");
     exit;
 }
 // Get student ID for operations

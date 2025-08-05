@@ -1,7 +1,7 @@
 <?php
 session_start();
 if (!isset($_SESSION['student_username'])) {
-  header("Location: student_login.html");
+  header("Location: ../../unified_login.php");
   exit;
 }
 // Include database connection

@@ -3,7 +3,7 @@ include __DIR__ . '/../../config/database.php';
 session_start();
 
 if (!isset($_SESSION['admin_username'])) {
-    header("Location: index.php");
+    header("Location: ../../unified_login.php");
     exit;
 }
 
@@ -29,8 +29,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $admin_username = $_SESSION['admin_username'];
-        $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE username = $1", [$admin_username]);
+        // Get admin password using admin_id from session
+        if (isset($_SESSION['admin_id'])) {
+            // New unified login system
+            $admin_id = $_SESSION['admin_id'];
+            $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE admin_id = $1", [$admin_id]);
+        } elseif (isset($_SESSION['admin_username'])) {
+            // Legacy login system fallback
+            $admin_username = $_SESSION['admin_username'];
+            $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE username = $1", [$admin_username]);
+        } else {
+            header("Location: manage_slots.php?error=session_invalid");
+            exit;
+        }
+        
         $adminRow = pg_fetch_assoc($adminQuery);
         if (!$adminRow || !password_verify($admin_password, $adminRow['password'])) {
             header("Location: manage_slots.php?error=invalid_password");
@@ -160,6 +172,47 @@ while ($row = pg_fetch_assoc($res)) {
 
     <div class="container-fluid p-4">
       <h2 class="fw-bold mb-4 text-primary"><i class="bi bi-calendar-week"></i> Manage Signup Slots</h2>
+
+      <?php
+      // Display status/error messages
+      if (isset($_GET['status'])) {
+          if ($_GET['status'] === 'success') {
+              echo '<div class="alert alert-success alert-dismissible fade show" role="alert">
+                      <i class="bi bi-check-circle-fill"></i> Slot released successfully!
+                      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>';
+          } elseif ($_GET['status'] === 'deleted') {
+              echo '<div class="alert alert-info alert-dismissible fade show" role="alert">
+                      <i class="bi bi-trash-fill"></i> Slot deleted successfully!
+                      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>';
+          }
+      }
+      
+      if (isset($_GET['error'])) {
+          $errorMsg = '';
+          switch ($_GET['error']) {
+              case 'invalid_year':
+                  $errorMsg = 'Invalid academic year format. Use format: 2025-2026';
+                  break;
+              case 'invalid_password':
+                  $errorMsg = 'Incorrect password. Please try again.';
+                  break;
+              case 'duplicate_slot':
+                  $errorMsg = 'A slot for this semester and academic year already exists.';
+                  break;
+              case 'session_invalid':
+                  $errorMsg = 'Session error. Please log out and log in again.';
+                  break;
+              default:
+                  $errorMsg = 'An error occurred. Please try again.';
+          }
+          echo '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                  <i class="bi bi-exclamation-triangle-fill"></i> ' . htmlspecialchars($errorMsg) . '
+                  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>';
+      }
+      ?>
 
       <!-- Release New Slot -->
       <form id="releaseSlotsForm" method="POST" class="card p-4 shadow-sm mb-4">

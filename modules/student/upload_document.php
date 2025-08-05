@@ -4,7 +4,7 @@ include '../../config/database.php';
 session_start();
 // Redirect if not logged in
 if (!isset($_SESSION['student_username'])) {
-    header("Location: student_login.php");
+    header("Location: ../../unified_login.php");
     exit;
 }
 // Session flash for upload status

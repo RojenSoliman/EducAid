@@ -16,6 +16,10 @@ CREATE TABLE municipalities (
 CREATE TABLE admins (
     admin_id SERIAL PRIMARY KEY,
     municipality_id INT REFERENCES municipalities(municipality_id),
+    first_name TEXT NOT NULL,
+    middle_name TEXT,
+    last_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
     username TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL
 );

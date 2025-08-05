@@ -62,7 +62,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
                     </svg>
                     <h4 class="text-danger">Slots are full.</h4>
                     <p>Please wait for the next announcement before registering again.</p>
-                    <a href="student_login.html" class="btn btn-outline-primary mt-3">Back to Login</a>
+                    <a href="../../unified_login.php" class="btn btn-outline-primary mt-3">Back to Login</a>
                 </div>
             </div>
         </body>
@@ -190,7 +190,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
     $checkEmail = pg_query_params($connection, "SELECT 1 FROM students WHERE email = $1", [$email]);
     if (pg_num_rows($checkEmail) > 0) {
-        echo "<script>alert('Email already exists. Please use a different email or login.'); window.location.href = 'student_login.html';</script>";
+        echo "<script>alert('Email already exists. Please use a different email or login.'); window.location.href = '../../unified_login.php';</script>";
         exit;
     }
 
@@ -203,7 +203,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
     $slotInfo = pg_fetch_assoc($slotRes);
     if (!$slotInfo) {
-        echo "<script>alert('No active slot found for your municipality.'); window.location.href = 'student_login.html';</script>";
+        echo "<script>alert('No active slot found for your municipality.'); window.location.href = '../../unified_login.php';</script>";
         exit;
     }
 
@@ -217,7 +217,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $slotsLeft = intval($slotInfo['slot_count']) - $slotsUsed;
 
     if ($slotsLeft <= 0) {
-        echo "<script>alert('Registration slots are full. Please wait for the next round.'); window.location.href = 'student_login.html';</script>";
+        echo "<script>alert('Registration slots are full. Please wait for the next round.'); window.location.href = '../../unified_login.php';</script>";
         exit;
     }
 
@@ -248,7 +248,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
         unset($_SESSION['otp_verified']);
 
-        echo "<script>alert('Registration successful! You can now login.'); window.location.href = 'student_login.html';</script>";
+        echo "<script>alert('Registration successful! You can now login.'); window.location.href = '../../unified_login.php';</script>";
         exit;
     } else {
         echo "<script>alert('Registration failed due to a database error. Please try again.');</script>";

@@ -2,7 +2,7 @@
 include __DIR__ . '/../../config/database.php';
 session_start();
 if (!isset($_SESSION['admin_username'])) {
-    header("Location: index.php");
+    header("Location: ../../unified_login.php");
     exit;
 }
 
