@@ -484,6 +484,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $unique_student_id
     ]);
 
+    
     if ($result) {
         $student_id_row = pg_fetch_assoc($result);
         $student_id = $student_id_row['student_id'];

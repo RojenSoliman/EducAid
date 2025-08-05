@@ -265,29 +265,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
-        .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .login-card { background: white; border-radius: 15px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); padding: 2rem; max-width: 400px; width: 100%; }
-        .logo { width: 80px; height: 80px; margin: 0 auto 1rem; display: block; }
-        .btn-primary { background: linear-gradient(45deg, #667eea, #764ba2); border: none; }
-        .form-control:focus { border-color: #667eea; box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25); }
-        .step { display: none; }
-        .step.active { display: block; }
-        .signup-link { 
-            padding: 0.5rem; 
-            border: 1px solid #e0e0e0; 
-            border-radius: 8px; 
-            background-color: #f8f9fa; 
-            margin-top: 0.5rem;
-        }
-        .signup-link a { 
-            color: #667eea; 
-            font-weight: 600; 
-        }
-        .signup-link a:hover { 
-            color: #764ba2; 
-            text-decoration: underline !important; 
-        }
+      body { 
+        font-family: 'Poppins', sans-serif; 
+        background: linear-gradient(135deg, #0068DA 0%, #00B1C6 50%, #67D6C6 100%); 
+        min-height: 100vh; 
+    }
+    .login-container { 
+        min-height: 100vh; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+    }
+    .login-card { 
+        background: white; 
+        border-radius: 15px; 
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
+        padding: 2rem; 
+        max-width: 400px; 
+        width: 100%; 
+        border-top: 4px solid #0068DA;
+    }
+    .logo { 
+        width: 80px; 
+        height: 80px; 
+        margin: 0 auto 1rem; 
+        display: block; 
+    }
+    .btn-primary { 
+        background: linear-gradient(45deg, #0068DA, #0088C8); 
+        border: none; 
+        transition: all 0.3s ease;
+    }
+    .btn-primary:hover {
+        background: linear-gradient(45deg, #0088C8, #00B1C6);
+        transform: translateY(-1px);
+    }
+    .form-control:focus { 
+        border-color: #0068DA; 
+        box-shadow: 0 0 0 0.2rem rgba(0, 104, 218, 0.25); 
+    }
+    .step { 
+        display: none; 
+    }
+    .step.active { 
+        display: block; 
+    }
+    .signup-link { 
+        padding: 0.5rem; 
+        border: 1px solid #e0e0e0; 
+        border-radius: 8px; 
+        background: linear-gradient(135deg, #67D6C6 0%, rgba(103, 214, 198, 0.1) 100%); 
+        margin-top: 0.5rem;
+    }
+    .signup-link a { 
+        color: #0068DA; 
+        font-weight: 600; 
+    }
+    .signup-link a:hover { 
+        color: #0088C8; 
+        text-decoration: underline !important; 
+    }
+    h2 {
+        color: #0068DA;
+        font-weight: 600;
+    }
+    h5 {
+        color: #0068DA;
+        font-weight: 600;
+    }
+    .form-label {
+        color: #374151;
+        font-weight: 500;
+    }
+    a {
+        color: #0068DA;
+    }
+    a:hover {
+        color: #0088C8;
+    }
+    .alert-success {
+        background-color: rgba(61, 173, 16, 0.1);
+        border-color: #3DAD10;
+        color: #2d7d0c;
+    }
+    .alert-danger {
+        background-color: #fee2e2;
+        border-color: #ef4444;
+        color: #991b1b;
+    }
     </style>
 </head>
 <body>
