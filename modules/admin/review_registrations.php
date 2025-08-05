@@ -184,7 +184,7 @@ if (!empty($year_level_filter)) {
 $whereClause = implode(' AND ', $whereConditions);
 
 // Valid sort columns
-$validSorts = ['application_date', 'first_name', 'last_name', 'barangay_name', 'university_name'];
+$validSorts = ['application_date', 'first_name', 'last_name'];
 if (!in_array($sort_by, $validSorts)) $sort_by = 'application_date';
 if (!in_array($sort_order, ['ASC', 'DESC'])) $sort_order = 'DESC';
 
@@ -483,16 +483,8 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                         </a>
                                     </th>
                                     <th>Contact</th>
-                                    <th>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'barangay_name', 'order' => $sort_by === 'barangay_name' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>" class="sort-link <?php echo $sort_by === 'barangay_name' ? 'sort-active' : ''; ?>">
-                                            Barangay <?php if ($sort_by === 'barangay_name') echo $sort_order === 'ASC' ? '↑' : '↓'; ?>
-                                        </a>
-                                    </th>
-                                    <th>
-                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'university_name', 'order' => $sort_by === 'university_name' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>" class="sort-link <?php echo $sort_by === 'university_name' ? 'sort-active' : ''; ?>">
-                                            University <?php if ($sort_by === 'university_name') echo $sort_order === 'ASC' ? '↑' : '↓'; ?>
-                                        </a>
-                                    </th>
+                                    <th>Barangay</th>
+                                    <th>University</th>
                                     <th>Year</th>
                                     <th>
                                         <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'application_date', 'order' => $sort_by === 'application_date' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>" class="sort-link <?php echo $sort_by === 'application_date' ? 'sort-active' : ''; ?>">
