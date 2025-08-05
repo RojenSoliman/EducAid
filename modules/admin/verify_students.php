@@ -48,6 +48,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['deactivate']) && !empty($_POST['selected_actives'])) {
         $count = count($_POST['selected_actives']);
         foreach ($_POST['selected_actives'] as $student_id) {
+            // Get unique_student_id for this student
+            $res = pg_query_params($connection, "SELECT unique_student_id FROM students WHERE student_id = $1", [$student_id]);
+            $row = pg_fetch_assoc($res);
+            if ($row && !empty($row['unique_student_id'])) {
+                // Delete QR code PNGs and DB records for this student
+                $qr_res = pg_query_params($connection, "SELECT unique_id FROM qr_codes WHERE student_unique_id = $1", [$row['unique_student_id']]);
+                while ($qr_row = pg_fetch_assoc($qr_res)) {
+                    $png_path = __DIR__ . '/../../assets/js/qrcode/phpqrcode-master/temp/' . $qr_row['unique_id'] . '.png';
+                    if (file_exists($png_path)) {
+                        @unlink($png_path);
+                    }
+                }
+                pg_query_params($connection, "DELETE FROM qr_codes WHERE student_unique_id = $1", [$row['unique_student_id']]);
+            }
             pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
         }
         // Reset finalized flag
@@ -76,15 +90,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['revert_list'])) {
         pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
         $isFinalized = false;
+        // Delete all QR code DB records (unconditional wipe)
+        $delRes = pg_query($connection, "DELETE FROM qr_codes");
+        if (!$delRes) {
+            $notification_msg = "ERROR: Failed to delete QR code records.";
+            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+            echo "<script>alert('Failed to delete QR code records!'); window.location.href='verify_students.php';</script>";
+            exit;
+        }
         if (isset($_POST['reset_payroll'])) {
             pg_query($connection, "UPDATE students SET payroll_no = 0 WHERE status = 'active'");
-            $notification_msg = "Student list reverted and payroll numbers reset";
+            $notification_msg = "Student list reverted and payroll numbers reset. All QR code records deleted.";
         } else {
-            $notification_msg = "Student list reverted (payroll numbers preserved)";
+            $notification_msg = "Student list reverted (payroll numbers preserved). All QR code records deleted.";
         }
-        
         // Add admin notification
         pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        // Force reload to reflect changes
+        echo "<script>alert('Revert complete! $notification_msg'); window.location.href='verify_students.php';</script>";
+        exit;
     }
 
     // Generate payroll numbers (sorted A→Z by full name) and QR codes
@@ -267,8 +291,8 @@ if ($isFinalized) {
                     <th>Email</th>
                     <th>Mobile Number</th>
                     <th>Barangay</th>
-                    <th class="payroll-col<?= $isFinalized ? '' : ' d-none' ?>">Payroll #</th>
-                    <th class="qr-col<?= $isFinalized ? '' : ' d-none' ?>">QR Code</th>
+                    <th class="payroll-col">Payroll #</th>
+                    <th class="qr-col">QR Code</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -322,9 +346,9 @@ if ($isFinalized) {
                         <td><?= $email ?></td>
                         <td><?= $mobile ?></td>
                         <td><?= $barangay ?></td>
-                        <td class="payroll-col" <?= $isFinalized ? '' : 'style=\"display:none;\"' ?>><?= $payroll ?></td>
-                        <td class="qr-col" <?= $isFinalized ? '' : 'style=\"display:none;\"' ?>>
-                          <?php if ($qr_img): ?>
+                        <td class="payroll-col"><?php if ($isFinalized) { echo $payroll; } else { echo '<span class="text-muted">N/A</span>'; } ?></td>
+                        <td class="qr-col">
+                          <?php if ($isFinalized && $qr_img): ?>
                             <img src="<?= $qr_img ?>" alt="QR Code" style="width:60px;height:60px;" onerror="this.onerror=null;this.src='';this.nextElementSibling.style.display='inline';" />
                             <span class="text-danger" style="display:none;">QR Error</span>
                           <?php else: ?>
@@ -492,11 +516,7 @@ if ($isFinalized) {
     var revertBtn = document.getElementById('revertBtn');
     if (revertBtn) revertBtn.disabled = isFinalized;
 
-    // Show/hide payroll column
-    document.querySelectorAll('.payroll-col').forEach(col => {
-      if (isFinalized) col.classList.remove('d-none');
-      else col.classList.add('d-none');
-    });
+    // Payroll and QR columns are always visible; cell content is N/A if not finalized
 
     // Select all behavior
     var selectAll = document.getElementById('selectAllActive');
