@@ -162,6 +162,40 @@ function render_pagination($page, $totalPages) {
     <?php
 }
 
+// Handle verify/reject actions before AJAX or page render
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Verify student
+    if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
+        $sid = intval($_POST['student_id']);
+        /** @phpstan-ignore-next-line */
+        pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$sid]);
+        // Redirect to refresh list
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    // Reject applicant and reset documents
+    if (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
+        $sid = intval($_POST['student_id']);
+        // Delete uploaded files
+        /** @phpstan-ignore-next-line */
+        $docs = pg_query_params($connection, "SELECT file_path FROM documents WHERE student_id = $1", [$sid]);
+        while ($d = pg_fetch_assoc($docs)) {
+            $path = $d['file_path'];
+            if ($path && file_exists($path)) {
+                @unlink($path);
+            }
+        }
+        /** @phpstan-ignore-next-line */
+        pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$sid]);
+        // Student notification
+        $msg = 'Your uploaded documents were rejected on ' . date('F j, Y, g:i a') . '. Please re-upload.';
+        /** @phpstan-ignore-next-line */
+        pg_query_params($connection, "INSERT INTO notifications (student_id, message) VALUES ($1, $2)", [$sid, $msg]);
+        // Redirect to refresh list
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+}
 // --------- AJAX handler ---------
 if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest') {
     echo render_table($applicants, $connection);
