@@ -153,6 +153,199 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
     exit;
 }
 
+// --- Document OCR Processing ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
+    if (!isset($_FILES['enrollment_form']) || $_FILES['enrollment_form']['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['status' => 'error', 'message' => 'No file uploaded or upload error.']);
+        exit;
+    }
+
+    $uploadDir = 'assets/uploads/temp/';
+    if (!file_exists($uploadDir)) {
+        mkdir($uploadDir, 0777, true);
+    }
+
+    // Clear temp folder
+    $files = glob($uploadDir . '*');
+    foreach ($files as $file) {
+        if (is_file($file)) unlink($file);
+    }
+
+    $uploadedFile = $_FILES['enrollment_form'];
+    $fileName = basename($uploadedFile['name']);
+    $targetPath = $uploadDir . $fileName;
+    
+    // Validate filename format: Lastname_Firstname_EAF
+    $formFirstName = trim($_POST['first_name'] ?? '');
+    $formLastName = trim($_POST['last_name'] ?? '');
+    
+    if (empty($formFirstName) || empty($formLastName)) {
+        echo json_encode(['status' => 'error', 'message' => 'First name and last name are required for filename validation.']);
+        exit;
+    }
+    
+    // Remove file extension and validate format
+    $nameWithoutExt = pathinfo($fileName, PATHINFO_FILENAME);
+    $expectedFormat = $formLastName . '_' . $formFirstName . '_EAF';
+    
+    if (strcasecmp($nameWithoutExt, $expectedFormat) !== 0) {
+        echo json_encode([
+            'status' => 'error', 
+            'message' => "Filename must follow format: {$formLastName}_{$formFirstName}_EAF.{file_extension}"
+        ]);
+        exit;
+    }
+    
+    if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
+        echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded file.']);
+        exit;
+    }
+
+    // Get form data for comparison
+    $formData = [
+        'first_name' => trim($_POST['first_name'] ?? ''),
+        'middle_name' => trim($_POST['middle_name'] ?? ''),
+        'last_name' => trim($_POST['last_name'] ?? ''),
+        'university_id' => intval($_POST['university_id'] ?? 0),
+        'year_level_id' => intval($_POST['year_level_id'] ?? 0)
+    ];
+
+    // Get university and year level names for comparison
+    $universityName = '';
+    $yearLevelName = '';
+    
+    if ($formData['university_id'] > 0) {
+        $uniResult = pg_query_params($connection, "SELECT name FROM universities WHERE university_id = $1", [$formData['university_id']]);
+        if ($uniRow = pg_fetch_assoc($uniResult)) {
+            $universityName = $uniRow['name'];
+        }
+    }
+    
+    if ($formData['year_level_id'] > 0) {
+        $yearResult = pg_query_params($connection, "SELECT name, code FROM year_levels WHERE year_level_id = $1", [$formData['year_level_id']]);
+        if ($yearRow = pg_fetch_assoc($yearResult)) {
+            $yearLevelName = $yearRow['name'];
+        }
+    }
+
+    // Process with Tesseract OCR
+    $outputBase = $uploadDir . 'ocr_' . pathinfo($fileName, PATHINFO_FILENAME);
+    $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) .
+               " --oem 1 --psm 6 -l eng 2>&1";
+    
+    $tesseractOutput = shell_exec($command);
+    $outputFile = $outputBase . ".txt";
+    
+    if (!file_exists($outputFile)) {
+        echo json_encode(['status' => 'error', 'message' => 'OCR processing failed. Please ensure the document is clear and readable.']);
+        exit;
+    }
+
+    $ocrText = file_get_contents($outputFile);
+    $ocrTextLower = strtolower($ocrText);
+    
+    // Verification results
+    $verification = [
+        'first_name' => false,
+        'middle_name' => false,
+        'last_name' => false,
+        'year_level' => false,
+        'university' => false,
+        'document_keywords' => false
+    ];
+
+    // Check first name
+    if (!empty($formData['first_name']) && stripos($ocrText, $formData['first_name']) !== false) {
+        $verification['first_name'] = true;
+    }
+
+    // Check middle name (optional)
+    if (empty($formData['middle_name']) || stripos($ocrText, $formData['middle_name']) !== false) {
+        $verification['middle_name'] = true;
+    }
+
+    // Check last name
+    if (!empty($formData['last_name']) && stripos($ocrText, $formData['last_name']) !== false) {
+        $verification['last_name'] = true;
+    }
+
+    // Check year level (must match the specific year level selected by user)
+    if (!empty($yearLevelName)) {
+        // Create specific variations for the selected year level only
+        $selectedYearVariations = [];
+        
+        // Extract year number from the year level name
+        if (stripos($yearLevelName, '1st') !== false || stripos($yearLevelName, 'first') !== false) {
+            $selectedYearVariations = ['1st year', 'first year', '1st yr', 'year 1', 'yr 1', 'freshman'];
+        } elseif (stripos($yearLevelName, '2nd') !== false || stripos($yearLevelName, 'second') !== false) {
+            $selectedYearVariations = ['2nd year', 'second year', '2nd yr', 'year 2', 'yr 2', 'sophomore'];
+        } elseif (stripos($yearLevelName, '3rd') !== false || stripos($yearLevelName, 'third') !== false) {
+            $selectedYearVariations = ['3rd year', 'third year', '3rd yr', 'year 3', 'yr 3', 'junior'];
+        } elseif (stripos($yearLevelName, '4th') !== false || stripos($yearLevelName, 'fourth') !== false) {
+            $selectedYearVariations = ['4th year', 'fourth year', '4th yr', 'year 4', 'yr 4', 'senior'];
+        } elseif (stripos($yearLevelName, '5th') !== false || stripos($yearLevelName, 'fifth') !== false) {
+            $selectedYearVariations = ['5th year', 'fifth year', '5th yr', 'year 5', 'yr 5'];
+        } elseif (stripos($yearLevelName, 'graduate') !== false || stripos($yearLevelName, 'grad') !== false) {
+            $selectedYearVariations = ['graduate', 'grad student', 'masters', 'phd', 'doctoral'];
+        }
+        
+        // Check if any of the specific year level variations are found
+        foreach ($selectedYearVariations as $variation) {
+            if (stripos($ocrText, $variation) !== false) {
+                $verification['year_level'] = true;
+                break;
+            }
+        }
+    }
+
+    // Check university name (partial matches)
+    if (!empty($universityName)) {
+        $universityWords = explode(' ', strtolower($universityName));
+        $foundWords = 0;
+        foreach ($universityWords as $word) {
+            if (strlen($word) > 3 && stripos($ocrText, $word) !== false) {
+                $foundWords++;
+            }
+        }
+        if ($foundWords >= 2 || (count($universityWords) <= 2 && $foundWords >= 1)) {
+            $verification['university'] = true;
+        }
+    }
+
+    // Check document keywords
+    $documentKeywords = [
+        'enrollment', 'assessment', 'form', 'official', 'academic', 'student',
+        'tuition', 'fees', 'semester', 'registration', 'course', 'subject',
+        'grade', 'transcript', 'record', 'university', 'college', 'school'
+    ];
+    
+    $keywordMatches = 0;
+    foreach ($documentKeywords as $keyword) {
+        if (stripos($ocrText, $keyword) !== false) {
+            $keywordMatches++;
+        }
+    }
+    
+    if ($keywordMatches >= 3) {
+        $verification['document_keywords'] = true;
+    }
+
+    // Calculate overall success
+    $requiredChecks = ['first_name', 'last_name', 'year_level', 'university', 'document_keywords'];
+    $passedChecks = 0;
+    foreach ($requiredChecks as $check) {
+        if ($verification[$check]) {
+            $passedChecks++;
+        }
+    }
+
+    $verification['overall_success'] = $passedChecks >= 4; // At least 4 out of 5 required checks
+    $verification['ocr_text'] = $ocrText; // For debugging
+
+    echo json_encode(['status' => 'success', 'verification' => $verification]);
+    exit;
+}
+
 // --- Registration logic ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     if (!isset($_SESSION['otp_verified']) || $_SESSION['otp_verified'] !== true) {
@@ -352,6 +545,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 <span class="step" id="step-indicator-3">3</span>
                 <span class="step" id="step-indicator-4">4</span>
                 <span class="step" id="step-indicator-5">5</span>
+                <span class="step" id="step-indicator-6">6</span>
             </div>
             <form id="multiStepForm" method="POST" autocomplete="off">
                 <!-- Step 1: Personal Information -->
@@ -373,11 +567,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 <!-- Step 2: Birthdate and Sex -->
                 <div class="step-panel d-none" id="step-2">
                     <div class="mb-3">
-                        <label class="form-label">Birthdate</label>
+                        <label class="form-label">Date of Birth</label>
                         <input type="date" class="form-control" name="bdate" required />
                     </div>
                     <div class="mb-3">
-                        <label class="form-label d-block">Sex</label>
+                        <label class="form-label d-block">Gender</label>
                         <div class="form-check form-check-inline">
                             <input type="radio" class="form-check-input" name="sex" value="Male" required />
                             <label class="form-check-label">Male</label>
@@ -402,9 +596,110 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
                     <button type="button" class="btn btn-primary w-100" onclick="nextStep()">Next</button>
                 </div>
-                <!-- Step 3: OTP Verification -->
+                <!-- Step 3: University and Year Level -->
                 <div class="step-panel d-none" id="step-3">
+                      <div class="mb-3">
+                          <label class="form-label">University/College</label>
+                          <select name="university_id" class="form-select" required>
+                              <option value="" disabled selected>Select your university/college</option>
+                              <?php
+                              $res = pg_query($connection, "SELECT university_id, name FROM universities ORDER BY name ASC");
+                              while ($row = pg_fetch_assoc($res)) {
+                                  echo "<option value='{$row['university_id']}'>" . htmlspecialchars($row['name']) . "</option>";
+                              }
+                              ?>
+                          </select>
+                      </div>
+                      <div class="mb-3">
+                          <label class="form-label">Year Level</label>
+                          <select name="year_level_id" class="form-select" required>
+                              <option value="" disabled selected>Select your year level</option>
+                              <?php
+                              $res = pg_query($connection, "SELECT year_level_id, name FROM year_levels ORDER BY sort_order ASC");
+                              while ($row = pg_fetch_assoc($res)) {
+                                  echo "<option value='{$row['year_level_id']}'>" . htmlspecialchars($row['name']) . "</option>";
+                              }
+                              ?>
+                          </select>
+                      </div>
+                      <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
+                      <button type="button" class="btn btn-primary w-100" onclick="nextStep()">Next</button>
+                </div>
+                <!-- Step 4: Document Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-4">
                     <div class="mb-3">
+                        <label class="form-label">Upload Enrollment Assessment Form</label>
+                        <small class="form-text text-muted d-block">
+                            Please upload a clear photo or PDF of your Enrollment Assessment Form<br>
+                            <strong>Required filename format:</strong> Lastname_Firstname_EAF (e.g., Santos_Juan_EAF.jpg)
+                        </small>
+                        <input type="file" class="form-control" name="enrollment_form" id="enrollmentForm" accept="image/*,.pdf" required />
+                        <div id="filenameError" class="text-danger mt-1" style="display: none;">
+                            <small><i class="bi bi-exclamation-triangle me-1"></i>Filename must follow format: Lastname_Firstname_EAF</small>
+                        </div>
+                    </div>
+                    <div id="uploadPreview" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label">Preview:</label>
+                            <div id="previewContainer" class="border rounded p-2" style="max-height: 300px; overflow-y: auto;">
+                                <img id="previewImage" class="img-fluid" style="max-width: 100%; display: none;" />
+                                <div id="pdfPreview" class="text-center p-3" style="display: none;">
+                                    <i class="bi bi-file-earmark-pdf fs-1 text-danger"></i>
+                                    <p>PDF File Selected</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="ocrSection" class="d-none">
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-info w-100" id="processOcrBtn" disabled>
+                                <i class="bi bi-search me-2"></i>Process Document
+                            </button>
+                            <small class="text-muted d-block mt-1">
+                                <i class="bi bi-info-circle me-1"></i>Upload a file with correct filename format to enable processing
+                            </small>
+                        </div>
+                        <div id="ocrResults" class="d-none">
+                            <div class="mb-3">
+                                <label class="form-label">Verification Results:</label>
+                                <div class="verification-checklist">
+                                    <div class="form-check" id="check-firstname">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>First Name Match</span>
+                                    </div>
+                                    <div class="form-check" id="check-middlename">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Middle Name Match</span>
+                                    </div>
+                                    <div class="form-check" id="check-lastname">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Last Name Match</span>
+                                    </div>
+                                    <div class="form-check" id="check-yearlevel">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Year Level Match</span>
+                                    </div>
+                                    <div class="form-check" id="check-university">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>University Match</span>
+                                    </div>
+                                    <div class="form-check" id="check-document">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Official Document Keywords</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="ocrFeedback" class="alert alert-warning mt-3" style="display: none;">
+                                <strong>Verification Failed:</strong> Please ensure your document is clear and contains all required information.
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" disabled onclick="nextStep()">Next</button>
+                </div>
+                <!-- Step 5: OTP Verification -->
+                <div class="step-panel d-none" id="step-5">
+                      <div class="mb-3">
                         <label class="form-label">Email</label>
                         <input type="email" class="form-control" name="email" id="emailInput" required />
                         <span id="emailStatus" class="text-success d-none">Verified</span>
@@ -426,39 +721,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                         <button type="button" class="btn btn-warning w-100 mt-3" id="resendOtpBtn" style="display:none;" disabled>Resend OTP</button>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep3Btn">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn">Next</button>
                 </div>
-                <!-- Step 4: University and Year Level -->
-                <div class="step-panel d-none" id="step-4">
-                    <div class="mb-3">
-                        <label class="form-label">University/College</label>
-                        <select name="university_id" class="form-select" required>
-                            <option value="" disabled selected>Select your university/college</option>
-                            <?php
-                            $res = pg_query($connection, "SELECT university_id, name FROM universities ORDER BY name ASC");
-                            while ($row = pg_fetch_assoc($res)) {
-                                echo "<option value='{$row['university_id']}'>" . htmlspecialchars($row['name']) . "</option>";
-                            }
-                            ?>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Year Level</label>
-                        <select name="year_level_id" class="form-select" required>
-                            <option value="" disabled selected>Select your year level</option>
-                            <?php
-                            $res = pg_query($connection, "SELECT year_level_id, name FROM year_levels ORDER BY sort_order ASC");
-                            while ($row = pg_fetch_assoc($res)) {
-                                echo "<option value='{$row['year_level_id']}'>" . htmlspecialchars($row['name']) . "</option>";
-                            }
-                            ?>
-                        </select>
-                    </div>
-                    <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" onclick="nextStep()">Next</button>
-                </div>
-                <!-- Step 5: Password and Confirmation -->
-                <div class="step-panel d-none" id="step-5">
+                <!-- Step 6: Password and Confirmation -->
+                <div class="step-panel d-none" id="step-6">
                     <div class="mb-3">
                         <label class="form-label">Password</label>
                         <input type="password" class="form-control" name="password" id="password" minlength="12" required />
@@ -534,7 +800,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         }
 
         function nextStep() {
-            if (currentStep === 5) return;
+            if (currentStep === 6) return;
 
             let isValid = true;
             const currentPanel = document.getElementById(`step-${currentStep}`);
@@ -560,13 +826,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 return;
             }
 
-            if (currentStep === 3) {
+            if (currentStep === 5) {
                 if (!otpVerified) {
                     showNotifier('Please verify your OTP before proceeding.', 'error');
                     return;
                 }
                 showStep(currentStep + 1);
-            } else if (currentStep < 5) {
+            } else if (currentStep < 6) {
                 showStep(currentStep + 1);
             }
         }
@@ -580,8 +846,25 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         document.addEventListener('DOMContentLoaded', () => {
             showStep(1);
             updateRequiredFields();
-            document.getElementById('nextStep3Btn').disabled = true;
-            document.getElementById('nextStep3Btn').addEventListener('click', nextStep);
+            document.getElementById('nextStep5Btn').disabled = true;
+            document.getElementById('nextStep5Btn').addEventListener('click', nextStep);
+            
+            // Add listeners to name fields to re-validate filename if changed
+            document.querySelector('input[name="first_name"]').addEventListener('input', function() {
+                if (document.getElementById('enrollmentForm').files.length > 0) {
+                    // Trigger filename re-validation if file is already selected
+                    const event = new Event('change');
+                    document.getElementById('enrollmentForm').dispatchEvent(event);
+                }
+            });
+            
+            document.querySelector('input[name="last_name"]').addEventListener('input', function() {
+                if (document.getElementById('enrollmentForm').files.length > 0) {
+                    // Trigger filename re-validation if file is already selected
+                    const event = new Event('change');
+                    document.getElementById('enrollmentForm').dispatchEvent(event);
+                }
+            });
         });
 
         // ---- OTP BUTTON HANDLING ----
@@ -705,7 +988,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     clearInterval(countdown);
                     document.getElementById('timer').textContent = '';
                     document.getElementById('resendOtpBtn').style.display = 'none';
-                    document.getElementById('nextStep3Btn').disabled = false;
+                    document.getElementById('nextStep5Btn').disabled = false;
                     document.getElementById('emailInput').disabled = true;
                     document.getElementById('emailInput').classList.add('verified-email');
                 } else {
@@ -744,7 +1027,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     document.getElementById('resendOtpBtn').style.display = 'block';
                     document.getElementById('sendOtpBtn').classList.add('d-none');
                     otpVerified = false;
-                    document.getElementById('nextStep3Btn').disabled = true;
+                    document.getElementById('nextStep5Btn').disabled = true;
                 }
             }, 1000);
         }
@@ -798,7 +1081,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
         // ----- FIX FOR REQUIRED FIELD ERROR -----
         document.getElementById('multiStepForm').addEventListener('submit', function(e) {
-            if (currentStep !== 5) {
+            if (currentStep !== 6) {
                 e.preventDefault();
                 showNotifier('Please complete all steps first.', 'error');
                 return;
@@ -812,6 +1095,212 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 el.disabled = false;
             });
         });
+
+        // ----- DOCUMENT UPLOAD AND OCR FUNCTIONALITY -----
+        let documentVerified = false;
+        let filenameValid = false;
+
+        function validateFilename(filename, firstName, lastName) {
+            // Remove file extension for validation
+            const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+            
+            // Expected format: Lastname_Firstname_EAF
+            const expectedFormat = `${lastName}_${firstName}_EAF`;
+            
+            // Case-insensitive comparison
+            return nameWithoutExt.toLowerCase() === expectedFormat.toLowerCase();
+        }
+
+        function updateProcessButtonState() {
+            const processBtn = document.getElementById('processOcrBtn');
+            const fileInput = document.getElementById('enrollmentForm');
+            
+            if (fileInput.files.length > 0 && filenameValid) {
+                processBtn.disabled = false;
+            } else {
+                processBtn.disabled = true;
+            }
+        }
+
+        document.getElementById('enrollmentForm').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const filenameError = document.getElementById('filenameError');
+            
+            if (file) {
+                // Get form data for filename validation
+                const firstName = document.querySelector('input[name="first_name"]').value.trim();
+                const lastName = document.querySelector('input[name="last_name"]').value.trim();
+                
+                if (!firstName || !lastName) {
+                    showNotifier('Please fill in your first and last name first.', 'error');
+                    this.value = '';
+                    return;
+                }
+                
+                // Validate filename format
+                filenameValid = validateFilename(file.name, firstName, lastName);
+                
+                if (!filenameValid) {
+                    filenameError.style.display = 'block';
+                    filenameError.innerHTML = `
+                        <small><i class="bi bi-exclamation-triangle me-1"></i>
+                        Filename must be: <strong>${lastName}_${firstName}_EAF.${file.name.split('.').pop()}</strong>
+                        </small>
+                    `;
+                    document.getElementById('uploadPreview').classList.add('d-none');
+                    document.getElementById('ocrSection').classList.add('d-none');
+                } else {
+                    filenameError.style.display = 'none';
+                    
+                    const previewContainer = document.getElementById('uploadPreview');
+                    const previewImage = document.getElementById('previewImage');
+                    const pdfPreview = document.getElementById('pdfPreview');
+                    
+                    previewContainer.classList.remove('d-none');
+                    document.getElementById('ocrSection').classList.remove('d-none');
+                    
+                    if (file.type.startsWith('image/')) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            previewImage.src = e.target.result;
+                            previewImage.style.display = 'block';
+                            pdfPreview.style.display = 'none';
+                        };
+                        reader.readAsDataURL(file);
+                    } else if (file.type === 'application/pdf') {
+                        previewImage.style.display = 'none';
+                        pdfPreview.style.display = 'block';
+                    }
+                }
+                
+                // Reset verification status
+                documentVerified = false;
+                document.getElementById('nextStep4Btn').disabled = true;
+                document.getElementById('ocrResults').classList.add('d-none');
+                updateProcessButtonState();
+            } else {
+                filenameError.style.display = 'none';
+                filenameValid = false;
+                updateProcessButtonState();
+            }
+        });
+
+        document.getElementById('processOcrBtn').addEventListener('click', function() {
+            const fileInput = document.getElementById('enrollmentForm');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showNotifier('Please select a file first.', 'error');
+                return;
+            }
+
+            if (!filenameValid) {
+                showNotifier('Please rename your file to follow the required format: Lastname_Firstname_EAF', 'error');
+                return;
+            }
+
+            const processBtn = this;
+            processBtn.disabled = true;
+            processBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
+            
+            // Get form data for verification
+            const formData = new FormData();
+            formData.append('processOcr', 'true');
+            formData.append('enrollment_form', file);
+            formData.append('first_name', document.querySelector('input[name="first_name"]').value);
+            formData.append('middle_name', document.querySelector('input[name="middle_name"]').value);
+            formData.append('last_name', document.querySelector('input[name="last_name"]').value);
+            formData.append('university_id', document.querySelector('select[name="university_id"]').value);
+            formData.append('year_level_id', document.querySelector('select[name="year_level_id"]').value);
+
+            fetch('student_register.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                processBtn.disabled = false;
+                processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
+                
+                if (data.status === 'success') {
+                    displayVerificationResults(data.verification);
+                } else {
+                    showNotifier(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error processing OCR:', error);
+                showNotifier('Failed to process document. Please try again.', 'error');
+                processBtn.disabled = false;
+                processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
+            });
+        });
+
+        function displayVerificationResults(verification) {
+            const resultsContainer = document.getElementById('ocrResults');
+            const feedbackContainer = document.getElementById('ocrFeedback');
+            
+            resultsContainer.classList.remove('d-none');
+            
+            // Update checklist items
+            const checks = ['firstname', 'middlename', 'lastname', 'yearlevel', 'university', 'document'];
+            const checkMap = {
+                'firstname': 'first_name',
+                'middlename': 'middle_name', 
+                'lastname': 'last_name',
+                'yearlevel': 'year_level',
+                'university': 'university',
+                'document': 'document_keywords'
+            };
+            
+            checks.forEach(check => {
+                const element = document.getElementById(`check-${check}`);
+                const icon = element.querySelector('i');
+                const isValid = verification[checkMap[check]];
+                
+                if (isValid) {
+                    icon.className = 'bi bi-check-circle text-success me-2';
+                } else {
+                    icon.className = 'bi bi-x-circle text-danger me-2';
+                }
+            });
+            
+            if (verification.overall_success) {
+                feedbackContainer.style.display = 'none';
+                feedbackContainer.className = 'alert alert-success mt-3';
+                feedbackContainer.innerHTML = '<strong>Verification Successful!</strong> Your document has been validated.';
+                feedbackContainer.style.display = 'block';
+                documentVerified = true;
+                document.getElementById('nextStep4Btn').disabled = false;
+                showNotifier('Document verification successful!', 'success');
+            } else {
+                feedbackContainer.style.display = 'none';
+                feedbackContainer.className = 'alert alert-warning mt-3';
+                feedbackContainer.innerHTML = '<strong>Verification Failed:</strong> Please ensure your document is clear and contains all required information. Upload a clearer image or check that the document matches your registration details.';
+                feedbackContainer.style.display = 'block';
+                documentVerified = false;
+                document.getElementById('nextStep4Btn').disabled = true;
+                showNotifier('Document verification failed. Please try again with a clearer document.', 'error');
+            }
+        }
+
+        // Add CSS for verification checklist
+        const style = document.createElement('style');
+        style.textContent = `
+            .verification-checklist .form-check {
+                display: flex;
+                align-items: center;
+                padding: 8px 0;
+                border-bottom: 1px solid #eee;
+            }
+            .verification-checklist .form-check:last-child {
+                border-bottom: none;
+            }
+            .verification-checklist .form-check span {
+                font-size: 14px;
+            }
+        `;
+        document.head.appendChild(style);
     </script>
 </body>
 </html>
