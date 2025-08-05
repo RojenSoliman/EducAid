@@ -34,6 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   file_put_contents($jsonPath, json_encode($out, JSON_PRETTY_PRINT));
+  
+  // Add admin notification for deadline changes
+  $notification_msg = "System deadlines and settings updated";
+  include __DIR__ . '/../../config/database.php';
+  pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+  
   header('Location: ' . $_SERVER['PHP_SELF'] . '?saved=1');
   exit;
 }

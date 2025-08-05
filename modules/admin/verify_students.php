@@ -41,12 +41,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Revert selected actives back to applicants
     if (isset($_POST['deactivate']) && !empty($_POST['selected_actives'])) {
+        $count = count($_POST['selected_actives']);
         foreach ($_POST['selected_actives'] as $student_id) {
             pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
         }
         // Reset finalized flag
         pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
         $isFinalized = false;
+        
+        // Add admin notification
+        $notification_msg = "Reverted " . $count . " student(s) from active to applicant status";
+        pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
     }
@@ -55,6 +61,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['finalize_list'])) {
         pg_query($connection, "UPDATE config SET value = '1' WHERE key = 'student_list_finalized'");
         $isFinalized = true;
+        
+        // Add admin notification
+        $notification_msg = "Student list has been finalized";
+        pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
     }
 
     // Revert list (optionally reset payroll numbers)
@@ -63,7 +73,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $isFinalized = false;
         if (isset($_POST['reset_payroll'])) {
             pg_query($connection, "UPDATE students SET payroll_no = 0 WHERE status = 'active'");
+            $notification_msg = "Student list reverted and payroll numbers reset";
+        } else {
+            $notification_msg = "Student list reverted (payroll numbers preserved)";
         }
+        
+        // Add admin notification
+        pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
     }
 
     // Generate payroll numbers (sorted A→Z by full name)
@@ -84,6 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $payroll_no++;
             }
+            
+            // Add admin notification
+            $total_assigned = $payroll_no - 1;
+            $notification_msg = "Payroll numbers generated for " . $total_assigned . " active students";
+            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
         }
         echo "<script>alert('Payroll numbers generated successfully!'); window.location.href='verify_students.php';</script>";
         exit;

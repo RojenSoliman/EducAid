@@ -58,6 +58,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) 
     }
     $settings['schedule_published'] = true;
     file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
+    
+    // Add admin notification for schedule publishing
+    $notification_msg = "Distribution schedule published from " . $startDate . " to " . $endDate . " at " . $location;
+    pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+    
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
 }
@@ -65,6 +70,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unpublish_schedule'])) {
     $settings['schedule_published'] = false;
     file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
+    
+    // Add admin notification for schedule unpublishing
+    $notification_msg = "Distribution schedule unpublished and reset";
+    pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+    
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
 }

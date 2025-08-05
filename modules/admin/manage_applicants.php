@@ -169,8 +169,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Verify student
     if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
         $sid = intval($_POST['student_id']);
+        
+        // Get student name for notification
+        $studentQuery = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$sid]);
+        $student = pg_fetch_assoc($studentQuery);
+        
         /** @phpstan-ignore-next-line */
         pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$sid]);
+        
+        // Add admin notification
+        if ($student) {
+            $student_name = $student['first_name'] . ' ' . $student['last_name'];
+            $notification_msg = "Student promoted to active: " . $student_name . " (ID: " . $sid . ")";
+            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        }
+        
         // Redirect to refresh list
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
@@ -178,6 +191,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Reject applicant and reset documents
     if (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
         $sid = intval($_POST['student_id']);
+        
+        // Get student name for notification
+        $studentQuery = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$sid]);
+        $student = pg_fetch_assoc($studentQuery);
+        
         // Delete uploaded files
         /** @phpstan-ignore-next-line */
         $docs = pg_query_params($connection, "SELECT file_path FROM documents WHERE student_id = $1", [$sid]);
@@ -189,10 +207,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         /** @phpstan-ignore-next-line */
         pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$sid]);
+        
         // Student notification
         $msg = 'Your uploaded documents were rejected on ' . date('F j, Y, g:i a') . '. Please re-upload.';
         /** @phpstan-ignore-next-line */
         pg_query_params($connection, "INSERT INTO notifications (student_id, message) VALUES ($1, $2)", [$sid, $msg]);
+        
+        // Add admin notification
+        if ($student) {
+            $student_name = $student['first_name'] . ' ' . $student['last_name'];
+            $notification_msg = "Documents rejected for applicant: " . $student_name . " (ID: " . $sid . ")";
+            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        }
+        
         // Redirect to refresh list
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
