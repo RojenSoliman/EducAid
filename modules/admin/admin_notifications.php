@@ -13,13 +13,13 @@ $offset = ($page - 1) * $limit;
 
 // Notification query
 $baseSql = "
-  SELECT 'Announcement: ' || title AS message, posted_at AS created_at FROM announcements
+  SELECT 'Announcement' as type, 'Announcement: ' || title AS message, posted_at AS created_at FROM announcements
   UNION ALL
-  SELECT 'Slot released: ' || slot_count || ' slots for ' || semester || ' ' || academic_year AS message, created_at FROM signup_slots
+  SELECT 'Slot' as type, 'Slot released: ' || slot_count || ' slots for ' || semester || ' ' || academic_year AS message, created_at FROM signup_slots
   UNION ALL
-  SELECT 'Schedule created for student ' || student_id || ' on ' || distribution_date::text AS message, created_at FROM schedules
+  SELECT 'Schedule' as type, 'Schedule created for student ' || student_id || ' on ' || distribution_date::text AS message, created_at FROM schedules
   UNION ALL
-  SELECT 'Admin Event: ' || message AS message, created_at FROM admin_notifications
+  SELECT 'System' as type, 'Admin Event: ' || message AS message, created_at FROM admin_notifications
 ";
 $countSql = "SELECT COUNT(*) AS total FROM ($baseSql) AS sub";
 $countRes = pg_query($connection, $countSql);
@@ -29,6 +29,22 @@ $lastPage = (int)ceil($total / $limit);
 $adminNotifSql = $baseSql . " ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
 $adminNotifRes = @pg_query($connection, $adminNotifSql);
 $adminNotifs = $adminNotifRes ? pg_fetch_all($adminNotifRes) : [];
+
+// Function to get notification icon based on type
+function getNotificationIcon($type) {
+    switch ($type) {
+        case 'Announcement':
+            return 'bi-megaphone-fill text-primary';
+        case 'Slot':
+            return 'bi-calendar-plus-fill text-success';
+        case 'Schedule':
+            return 'bi-clock-fill text-info';
+        case 'System':
+            return 'bi-gear-fill text-warning';
+        default:
+            return 'bi-info-circle-fill text-secondary';
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -90,7 +106,9 @@ $adminNotifs = $adminNotifRes ? pg_fetch_all($adminNotifRes) : [];
               <div class="notification-card unread">
                 <div class="d-flex justify-content-between align-items-center notification-header">
                   <div>
-                    <span class="icon-box text-primary bg-light me-3"><i class="bi bi-info-circle-fill"></i></span>
+                    <span class="icon-box text-primary bg-light me-3">
+                      <i class="<?php echo getNotificationIcon($note['type']); ?>"></i>
+                    </span>
                     <?php echo htmlspecialchars($note['message']); ?>
                   </div>
                   <div class="action-buttons">

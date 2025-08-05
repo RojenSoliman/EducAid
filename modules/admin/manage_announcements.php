@@ -16,7 +16,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['post_announcement']))
 
     // Insert new announcement as active
     $query = "INSERT INTO announcements (title, remarks, is_active) VALUES ($1, $2, TRUE)";
-    pg_query_params($connection, $query, [$title, $remarks]);
+    $result = pg_query_params($connection, $query, [$title, $remarks]);
+    
+    // Add admin notification for announcement creation
+    if ($result) {
+        $notification_msg = "New announcement posted: " . $title;
+        pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+    }
 
     header('Location: ' . $_SERVER['PHP_SELF'] . '?posted=1');
     exit;

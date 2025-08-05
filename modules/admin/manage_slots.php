@@ -62,11 +62,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         pg_query_params($connection, "UPDATE signup_slots SET is_active = FALSE WHERE is_active = TRUE AND municipality_id = $1", [$municipality_id]);
         pg_query_params($connection, "INSERT INTO signup_slots (municipality_id, slot_count, is_active, semester, academic_year) VALUES ($1, $2, TRUE, $3, $4)", [$municipality_id, $newSlotCount, $semester, $academic_year]);
 
+        // Add admin notification for slot creation
+        $notification_msg = "New slot configuration created: " . $newSlotCount . " slots for " . $semester . " " . $academic_year;
+        pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+
         header("Location: manage_slots.php?status=success");
         exit;
     } elseif (isset($_POST['delete_slot_id'])) {
         $delete_slot_id = intval($_POST['delete_slot_id']);
+        
+        // Get slot details before deletion for notification
+        $slotQuery = pg_query_params($connection, "SELECT slot_count, semester, academic_year FROM signup_slots WHERE slot_id = $1", [$delete_slot_id]);
+        $slotData = pg_fetch_assoc($slotQuery);
+        
         pg_query_params($connection, "DELETE FROM signup_slots WHERE slot_id = $1 AND municipality_id = $2", [$delete_slot_id, $municipality_id]);
+        
+        // Add admin notification for slot deletion
+        if ($slotData) {
+            $notification_msg = "Slot configuration deleted: " . $slotData['slot_count'] . " slots for " . $slotData['semester'] . " " . $slotData['academic_year'];
+            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        }
+        
         header("Location: manage_slots.php?status=deleted");
         exit;
     } elseif (isset($_POST['export_csv']) && $_POST['export_csv'] === '1') {

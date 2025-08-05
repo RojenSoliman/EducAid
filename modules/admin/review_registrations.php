@@ -37,6 +37,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $emailResult = pg_query_params($connection, $emailQuery, [$student_id]);
                     if ($student = pg_fetch_assoc($emailResult)) {
                         sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], $action === 'approve', '');
+                        
+                        // Add admin notification
+                        $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                        $notification_msg = "Registration " . ($action === 'approve' ? 'approved' : 'rejected') . " for student: " . $student_name . " (ID: " . $student_id . ")";
+                        pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                     }
                 }
             }
@@ -69,6 +74,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Send approval email
                 sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], true, $remarks);
                 
+                // Add admin notification
+                $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                $notification_msg = "Registration approved for student: " . $student_name . " (ID: " . $student_id . ")";
+                pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                
                 $_SESSION['success_message'] = "Registration approved successfully!";
             }
         } elseif ($action === 'reject') {
@@ -84,6 +94,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // Send rejection email
                 sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], false, $remarks);
+                
+                // Add admin notification
+                $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                $notification_msg = "Registration rejected for student: " . $student_name . " (ID: " . $student_id . ")" . ($remarks ? " - Reason: " . $remarks : "");
+                pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                 
                 $_SESSION['success_message'] = "Registration rejected.";
             }
