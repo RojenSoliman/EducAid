@@ -13,11 +13,65 @@
   --gradient-success: linear-gradient(135deg, var(--trias-success) 0%, var(--trias-fresh) 100%);
 }
 
+
+
+@keyframes floatingParticles {
+  0%, 100% {
+    transform: translateY(0px) translateX(0px);
+  }
+  25% {
+    transform: translateY(-20px) translateX(10px);
+  }
+  50% {
+    transform: translateY(-10px) translateX(-5px);
+  }
+  75% {
+    transform: translateY(-25px) translateX(8px);
+  }
+}
+
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: var(--gradient-primary);
+  background: linear-gradient(-45deg, var(--trias-primary), var(--trias-secondary), var(--trias-accent), var(--trias-light));
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
   min-height: 100vh;
   margin: 0;
+  position: relative;
+}
+
+/* Animated background particles */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  background-image: 
+    radial-gradient(circle, rgba(255,255,255,0.1) 2px, transparent 2px),
+    radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px),
+    radial-gradient(circle, rgba(255,255,255,0.08) 3px, transparent 3px);
+  background-size: 200px 200px, 150px 150px, 300px 300px;
+  animation: floatingParticles 20s ease-in-out infinite;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  background-image: 
+    radial-gradient(circle, rgba(103, 214, 198, 0.08) 1px, transparent 1px),
+    radial-gradient(circle, rgba(0, 177, 198, 0.06) 2px, transparent 2px);
+  background-size: 180px 180px, 250px 250px;
+  animation: floatingParticles 25s ease-in-out infinite reverse;
 }
 
 .login-wrapper {
@@ -26,6 +80,8 @@ body {
   align-items: center;
   justify-content: center;
   padding: 2rem;
+  position: relative;
+  z-index: 10;
 }
 
 .login-container {
@@ -282,6 +338,12 @@ a[href="#forgotPassBtn"],
     width: 100px;
     height: 100px;
   }
+  
+  /* Reduce animations on mobile for performance */
+  body::before,
+  body::after {
+    animation-duration: 30s;
+  }
 }
 
 @media (max-width: 576px) {
@@ -300,5 +362,14 @@ a[href="#forgotPassBtn"],
   
   .input-group-text {
     padding: 12px 16px;
+  }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  body,
+  body::before,
+  body::after {
+    animation: none !important;
   }
 }
