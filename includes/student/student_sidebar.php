@@ -3,7 +3,7 @@
 ?>
 <div class="sidebar" id="sidebar">
   <div class="logo-details">
-    <img src="../../assets/images/educaid-logo.png" alt="EducAid Logo" class="logo-img" />
+    <i class="bi bi-mortarboard-fill icon"></i>
     <span class="logo_name">EducAid</span>
   </div>
   <ul class="nav-list">
