@@ -143,3 +143,41 @@ CREATE TABLE IF NOT EXISTS admin_notifications (
     message TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- Create universities table
+CREATE TABLE IF NOT EXISTS universities (
+    university_id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    code TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create year levels table
+CREATE TABLE IF NOT EXISTS year_levels (
+    year_level_id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    code TEXT UNIQUE NOT NULL,
+    sort_order INT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Add university and year level columns to students table
+ALTER TABLE students 
+ADD COLUMN IF NOT EXISTS university_id INT REFERENCES universities(university_id),
+ADD COLUMN IF NOT EXISTS year_level_id INT REFERENCES year_levels(year_level_id);
+
+-- Insert year levels
+INSERT INTO year_levels (name, code, sort_order) VALUES
+('1st Year', '1ST', 1),
+('2nd Year', '2ND', 2),
+('3rd Year', '3RD', 3),
+('4th Year', '4TH', 4),
+('5th Year', '5TH', 5)
+ON CONFLICT (code) DO NOTHING;
+
+-- Add unique student identifier column to students table
+ALTER TABLE students 
+ADD COLUMN IF NOT EXISTS unique_student_id TEXT UNIQUE;
+
+-- Create index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_students_unique_id ON students(unique_student_id);

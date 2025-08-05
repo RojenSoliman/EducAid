@@ -166,12 +166,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $bdate = $_POST['bdate'];
     $sex = htmlspecialchars(trim($_POST['sex']));
     $barangay = filter_var($_POST['barangay_id'], FILTER_VALIDATE_INT);
+    $university = filter_var($_POST['university_id'], FILTER_VALIDATE_INT);
+    $year_level = filter_var($_POST['year_level_id'], FILTER_VALIDATE_INT);
     $mobile = htmlspecialchars(trim($_POST['phone']));
     $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
     $pass = $_POST['password'];
     $confirm = $_POST['confirm_password'];
 
-    if (empty($firstname) || empty($lastname) || empty($bdate) || empty($sex) || empty($barangay) || empty($mobile) || empty($email) || empty($pass) || empty($confirm)) {
+    if (empty($firstname) || empty($lastname) || empty($bdate) || empty($sex) || empty($barangay) || empty($university) || empty($year_level) || empty($mobile) || empty($email) || empty($pass) || empty($confirm)) {
         echo "<script>alert('Please fill in all required fields.'); history.back();</script>";
         exit;
     }
@@ -221,8 +223,57 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         exit;
     }
 
-    $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10) RETURNING student_id";
+    // Generate unique student ID with format: currentyear-yearlevel-######
+    function generateUniqueStudentId($connection, $year_level_id) {
+        $current_year = date('Y');
+        
+        // Get year level code from year_level_id
+        $year_query = pg_query_params($connection, "SELECT code FROM year_levels WHERE year_level_id = $1", [$year_level_id]);
+        $year_row = pg_fetch_assoc($year_query);
+        
+        if (!$year_row) {
+            return false;
+        }
+        
+        // Extract the numeric part from year level (e.g., "1ST" -> "1", "2ND" -> "2")
+        $year_level_code = $year_row['code'];
+        $year_level_num = preg_replace('/[^0-9]/', '', $year_level_code);
+        if (empty($year_level_num)) {
+            $year_level_num = '0'; // fallback for non-numeric codes like "GRAD"
+        }
+        
+        $max_attempts = 100; // Prevent infinite loop
+        $attempts = 0;
+        
+        do {
+            // Generate 6 random digits
+            $random_digits = str_pad(mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            $unique_id = $current_year . '-' . $year_level_num . '-' . $random_digits;
+            
+            // Check if this ID already exists
+            $check_query = pg_query_params($connection, "SELECT 1 FROM students WHERE unique_student_id = $1", [$unique_id]);
+            $exists = pg_num_rows($check_query) > 0;
+            
+            $attempts++;
+            
+        } while ($exists && $attempts < $max_attempts);
+        
+        if ($attempts >= $max_attempts) {
+            return false; // Could not generate unique ID
+        }
+        
+        return $unique_id;
+    }
+
+    // Generate unique student ID
+    $unique_student_id = generateUniqueStudentId($connection, $year_level);
+    if (!$unique_student_id) {
+        echo "<script>alert('Failed to generate unique student ID. Please try again.'); history.back();</script>";
+        exit;
+    }
+
+    $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $municipality_id,
@@ -234,7 +285,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $hashed,
         $sex,
         $bdate,
-        $barangay
+        $barangay,
+        $university,
+        $year_level,
+        $unique_student_id
     ]);
 
     if ($result) {
@@ -248,7 +302,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
         unset($_SESSION['otp_verified']);
 
-        echo "<script>alert('Registration successful! You can now login.'); window.location.href = '../../unified_login.php';</script>";
+        echo "<script>alert('Registration successful!'); window.location.href = '../../unified_login.php';</script>";
         exit;
     } else {
         echo "<script>alert('Registration failed due to a database error. Please try again.');</script>";
@@ -374,8 +428,37 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
                     <button type="button" class="btn btn-primary w-100" id="nextStep3Btn">Next</button>
                 </div>
-                <!-- Step 4: Password and Confirmation -->
+                <!-- Step 4: University and Year Level -->
                 <div class="step-panel d-none" id="step-4">
+                    <div class="mb-3">
+                        <label class="form-label">University/College</label>
+                        <select name="university_id" class="form-select" required>
+                            <option value="" disabled selected>Select your university/college</option>
+                            <?php
+                            $res = pg_query($connection, "SELECT university_id, name FROM universities ORDER BY name ASC");
+                            while ($row = pg_fetch_assoc($res)) {
+                                echo "<option value='{$row['university_id']}'>" . htmlspecialchars($row['name']) . "</option>";
+                            }
+                            ?>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Year Level</label>
+                        <select name="year_level_id" class="form-select" required>
+                            <option value="" disabled selected>Select your year level</option>
+                            <?php
+                            $res = pg_query($connection, "SELECT year_level_id, name FROM year_levels ORDER BY sort_order ASC");
+                            while ($row = pg_fetch_assoc($res)) {
+                                echo "<option value='{$row['year_level_id']}'>" . htmlspecialchars($row['name']) . "</option>";
+                            }
+                            ?>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
+                    <button type="button" class="btn btn-primary w-100" onclick="nextStep()">Next</button>
+                </div>
+                <!-- Step 5: Password and Confirmation -->
+                <div class="step-panel d-none" id="step-5">
                     <div class="mb-3">
                         <label class="form-label">Password</label>
                         <input type="password" class="form-control" name="password" id="password" minlength="12" required />
@@ -451,7 +534,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         }
 
         function nextStep() {
-            if (currentStep === 4) return;
+            if (currentStep === 5) return;
 
             let isValid = true;
             const currentPanel = document.getElementById(`step-${currentStep}`);
@@ -483,7 +566,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     return;
                 }
                 showStep(currentStep + 1);
-            } else if (currentStep < 4) {
+            } else if (currentStep < 5) {
                 showStep(currentStep + 1);
             }
         }
@@ -715,7 +798,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
         // ----- FIX FOR REQUIRED FIELD ERROR -----
         document.getElementById('multiStepForm').addEventListener('submit', function(e) {
-            if (currentStep !== 4) {
+            if (currentStep !== 5) {
                 e.preventDefault();
                 showNotifier('Please complete all steps first.', 'error');
                 return;
