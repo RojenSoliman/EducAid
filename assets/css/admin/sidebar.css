@@ -21,7 +21,6 @@
   width: 250px;
   background-color: #f9f9f9;
   padding: 20px 0;
-  transition: width 0.3s ease;
   overflow: hidden;
   z-index: 1000;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);

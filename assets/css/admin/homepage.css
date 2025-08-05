@@ -11,27 +11,13 @@ body {
 }
 
 /* ===== Sidebar ===== */
-.sidebar {
-  width: 250px;
-  background-color: #4A6FA5;
-  min-height: 100vh;
-  position: fixed;
-  top: 0;
-  left: 0;
-  transition: width 0.3s ease;
-  z-index: 1000;
-}
 
-.sidebar.close {
-  width: 70px;
-}
 
 /* ===== Main Content ===== */
 .home-section,
 #mainContent {
   margin-left: 250px;
   padding: 20px;
-  transition: margin-left 0.3s ease;
 }
 
 .sidebar.close ~ .home-section,
