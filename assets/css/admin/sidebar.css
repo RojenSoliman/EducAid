@@ -10,6 +10,45 @@
   --sidebar-text: #2c3e50;
   --active-bg: var(--gt-green);
   --hover-bg: var(--gt-lime);
+  --disabled-text: #9ca3af;
+  --disabled-bg: #f3f4f6;
+}
+
+/* === SIDEBAR BASE === */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 250px;
+  background-color: #f9f9f9;
+  padding: 20px 0;
+  overflow: hidden;
+  z-index: 1000;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.sidebar.close {
+  width: 70px;
+}
+
+/* === DISABLED NAVIGATION ITEMS === */
+.sidebar .nav-list li.disabled a {
+  color: var(--disabled-text) !important;
+  background-color: var(--disabled-bg);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.sidebar .nav-list li.disabled a:hover {
+  background-color: var(--disabled-bg) !important;
+  color: var(--disabled-text) !important;
+}
+
+.sidebar .nav-list li.disabled .badge {
+  opacity: 0.7;
 }
 
 /* === SIDEBAR BASE === */
