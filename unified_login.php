@@ -11,29 +11,27 @@ if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQU
     header('Content-Type: application/json');
 }
 
-// LOGIN PHASE 1: credentials → send login-OTP
+// LOGIN PHASE 1: credentials → send login-OTP (SIMPLIFIED)
 if (
-    isset($_POST['firstname'], $_POST['lastname'], $_POST['email'], $_POST['password'])
+    isset($_POST['email'], $_POST['password'])
     && !isset($_POST['login_action'])
     && !isset($_POST['forgot_action'])
 ) {
-    $fn = trim($_POST['firstname']);
-    $ln = trim($_POST['lastname']);
     $em = trim($_POST['email']);
     $pw = $_POST['password'];
 
-    // Check if user is a student
+    // Check if user is a student (simplified query)
     $studentRes = pg_query_params($connection,
-        "SELECT student_id, password, 'student' as role FROM students
-         WHERE first_name = $1 AND last_name = $2 AND email = $3",
-        [$fn, $ln, $em]
+        "SELECT student_id, password, first_name, last_name, 'student' as role FROM students
+         WHERE email = $1",
+        [$em]
     );
     
-    // Check if user is an admin
+    // Check if user is an admin (simplified query)
     $adminRes = pg_query_params($connection,
-        "SELECT admin_id, password, 'admin' as role FROM admins
-         WHERE first_name = $1 AND last_name = $2 AND email = $3",
-        [$fn, $ln, $em]
+        "SELECT admin_id, password, first_name, last_name, 'admin' as role FROM admins
+         WHERE email = $1",
+        [$em]
     );
 
     $user = null;
@@ -46,7 +44,7 @@ if (
     }
 
     if (!$user) {
-        echo json_encode(['status'=>'error','message'=>'User not found.']);
+        echo json_encode(['status'=>'error','message'=>'Email not found.']);
         exit;
     }
     
@@ -62,10 +60,10 @@ if (
     $_SESSION['login_pending'] = [
         'user_id' => $user['id'],
         'role' => $user['role'],
-        'name' => "$fn $ln"
+        'name' => trim($user['first_name'] . ' ' . $user['last_name'])
     ];
 
-    // Send via email
+    // Send via email (same email logic as before)
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
@@ -80,7 +78,7 @@ if (
         $mail->addAddress($em);
         $mail->isHTML(true);
         $mail->Subject = 'Your EducAid Login OTP';
-        $mail->Body = "Your one-time login code is: <strong>$otp</strong><br>Valid for 5 minutes.";
+        $mail->Body = "Hello {$user['first_name']},<br><br>Your one-time login code is: <strong>$otp</strong><br>Valid for 5 minutes.";
 
         $mail->send();
         echo json_encode(['status'=>'otp_sent','message'=>'OTP sent to your email.']);
@@ -172,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             $mail->addAddress($email);
             $mail->isHTML(true);
             $mail->Subject = 'EducAid Password Reset OTP';
-            $mail->Body = "Your OTP is: <strong>$otp</strong><br>This is valid for 5 minutes.";
+            $mail->Body = "Hello,<br><br>You requested a password reset for your EducAid account.<br><br>Your OTP is: <strong>$otp</strong><br><br>This code is valid for 5 minutes.<br><br>If you didn't request this reset, please ignore this email.";
 
             $mail->send();
             echo json_encode(['status'=>'success','message'=>'OTP sent to your email.']);
@@ -245,302 +243,245 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <title>EducAid - Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="assets/css/universal.css" rel="stylesheet">
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-      body { 
-        font-family: 'Poppins', sans-serif; 
-        background: linear-gradient(135deg, #0068DA 0%, #00B1C6 50%, #67D6C6 100%); 
-        min-height: 100vh; 
-    }
-    .login-container { 
-        min-height: 100vh; 
-        display: flex; 
-        align-items: center; 
-        justify-content: center; 
-    }
-    .login-card { 
-        background: white; 
-        border-radius: 15px; 
-        box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
-        padding: 2rem; 
-        max-width: 400px; 
-        width: 100%; 
-        border-top: 4px solid #0068DA;
-    }
-    .logo { 
-        width: 80px; 
-        height: 80px; 
-        margin: 0 auto 1rem; 
-        display: block; 
-    }
-    .btn-primary { 
-        background: linear-gradient(45deg, #0068DA, #0088C8); 
-        border: none; 
-        transition: all 0.3s ease;
-    }
-    .btn-primary:hover {
-        background: linear-gradient(45deg, #0088C8, #00B1C6);
-        transform: translateY(-1px);
-    }
-    .form-control:focus { 
-        border-color: #0068DA; 
-        box-shadow: 0 0 0 0.2rem rgba(0, 104, 218, 0.25); 
-    }
-    .step { 
-        display: none; 
-    }
-    .step.active { 
-        display: block; 
-    }
-    .signup-link { 
-        padding: 0.5rem; 
-        border: 1px solid #e0e0e0; 
-        border-radius: 8px; 
-        background: linear-gradient(135deg, #67D6C6 0%, rgba(103, 214, 198, 0.1) 100%); 
-        margin-top: 0.5rem;
-    }
-    .signup-link a { 
-        color: #0068DA; 
-        font-weight: 600; 
-    }
-    .signup-link a:hover { 
-        color: #0088C8; 
-        text-decoration: underline !important; 
-    }
-    h2 {
-        color: #0068DA;
-        font-weight: 600;
-    }
-    h5 {
-        color: #0068DA;
-        font-weight: 600;
-    }
-    .form-label {
-        color: #374151;
-        font-weight: 500;
-    }
-    a {
-        color: #0068DA;
-    }
-    a:hover {
-        color: #0088C8;
-    }
-    .alert-success {
-        background-color: rgba(61, 173, 16, 0.1);
-        border-color: #3DAD10;
-        color: #2d7d0c;
-    }
-    .alert-danger {
-        background-color: #fee2e2;
-        border-color: #ef4444;
-        color: #991b1b;
-    }
-    </style>
+
 </head>
 <body>
-    <div class="login-container">
-        <div class="login-card">
-            <img src="assets/images/logo.png" alt="EducAid Logo" class="logo">
-            <h2 class="text-center mb-4">EducAid Login</h2>
-            
-            <!-- Step 1: Credentials -->
-            <div id="step1" class="step active">
-                <form id="loginForm">
-                    <div class="mb-3">
-                        <label class="form-label">First Name</label>
-                        <input type="text" class="form-control" id="firstname" name="firstname" required>
+    <div class="container-fluid p-0">
+        <div class="row g-0 min-vh-100">
+            <!-- Brand Section - Hidden on mobile, visible on tablet+ -->
+            <div class="col-lg-6 d-none d-lg-flex brand-section">
+                <div class="brand-content">
+                    <div class="brand-logo">
+                        <img src="assets/images/logo.png" alt="EducAid Logo" class="img-fluid">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Last Name</label>
-                        <input type="text" class="form-control" id="lastname" name="lastname" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Email</label>
-                        <input type="email" class="form-control" id="email" name="email" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">Send OTP</button>
-                </form>
-                <div class="text-center mt-3">
-                    <a href="#" onclick="showForgotPassword()">Forgot Password?</a>
-                </div>
-                <div class="signup-link text-center">
-                    <small class="text-muted">Don't have an account?</small><br>
-                    <a href="modules/student/student_register.php" class="text-decoration-none">
-                        <i class="bi bi-person-plus"></i> Sign up as Student
-                    </a>
+                    <h1 class="brand-title">EducAid</h1>
+                    <p class="brand-subtitle">
+                        Empowering students through accessible financial assistance programs in General Trias.
+                    </p>
+                    <ul class="feature-list d-none d-xl-block">
+                        <li class="feature-item">
+                            <i class="bi bi-shield-check"></i>
+                            <span>Secure Application Process</span>
+                        </li>
+                        <li class="feature-item">
+                            <i class="bi bi-clock-history"></i>
+                            <span>Fast Processing Time</span>
+                        </li>
+                        <li class="feature-item">
+                            <i class="bi bi-people"></i>
+                            <span>Community Support</span>
+                        </li>
+                        <li class="feature-item">
+                            <i class="bi bi-award"></i>
+                            <span>Merit-Based Awards</span>
+                        </li>
+                    </ul>
                 </div>
             </div>
 
-            <!-- Step 2: OTP Verification -->
-            <div id="step2" class="step">
-                <div class="text-center mb-3">
-                    <h5>Enter OTP</h5>
-                    <p class="text-muted">Check your email for the verification code</p>
-                </div>
-                <form id="otpForm">
-                    <div class="mb-3">
-                        <input type="text" class="form-control text-center" id="login_otp" name="login_otp" placeholder="000000" maxlength="6" required>
+            <!-- Mobile Brand Header - Only visible on mobile -->
+            <div class="col-12 d-lg-none mobile-brand-header">
+                <div class="container py-4">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="mobile-logo">
+                                <img src="assets/images/logo.png" alt="EducAid Logo" class="img-fluid">
+                            </div>
+                        </div>
+                        <div class="col">
+                            <h4 class="mobile-brand-title mb-0">EducAid</h4>
+                            <small class="text-muted">General Trias Financial Assistance</small>
+                        </div>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">Verify & Login</button>
-                </form>
-                <div class="text-center mt-3">
-                    <a href="#" onclick="showStep1()">Back to Login</a>
                 </div>
             </div>
 
-            <!-- Forgot Password Steps -->
-            <div id="forgotStep1" class="step">
-                <div class="text-center mb-3">
-                    <h5>Reset Password</h5>
-                    <p class="text-muted">Enter your email to receive OTP</p>
-                </div>
-                <form id="forgotForm">
-                    <div class="mb-3">
-                        <input type="email" class="form-control" id="forgot_email" name="forgot_email" placeholder="Enter your email" required>
+            <!-- Form Section -->
+            <div class="col-12 col-lg-6 form-section">
+                <div class="container h-100">
+                    <div class="row justify-content-center align-items-center h-100">
+                        <div class="col-12 col-sm-10 col-md-8 col-lg-12 col-xl-10 col-xxl-8">
+                            <div class="login-card">
+                                <div class="login-header">
+                                    <h2 class="login-title">Welcome Back</h2>
+                                    <p class="login-subtitle">Sign in to access your EducAid account</p>
+                                </div>
+
+                                <!-- Step Indicators -->
+                                <div class="step-indicators justify-content-center mb-4" style="display: none;">
+                                    <div class="step-indicator-item">
+                                        <div class="step-indicator" id="indicator1"></div>
+                                        <span class="step-label d-none d-sm-block" id="label1">Email</span>
+                                    </div>
+                                    <div class="step-indicator-item">
+                                        <div class="step-indicator" id="indicator2"></div>
+                                        <span class="step-label d-none d-sm-block" id="label2">Verify</span>
+                                    </div>
+                                    <div class="step-indicator-item">
+                                        <div class="step-indicator" id="indicator3"></div>
+                                        <span class="step-label d-none d-sm-block" id="label3">Password</span>
+                                    </div>
+                                </div>
+
+                                <!-- Messages Container -->
+                                <div id="messages" class="message-container mb-3"></div>
+
+                                <!-- Step 1: Simplified Credentials (Email + Password Only) -->
+                                <div id="step1" class="step active">
+                                    <form id="loginForm">
+                                        <div class="form-group mb-3">
+                                            <label class="form-label">Email Address</label>
+                                            <input type="email" class="form-control form-control-lg" id="email" name="email" 
+                                                   placeholder="Enter your email address" required autocomplete="email">
+                                        </div>
+                                        <div class="form-group mb-4">
+                                            <label class="form-label">Password</label>
+                                            <div class="position-relative">
+                                                <input type="password" class="form-control form-control-lg" id="password" name="password" 
+                                                       placeholder="Enter your password" required autocomplete="current-password">
+                                                <button type="button" class="btn btn-link position-absolute end-0 top-50 translate-middle-y" 
+                                                        onclick="togglePassword('password')" style="text-decoration: none; padding: 0 15px;">
+                                                    <i class="bi bi-eye" id="password-toggle-icon"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="d-grid">
+                                            <button type="submit" class="btn btn-primary btn-lg">
+                                                <i class="bi bi-envelope me-2"></i>Send Verification Code
+                                            </button>
+                                        </div>
+                                    </form>
+                                    <div class="text-center mt-3">
+                                        <a href="#" onclick="showForgotPassword()" class="text-decoration-none">
+                                            <small>Forgot your password?</small>
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <!-- Step 2: OTP Verification -->
+                                <div id="step2" class="step">
+                                    <div class="text-center mb-4">
+                                        <i class="bi bi-shield-check text-primary" style="font-size: 3rem;"></i>
+                                        <h5 class="mt-3">Verify Your Identity</h5>
+                                        <p class="text-muted">Enter the 6-digit code sent to your email</p>
+                                    </div>
+                                    <form id="otpForm">
+                                        <div class="form-group mb-4">
+                                            <input type="text" class="form-control form-control-lg otp-input text-center" 
+                                                   id="login_otp" name="login_otp" placeholder="000000" maxlength="6" required
+                                                   style="font-size: 1.5rem; letter-spacing: 0.5em;">
+                                        </div>
+                                        <div class="d-grid">
+                                            <button type="submit" class="btn btn-primary btn-lg">
+                                                <i class="bi bi-shield-check me-2"></i>Verify & Sign In
+                                            </button>
+                                        </div>
+                                    </form>
+                                    <div class="text-center mt-3">
+                                        <a href="#" onclick="showStep1()" class="text-decoration-none">
+                                            <i class="bi bi-arrow-left me-2"></i><small>Back to login</small>
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <!-- Forgot Password Step 1: Email -->
+                                <div id="forgotStep1" class="step">
+                                    <div class="text-center mb-4">
+                                        <i class="bi bi-key text-primary" style="font-size: 3rem;"></i>
+                                        <h5 class="mt-3">Reset Your Password</h5>
+                                        <p class="text-muted">Enter your email address to receive a reset code</p>
+                                    </div>
+                                    <form id="forgotForm">
+                                        <div class="form-group mb-4">
+                                            <label class="form-label">Email Address</label>
+                                            <input type="email" class="form-control form-control-lg" id="forgot_email" name="forgot_email" required>
+                                        </div>
+                                        <div class="d-grid">
+                                            <button type="submit" class="btn btn-primary btn-lg">
+                                                <i class="bi bi-envelope me-2"></i>Send Reset Code
+                                            </button>
+                                        </div>
+                                    </form>
+                                    <div class="text-center mt-3">
+                                        <a href="#" onclick="showStep1()" class="text-decoration-none">
+                                            <i class="bi bi-arrow-left me-2"></i><small>Back to login</small>
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <!-- Forgot Password Step 2: OTP Verification -->
+                                <div id="forgotStep2" class="step">
+                                    <div class="text-center mb-4">
+                                        <i class="bi bi-check-circle text-primary" style="font-size: 3rem;"></i>
+                                        <h5 class="mt-3">Enter Reset Code</h5>
+                                        <p class="text-muted">Enter the 6-digit code sent to your email</p>
+                                    </div>
+                                    <form id="forgotOtpForm">
+                                        <div class="form-group mb-4">
+                                            <input type="text" class="form-control form-control-lg otp-input text-center" 
+                                                   id="forgot_otp" name="forgot_otp" placeholder="000000" maxlength="6" required
+                                                   style="font-size: 1.5rem; letter-spacing: 0.5em;">
+                                        </div>
+                                        <div class="d-grid">
+                                            <button type="submit" class="btn btn-primary btn-lg">
+                                                <i class="bi bi-check-circle me-2"></i>Verify Code
+                                            </button>
+                                        </div>
+                                    </form>
+                                    <div class="text-center mt-3">
+                                        <a href="#" onclick="showForgotPassword()" class="text-decoration-none">
+                                            <i class="bi bi-arrow-left me-2"></i><small>Back to email</small>
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <!-- Forgot Password Step 3: New Password -->
+                                <div id="forgotStep3" class="step">
+                                    <div class="text-center mb-4">
+                                        <i class="bi bi-lock text-primary" style="font-size: 3rem;"></i>
+                                        <h5 class="mt-3">Set New Password</h5>
+                                        <p class="text-muted">Choose a strong password for your account</p>
+                                    </div>
+                                    <form id="newPasswordForm">
+                                        <div class="form-group mb-3">
+                                            <label class="form-label">New Password</label>
+                                            <input type="password" class="form-control form-control-lg" id="forgot_new_password" 
+                                                   name="forgot_new_password" placeholder="Minimum 12 characters" minlength="12" required>
+                                            <div class="form-text">Password must be at least 12 characters long</div>
+                                        </div>
+                                        <div class="form-group mb-4">
+                                            <label class="form-label">Confirm New Password</label>
+                                            <input type="password" class="form-control form-control-lg" id="confirm_password" 
+                                                   name="confirm_password" placeholder="Re-enter your password" required>
+                                        </div>
+                                        <div class="d-grid">
+                                            <button type="submit" class="btn btn-primary btn-lg">
+                                                <i class="bi bi-key me-2"></i>Update Password
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                <!-- Registration Section -->
+                                <div class="signup-section mt-4">
+                                    <div class="text-center">
+                                        <p class="mb-2">Don't have an account yet?</p>
+                                        <a href="modules/student/student_register.php" class="btn btn-outline-primary">
+                                            <i class="bi bi-person-plus me-2"></i>Create Account
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">Send OTP</button>
-                </form>
-                <div class="text-center mt-3">
-                    <a href="#" onclick="showStep1()">Back to Login</a>
                 </div>
             </div>
-
-            <div id="forgotStep2" class="step">
-                <div class="text-center mb-3">
-                    <h5>Verify OTP</h5>
-                    <p class="text-muted">Enter the OTP sent to your email</p>
-                </div>
-                <form id="forgotOtpForm">
-                    <div class="mb-3">
-                        <input type="text" class="form-control text-center" id="forgot_otp" name="forgot_otp" placeholder="000000" maxlength="6" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">Verify OTP</button>
-                </form>
-            </div>
-
-            <div id="forgotStep3" class="step">
-                <div class="text-center mb-3">
-                    <h5>New Password</h5>
-                    <p class="text-muted">Enter your new password</p>
-                </div>
-                <form id="newPasswordForm">
-                    <div class="mb-3">
-                        <input type="password" class="form-control" id="forgot_new_password" name="forgot_new_password" placeholder="New Password" minlength="12" required>
-                        <div class="form-text">Must be at least 12 characters</div>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">Update Password</button>
-                </form>
-            </div>
-
-            <div id="messages" class="mt-3"></div>
         </div>
     </div>
 
     <script src="assets/js/bootstrap.bundle.min.js"></script>
-    <script>
-        function showStep1() { hideAllSteps(); document.getElementById('step1').classList.add('active'); }
-        function showStep2() { hideAllSteps(); document.getElementById('step2').classList.add('active'); }
-        function showForgotPassword() { hideAllSteps(); document.getElementById('forgotStep1').classList.add('active'); }
-        function showForgotStep2() { hideAllSteps(); document.getElementById('forgotStep2').classList.add('active'); }
-        function showForgotStep3() { hideAllSteps(); document.getElementById('forgotStep3').classList.add('active'); }
-        function hideAllSteps() { document.querySelectorAll('.step').forEach(s => s.classList.remove('active')); }
-        function showMessage(msg, type='danger') {
-            document.getElementById('messages').innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
-        }
-
-        // Login Form
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            
-            fetch('unified_login.php', { method: 'POST', body: formData })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'otp_sent') {
-                    showStep2();
-                    showMessage(data.message, 'success');
-                } else {
-                    showMessage(data.message);
-                }
-            });
-        });
-
-        // OTP Verification
-        document.getElementById('otpForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData();
-            formData.append('login_action', 'verify_otp');
-            formData.append('login_otp', document.getElementById('login_otp').value);
-            
-            fetch('unified_login.php', { method: 'POST', body: formData })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    window.location.href = data.redirect;
-                } else {
-                    showMessage(data.message);
-                }
-            });
-        });
-
-        // Forgot Password Forms
-        document.getElementById('forgotForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData();
-            formData.append('forgot_action', 'send_otp');
-            formData.append('forgot_email', document.getElementById('forgot_email').value);
-            
-            fetch('unified_login.php', { method: 'POST', body: formData })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showForgotStep2();
-                    showMessage(data.message, 'success');
-                } else {
-                    showMessage(data.message);
-                }
-            });
-        });
-
-        document.getElementById('forgotOtpForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData();
-            formData.append('forgot_action', 'verify_otp');
-            formData.append('forgot_otp', document.getElementById('forgot_otp').value);
-            
-            fetch('unified_login.php', { method: 'POST', body: formData })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showForgotStep3();
-                    showMessage(data.message, 'success');
-                } else {
-                    showMessage(data.message);
-                }
-            });
-        });
-
-        document.getElementById('newPasswordForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData();
-            formData.append('forgot_action', 'set_new_password');
-            formData.append('forgot_new_password', document.getElementById('forgot_new_password').value);
-            
-            fetch('unified_login.php', { method: 'POST', body: formData })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showStep1();
-                    showMessage('Password updated successfully! Please login.', 'success');
-                } else {
-                    showMessage(data.message);
-                }
-            });
-        });
-    </script>
+    <script src="assets/js/login.js"></script>
 </body>
 </html>

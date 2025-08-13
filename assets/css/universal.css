@@ -1,0 +1,1027 @@
+/* EducAid Login System - Light & Bright Theme */
+:root {
+    /* General Trias Color Palette - Light Variants */
+    --trias-primary: #0068DA;
+    --trias-secondary: #00B1C6;
+    --trias-accent: #0088C8;
+    --trias-success: #3DAD10;
+    --trias-light: #67D6C6;
+    --trias-fresh: #6CC748;
+    
+    /* Light & Bright Color System */
+    --background-base: #ffffff;
+    --background-pattern: radial-gradient(circle at 20% 80%, rgba(0, 104, 218, 0.02) 0%, transparent 50%),
+                         radial-gradient(circle at 80% 20%, rgba(103, 214, 198, 0.015) 0%, transparent 50%),
+                         radial-gradient(circle at 40% 40%, rgba(0, 177, 198, 0.01) 0%, transparent 50%);
+    
+    --card-background: rgba(255, 255, 255, 0.98);
+    --card-shadow: 0 25px 50px -12px rgba(0, 104, 218, 0.08),
+                   0 0 0 1px rgba(0, 104, 218, 0.02);
+    
+    --text-primary: #2d3748;
+    --text-secondary: #4a5568;
+    --text-muted: #718096;
+    --text-accent: var(--trias-primary);
+    
+    --border-color: #e2e8f0;
+    --border-focus: var(--trias-primary);
+    --error-color: #e53e3e;
+    --success-color: var(--trias-success);
+    
+    /* Spacing Scale */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+    --space-16: 4rem;
+    
+    /* Typography Scale */
+    --font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    --font-family-display: 'Poppins', var(--font-family);
+    
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.25rem;
+    --text-2xl: 1.5rem;
+    --text-3xl: 1.875rem;
+    --text-4xl: 2.25rem;
+    
+    /* Border Radius */
+    --radius-sm: 0.375rem;
+    --radius: 0.5rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.5rem;
+    --radius-2xl: 2rem;
+    
+    /* Light Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 104, 218, 0.03);
+    --shadow: 0 1px 3px 0 rgba(0, 104, 218, 0.06), 0 1px 2px 0 rgba(0, 104, 218, 0.03);
+    --shadow-md: 0 4px 6px -1px rgba(0, 104, 218, 0.08), 0 2px 4px -1px rgba(0, 104, 218, 0.04);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 104, 218, 0.1), 0 4px 6px -2px rgba(0, 104, 218, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 104, 218, 0.12), 0 10px 10px -5px rgba(0, 104, 218, 0.06);
+    
+    /* Transitions */
+    --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Global Styles */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-family);
+    background: var(--background-base);
+    background-image: var(--background-pattern);
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Login Layout */
+.login-container {
+    /* Remove existing grid styles - now handled by Bootstrap */
+    position: relative;
+    overflow: hidden;
+}
+
+/* Brand Section (Left Side) - Complete Fix */
+.brand-section {
+    background: linear-gradient(135deg, 
+        rgba(0, 104, 218, 0.9) 0%, 
+        rgba(0, 136, 200, 0.85) 50%, 
+        rgba(0, 177, 198, 0.8) 100%
+    );
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: var(--space-8);
+    color: white;
+    position: relative;
+    overflow: hidden;
+}
+
+.brand-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="20" cy="20" r="2" fill="rgba(255,255,255,0.15)"/><circle cx="80" cy="80" r="1.5" fill="rgba(255,255,255,0.12)"/><circle cx="60" cy="30" r="1" fill="rgba(255,255,255,0.1)"/><circle cx="30" cy="70" r="1.2" fill="rgba(255,255,255,0.08)"/></svg>') repeat;
+    pointer-events: none;
+}
+
+.brand-content {
+    text-align: center;
+    max-width: 400px;
+    z-index: 1; /* ADD THIS - Ensure content appears above pattern */
+}
+
+.brand-logo {
+    width: 120px;
+    height: 120px;
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: var(--radius-2xl);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto var(--space-6);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px rgba(255, 255, 255, 0.1);
+}
+
+.brand-logo img {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+}
+
+.brand-title {
+    font-family: var(--font-family-display);
+    font-size: var(--text-4xl);
+    font-weight: 700;
+    margin-bottom: var(--space-4);
+    background: linear-gradient(45deg, #ffffff, #f0f9ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 2px 4px rgba(255, 255, 255, 0.1);
+}
+
+.brand-subtitle {
+    font-size: var(--text-lg);
+    opacity: 0.95;
+    margin-bottom: var(--space-8);
+    line-height: 1.7;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.feature-list {
+    list-style: none;
+    padding: 0;
+    text-align: left; /* ADD THIS - Align features to left */
+}
+
+.feature-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--space-4);
+    font-size: var(--text-base);
+    opacity: 0.95;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.feature-item i {
+    font-size: var(--text-xl);
+    margin-right: var(--space-3);
+    color: rgba(255, 255, 255, 0.9);
+    min-width: 24px; /* ADD THIS - Consistent icon spacing */
+}
+
+/* Login Form Section (Right Side) */
+.form-section {
+    background: var(--background-base);
+    background-image: var(--background-pattern);
+    min-height: 100vh;
+    padding: var(--space-8);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+}
+
+/* Mobile-First Login Card */
+.login-card {
+    background: var(--card-background);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--card-shadow);
+    padding: var(--space-6);
+    border: 1px solid rgba(0, 104, 218, 0.08);
+    backdrop-filter: blur(20px);
+    position: relative;
+    margin: var(--space-4);
+}
+
+.login-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--trias-primary), var(--trias-accent), var(--trias-secondary));
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: var(--space-8);
+}
+
+.login-title {
+    font-family: var(--font-family-display);
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+}
+
+.login-subtitle {
+    color: var(--text-secondary);
+    font-size: var(--text-base);
+}
+
+/* Step Indicators */
+.step-indicators {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: var(--space-8);
+    gap: var(--space-4);
+}
+
+.step-indicator-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.step-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border-color);
+    transition: all var(--transition);
+}
+
+.step-indicator.active {
+    background: var(--trias-primary);
+    transform: scale(1.25);
+    box-shadow: 0 0 0 4px rgba(0, 104, 218, 0.1);
+}
+
+.step-label {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+    transition: color var(--transition);
+}
+
+.step-indicator.active + .step-label {
+    color: var(--trias-primary);
+}
+
+/* Hide labels on small screens */
+@media (max-width: 480px) {
+    .step-label {
+        display: none;
+    }
+    
+    .step-indicators {
+        gap: var(--space-2);
+    }
+}
+
+/* Form Styles */
+.step {
+    display: none;
+    animation: slideInRight 300ms ease-out;
+}
+
+.step.active {
+    display: block;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.form-group {
+    margin-bottom: var(--space-5);
+}
+
+.form-label {
+    display: block;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.form-control {
+    width: 100%;
+    padding: var(--space-4);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: var(--text-base);
+    transition: all var(--transition);
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text-primary);
+    font-family: inherit;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(0, 104, 218, 0.1);
+    background: rgba(255, 255, 255, 1);
+    transform: translateY(-1px);
+}
+
+.form-control::placeholder {
+    color: var(--text-muted);
+}
+
+/* Enhanced Form Styles for Simplified Login */
+.form-control-lg {
+    padding: var(--space-4) var(--space-5);
+    font-size: var(--text-lg);
+    border-radius: var(--radius-md);
+    min-height: 56px;
+}
+
+.form-control-lg:focus {
+    box-shadow: 0 0 0 3px rgba(0, 104, 218, 0.15);
+    transform: translateY(-1px);
+}
+
+/* Password Toggle Button */
+.position-relative .btn-link {
+    color: var(--text-muted);
+    border: none;
+    background: none;
+    font-size: var(--text-lg);
+}
+
+.position-relative .btn-link:hover {
+    color: var(--trias-primary);
+}
+
+.position-relative .btn-link:focus {
+    box-shadow: none;
+    outline: 2px solid var(--trias-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+/* Form Group Spacing */
+.form-group {
+    margin-bottom: var(--space-5);
+}
+
+/* Enhanced Login Form */
+@media (min-width: 992px) {
+    .form-control-lg {
+        padding: var(--space-5) var(--space-6);
+        font-size: var(--text-xl);
+        min-height: 60px;
+    }
+}
+
+/* Touch-friendly improvements for mobile */
+@media (hover: none) and (pointer: coarse) {
+    .form-control-lg {
+        font-size: 16px; /* Prevents zoom on iOS */
+        min-height: 56px;
+    }
+    
+    .position-relative .btn-link {
+        padding: var(--space-3) var(--space-4);
+        min-height: 48px;
+        min-width: 48px;
+    }
+}
+
+/* Focus improvements */
+.form-control:focus {
+    border-color: var(--trias-primary);
+    box-shadow: 0 0 0 3px rgba(0, 104, 218, 0.1);
+}
+
+/* Autocomplete styling */
+.form-control:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px rgba(240, 249, 255, 0.8) inset;
+    -webkit-text-fill-color: var(--text-primary);
+}
+
+/* Loading States */
+.spinner-border {
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Utility Classes */
+.text-center { text-align: center; }
+.text-muted { color: var(--text-muted); }
+.mb-3 { margin-bottom: var(--space-4); }
+.mt-3 { margin-top: var(--space-4); }
+.me-2 { margin-right: var(--space-2); }
+
+/* Registration Link */
+.signup-section {
+    margin-top: var(--space-6);
+    padding: var(--space-5);
+    background: linear-gradient(135deg, rgba(240, 249, 255, 0.6), rgba(0, 104, 218, 0.02));
+    border: 1px solid rgba(0, 104, 218, 0.1);
+    border-radius: var(--radius-lg);
+    text-align: center;
+}
+
+.signup-section p {
+    margin-bottom: var(--space-3);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+}
+
+.signup-section a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 600;
+}
+
+/* Mobile Brand Header */
+.mobile-brand-header {
+    background: linear-gradient(135deg, var(--trias-primary), var(--trias-accent));
+    color: white;
+}
+
+.mobile-logo {
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(10px);
+}
+
+.mobile-logo img {
+    width: 35px;
+    height: 35px;
+    object-fit: contain;
+}
+
+.mobile-brand-title {
+    color: white;
+    font-family: var(--font-family-display);
+    font-weight: 700;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .login-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .brand-section {
+        min-height: 40vh;
+        padding: var(--space-6);
+    }
+    
+    .brand-title {
+        font-size: var(--text-3xl);
+    }
+    
+    .form-section {
+        padding: var(--space-6);
+        min-height: 60vh;
+    }
+}
+
+@media (max-width: 768px) {
+    .brand-section {
+        min-height: 30vh;
+        padding: var(--space-4);
+    }
+    
+    .brand-logo {
+        width: 80px;
+        height: 80px;
+    }
+    
+    .brand-logo img {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .brand-title {
+        font-size: var(--text-2xl);
+    }
+    
+    .login-card {
+        padding: var(--space-6);
+    }
+    
+    .feature-list {
+        display: none;
+    }
+}
+
+@media (max-width: 480px) {
+    .form-section {
+        padding: var(--space-4);
+    }
+    
+    .login-card {
+        padding: var(--space-5);
+        border-radius: var(--radius-xl);
+    }
+    
+    .login-title {
+        font-size: var(--text-2xl);
+    }
+}
+
+/* Remove Dark Mode */
+/* Dark mode completely removed - only light theme */
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* High Contrast */
+@media (prefers-contrast: high) {
+    .form-control {
+        border-width: 3px;
+    }
+    
+    .btn-primary {
+        background: var(--trias-primary);
+        border: 2px solid var(--text-primary);
+    }
+}
+
+/* Mobile Responsive Adjustments */
+@media (max-width: 575.98px) {
+    .login-card {
+        margin: var(--space-2);
+        padding: var(--space-4);
+        border-radius: var(--radius-lg);
+    }
+    
+    .login-title {
+        font-size: var(--text-2xl);
+    }
+    
+    .login-subtitle {
+        font-size: var(--text-sm);
+    }
+    
+    .brand-logo {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .brand-logo img {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .form-control {
+        padding: var(--space-3);
+    }
+    
+    .btn-lg {
+        padding: var(--space-3) var(--space-4);
+    }
+}
+
+/* Small devices (landscape phones, 576px and up) */
+@media (min-width: 576px) {
+    .login-card {
+        margin: var(--space-6);
+        padding: var(--space-8);
+    }
+}
+
+/* Medium devices (tablets, 768px and up) */
+@media (min-width: 768px) {
+    .form-section {
+        min-height: auto;
+    }
+    
+    .login-card {
+        margin: var(--space-8);
+    }
+}
+
+/* Large devices (desktops, 992px and up) */
+@media (min-width: 992px) {
+    /* Ensure proper grid layout */
+    .row.g-0 {
+        height: 100vh;
+    }
+    
+    .brand-section {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+    }
+    
+    .form-section {
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+    }
+    
+    .login-card {
+        margin: 0;
+        max-width: 480px;
+        width: 100%;
+    }
+    
+    /* Hide mobile elements */
+    .mobile-brand-header {
+        display: none !important;
+    }
+    
+    /* Show feature list on desktop */
+    .feature-list {
+        display: block !important;
+    }
+}
+
+/* Extra large desktop improvements */
+@media (min-width: 1200px) {
+    .form-section .container {
+        padding: var(--space-8);
+    }
+    
+    .login-card {
+        max-width: 520px;
+        padding: var(--space-12);
+    }
+    
+    .brand-content {
+        max-width: 450px;
+    }
+    
+    .brand-title {
+        font-size: 3rem;
+    }
+    
+    .brand-subtitle {
+        font-size: var(--text-xl);
+    }
+    
+    .feature-item {
+        font-size: var(--text-lg);
+    }
+}
+
+/* Ultra-wide screen support */
+@media (min-width: 1400px) {
+    .login-card {
+        max-width: 560px;
+    }
+    
+    .brand-content {
+        max-width: 500px;
+    }
+}
+
+/* Touch-friendly improvements */
+@media (hover: none) and (pointer: coarse) {
+    .btn {
+        min-height: 48px;
+        padding: var(--space-4) var(--space-6);
+    }
+    
+    .form-control {
+        min-height: 48px;
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+    
+    .otp-input {
+        font-size: 18px !important;
+    }
+}
+
+/* Improved OTP Input for Mobile */
+.otp-input {
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-weight: 600;
+}
+
+/* Step Indicators Mobile Optimization */
+.step-indicators {
+    gap: var(--space-3);
+}
+
+.step-indicator {
+    width: 10px;
+    height: 10px;
+}
+
+@media (max-width: 575.98px) {
+    .step-indicators {
+        gap: var(--space-2);
+    }
+    
+    .step-indicator {
+        width: 8px;
+        height: 8px;
+    }
+}
+
+/* Form Group Spacing */
+.form-group {
+    margin-bottom: var(--space-4);
+}
+
+/* Button Improvements */
+.btn-lg {
+    font-weight: 600;
+    border-radius: var(--radius-md);
+}
+
+.d-grid .btn {
+    padding: var(--space-4) var(--space-6);
+}
+
+/* Alert Responsive */
+.alert {
+    border-radius: var(--radius-md);
+    border: none;
+    font-size: var(--text-sm);
+}
+
+/* Signup Section Mobile */
+.signup-section {
+    background: linear-gradient(135deg, rgba(240, 249, 255, 0.6), rgba(0, 104, 218, 0.02));
+    border: 1px solid rgba(0, 104, 218, 0.1);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+}
+
+@media (max-width: 575.98px) {
+    .signup-section {
+        margin-top: var(--space-6);
+        padding: var(--space-3);
+    }
+}
+
+/* Brand Section Responsive */
+.brand-section {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: var(--space-8);
+}
+
+.brand-content {
+    text-align: center;
+    max-width: 400px;
+}
+
+/* Feature List Responsive */
+.feature-list {
+    list-style: none;
+    padding: 0;
+}
+
+.feature-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--space-3);
+    font-size: var(--text-base);
+    opacity: 0.95;
+}
+
+.feature-item i {
+    font-size: var(--text-lg);
+    margin-right: var(--space-3);
+    min-width: 24px;
+}
+
+/* Landscape Mobile Optimization */
+@media (max-height: 600px) and (orientation: landscape) {
+    .mobile-brand-header {
+        padding: var(--space-2) 0;
+    }
+    
+    .login-card {
+        margin: var(--space-2);
+        padding: var(--space-4);
+    }
+    
+    .login-header {
+        margin-bottom: var(--space-4);
+    }
+    
+    .login-title {
+        font-size: var(--text-xl);
+        margin-bottom: var(--space-1);
+    }
+    
+    .form-group {
+        margin-bottom: var(--space-3);
+    }
+}
+
+/* Mobile and Tablet Responsive (Updated) */
+@media (max-width: 991.98px) {
+    /* Hide brand section on mobile/tablet */
+    .brand-section {
+        display: none !important;
+    }
+    
+    /* Show mobile brand header */
+    .mobile-brand-header {
+        display: block;
+    }
+    
+    .form-section {
+        min-height: calc(100vh - 80px); /* Account for mobile header */
+    }
+}
+
+/* Desktop and larger */
+@media (min-width: 992px) {
+    /* Hide mobile brand header */
+    .mobile-brand-header {
+        display: none !important;
+    }
+    
+    /* Show full brand section */
+    .brand-section {
+        display: flex !important;
+    }
+    
+    /* Fix Bootstrap Grid Layout */
+    .container-fluid {
+        height: 100vh;
+        overflow: hidden;
+    }
+    
+    .row.g-0 {
+        height: 100vh;
+        margin: 0;
+    }
+    
+    .row.g-0 > .col-lg-6 {
+        height: 100vh;
+    }
+    
+    /* Brand Section - Left Side */
+    .brand-section {
+        height: 100vh;
+        display: flex !important;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: var(--space-8);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    /* Form Section - Right Side */
+    .form-section {
+        height: 100vh;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+    }
+    
+    .form-section .container {
+        height: 100%;
+        max-width: none;
+        padding: var(--space-6);
+    }
+    
+    .form-section .row {
+        height: 100%;
+        margin: 0;
+    }
+    
+    .form-section .col-12 {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+    }
+    
+    /* Login Card Positioning */
+    .login-card {
+        margin: 0;
+        max-width: 480px;
+        width: 100%;
+        padding: var(--space-10);
+        position: relative;
+    }
+    
+    /* Center Login Card Vertically and Horizontally */
+    .form-section {
+        background: var(--background-base);
+        background-image: var(--background-pattern);
+    }
+    
+    .form-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, 
+            rgba(248, 250, 252, 0.95) 0%, 
+            rgba(255, 255, 255, 0.98) 50%, 
+            rgba(240, 249, 255, 0.95) 100%
+        );
+        z-index: 0;
+    }
+    
+    .form-section .container {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .form-section .row {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* Fix Form Input Spacing on Desktop */
+@media (min-width: 992px) {
+    .row .col-12.col-md-6 {
+        padding-right: var(--space-2);
+        padding-left: var(--space-2);
+    }
+    
+    .row .col-12.col-md-6:first-child {
+        padding-left: 0;
+    }
+    
+    .row .col-12.col-md-6:last-child {
+        padding-right: 0;
+    }
+}
+
+/* Improve Button Spacing */
+@media (min-width: 992px) {
+    .d-grid .btn {
+        padding: var(--space-4) var(--space-8);
+        font-size: var(--text-lg);
+        min-height: 52px;
+    }
+    
+    .btn-lg {
+        padding: var(--space-5) var(--space-8);
+        font-size: var(--text-lg);
+        min-height: 56px;
+    }
+}
