@@ -5,8 +5,8 @@
 
 import { FormManager } from './modules/form-manager.js';
 import { OTPManager } from './modules/otp-manager.js';
-import { PasswordManager } from './modules/password-manager.js';
 import { NotificationManager } from './modules/notification-manager.js';
+import { PasswordManager } from './modules/password-manager.js';
 import { DocumentManager } from './modules/document-manager.js';
 
 /**

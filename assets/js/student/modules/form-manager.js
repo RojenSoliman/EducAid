@@ -4,22 +4,27 @@
 export class FormManager {
     constructor() {
         this.currentStep = 1;
+        this.totalSteps = 6;
         this.init();
     }
 
     init() {
-        this.showStep(1);
-        this.updateRequiredFields();
         this.bindEvents();
+        this.updateStepIndicator();
+        this.showCurrentStep();
+        
+        // Make functions globally available for onclick handlers
+        window.nextStep = () => this.nextStep();
+        window.prevStep = () => this.prevStep();
     }
 
     bindEvents() {
-        // Handle all navigation buttons using event delegation
+        // Event delegation for data-action buttons
         document.addEventListener('click', (e) => {
-            if (e.target.dataset.action === 'next') {
+            if (e.target.closest('[data-action="next"]')) {
                 e.preventDefault();
                 this.nextStep();
-            } else if (e.target.dataset.action === 'prev') {
+            } else if (e.target.closest('[data-action="prev"]')) {
                 e.preventDefault();
                 this.prevStep();
             }
@@ -55,17 +60,17 @@ export class FormManager {
     }
 
     nextStep() {
-        if (this.currentStep === 6) return;
+        if (this.currentStep === this.totalSteps) return;
 
         if (!this.validateCurrentStep()) return;
 
-        if (this.currentStep === 5) {
+        if (this.currentStep === this.totalSteps - 1) {
             if (!window.otpManager?.isVerified()) {
                 window.notificationManager?.show('Please verify your OTP before proceeding.', 'error');
                 return;
             }
             this.showStep(this.currentStep + 1);
-        } else if (this.currentStep < 6) {
+        } else if (this.currentStep < this.totalSteps) {
             this.showStep(this.currentStep + 1);
         }
     }
@@ -106,4 +111,16 @@ export class FormManager {
     getCurrentStep() {
         return this.currentStep;
     }
+
+    updateStepIndicator() {
+        // Update the step indicator logic here
+    }
+
+    showCurrentStep() {
+        this.showStep(this.currentStep);
+    }
 }
+
+console.log('✅ Student Registration JS Loaded');
+console.log('FormManager:', window.formManager);
+console.log('NextStep function:', typeof window.nextStep);
