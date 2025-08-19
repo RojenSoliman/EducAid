@@ -220,6 +220,11 @@ body {
 }
 
 .login-card::before {
+    display: none;
+}
+
+/* OR completely remove the ::before rule */
+.login-card::before {
     content: '';
     position: absolute;
     top: 0;
@@ -1025,3 +1030,275 @@ body {
         min-height: 56px;
     }
 }
+
+/* ========================================
+   PRIMARY BUTTON GREEN OVERRIDE
+   ======================================== */
+
+/* Override Bootstrap Primary Button Colors with Green */
+:root {
+    /* Override Bootstrap CSS Variables */
+    --bs-primary: #3DAD10 !important;
+    --bs-primary-rgb: 61, 173, 16 !important;
+    
+    /* Custom Green Shades */
+    --btn-primary-bg: #3DAD10;
+    --btn-primary-hover: #359C0E;
+    --btn-primary-active: #2E8A0C;
+    --btn-primary-border: #3DAD10;
+    --btn-primary-focus-shadow: rgba(61, 173, 16, 0.25);
+    
+    /* Outline Button Colors */
+    --btn-outline-primary-color: #3DAD10;
+    --btn-outline-primary-border: #3DAD10;
+    --btn-outline-primary-hover-bg: #3DAD10;
+    --btn-outline-primary-hover-border: #3DAD10;
+    --btn-outline-primary-focus-shadow: rgba(61, 173, 16, 0.25);
+}
+
+/* Primary Button Styles */
+.btn-primary {
+    background-color: var(--btn-primary-bg) !important;
+    border-color: var(--btn-primary-border) !important;
+    color: white !important;
+    font-weight: 600;
+    transition: all var(--transition);
+}
+
+.btn-primary:hover {
+    background-color: var(--btn-primary-hover) !important;
+    border-color: var(--btn-primary-hover) !important;
+    color: white !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(61, 173, 16, 0.25);
+}
+
+.btn-primary:focus,
+.btn-primary:focus-visible {
+    background-color: var(--btn-primary-bg) !important;
+    border-color: var(--btn-primary-border) !important;
+    color: white !important;
+    outline: none !important;
+    box-shadow: 0 0 0 0.25rem var(--btn-primary-focus-shadow) !important;
+}
+
+.btn-primary:active,
+.btn-primary.active {
+    background-color: var(--btn-primary-active) !important;
+    border-color: var(--btn-primary-active) !important;
+    color: white !important;
+    box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125) !important;
+}
+
+.btn-primary:not(:disabled):not(.disabled):active:focus {
+    box-shadow: 0 0 0 0.25rem var(--btn-primary-focus-shadow) !important;
+}
+
+/* Primary Outline Button Styles */
+.btn-outline-primary {
+    background-color: transparent !important;
+    border-color: var(--btn-outline-primary-border) !important;
+    color: var(--btn-outline-primary-color) !important;
+    font-weight: 600;
+    transition: all var(--transition);
+}
+
+.btn-outline-primary:hover {
+    background-color: var(--btn-outline-primary-hover-bg) !important;
+    border-color: var(--btn-outline-primary-hover-border) !important;
+    color: white !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(61, 173, 16, 0.25);
+}
+
+.btn-outline-primary:focus,
+.btn-outline-primary:focus-visible {
+    background-color: transparent !important;
+    border-color: var(--btn-outline-primary-border) !important;
+    color: var(--btn-outline-primary-color) !important;
+    outline: none !important;
+    box-shadow: 0 0 0 0.25rem var(--btn-outline-primary-focus-shadow) !important;
+}
+
+.btn-outline-primary:active,
+.btn-outline-primary.active {
+    background-color: var(--btn-outline-primary-hover-bg) !important;
+    border-color: var(--btn-outline-primary-hover-border) !important;
+    color: white !important;
+    box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125) !important;
+}
+
+.btn-outline-primary:not(:disabled):not(.disabled):active:focus {
+    box-shadow: 0 0 0 0.25rem var(--btn-outline-primary-focus-shadow) !important;
+}
+
+/* Enhanced Button Styles with Green Gradient */
+.btn-primary.btn-lg {
+    background: linear-gradient(135deg, #3DAD10, #47B614) !important;
+    border: 2px solid #3DAD10 !important;
+    box-shadow: 0 4px 15px rgba(61, 173, 16, 0.25);
+}
+
+.btn-primary.btn-lg:hover {
+    background: linear-gradient(135deg, #47B614, #52C018) !important;
+    border-color: #47B614 !important;
+    box-shadow: 0 6px 20px rgba(61, 173, 16, 0.35);
+    transform: translateY(-2px);
+}
+
+.btn-outline-primary.btn-lg {
+    border: 2px solid #3DAD10 !important;
+    color: #3DAD10 !important;
+    font-weight: 600;
+}
+
+.btn-outline-primary.btn-lg:hover {
+    background: linear-gradient(135deg, #3DAD10, #47B614) !important;
+    border-color: #3DAD10 !important;
+    color: white !important;
+    box-shadow: 0 4px 15px rgba(61, 173, 16, 0.25);
+}
+
+/* Loading State for Green Buttons */
+.btn-primary .spinner-border,
+.btn-outline-primary .spinner-border {
+    border-color: rgba(255, 255, 255, 0.25);
+    border-top-color: white;
+}
+
+.btn-outline-primary .spinner-border {
+    border-color: rgba(61, 173, 16, 0.25);
+    border-top-color: #3DAD10;
+}
+
+.btn-outline-primary:hover .spinner-border {
+    border-color: rgba(255, 255, 255, 0.25);
+    border-top-color: white;
+}
+
+/* Success Button (Same as Primary for Consistency) */
+.btn-success {
+    background-color: #3DAD10 !important;
+    border-color: #3DAD10 !important;
+    color: white !important;
+}
+
+.btn-success:hover {
+    background-color: #359C0E !important;
+    border-color: #359C0E !important;
+    color: white !important;
+}
+
+.btn-success:focus {
+    box-shadow: 0 0 0 0.25rem rgba(61, 173, 16, 0.25) !important;
+}
+
+/* Override any conflicting styles */
+button[type="submit"],
+input[type="submit"],
+.btn[type="submit"] {
+    background-color: #3DAD10 !important;
+    border-color: #3DAD10 !important;
+    color: white !important;
+}
+
+button[type="submit"]:hover,
+input[type="submit"]:hover,
+.btn[type="submit"]:hover {
+    background-color: #359C0E !important;
+    border-color: #359C0E !important;
+}
+
+button[type="submit"]:focus,
+input[type="submit"]:focus,
+.btn[type="submit"]:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 0.25rem rgba(61, 173, 16, 0.25) !important;
+}
+
+/* Form Button Improvements */
+.d-grid .btn-primary,
+.d-grid .btn-outline-primary {
+    min-height: 48px;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+}
+
+/* Mobile Touch Improvements */
+@media (hover: none) and (pointer: coarse) {
+    .btn-primary,
+    .btn-outline-primary {
+        min-height: 48px;
+        padding: var(--space-4) var(--space-6);
+        font-size: 16px;
+    }
+    
+    .btn-primary:active,
+    .btn-outline-primary:active {
+        transform: scale(0.98);
+    }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+    .btn-primary {
+        border-width: 3px !important;
+        font-weight: 700;
+    }
+    
+    .btn-outline-primary {
+        border-width: 3px !important;
+        font-weight: 700;
+    }
+}
+
+/* Dark Mode Support (if needed later) */
+@media (prefers-color-scheme: dark) {
+    .btn-primary {
+        background-color: #47B614 !important;
+        border-color: #47B614 !important;
+    }
+    
+    .btn-primary:hover {
+        background-color: #52C018 !important;
+        border-color: #52C018 !important;
+    }
+    
+    .btn-outline-primary {
+        border-color: #47B614 !important;
+        color: #47B614 !important;
+    }
+    
+    .btn-outline-primary:hover {
+        background-color: #47B614 !important;
+        border-color: #47B614 !important;
+    }
+}
+
+/* Fix any remaining blue elements */
+.text-primary {
+    color: #3DAD10 !important;
+}
+
+.border-primary {
+    border-color: #3DAD10 !important;
+}
+
+.bg-primary {
+    background-color: #3DAD10 !important;
+}
+
+/* Link Colors */
+a.text-primary,
+.link-primary {
+    color: #3DAD10 !important;
+}
+
+a.text-primary:hover,
+.link-primary:hover {
+    color: #359C0E !important;
+}
+
+/* ========================================
+   END PRIMARY BUTTON GREEN OVERRIDE
+   ======================================== */
