@@ -253,6 +253,29 @@ body {
     font-size: var(--text-base);
 }
 
+/* Smooth header transitions */
+.login-title,
+.login-subtitle {
+    transition: all 0.3s ease-in-out;
+}
+
+/* Header animation */
+@keyframes headerFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.login-header h2,
+.login-header p {
+    animation: headerFadeIn 0.4s ease-out;
+}
+
 /* Step Indicators */
 .step-indicators {
     display: flex;
@@ -1299,6 +1322,10 @@ a.text-primary:hover,
     color: #359C0E !important;
 }
 
-/* ========================================
-   END PRIMARY BUTTON GREEN OVERRIDE
-   ======================================== */
+/* Remove duplicate step headers */
+#forgotStep1 .text-center:first-child,
+#forgotStep2 .text-center:first-child,
+#forgotStep3 .text-center:first-child {
+    display: none;
+}
+
