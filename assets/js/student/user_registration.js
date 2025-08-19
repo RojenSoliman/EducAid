@@ -1,4 +1,4 @@
- let countdown;
+  let countdown;
         let currentStep = 1;
         let otpVerified = false;
 
@@ -91,20 +91,19 @@
             updateRequiredFields();
             document.getElementById('nextStep5Btn').disabled = true;
             document.getElementById('nextStep5Btn').addEventListener('click', nextStep);
-            
-            // Initialize all handlers
-            initializeTermsAndConditions(); // Add this line
-            
+
             // Add listeners to name fields to re-validate filename if changed
             document.querySelector('input[name="first_name"]').addEventListener('input', function() {
                 if (document.getElementById('enrollmentForm').files.length > 0) {
+                    // Trigger filename re-validation if file is already selected
                     const event = new Event('change');
                     document.getElementById('enrollmentForm').dispatchEvent(event);
                 }
             });
-            
+
             document.querySelector('input[name="last_name"]').addEventListener('input', function() {
                 if (document.getElementById('enrollmentForm').files.length > 0) {
+                    // Trigger filename re-validation if file is already selected
                     const event = new Event('change');
                     document.getElementById('enrollmentForm').dispatchEvent(event);
                 }
@@ -347,10 +346,10 @@
         function validateFilename(filename, firstName, lastName) {
             // Remove file extension for validation
             const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
-            
+
             // Expected format: Lastname_Firstname_EAF
             const expectedFormat = `${lastName}_${firstName}_EAF`;
-            
+
             // Case-insensitive comparison
             return nameWithoutExt.toLowerCase() === expectedFormat.toLowerCase();
         }
@@ -358,7 +357,7 @@
         function updateProcessButtonState() {
             const processBtn = document.getElementById('processOcrBtn');
             const fileInput = document.getElementById('enrollmentForm');
-            
+
             if (fileInput.files.length > 0 && filenameValid) {
                 processBtn.disabled = false;
             } else {
@@ -369,21 +368,21 @@
         document.getElementById('enrollmentForm').addEventListener('change', function(e) {
             const file = e.target.files[0];
             const filenameError = document.getElementById('filenameError');
-            
+
             if (file) {
                 // Get form data for filename validation
                 const firstName = document.querySelector('input[name="first_name"]').value.trim();
                 const lastName = document.querySelector('input[name="last_name"]').value.trim();
-                
+
                 if (!firstName || !lastName) {
                     showNotifier('Please fill in your first and last name first.', 'error');
                     this.value = '';
                     return;
                 }
-                
+
                 // Validate filename format
                 filenameValid = validateFilename(file.name, firstName, lastName);
-                
+
                 if (!filenameValid) {
                     filenameError.style.display = 'block';
                     filenameError.innerHTML = `
@@ -395,14 +394,14 @@
                     document.getElementById('ocrSection').classList.add('d-none');
                 } else {
                     filenameError.style.display = 'none';
-                    
+
                     const previewContainer = document.getElementById('uploadPreview');
                     const previewImage = document.getElementById('previewImage');
                     const pdfPreview = document.getElementById('pdfPreview');
-                    
+
                     previewContainer.classList.remove('d-none');
                     document.getElementById('ocrSection').classList.remove('d-none');
-                    
+
                     if (file.type.startsWith('image/')) {
                         const reader = new FileReader();
                         reader.onload = function(e) {
@@ -416,7 +415,7 @@
                         pdfPreview.style.display = 'block';
                     }
                 }
-                
+
                 // Reset verification status
                 documentVerified = false;
                 document.getElementById('nextStep4Btn').disabled = true;
@@ -432,7 +431,7 @@
         document.getElementById('processOcrBtn').addEventListener('click', function() {
             const fileInput = document.getElementById('enrollmentForm');
             const file = fileInput.files[0];
-            
+
             if (!file) {
                 showNotifier('Please select a file first.', 'error');
                 return;
@@ -446,7 +445,7 @@
             const processBtn = this;
             processBtn.disabled = true;
             processBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
-            
+
             // Get form data for verification
             const formData = new FormData();
             formData.append('processOcr', 'true');
@@ -465,7 +464,7 @@
             .then(data => {
                 processBtn.disabled = false;
                 processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
-                
+
                 if (data.status === 'success') {
                     displayVerificationResults(data.verification);
                 } else {
@@ -483,9 +482,9 @@
         function displayVerificationResults(verification) {
             const resultsContainer = document.getElementById('ocrResults');
             const feedbackContainer = document.getElementById('ocrFeedback');
-            
+
             resultsContainer.classList.remove('d-none');
-            
+
             // Update checklist items
             const checks = ['firstname', 'middlename', 'lastname', 'yearlevel', 'university', 'document'];
             const checkMap = {
@@ -496,19 +495,19 @@
                 'university': 'university',
                 'document': 'document_keywords'
             };
-            
+
             checks.forEach(check => {
                 const element = document.getElementById(`check-${check}`);
                 const icon = element.querySelector('i');
                 const isValid = verification[checkMap[check]];
-                
+
                 if (isValid) {
                     icon.className = 'bi bi-check-circle text-success me-2';
                 } else {
                     icon.className = 'bi bi-x-circle text-danger me-2';
                 }
             });
-            
+
             if (verification.overall_success) {
                 feedbackContainer.style.display = 'none';
                 feedbackContainer.className = 'alert alert-success mt-3';
@@ -546,132 +545,4 @@
         `;
         document.head.appendChild(style);
 
-        // ----- TERMS AND CONDITIONS MODAL FUNCTIONALITY ----
-        function initializeTermsAndConditions() {
-            const termsModal = document.getElementById('termsModal');
-            const termsModalBody = document.getElementById('termsModalBody');
-            const acceptTermsBtn = document.getElementById('acceptTermsBtn');
-            const agreeTermsCheckbox = document.getElementById('agreeTerms');
-            const scrollNotice = document.getElementById('scrollNotice');
-            const scrollDetector = document.getElementById('scrollDetector');
-            
-            let hasScrolledToBottom = false;
-            
-            // Reset modal state when opened
-            termsModal.addEventListener('show.bs.modal', function() {
-                hasScrolledToBottom = false;
-                acceptTermsBtn.disabled = true;
-                scrollNotice.style.display = 'block';
-                termsModalBody.scrollTop = 0;
-            });
-            
-            // Scroll detection
-            termsModalBody.addEventListener('scroll', function() {
-                const scrollTop = termsModalBody.scrollTop;
-                const scrollHeight = termsModalBody.scrollHeight;
-                const clientHeight = termsModalBody.clientHeight;
-                
-                // Check if user has scrolled to within 10px of the bottom
-                if (scrollTop + clientHeight >= scrollHeight - 10) {
-                    if (!hasScrolledToBottom) {
-                        hasScrolledToBottom = true;
-                        acceptTermsBtn.disabled = false;
-                        scrollNotice.innerHTML = '<small class="text-success"><i class="bi bi-check-circle me-1"></i>Thank you for reading the terms</small>';
-                        
-                        // Animate the accept button
-                        acceptTermsBtn.classList.add('btn-success');
-                        acceptTermsBtn.classList.remove('btn-primary');
-                        
-                        // Optional: Add a subtle animation
-                        acceptTermsBtn.style.animation = 'pulse 0.5s ease-in-out';
-                        setTimeout(() => {
-                            acceptTermsBtn.style.animation = '';
-                        }, 500);
-                    }
-                }
-            });
-            
-            // Handle accept button click
-            acceptTermsBtn.addEventListener('click', function() {
-                if (hasScrolledToBottom) {
-                    agreeTermsCheckbox.checked = true;
-                    agreeTermsCheckbox.disabled = false;
-                    
-                    // Close modal
-                    const modalInstance = bootstrap.Modal.getInstance(termsModal);
-                    modalInstance.hide();
-                    
-                    // Show success message
-                    showNotifier('Terms and conditions accepted successfully!', 'success');
-                    
-                    // Update button text to show accepted state
-                    const showTermsBtn = document.getElementById('showTermsBtn');
-                    showTermsBtn.innerHTML = 'Terms and Conditions ✓';
-                    showTermsBtn.classList.add('text-success');
-                }
-            });
-            
-            // Prevent checkbox from being unchecked once accepted
-            agreeTermsCheckbox.addEventListener('change', function() {
-                if (this.checked && hasScrolledToBottom) {
-                    // Keep it checked
-                    return;
-                } else if (this.checked && !hasScrolledToBottom) {
-                    // If somehow checked without reading, uncheck it
-                    this.checked = false;
-                    showNotifier('Please read the complete terms and conditions first.', 'error');
-                    // Show modal again
-                    const modalInstance = new bootstrap.Modal(termsModal);
-                    modalInstance.show();
-                }
-            });
-        }
-
-        // Add CSS for animations
-        const termsStyle = document.createElement('style');
-        termsStyle.textContent = `
-            @keyframes pulse {
-                0% { transform: scale(1); }
-                50% { transform: scale(1.05); }
-                100% { transform: scale(1); }
-            }
-            
-            .terms-content {
-                line-height: 1.6;
-                font-size: 14px;
-            }
-            
-            .terms-content h6 {
-                color: #495057;
-                margin-top: 1.5rem;
-                margin-bottom: 0.5rem;
-                font-weight: 600;
-            }
-            
-            .terms-content ul {
-                margin-bottom: 1rem;
-            }
-            
-            .terms-content li {
-                margin-bottom: 0.25rem;
-            }
-            
-            .modal-body {
-                max-height: 60vh;
-            }
-            
-            .scroll-notice {
-                transition: all 0.3s ease;
-            }
-            
-            .btn-link {
-                font-size: inherit;
-                vertical-align: baseline;
-            }
-            
-            #acceptTermsBtn:disabled {
-                opacity: 0.6;
-                cursor: not-allowed;
-            }
-        `;
-        document.head.appendChild(termsStyle);
+        

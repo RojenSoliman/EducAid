@@ -70,7 +70,12 @@
 body {
     font-family: var(--font-family);
     background: var(--background-base);
-    background-image: var(--background-pattern);
+    /* Use your actual background image - NO blur on main background */
+    background-image: url('../images/background.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
     min-height: 100vh;
     margin: 0;
     padding: 0;
@@ -79,9 +84,54 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Remove old background pattern, use consistent one */
+/* Soft bokeh overlay blur - NOT the background itself */
 body::before {
-    display: none;
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* Create a subtle pattern overlay that will be blurred */
+    background: 
+        radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.3) 0%, transparent 25%),
+        radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.2) 0%, transparent 30%),
+        radial-gradient(circle at 50% 80%, rgba(0, 104, 218, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 80% 20%, rgba(103, 214, 198, 0.1) 0%, transparent 35%),
+        radial-gradient(circle at 20% 60%, rgba(255, 255, 255, 0.25) 0%, transparent 20%);
+    filter: blur(25px) saturate(150%); /* Heavy blur for soft bokeh effect */
+    z-index: -2;
+    opacity: 0.8;
+}
+
+/* Light overlay for better readability */
+body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.65); /* 65% black overlay */
+    z-index: -1;
+}
+
+/* Enhanced glass card effect */
+.register-card {
+    background: rgba(255, 255, 255, 0.85) !important;
+    backdrop-filter: blur(20px) saturate(180%) brightness(110%);
+    box-shadow: 
+        0 32px 64px -12px rgba(0, 0, 0, 0.15),
+        0 0 0 1px rgba(255, 255, 255, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Remove glow effect */
+.register-card::before {
+    display: none !important;
 }
 
 /* ========================================
@@ -101,15 +151,16 @@ body::before {
    ======================================== */
 
 .register-card {
-    background: var(--card-background);
-    backdrop-filter: blur(20px);
+    background: #ffffff !important; /* Solid white */
     border-radius: var(--card-border-radius);
-    padding: var(--space-10) var(--space-8);
-    box-shadow: var(--card-shadow);
-    border: 1px solid rgba(0, 104, 218, 0.08);
+    box-shadow: 
+        0 32px 64px -12px rgba(0, 0, 0, 0.25),
+        0 8px 24px -8px rgba(0, 0, 0, 0.15),
+        0 0 0 1px rgba(0, 0, 0, 0.05) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
     position: relative;
     overflow: hidden;
-    max-width: 650px;
+    max-width: 520px !important; /* Reduced from 650px - slightly slimmer */
     width: 100%;
     margin: 0 auto;
 }
@@ -156,14 +207,7 @@ body::before {
 
 /* DELETE THIS ENTIRE SECTION */
 .step-indicator {
-    display: flex;
-    justify-content: center;
-    gap: var(--space-4);
-    margin-bottom: var(--space-8);
-    padding: var(--space-6) var(--space-4);
-    background: rgba(248, 251, 255, 0.5);
-    border-radius: var(--form-border-radius);
-    border: 1px solid rgba(0, 104, 218, 0.08);
+    display: none !important;
 }
 
 .step {
@@ -614,9 +658,10 @@ body::before {
     }
     
     .register-card {
-        padding: var(--space-8) var(--space-6);
+        padding: var(--space-8) var(--space-6) !important;
         border-radius: var(--form-border-radius);
         margin: var(--space-4);
+        max-width: 480px !important;
     }
 
     .register-card h4 {
@@ -642,12 +687,25 @@ body::before {
     .button-container .btn {
         width: 100%;
     }
+
+    body, body::before {
+        background-attachment: scroll; /* Better mobile performance */
+    }
+    
+    body::before {
+        filter: blur(6px); /* Less blur on mobile for performance */
+    }
+    
+    .register-card {
+        background: rgba(255, 255, 255, 0.95) !important; /* More solid on mobile */
+    }
 }
 
 @media (max-width: 480px) {
     .register-card {
         padding: var(--space-6) var(--space-4);
         margin: var(--space-2);
+        max-width: 95% !important;
     }
 
     .register-card h4 {

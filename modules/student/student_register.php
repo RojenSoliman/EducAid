@@ -17,7 +17,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     if ($slotInfo) {
         $countRes = pg_query_params($connection, "
             SELECT COUNT(*) AS total FROM students
-            WHERE (status = 'applicant' OR status = 'active')
+            WHERE (status = 'under_registration' OR status = 'applicant' OR status = 'active')
             AND application_date >= $1
         ", [$slotInfo['created_at']]);
         $countRow = pg_fetch_assoc($countRes);
@@ -174,20 +174,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     $uploadedFile = $_FILES['enrollment_form'];
     $fileName = basename($uploadedFile['name']);
     $targetPath = $uploadDir . $fileName;
-    
+
     // Validate filename format: Lastname_Firstname_EAF
     $formFirstName = trim($_POST['first_name'] ?? '');
     $formLastName = trim($_POST['last_name'] ?? '');
-    
+
     if (empty($formFirstName) || empty($formLastName)) {
         echo json_encode(['status' => 'error', 'message' => 'First name and last name are required for filename validation.']);
         exit;
     }
-    
+
     // Remove file extension and validate format
     $nameWithoutExt = pathinfo($fileName, PATHINFO_FILENAME);
     $expectedFormat = $formLastName . '_' . $formFirstName . '_EAF';
-    
+
     if (strcasecmp($nameWithoutExt, $expectedFormat) !== 0) {
         echo json_encode([
             'status' => 'error', 
@@ -195,7 +195,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         ]);
         exit;
     }
-    
+
     if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
         echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded file.']);
         exit;
@@ -213,14 +213,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     // Get university and year level names for comparison
     $universityName = '';
     $yearLevelName = '';
-    
+
     if ($formData['university_id'] > 0) {
         $uniResult = pg_query_params($connection, "SELECT name FROM universities WHERE university_id = $1", [$formData['university_id']]);
         if ($uniRow = pg_fetch_assoc($uniResult)) {
             $universityName = $uniRow['name'];
         }
     }
-    
+
     if ($formData['year_level_id'] > 0) {
         $yearResult = pg_query_params($connection, "SELECT name, code FROM year_levels WHERE year_level_id = $1", [$formData['year_level_id']]);
         if ($yearRow = pg_fetch_assoc($yearResult)) {
@@ -232,10 +232,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     $outputBase = $uploadDir . 'ocr_' . pathinfo($fileName, PATHINFO_FILENAME);
     $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) .
                " --oem 1 --psm 6 -l eng 2>&1";
-    
+
     $tesseractOutput = shell_exec($command);
     $outputFile = $outputBase . ".txt";
-    
+
     if (!file_exists($outputFile)) {
         echo json_encode(['status' => 'error', 'message' => 'OCR processing failed. Please ensure the document is clear and readable.']);
         exit;
@@ -243,7 +243,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
 
     $ocrText = file_get_contents($outputFile);
     $ocrTextLower = strtolower($ocrText);
-    
+
     // Verification results
     $verification = [
         'first_name' => false,
@@ -273,7 +273,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     if (!empty($yearLevelName)) {
         // Create specific variations for the selected year level only
         $selectedYearVariations = [];
-        
+
         // Extract year number from the year level name
         if (stripos($yearLevelName, '1st') !== false || stripos($yearLevelName, 'first') !== false) {
             $selectedYearVariations = ['1st year', 'first year', '1st yr', 'year 1', 'yr 1', 'freshman'];
@@ -288,7 +288,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         } elseif (stripos($yearLevelName, 'graduate') !== false || stripos($yearLevelName, 'grad') !== false) {
             $selectedYearVariations = ['graduate', 'grad student', 'masters', 'phd', 'doctoral'];
         }
-        
+
         // Check if any of the specific year level variations are found
         foreach ($selectedYearVariations as $variation) {
             if (stripos($ocrText, $variation) !== false) {
@@ -318,14 +318,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         'tuition', 'fees', 'semester', 'registration', 'course', 'subject',
         'grade', 'transcript', 'record', 'university', 'college', 'school'
     ];
-    
+
     $keywordMatches = 0;
     foreach ($documentKeywords as $keyword) {
         if (stripos($ocrText, $keyword) !== false) {
             $keywordMatches++;
         }
     }
-    
+
     if ($keywordMatches >= 3) {
         $verification['document_keywords'] = true;
     }
@@ -404,7 +404,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
     $countRes = pg_query_params($connection, "
         SELECT COUNT(*) AS total FROM students
-        WHERE (status = 'applicant' OR status = 'active')
+        WHERE (status = 'under_registration' OR status = 'applicant' OR status = 'active')
         AND application_date >= $1
     ", [$slotInfo['created_at']]);
     $countRow = pg_fetch_assoc($countRes);
@@ -419,42 +419,42 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     // Generate unique student ID with format: currentyear-yearlevel-######
     function generateUniqueStudentId($connection, $year_level_id) {
         $current_year = date('Y');
-        
+
         // Get year level code from year_level_id
         $year_query = pg_query_params($connection, "SELECT code FROM year_levels WHERE year_level_id = $1", [$year_level_id]);
         $year_row = pg_fetch_assoc($year_query);
-        
+
         if (!$year_row) {
             return false;
         }
-        
+
         // Extract the numeric part from year level (e.g., "1ST" -> "1", "2ND" -> "2")
         $year_level_code = $year_row['code'];
         $year_level_num = preg_replace('/[^0-9]/', '', $year_level_code);
         if (empty($year_level_num)) {
             $year_level_num = '0'; // fallback for non-numeric codes like "GRAD"
         }
-        
+
         $max_attempts = 100; // Prevent infinite loop
         $attempts = 0;
-        
+
         do {
             // Generate 6 random digits
             $random_digits = str_pad(mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
             $unique_id = $current_year . '-' . $year_level_num . '-' . $random_digits;
-            
+
             // Check if this ID already exists
             $check_query = pg_query_params($connection, "SELECT 1 FROM students WHERE unique_student_id = $1", [$unique_id]);
             $exists = pg_num_rows($check_query) > 0;
-            
+
             $attempts++;
-            
+
         } while ($exists && $attempts < $max_attempts);
-        
+
         if ($attempts >= $max_attempts) {
             return false; // Could not generate unique ID
         }
-        
+
         return $unique_id;
     }
 
@@ -466,7 +466,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     }
 
     $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'under_registration', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $municipality_id,
@@ -489,6 +489,31 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $student_id_row = pg_fetch_assoc($result);
         $student_id = $student_id_row['student_id'];
 
+        // Save enrollment form if it exists in temp folder
+        $tempFormPath = 'assets/uploads/temp/';
+        $tempFiles = glob($tempFormPath . '*');
+        if (!empty($tempFiles)) {
+            // Create permanent upload directory
+            $permanentDir = '../../assets/uploads/enrollment_forms/';
+            if (!file_exists($permanentDir)) {
+                mkdir($permanentDir, 0777, true);
+            }
+
+            // Move the file to permanent location
+            $tempFile = $tempFiles[0]; // Get the first (and should be only) file
+            $filename = basename($tempFile);
+            $permanentPath = $permanentDir . $student_id . '_' . $filename;
+
+            if (copy($tempFile, $permanentPath)) {
+                // Save form record to database
+                $formQuery = "INSERT INTO enrollment_forms (student_id, file_path, original_filename) VALUES ($1, $2, $3)";
+                pg_query_params($connection, $formQuery, [$student_id, $permanentPath, $filename]);
+
+                // Clean up temp file
+                unlink($tempFile);
+            }
+        }
+
         $semester = $slotInfo['semester'];
         $academic_year = $slotInfo['academic_year'];
         $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";
@@ -496,11 +521,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
         unset($_SESSION['otp_verified']);
 
-        echo "<script>alert('Registration successful!'); window.location.href = '../../unified_login.php';</script>";
+        echo "<script>alert('Registration submitted successfully! Your application is under review. You will receive an email notification once approved.'); window.location.href = '../../unified_login.php';</script>";
         exit;
     } else {
         echo "<script>alert('Registration failed due to a database error. Please try again.');</script>";
-        
+
     }
 }
 ?>
@@ -532,41 +557,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         }
         .notifier.success { background-color: #d4edda; color: #155724; }
         .verified-email { background-color: #e9f7e9; color: #28a745; }
-        
-        .password-input-container {
-            position: relative;
-        }
-
-        .password-toggle {
-            position: absolute;
-            right: 0;
-            top: 0;
-            bottom: 0;
-            border-top-left-radius: 0;
-            border-bottom-left-radius: 0;
-            z-index: 3;
-            border-left: none;
-        }
-
-        .strength-bar {
-            width: 100%;
-            height: 6px;
-            background-color: #e9ecef;
-            border-radius: 3px;
-            overflow: hidden;
-            margin-top: 0.5rem;
-        }
-
-        .strength-fill {
-            height: 100%;
-            transition: all 0.3s ease;
-            border-radius: 3px;
-        }
-
-        .strength-text {
-            font-size: 0.875rem;
-            margin-top: 0.25rem;
-        }
     </style>
 </head>
 <body>
@@ -780,13 +770,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                         <small id="strengthText" class="text-muted"></small>
                     </div>
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="agreeTerms" name="agree_terms" required disabled />
-                        <label class="form-check-label">
-                            I agree to the 
-                            <button type="button" class="btn btn-link p-0 text-decoration-underline" id="showTermsBtn" data-bs-toggle="modal" data-bs-target="#termsModal">
-                                Terms and Conditions
-                            </button>
-                        </label>
+                        <input type="checkbox" class="form-check-input" name="agree_terms" required />
+                        <label class="form-check-label">I agree to the Terms</label>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
                     <button type="submit" name="register" class="btn btn-success w-100">Submit</button>
@@ -795,151 +780,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         </div>
     </div>
     <div id="notifier" class="notifier"></div>
-
-    <!-- Terms and Conditions Modal -->
-<div class="modal fade" id="termsModal" tabindex="-1" aria-labelledby="termsModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="termsModalLabel">
-                    <i class="bi bi-file-text me-2"></i>Terms and Conditions
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" id="termsModalBody">
-                <div class="terms-content">
-                    <h6><strong>EducAid Student Financial Assistance Program - Terms and Conditions</strong></h6>
-                    
-                    <p><strong>Effective Date:</strong> <?php echo date('F d, Y'); ?></p>
-                    
-                    <h6>1. ACCEPTANCE OF TERMS</h6>
-                    <p>By registering for the EducAid Student Financial Assistance Program, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.</p>
-                    
-                    <h6>2. ELIGIBILITY REQUIREMENTS</h6>
-                    <p>To be eligible for the EducAid program, you must:</p>
-                    <ul>
-                        <li>Be a bona fide resident of the participating municipality</li>
-                        <li>Be currently enrolled or accepted in an accredited educational institution</li>
-                        <li>Provide accurate and complete information during registration</li>
-                        <li>Submit all required documents as specified in the application process</li>
-                        <li>Meet the academic and financial criteria set by the program</li>
-                    </ul>
-                    
-                    <h6>3. PROGRAM BENEFITS</h6>
-                    <p>EducAid provides financial assistance for qualified students including but not limited to:</p>
-                    <ul>
-                        <li>Tuition fee assistance</li>
-                        <li>School supplies allowance</li>
-                        <li>Transportation assistance</li>
-                        <li>Other educational support as determined by the program administrators</li>
-                    </ul>
-                    
-                    <h6>4. OBLIGATIONS AND RESPONSIBILITIES</h6>
-                    <p>As a program beneficiary, you agree to:</p>
-                    <ul>
-                        <li>Maintain satisfactory academic performance as defined by your institution</li>
-                        <li>Attend all required program activities and orientations</li>
-                        <li>Submit progress reports and required documentation on time</li>
-                        <li>Use the financial assistance solely for educational purposes</li>
-                        <li>Notify the program administrators of any changes in your academic status</li>
-                        <li>Participate in community service activities as required by the program</li>
-                    </ul>
-                    
-                    <h6>5. DATA PRIVACY AND PROTECTION</h6>
-                    <p>We are committed to protecting your personal information in accordance with applicable data privacy laws:</p>
-                    <ul>
-                        <li>Your personal data will be used solely for program administration purposes</li>
-                        <li>Information may be shared with partner institutions and government agencies as necessary</li>
-                        <li>You have the right to access, correct, and request deletion of your personal data</li>
-                        <li>We implement appropriate security measures to protect your information</li>
-                    </ul>
-                    
-                    <h6>6. ACADEMIC REQUIREMENTS</h6>
-                    <p>Continued participation in the program requires:</p>
-                    <ul>
-                        <li>Maintenance of a minimum GPA as specified by your institution</li>
-                        <li>Completion of required credit hours per semester</li>
-                        <li>Timely submission of academic transcripts and progress reports</li>
-                        <li>Good standing with your educational institution</li>
-                    </ul>
-                    
-                    <h6>7. TERMINATION AND SUSPENSION</h6>
-                    <p>The program reserves the right to suspend or terminate your participation if:</p>
-                    <ul>
-                        <li>You fail to meet academic requirements</li>
-                        <li>You provide false or misleading information</li>
-                        <li>You violate any terms and conditions of the program</li>
-                        <li>You engage in conduct that reflects poorly on the program</li>
-                        <li>Funding for the program is discontinued</li>
-                    </ul>
-                    
-                    <h6>8. APPEAL PROCESS</h6>
-                    <p>If your application is denied or your participation is terminated, you may:</p>
-                    <ul>
-                        <li>Submit a written appeal within 30 days of notification</li>
-                        <li>Provide additional documentation to support your appeal</li>
-                        <li>Request a hearing before the appeals committee</li>
-                    </ul>
-                    
-                    <h6>9. LIMITATION OF LIABILITY</h6>
-                    <p>The EducAid program and its administrators shall not be liable for:</p>
-                    <ul>
-                        <li>Any direct, indirect, or consequential damages arising from program participation</li>
-                        <li>Delays or interruptions in program services</li>
-                        <li>Changes in program benefits or requirements</li>
-                        <li>Actions of third-party institutions or service providers</li>
-                    </ul>
-                    
-                    <h6>10. MODIFICATIONS</h6>
-                    <p>These terms and conditions may be modified at any time. Significant changes will be communicated to participants through official program channels. Continued participation constitutes acceptance of modified terms.</p>
-                    
-                    <h6>11. GOVERNING LAW</h6>
-                    <p>These terms and conditions are governed by the laws of the Philippines and any disputes shall be resolved in the appropriate courts within the jurisdiction.</p>
-                    
-                    <h6>12. CONTACT INFORMATION</h6>
-                    <p>For questions regarding these terms and conditions or the EducAid program, please contact:</p>
-                    <p>
-                        <strong>EducAid Program Office</strong><br>
-                        Email: info@educaid.gov.ph<br>
-                        Phone: (02) 8123-4567<br>
-                        Address: Municipal Hall, Your Municipality
-                    </p>
-                    
-                    <h6>13. ACKNOWLEDGMENT</h6>
-                    <p>By checking the "I agree to the Terms and Conditions" box and submitting your registration, you acknowledge that:</p>
-                    <ul>
-                        <li>You have read and understood all terms and conditions</li>
-                        <li>You agree to comply with all program requirements</li>
-                        <li>You understand the consequences of non-compliance</li>
-                        <li>You provide your consent for the processing of your personal data</li>
-                        <li>All information provided in your application is true and accurate</li>
-                    </ul>
-                    
-                    <hr>
-                    <p class="text-muted"><small>Last updated: <?php echo date('F d, Y'); ?></small></p>
-                    
-                    <!-- Scroll detection element -->
-                    <div id="scrollDetector" style="height: 1px;"></div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <div class="d-flex justify-content-between align-items-center w-100">
-                    <div class="scroll-notice text-muted" id="scrollNotice">
-                        <small><i class="bi bi-arrow-down me-1"></i>Please scroll down to read all terms</small>
-                    </div>
-                    <div>
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-primary" id="acceptTermsBtn" disabled>
-                            <i class="bi bi-check-circle me-2"></i>I Agree
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-    <script type="module" src="../../assets/js/student/student-registration.js"></script>
-    <script src="../../assets/js/bootstrap.bundle.min.js"></script>
+    <script src="../../assets/js/student/user_registration.js"></script>
 </body>
 </html>
