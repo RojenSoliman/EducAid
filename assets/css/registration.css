@@ -154,6 +154,7 @@ body::before {
    STEP INDICATOR - ENHANCED BUT CONSISTENT
    ======================================== */
 
+/* DELETE THIS ENTIRE SECTION */
 .step-indicator {
     display: flex;
     justify-content: center;
