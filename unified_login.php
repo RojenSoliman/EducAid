@@ -247,7 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
 
 </head>
-<body>
+<body class = "login-page"> 
     <div class="container-fluid p-0">
         <div class="row g-0 min-vh-100">
             <!-- Brand Section - Hidden on mobile, visible on tablet+ -->
@@ -480,6 +480,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             </div>
         </div>
     </div>
+
+    <?php
+    include_once 'includes/footer.php';
+    ?>
 
     <script src="assets/js/bootstrap.bundle.min.js"></script>
     <script src="assets/js/login.js"></script>

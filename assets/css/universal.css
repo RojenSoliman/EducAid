@@ -925,9 +925,9 @@ body {
     }
     
     /* Fix Bootstrap Grid Layout */
-    .container-fluid {
-        height: 100vh;
-        overflow: hidden;
+    .login-page .container-fluid {
+    height: 100vh;
+    overflow: hidden;
     }
     
     .row.g-0 {
@@ -1329,3 +1329,28 @@ a.text-primary:hover,
     display: none;
 }
 
+/* REMOVE OR COMMENT OUT THESE LINES IN universal.css */
+
+/* 
+html, body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.container-fluid {
+    flex: 1;
+}
+
+.container.py-5 {
+    flex: 1;
+}
+*/
+
+/* Footer safety so it never inherits full-height rules */
+footer .container,
+footer .container-fluid {
+    height: auto !important;
+    overflow: visible !important;
+}
+footer { margin-top: 0 !important; }
