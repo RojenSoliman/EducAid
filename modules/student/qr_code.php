@@ -1,126 +1,237 @@
 <?php
+include '../../config/database.php';
 session_start();
 
-// Initialize or retrieve QR code list
-if (!isset($_SESSION['qr_codes'])) {
-    $_SESSION['qr_codes'] = [];
+// Check if student is logged in
+if (!isset($_SESSION['student_username']) || !isset($_SESSION['student_id'])) {
+    header("Location: ../../unified_login.php");
+    exit;
 }
 
-// Generate a new QR entry
-if (isset($_POST['generate'])) {
-    $payroll_number = rand(1, 50);
-    $unique_id = uniqid('qr_');
-    $_SESSION['qr_codes'][] = [
-        'payroll_number' => $payroll_number,
-        'unique_id' => $unique_id,
-        'status' => 'Pending'
-    ];
+$student_id = $_SESSION['student_id'];
+
+// Get student information including QR code data
+$query = "
+    SELECT s.student_id, s.first_name, s.middle_name, s.last_name, 
+           s.payroll_no, s.unique_student_id, s.status,
+           q.unique_id as qr_unique_id, q.status as qr_status, q.created_at as qr_created_at
+    FROM students s
+    LEFT JOIN qr_codes q ON s.unique_student_id = q.student_unique_id AND s.payroll_no = q.payroll_number
+    WHERE s.student_id = $1
+";
+
+$result = pg_query_params($connection, $query, [$student_id]);
+$student_data = pg_fetch_assoc($result);
+
+if (!$student_data) {
+    header("Location: ../../unified_login.php");
+    exit;
 }
 
-// Remove a specific QR
-if (isset($_POST['remove'])) {
-    $index = $_POST['remove'];
-    unset($_SESSION['qr_codes'][$index]);
-    $_SESSION['qr_codes'] = array_values($_SESSION['qr_codes']);
-}
+$has_qr_code = !empty($student_data['qr_unique_id']) && !empty($student_data['payroll_no']);
+$qr_image_url = '';
 
-// Reset all
-if (isset($_POST['reset'])) {
-    unset($_SESSION['qr_codes']);
-}
-
-// Mark scanned
-if (isset($_POST['scan'])) {
-    $index = $_POST['scan'];
-    $_SESSION['qr_codes'][$index]['status'] = 'Done';
+if ($has_qr_code) {
+    // Generate QR code image URL
+    $qr_image_url = '../admin/phpqrcode/generate_qr.php?data=' . urlencode($student_data['qr_unique_id']);
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Generate Unique QR Code</title>
+  <title>My QR Code - EducAid</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="stylesheet" href="../../assets/css/bootstrap.min.css">
   <link rel="stylesheet" href="../../assets/css/student/homepage.css">
   <link rel="stylesheet" href="../../assets/css/student/sidebar.css">
-  <link rel="stylesheet" href="../../assets/css/student/qr_code.css">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <style>
     body {
-      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #0068DA 0%, #0088C8 50%, #00B1C6 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      min-height: 100vh;
       margin: 0;
       padding: 0;
-      background: #f4f7f6;
+      overflow-x: hidden;
     }
-    .container {
-      max-width: 800px;
-      margin: 2rem auto;
-      padding: 20px 30px;
-      background-color: #fff;
-      border-radius: 8px;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-      text-align: center;
+    
+    #wrapper {
+      width: 100%;
+      overflow-x: hidden;
     }
-    button, .download-button {
-      background-color: #4CAF50;
-      color: white;
-      padding: 10px 20px;
-      margin: 8px 5px;
-      border: none;
-      border-radius: 5px;
-      font-size: 16px;
+    
+    .main-content {
+      padding: 2rem;
+      width: 100%;
+      max-width: 100%;
+    }
+    
+    .home-section {
+      margin-left: 0;
+      transition: margin-left 0.3s ease;
+      width: 100%;
+      min-height: 100vh;
+    }
+    
+    .home-section.sidebar-open {
+      margin-left: 250px;
+    }
+    
+    nav {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      width: 100%;
+    }
+    
+    #menu-toggle {
+      font-size: 2rem;
+      color: #007bff;
       cursor: pointer;
+      padding: 0.75rem;
+      border-radius: 8px;
+      transition: all 0.3s ease;
+      background: rgba(0, 123, 255, 0.1);
+      border: 2px solid transparent;
+    }
+    
+    #menu-toggle:hover {
+      background: rgba(0, 123, 255, 0.2);
+      color: #0056b3;
+      border-color: #007bff;
+      transform: scale(1.05);
+    }
+    
+    .qr-card {
+      background: white;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      padding: 2rem;
+      text-align: center;
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    
+    .student-info {
+      background: linear-gradient(135deg, #007bff, #0056b3);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 10px;
+      margin-bottom: 2rem;
+    }
+    
+    .qr-display {
+      padding: 2rem;
+      background: #f8f9fa;
+      border-radius: 10px;
+      margin: 2rem 0;
+    }
+    
+    .qr-image {
+      max-width: 350px;
+      height: auto;
+      border: 3px solid #007bff;
+      border-radius: 10px;
+      padding: 15px;
+      background: white;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+    
+    .payroll-badge {
+      background: linear-gradient(45deg, #28a745, #20c997);
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 25px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      display: inline-block;
+      margin: 1rem 0;
+    }
+    
+    .status-badge {
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.9rem;
+    }
+    
+    .status-active { background: #d4edda; color: #155724; }
+    .status-pending { background: #fff3cd; color: #856404; }
+    .status-inactive { background: #f8d7da; color: #721c24; }
+    
+    .no-qr-message {
+      background: linear-gradient(135deg, #ffc107, #e0a800);
+      color: #212529;
+      padding: 2rem;
+      border-radius: 10px;
+      margin: 2rem 0;
+    }
+    
+    .download-btn {
+      background: linear-gradient(45deg, #007bff, #0056b3);
+      border: none;
+      color: white;
+      padding: 12px 30px;
+      border-radius: 25px;
+      font-weight: 600;
       text-decoration: none;
       display: inline-block;
+      transition: all 0.3s ease;
+      margin-top: 1rem;
     }
-    button:hover, .download-button:hover {
-      background-color: #45a049;
+    
+    .download-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0,123,255,0.4);
+      color: white;
     }
-    .qr-container {
-      margin-top: 20px;
+    
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
     }
-    img {
-      margin-top: 10px;
-      width: 200px;
-      height: 200px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      padding: 5px;
+    
+    .info-item {
+      background: rgba(255,255,255,0.2);
+      padding: 1rem;
+      border-radius: 8px;
+      backdrop-filter: blur(10px);
     }
-    .payroll-number {
-      font-size: 18px;
-      font-weight: bold;
-      color: #333;
+    
+    .info-label {
+      font-size: 0.9rem;
+      opacity: 0.9;
+      margin-bottom: 0.5rem;
     }
-    table {
-      width: 100%;
-      margin-top: 30px;
-      border-collapse: collapse;
+    
+    .info-value {
+      font-size: 1.1rem;
+      font-weight: 600;
     }
-    th, td {
-      padding: 10px;
-      text-align: center;
-      border: 1px solid #ddd;
-    }
-    th {
-      background-color: #f2f2f2;
-    }
-    .remove-button { background-color: #dc3545; }
-    .remove-button:hover { background-color: #c82333; }
-    .reset-button { background-color: #17a2b8; }
-    .reset-button:hover { background-color: #138496; }
-    .scan-button { background-color: #007bff; }
-    .scan-button:hover { background-color: #0056b3; }
-    .done-status { border: 2px solid green; color: green; }
-    .fade-in { animation: fadeIn 0.8s ease-in-out; }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @media (max-width: 600px) {
-      .container { width: 95%; padding: 15px; }
-      img { width: 150px; height: 150px; }
-      button, .download-button { font-size: 14px; padding: 8px 14px; }
+
+    @media (max-width: 768px) {
+      .main-content { padding: 1rem; }
+      .qr-card { padding: 1.5rem; }
+      .qr-image { max-width: 280px; }
+      .home-section { margin-left: 0 !important; }
+      nav { 
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+      }
+      #menu-toggle {
+        font-size: 1.8rem;
+        padding: 0.6rem;
+      }
     }
   </style>
 </head>
@@ -129,69 +240,105 @@ if (isset($_POST['scan'])) {
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
     <section class="home-section" id="page-content-wrapper">
-      <nav>
-        <div class="sidebar-toggle px-4 py-3">
+      <nav class="px-4 py-3 d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
           <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
         </div>
       </nav>
-      <div class="container py-5">
-        <h1>Generate Unique QR Code</h1>
-
-        <form method="post">
-          <button type="submit" name="generate">Generate QR Code</button>
-        </form>
-
-        <?php if (isset($_POST['generate'])): ?>
-          <?php
-            $last = $_SESSION['qr_codes'][count($_SESSION['qr_codes']) - 1];
-            $qr_url = "phpqrcode/generate_qr.php?data=" . urlencode($last['unique_id']);
-          ?>
-          <div class="qr-container fade-in">
-            <div class="payroll-number">Payroll Number: <?= $last['payroll_number'] ?></div>
-            <h2>Your Unique QR Code</h2>
-            <img src="<?= $qr_url ?>" alt="Generated QR Code">
-            <a href="<?= $qr_url ?>" download="qr_<?= $last['payroll_number'] ?>.png" class="download-button">Download QR</a>
+      
+      <div class="main-content">
+        <div class="qr-card">
+          <!-- Student Information Header -->
+          <div class="student-info">
+            <h2 class="mb-3">
+              <i class="bi bi-qr-code me-2"></i>My QR Code
+            </h2>
+            <div class="info-grid">
+              <div class="info-item">
+                <div class="info-label">Student Name</div>
+                <div class="info-value">
+                  <?= htmlspecialchars($student_data['first_name'] . ' ' . $student_data['middle_name'] . ' ' . $student_data['last_name']) ?>
+                </div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Student ID</div>
+                <div class="info-value"><?= htmlspecialchars($student_data['unique_student_id']) ?></div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Status</div>
+                <div class="info-value">
+                  <span class="status-badge status-<?= strtolower($student_data['status']) ?>">
+                    <?= ucfirst($student_data['status']) ?>
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-        <?php endif; ?>
 
-        <h2>Generated QR Codes List</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Payroll Number</th>
-              <th>Unique ID</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php foreach ($_SESSION['qr_codes'] as $index => $qr): ?>
-              <tr class="<?= ($qr['status'] == 'Done') ? 'done-status' : ''; ?>">
-                <td><?= $qr['payroll_number'] ?></td>
-                <td><?= $qr['unique_id'] ?></td>
-                <td><?= $qr['status'] ?></td>
-                <td>
-                  <?php if ($qr['status'] != 'Done'): ?>
-                    <form method="post" style="display:inline;">
-                      <button type="submit" name="scan" value="<?= $index ?>" class="scan-button">Scan</button>
-                    </form>
-                  <?php endif; ?>
-                  <form method="post" style="display:inline;">
-                    <button type="submit" name="remove" value="<?= $index ?>" class="remove-button">Remove</button>
-                  </form>
-                </td>
-              </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-
-        <form method="post">
-          <button type="submit" name="reset" class="reset-button">Reset All</button>
-        </form>
+          <?php if ($has_qr_code): ?>
+            <!-- QR Code Display -->
+            <div class="qr-display">
+              <div class="payroll-badge">
+                <i class="bi bi-hash me-2"></i>Payroll Number: <?= htmlspecialchars($student_data['payroll_no']) ?>
+              </div>
+              
+              <div class="mt-4">
+                <h4 class="text-primary mb-3">Your QR Code</h4>
+                <img src="<?= $qr_image_url ?>" alt="Student QR Code" class="qr-image" 
+                     onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <div style="display:none;" class="alert alert-danger">
+                  <i class="bi bi-exclamation-triangle me-2"></i>Error loading QR code image
+                </div>
+              </div>
+              
+              <div class="mt-3">
+                <small class="text-muted">
+                  <i class="bi bi-info-circle me-1"></i>
+                  QR Code ID: <?= htmlspecialchars($student_data['qr_unique_id']) ?><br>
+                  Generated: <?= date('F j, Y \a\t g:i A', strtotime($student_data['qr_created_at'])) ?>
+                </small>
+              </div>
+              
+              <a href="<?= $qr_image_url ?>" download="EducAid_QR_<?= $student_data['payroll_no'] ?>.png" class="download-btn">
+                <i class="bi bi-download me-2"></i>Download QR Code
+              </a>
+            </div>
+            
+            <div class="alert alert-info mt-3">
+              <i class="bi bi-lightbulb me-2"></i>
+              <strong>How to use:</strong> Present this QR code during verification processes or when attending scheduled activities.
+            </div>
+            
+          <?php else: ?>
+            <!-- No QR Code Message -->
+            <div class="no-qr-message">
+              <h4><i class="bi bi-exclamation-circle me-2"></i>No QR Code Available</h4>
+              <p class="mb-3">Your QR code has not been generated yet. This usually means:</p>
+              <ul class="text-start">
+                <li>Your application is still being processed</li>
+                <li>Payroll numbers haven't been assigned yet</li>
+                <li>The admin hasn't finalized the student list</li>
+              </ul>
+              <div class="mt-3">
+                <small class="text-muted">
+                  <i class="bi bi-clock me-1"></i>
+                  Please check back later or contact the admin for more information.
+                </small>
+              </div>
+            </div>
+            
+            <div class="alert alert-primary">
+              <i class="bi bi-info-circle me-2"></i>
+              <strong>Current Status:</strong> <?= ucfirst($student_data['status']) ?><br>
+              Your QR code will be automatically generated once your status becomes "Active" and payroll numbers are assigned.
+            </div>
+          <?php endif; ?>
+        </div>
       </div>
     </section>
   </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/homepage.js"></script>
-  <script src="../../assets/js/student/sidebar.js"></script>
 </body>
 </html>

@@ -90,6 +90,12 @@ if (isset($_SESSION['admin_id'])) {
       </a>
     </li>
     <?php endif; ?>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'manage_distributions.php' ? 'active' : ''; ?>">
+      <a href="manage_distributions.php">
+        <i class="bi bi-box-seam icon"></i>
+        <span class="links_name">Manage Distributions</span>
+      </a>
+    </li>
     <?php endif; ?>
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'admin_notifications.php' ? 'active' : ''; ?>">
       <a href="admin_notifications.php">
