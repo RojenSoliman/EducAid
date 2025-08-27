@@ -779,6 +779,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             </form>
         </div>
     </div>
+    
+    <?php
+    // Set custom login URL for this page
+    $footer_login_url = '../../unified_login.php';
+    
+    // Include the modular footer
+    include_once '../../includes/footer.php';
+    ?>
+
     <div id="notifier" class="notifier"></div>
     <script src="../../assets/js/student/user_registration.js"></script>
 </body>
