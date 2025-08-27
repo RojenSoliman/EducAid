@@ -333,13 +333,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                     <form id="loginForm">
                                         <div class="form-group mb-3">
                                             <label class="form-label">Email Address</label>
-                                            <input type="email" class="form-control form-control-lg" id="email" name="email" 
+                                            <input type="email" class="form-control form-control" id="email" name="email" 
                                                    placeholder="Enter your email address" required autocomplete="email">
                                         </div>
                                         <div class="form-group mb-4">
                                             <label class="form-label">Password</label>
                                             <div class="position-relative">
-                                                <input type="password" class="form-control form-control-lg" id="password" name="password" 
+                                                <input type="password" class="form-control form-control" id="password" name="password" 
                                                        placeholder="Enter your password" required autocomplete="current-password">
                                                 <button type="button" class="btn btn-link position-absolute end-0 top-50 translate-middle-y" 
                                                         onclick="togglePassword('password')" style="text-decoration: none; padding: 0 15px;">
@@ -369,7 +369,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                     </div>
                                     <form id="otpForm">
                                         <div class="form-group mb-4">
-                                            <input type="text" class="form-control form-control-lg otp-input text-center" 
+                                            <input type="text" class="form-control form-control otp-input text-center" 
                                                    id="login_otp" name="login_otp" placeholder="000000" maxlength="6" required
                                                    style="font-size: 1.5rem; letter-spacing: 0.5em;">
                                         </div>
@@ -396,7 +396,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                     <form id="forgotForm">
                                         <div class="form-group mb-4">
                                             <label class="form-label">Email Address</label>
-                                            <input type="email" class="form-control form-control-lg" id="forgot_email" name="forgot_email" required>
+                                            <input type="email" class="form-control form-control" id="forgot_email" name="forgot_email" required>
                                         </div>
                                         <div class="d-grid">
                                             <button type="submit" class="btn btn-primary btn-lg">
@@ -420,7 +420,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                     </div>
                                     <form id="forgotOtpForm">
                                         <div class="form-group mb-4">
-                                            <input type="text" class="form-control form-control-lg otp-input text-center" 
+                                            <input type="text" class="form-control form-control otp-input text-center" 
                                                    id="forgot_otp" name="forgot_otp" placeholder="000000" maxlength="6" required
                                                    style="font-size: 1.5rem; letter-spacing: 0.5em;">
                                         </div>
@@ -447,13 +447,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                     <form id="newPasswordForm">
                                         <div class="form-group mb-3">
                                             <label class="form-label">New Password</label>
-                                            <input type="password" class="form-control form-control-lg" id="forgot_new_password" 
+                                            <input type="password" class="form-control form-control" id="forgot_new_password" 
                                                    name="forgot_new_password" placeholder="Minimum 12 characters" minlength="12" required>
                                             <div class="form-text">Password must be at least 12 characters long</div>
                                         </div>
                                         <div class="form-group mb-4">
                                             <label class="form-label">Confirm New Password</label>
-                                            <input type="password" class="form-control form-control-lg" id="confirm_password" 
+                                            <input type="password" class="form-control form-control" id="confirm_password" 
                                                    name="confirm_password" placeholder="Re-enter your password" required>
                                         </div>
                                         <div class="d-grid">

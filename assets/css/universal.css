@@ -389,12 +389,12 @@ body {
     color: var(--text-muted);
 }
 
-/* Enhanced Form Styles for Simplified Login */
+/* Enhanced Form Styles for Simplified Login - UPDATED */
 .form-control-lg {
-    padding: var(--space-4) var(--space-5);
-    font-size: var(--text-lg);
+    padding: var(--space-3) var(--space-4);     /* Reduced padding */
+    font-size: var(--text-base);                /* Normal font size */
     border-radius: var(--radius-md);
-    min-height: 56px;
+    min-height: 48px;                           /* Reduced height */
 }
 
 .form-control-lg:focus {
@@ -429,9 +429,9 @@ body {
 /* Enhanced Login Form */
 @media (min-width: 992px) {
     .form-control-lg {
-        padding: var(--space-5) var(--space-6);
-        font-size: var(--text-xl);
-        min-height: 60px;
+        padding: var(--space-3) var(--space-5);     /* Reduced padding */
+        font-size: var(--text-base);                /* Normal font size */
+        min-height: 50px;                           /* Reduced height */
     }
 }
 
