@@ -1,0 +1,396 @@
+// EducAid Login System - Complete JavaScript Implementation
+(function() {
+    'use strict';
+
+    // Utility Functions
+    function hideAllSteps() {
+        document.querySelectorAll('.step').forEach(step => {
+            step.classList.remove('active');
+        });
+    }
+
+    function showMessage(message, type) {
+        const messagesContainer = document.getElementById('messages');
+        messagesContainer.innerHTML = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        
+        // Auto-dismiss after 5 seconds
+        setTimeout(() => {
+            const alert = messagesContainer.querySelector('.alert');
+            if (alert) {
+                alert.remove();
+            }
+        }, 5000);
+    }
+
+    function clearMessages() {
+        const messagesContainer = document.getElementById('messages');
+        messagesContainer.innerHTML = '';
+    }
+
+    function updateStepIndicators(activeStep) {
+        const stepIndicatorContainer = document.querySelector('.step-indicators');
+        if (!stepIndicatorContainer) return;
+        
+        // Reset all indicators
+        document.querySelectorAll('.step-indicator').forEach(indicator => {
+            indicator.classList.remove('active');
+        });
+        
+        // Map steps to indicator numbers
+        const stepMap = {
+            'step1': null,        // No indicator for main login
+            'step2': 1,          // First indicator for OTP verification
+            'forgotStep1': 1,    // First indicator for forgot password email
+            'forgotStep2': 2,    // Second indicator for forgot password OTP
+            'forgotStep3': 3     // Third indicator for new password
+        };
+        
+        const indicatorNumber = stepMap[activeStep];
+        
+        // Hide indicators for main login step
+        if (activeStep === 'step1') {
+            stepIndicatorContainer.style.display = 'none';
+            return;
+        }
+        
+        // Show indicators for multi-step processes
+        stepIndicatorContainer.style.display = 'flex';
+        
+        if (indicatorNumber) {
+            const indicator = document.getElementById(`indicator${indicatorNumber}`);
+            if (indicator) {
+                indicator.classList.add('active');
+            }
+        }
+    }
+
+    function setButtonLoading(button, loading, originalText = '') {
+        if (loading) {
+            button.disabled = true;
+            button.innerHTML = `
+                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                Processing...
+            `;
+        } else {
+            button.disabled = false;
+            button.innerHTML = originalText || button.innerHTML;
+        }
+    }
+
+    function makeRequest(url, formData, successCallback, errorCallback) {
+        fetch(url, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => successCallback(data))
+        .catch(error => {
+            console.error('Error:', error);
+            if (errorCallback) errorCallback(error);
+            showMessage('Connection error. Please try again.', 'danger');
+        });
+    }
+
+    function isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+
+    // Step Navigation Functions
+    window.showStep1 = function() { 
+        hideAllSteps(); 
+        document.getElementById('step1')?.classList.add('active'); 
+        updateStepIndicators('step1');
+        clearMessages();
+    };
+
+    window.showStep2 = function() { 
+        hideAllSteps(); 
+        document.getElementById('step2')?.classList.add('active');
+        updateStepIndicators('step2');
+    };
+
+    window.showForgotPassword = function() { 
+        hideAllSteps(); 
+        document.getElementById('forgotStep1')?.classList.add('active');
+        updateStepIndicators('forgotStep1');
+        clearMessages();
+    };
+
+    window.showForgotStep2 = function() { 
+        hideAllSteps(); 
+        document.getElementById('forgotStep2')?.classList.add('active');
+        updateStepIndicators('forgotStep2');
+    };
+
+    window.showForgotStep3 = function() { 
+        hideAllSteps(); 
+        document.getElementById('forgotStep3')?.classList.add('active');
+        updateStepIndicators('forgotStep3');
+    };
+
+    // Password Toggle Function
+    window.togglePassword = function(inputId) {
+        const passwordInput = document.getElementById(inputId);
+        const toggleIcon = document.getElementById(inputId + '-toggle-icon');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            toggleIcon.classList.remove('bi-eye');
+            toggleIcon.classList.add('bi-eye-slash');
+        } else {
+            passwordInput.type = 'password';
+            toggleIcon.classList.remove('bi-eye-slash');
+            toggleIcon.classList.add('bi-eye');
+        }
+    };
+
+    // DOM Content Loaded - Initialize Event Listeners
+    document.addEventListener('DOMContentLoaded', function() {
+        
+        // Login Form Handler
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const email = document.getElementById('email').value.trim();
+                const password = document.getElementById('password').value;
+                
+                // Basic validation
+                if (!email || !password) {
+                    showMessage('Please fill in all fields.', 'danger');
+                    return;
+                }
+                
+                if (!isValidEmail(email)) {
+                    showMessage('Please enter a valid email address.', 'danger');
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('email', email);
+                formData.append('password', password);
+                
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
+
+                setButtonLoading(submitBtn, true);
+
+                makeRequest('unified_login.php', formData,
+                    function(data) {
+                        setButtonLoading(submitBtn, false, originalText);
+                        
+                        if (data.status === 'otp_sent') {
+                            showStep2();
+                            showMessage('Verification code sent to your email!', 'success');
+                        } else {
+                            showMessage(data.message, 'danger');
+                        }
+                    },
+                    function(error) {
+                        setButtonLoading(submitBtn, false, originalText);
+                    }
+                );
+            });
+        }
+
+        // OTP Form Handler
+        const otpForm = document.getElementById('otpForm');
+        if (otpForm) {
+            otpForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const otp = document.getElementById('login_otp').value.trim();
+                
+                if (!otp || otp.length !== 6) {
+                    showMessage('Please enter a valid 6-digit code.', 'danger');
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('login_action', 'verify_otp');
+                formData.append('login_otp', otp);
+                
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
+
+                setButtonLoading(submitBtn, true);
+
+                makeRequest('unified_login.php', formData,
+                    function(data) {
+                        setButtonLoading(submitBtn, false, originalText);
+                        
+                        if (data.status === 'success') {
+                            showMessage('Login successful! Redirecting...', 'success');
+                            setTimeout(() => {
+                                window.location.href = data.redirect;
+                            }, 1500);
+                        } else {
+                            showMessage(data.message, 'danger');
+                        }
+                    },
+                    function(error) {
+                        setButtonLoading(submitBtn, false, originalText);
+                    }
+                );
+            });
+        }
+
+        // Forgot Password Form Handler
+        const forgotForm = document.getElementById('forgotForm');
+        if (forgotForm) {
+            forgotForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const email = document.getElementById('forgot_email').value.trim();
+                
+                if (!email || !isValidEmail(email)) {
+                    showMessage('Please enter a valid email address.', 'danger');
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('forgot_action', 'send_otp');
+                formData.append('forgot_email', email);
+                
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
+
+                setButtonLoading(submitBtn, true);
+
+                makeRequest('unified_login.php', formData,
+                    function(data) {
+                        setButtonLoading(submitBtn, false, originalText);
+                        
+                        if (data.status === 'success') {
+                            showForgotStep2();
+                            showMessage('Reset code sent to your email!', 'success');
+                        } else {
+                            showMessage(data.message, 'danger');
+                        }
+                    },
+                    function(error) {
+                        setButtonLoading(submitBtn, false, originalText);
+                    }
+                );
+            });
+        }
+
+        // Forgot Password OTP Form Handler
+        const forgotOtpForm = document.getElementById('forgotOtpForm');
+        if (forgotOtpForm) {
+            forgotOtpForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const otp = document.getElementById('forgot_otp').value.trim();
+                
+                if (!otp || otp.length !== 6) {
+                    showMessage('Please enter a valid 6-digit code.', 'danger');
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('forgot_action', 'verify_otp');
+                formData.append('forgot_otp', otp);
+                
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
+
+                setButtonLoading(submitBtn, true);
+
+                makeRequest('unified_login.php', formData,
+                    function(data) {
+                        setButtonLoading(submitBtn, false, originalText);
+                        
+                        if (data.status === 'success') {
+                            showForgotStep3();
+                            showMessage('Code verified! Set your new password.', 'success');
+                        } else {
+                            showMessage(data.message, 'danger');
+                        }
+                    },
+                    function(error) {
+                        setButtonLoading(submitBtn, false, originalText);
+                    }
+                );
+            });
+        }
+
+        // New Password Form Handler
+        const newPasswordForm = document.getElementById('newPasswordForm');
+        if (newPasswordForm) {
+            newPasswordForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const newPassword = document.getElementById('forgot_new_password').value;
+                const confirmPassword = document.getElementById('confirm_password').value;
+                
+                // Validate password match
+                if (newPassword !== confirmPassword) {
+                    showMessage('Passwords do not match. Please try again.', 'danger');
+                    return;
+                }
+                
+                // Validate password strength
+                if (newPassword.length < 12) {
+                    showMessage('Password must be at least 12 characters long.', 'danger');
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('forgot_action', 'set_new_password');
+                formData.append('forgot_new_password', newPassword);
+                
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
+
+                setButtonLoading(submitBtn, true);
+
+                makeRequest('unified_login.php', formData,
+                    function(data) {
+                        setButtonLoading(submitBtn, false, originalText);
+                        
+                        if (data.status === 'success') {
+                            showStep1();
+                            showMessage('Password updated successfully! Please login with your new password.', 'success');
+                        } else {
+                            showMessage(data.message, 'danger');
+                        }
+                    },
+                    function(error) {
+                        setButtonLoading(submitBtn, false, originalText);
+                    }
+                );
+            });
+        }
+
+        // OTP Input Auto-formatting
+        document.querySelectorAll('.otp-input').forEach(input => {
+            input.addEventListener('input', function(e) {
+                // Remove non-numeric characters
+                this.value = this.value.replace(/\D/g, '');
+                
+                // Limit to 6 digits
+                if (this.value.length > 6) {
+                    this.value = this.value.slice(0, 6);
+                }
+            });
+            
+            input.addEventListener('paste', function(e) {
+                e.preventDefault();
+                const paste = (e.clipboardData || window.clipboardData).getData('text');
+                const numericPaste = paste.replace(/\D/g, '').slice(0, 6);
+                this.value = numericPaste;
+            });
+        });
+    });
+})();
