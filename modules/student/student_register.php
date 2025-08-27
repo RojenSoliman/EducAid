@@ -32,6 +32,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             <title>EducAid – Registration Closed</title>
             <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
+            <link href="../../assets/css/homepage.css" rel="stylesheet" /> 
             <style>
                 .alert-container {
                     display: flex;
@@ -484,7 +485,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $unique_student_id
     ]);
 
-    
+
     if ($result) {
         $student_id_row = pg_fetch_assoc($result);
         $student_id = $student_id_row['student_id'];

@@ -65,7 +65,7 @@
         </ul>
         <div class="d-flex">
           <!-- From project root to modules/student/... -->
-          <a href="student_login.html" class="btn btn-outline-primary btn-rounded me-2">Login</a>
+          <a href="student_login.html" class="btn btn-outline-primary btn-rounded me-2" href="unified_login.php">Login</a>
           <a href="student_register.php" class="btn btn-trias-primary btn-rounded">Register</a>
         </div>
       </div>
