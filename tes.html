@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EducAid CRM Dashboard — Mockup</title>
+  <!-- Fonts & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <style>
+    :root{
+      --trias-primary:#0068DA;  /* deep blue */
+      --trias-secondary:#00B1C6;/* teal */
+      --trias-accent:#0088C8;   /* mid blue */
+      --trias-success:#3DAD10;  /* green */
+      --trias-warning:#FFB200;  /* amber */
+      --trias-danger:#DE3959;   /* coral */
+      --trias-bg:#f7f9fc;
+      --sidebar-w: 260px;
+      --sidebar-w-collapsed: 74px;
+    }
+    html,body{height:100%; background:var(--trias-bg); font-family:'Poppins', system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";}
+
+    /* ===== Sidebar ===== */
+    .sidebar{position:fixed; inset:0 auto 0 0; width:var(--sidebar-w); background:#0b2e5e; color:#fff; z-index:1030; box-shadow: 0 10px 30px rgba(0,0,0,.15);}    
+    .sidebar .brand{display:flex; align-items:center; gap:.6rem; padding:1rem 1.25rem; border-bottom:1px solid rgba(255,255,255,.08);} 
+    .sidebar .brand .logo{display:grid; place-items:center; width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg, var(--trias-primary), var(--trias-secondary));}
+    .sidebar .brand strong{font-size:1.05rem; letter-spacing:.3px;}
+    .sidebar .nav-link{color:#cfe2ff; border-radius:10px; padding:.65rem .9rem; display:flex; align-items:center; gap:.75rem;}
+    .sidebar .nav-link:hover{background:rgba(255,255,255,.08); color:#fff;}
+    .sidebar .nav-link.active{background:#1a3f73; color:#fff;}
+    .sidebar .section-label{opacity:.7; text-transform:uppercase; font-size:.7rem; letter-spacing:.12rem; padding:.75rem .9rem .25rem;}
+    .sidebar .collapse-toggle{position:absolute; right:-16px; top:16px; background:#0b2e5e; border:2px solid #0b2e5e; color:#fff; width:34px; height:34px; border-radius:50%; display:grid; place-items:center; box-shadow:0 8px 20px rgba(0,0,0,.18);}
+
+    /* Collapsed */
+    body.sidebar-collapsed .sidebar{width:var(--sidebar-w-collapsed);}    
+    body.sidebar-collapsed .sidebar .label-text{display:none;}    
+    body.sidebar-collapsed .sidebar .brand strong{display:none;} 
+    body.sidebar-collapsed .sidebar .brand .logo{margin:auto;} 
+
+    /* ===== Main ===== */
+    .main{margin-left:var(--sidebar-w); min-height:100vh;}
+    body.sidebar-collapsed .main{margin-left:var(--sidebar-w-collapsed);}  
+
+    /* Topbar */
+    .topbar{position:sticky; top:0; z-index:1020; background:rgba(255,255,255,.7); backdrop-filter:saturate(180%) blur(8px); border-bottom:1px solid rgba(0,0,0,.06);} 
+
+    /* Cards */
+    .kpi-card{border:0; border-radius:20px; box-shadow:0 10px 24px rgba(31,57,99,.06);} 
+    .kpi-icon{width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background:rgba(0,104,218,.1);}
+    .badge-soft{background:rgba(0,0,0,.04); color:#333; border:1px solid rgba(0,0,0,.06);}  
+
+    /* Kanban */
+    .kanban{display:grid; grid-template-columns:repeat(6, minmax(220px,1fr)); gap:16px; overflow:auto; padding-bottom:.25rem;}
+    .kanban .col{background:#fff; border-radius:16px; padding:12px; box-shadow:0 6px 18px rgba(31,57,99,.08); min-height:220px;}
+    .kanban .col h6{font-weight:600;}
+    .kanban .card{border:1px dashed #e8eef7; border-radius:14px;}
+
+    /* Tables */
+    .table thead th{font-size:.8rem; text-transform:uppercase; letter-spacing:.06rem; color:#678;}
+
+    /* Pills & chips */
+    .chip{display:inline-flex; align-items:center; gap:.35rem; padding:.25rem .55rem; border-radius:999px; font-size:.75rem; border:1px solid rgba(0,0,0,.08); background:#fff;}
+
+    /* Mobile */
+    @media (max-width: 992px){
+      .sidebar{transform:translateX(-100%); transition: transform .25s ease;}
+      body.sidebar-open .sidebar{transform:none;}
+      .backdrop{content:""; position:fixed; inset:0; background:rgba(0,0,0,.4); display:none;}
+      body.sidebar-open .backdrop{display:block;}
+      .main{margin-left:0;}
+      body.sidebar-collapsed .main{margin-left:0;}
+      .sidebar .collapse-toggle{display:none;}
+    }
+  </style>
+</head>
+<body>
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar d-flex flex-column">
+    <button id="collapseBtn" class="collapse-toggle" title="Toggle sidebar"><i class="bi bi-layout-sidebar-inset"></i></button>
+    <div class="brand">
+      <div class="logo text-white"><i class="bi bi-mortarboard"></i></div>
+      <strong>EducAid <span class="text-info">CRM</span></strong>
+    </div>
+    <nav class="p-2">
+      <div class="section-label">core</div>
+      <a class="nav-link active" href="#"><i class="bi bi-grid-1x2"></i><span class="label-text">Dashboard</span></a>
+      <a class="nav-link" href="#"><i class="bi bi-people"></i><span class="label-text">Contacts</span></a>
+      <a class="nav-link" href="#"><i class="bi bi-person-lines-fill"></i><span class="label-text">Leads</span></a>
+      <a class="nav-link" href="#"><i class="bi bi-flag"></i><span class="label-text">Opportunities</span></a>
+      <a class="nav-link" href="#"><i class="bi bi-calendar2-week"></i><span class="label-text">Schedules</span></a>
+      <a class="nav-link" href="#"><i class="bi bi-hdd-stack"></i><span class="label-text">Slots</span></a>
+      <div class="section-label">engagement</div>
+      <a class="nav-link" href="#"><i class="bi bi-megaphone"></i><span class="label-text">Announcements</span></a>
+      <a class="nav-link" href="#" data-bs-toggle="offcanvas" data-bs-target="#notifCanvas"><i class="bi bi-bell"></i><span class="label-text">Notifications</span></a>
+      <div class="section-label">insights</div>
+      <a class="nav-link" href="#"><i class="bi bi-graph-up"></i><span class="label-text">Reports</span></a>
+      <a class="nav-link" href="#"><i class="bi bi-gear"></i><span class="label-text">Settings</span></a>
+    </nav>
+    <div class="mt-auto p-3 small text-center text-white-50">v0.1 mockup</div>
+  </aside>
+  <div class="backdrop d-lg-none" id="backdrop"></div>
+
+  <!-- ===== MAIN ===== -->
+  <main class="main">
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="container-fluid py-2">
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-link d-lg-none" id="mobileToggle"><i class="bi bi-list" style="font-size:1.4rem"></i></button>
+          <h5 class="m-0 fw-semibold">CRM Dashboard</h5>
+          <span class="text-secondary small">Today • <span id="today"></span></span>
+          <div class="ms-auto d-flex align-items-center gap-2">
+            <div class="input-group" style="max-width:360px;">
+              <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+              <input class="form-control" id="globalSearch" placeholder="Search contacts, leads, IDs…" />
+            </div>
+            <button class="btn btn-outline-secondary d-none d-md-inline-flex" data-bs-toggle="tooltip" data-bs-title="Import CSV"><i class="bi bi-upload"></i></button>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createLeadModal"><i class="bi bi-plus-lg me-1"></i>Create Lead</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container-fluid py-4">
+      <!-- KPIs -->
+      <div class="row g-3">
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="card kpi-card p-3">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center gap-3">
+                <div class="kpi-icon"><i class="bi bi-people text-primary"></i></div>
+                <div>
+                  <div class="text-secondary small">Total Students</div>
+                  <div class="fs-4 fw-semibold">12,480</div>
+                </div>
+              </div>
+              <span class="chip"><i class="bi bi-arrow-up-right"></i> +2.4%</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="card kpi-card p-3">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center gap-3">
+                <div class="kpi-icon" style="background:rgba(0,177,198,.12)"><i class="bi bi-person-lines-fill" style="color:var(--trias-secondary)"></i></div>
+                <div>
+                  <div class="text-secondary small">Active Leads</div>
+                  <div class="fs-4 fw-semibold">1,162</div>
+                </div>
+              </div>
+              <span class="chip"><i class="bi bi-lightning-charge"></i> 18 new</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="card kpi-card p-3">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center gap-3">
+                <div class="kpi-icon" style="background:rgba(61,173,16,.12)"><i class="bi bi-badge-check" style="color:var(--trias-success)"></i></div>
+                <div>
+                  <div class="text-secondary small">Verified Students</div>
+                  <div class="fs-4 fw-semibold">9,740</div>
+                </div>
+              </div>
+              <span class="chip"><i class="bi bi-shield-check"></i> 78%</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="card kpi-card p-3">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center gap-3">
+                <div class="kpi-icon" style="background:rgba(255,178,0,.14)"><i class="bi bi-graph-up-arrow" style="color:var(--trias-warning)"></i></div>
+                <div>
+                  <div class="text-secondary small">Conversion Rate</div>
+                  <div class="fs-4 fw-semibold">32.6%</div>
+                </div>
+              </div>
+              <span class="chip"><i class="bi bi-arrow-up"></i> +1.1% MoM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="row g-3 mt-1">
+        <div class="col-12 col-lg-8">
+          <div class="card kpi-card p-3 h-100">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h6 class="m-0">Applications by Stage</h6>
+              <div class="d-flex gap-2 align-items-center">
+                <span class="badge rounded-pill badge-soft">This Month</span>
+                <div class="dropdown">
+                  <button class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown">Filter</button>
+                  <div class="dropdown-menu dropdown-menu-end">
+                    <button class="dropdown-item">All Municipalities</button>
+                    <button class="dropdown-item">General Trias</button>
+                    <button class="dropdown-item">Rosario</button>
+                    <button class="dropdown-item">Tanza</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <canvas id="stageBar" height="120"></canvas>
+          </div>
+        </div>
+        <div class="col-12 col-lg-4">
+          <div class="card kpi-card p-3 h-100">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h6 class="m-0">Leads by Source</h6>
+              <span class="badge rounded-pill" style="background:rgba(0,136,200,.12); color:var(--trias-accent)">Overview</span>
+            </div>
+            <canvas id="sourcePie" height="120"></canvas>
+            <div class="mt-3 small text-secondary">Top: Facebook • Walk-ins • School Referrals</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline -->
+      <div class="mt-4 d-flex align-items-center justify-content-between">
+        <h6 class="mb-0">Lead Pipeline</h6>
+        <div class="d-flex gap-2">
+          <span class="chip"><i class="bi bi-calendar-week"></i> AY 2025–2026</span>
+          <span class="chip"><i class="bi bi-geo-alt"></i> All Locations</span>
+        </div>
+      </div>
+      <div class="kanban mt-2">
+        <div class="col">
+          <h6 class="d-flex align-items-center gap-2"><i class="bi bi-inbox"></i> New</h6>
+          <div class="card p-2 mb-2">
+            <div class="fw-semibold">Juan Dela Cruz</div>
+            <div class="text-secondary small">STU-2025-00193 • Facebook</div>
+            <div class="mt-1 d-flex gap-2">
+              <span class="badge text-bg-warning">Needs Contact</span>
+              <span class="badge text-bg-light">General Trias</span>
+            </div>
+          </div>
+          <div class="card p-2 mb-2">
+            <div class="fw-semibold">Maria Santos</div>
+            <div class="text-secondary small">STU-2025-00194 • Walk-in</div>
+          </div>
+        </div>
+        <div class="col">
+          <h6 class="d-flex align-items-center gap-2"><i class="bi bi-telephone"></i> Contacted</h6>
+          <div class="card p-2 mb-2">
+            <div class="fw-semibold">Mark Reyes</div>
+            <div class="text-secondary small">Called: Aug 25</div>
+          </div>
+        </div>
+        <div class="col">
+          <h6 class="d-flex align-items-center gap-2"><i class="bi bi-check2-square"></i> Qualified</h6>
+          <div class="card p-2 mb-2">
+            <div class="fw-semibold">Ana Cruz</div>
+            <div class="text-secondary small">Meets requirements</div>
+          </div>
+        </div>
+        <div class="col">
+          <h6 class="d-flex align-items-center gap-2"><i class="bi bi-file-earmark-text"></i> Applied</h6>
+          <div class="card p-2 mb-2">
+            <div class="fw-semibold">Leo Garcia</div>
+            <div class="text-secondary small">Docs submitted</div>
+          </div>
+        </div>
+        <div class="col">
+          <h6 class="d-flex align-items-center gap-2"><i class="bi bi-shield-check"></i> Verified</h6>
+          <div class="card p-2 mb-2">
+            <div class="fw-semibold">Rica Tan</div>
+            <div class="text-secondary small">Verified Aug 24</div>
+          </div>
+        </div>
+        <div class="col">
+          <h6 class="d-flex align-items-center gap-2"><i class="bi bi-calendar-check"></i> Scheduled</h6>
+          <div class="card p-2 mb-2">
+            <div class="fw-semibold">John Paul</div>
+            <div class="text-secondary small">Sept 02, 9:00 AM</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tables & Tasks -->
+      <div class="row g-3 mt-2">
+        <div class="col-12 col-xl-8">
+          <div class="card kpi-card p-3">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h6 class="m-0">Recent Contacts & Leads</h6>
+              <div class="d-flex gap-2">
+                <span class="chip"><i class="bi bi-filter"></i> All</span>
+                <span class="chip"><i class="bi bi-badge-ad"></i> Admin</span>
+                <span class="chip"><i class="bi bi-mortarboard"></i> Student</span>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Stage</th>
+                    <th>Municipality</th>
+                    <th>Last Activity</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="recentTable">
+                  <tr>
+                    <td class="fw-medium">Juan Dela Cruz</td>
+                    <td><span class="badge text-bg-primary">Student</span></td>
+                    <td><span class="badge text-bg-warning">New</span></td>
+                    <td>General Trias</td>
+                    <td class="text-secondary">Aug 26 • Created</td>
+                    <td><button class="btn btn-sm btn-outline-primary">Open</button></td>
+                  </tr>
+                  <tr>
+                    <td class="fw-medium">Ana Cruz</td>
+                    <td><span class="badge text-bg-primary">Student</span></td>
+                    <td><span class="badge text-bg-info">Qualified</span></td>
+                    <td>Rosario</td>
+                    <td class="text-secondary">Aug 24 • Verified docs</td>
+                    <td><button class="btn btn-sm btn-outline-primary">Open</button></td>
+                  </tr>
+                  <tr>
+                    <td class="fw-medium">LGU Coordinator</td>
+                    <td><span class="badge text-bg-secondary">Admin</span></td>
+                    <td><span class="badge text-bg-light text-dark">—</span></td>
+                    <td>Tanza</td>
+                    <td class="text-secondary">Aug 22 • Meeting set</td>
+                    <td><button class="btn btn-sm btn-outline-primary">Open</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-xl-4">
+          <div class="card kpi-card p-3 h-100">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h6 class="m-0">Upcoming Tasks</h6>
+              <a href="#" class="small">View all</a>
+            </div>
+            <ul class="list-group list-group-flush" id="taskList">
+              <li class="list-group-item px-0 d-flex align-items-center gap-3">
+                <input class="form-check-input mt-0" type="checkbox" value="">
+                <div>
+                  <div class="fw-semibold">Call new lead (Juan)</div>
+                  <div class="text-secondary small">Aug 27, 3:00 PM</div>
+                </div>
+                <span class="ms-auto badge text-bg-warning">Today</span>
+              </li>
+              <li class="list-group-item px-0 d-flex align-items-center gap-3">
+                <input class="form-check-input mt-0" type="checkbox" value="">
+                <div>
+                  <div class="fw-semibold">Review documents (Ana)</div>
+                  <div class="text-secondary small">Aug 28, 10:00 AM</div>
+                </div>
+                <span class="ms-auto badge text-bg-light text-dark">Tomorrow</span>
+              </li>
+              <li class="list-group-item px-0 d-flex align-items-center gap-3">
+                <input class="form-check-input mt-0" type="checkbox" value="">
+                <div>
+                  <div class="fw-semibold">Schedule verification</div>
+                  <div class="text-secondary small">Aug 30, 9:00 AM</div>
+                </div>
+                <span class="ms-auto badge text-bg-light text-dark">This week</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity -->
+      <div class="row g-3 mt-1">
+        <div class="col-12">
+          <div class="card kpi-card p-3">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+              <h6 class="m-0">Activity Timeline</h6>
+              <div class="small text-secondary">Auto-refreshed (mock)</div>
+            </div>
+            <div class="d-flex flex-wrap gap-3" id="activity">
+              <span class="chip"><i class="bi bi-plus-circle"></i> Created lead: Juan</span>
+              <span class="chip"><i class="bi bi-clipboard-check"></i> Verified docs: Ana</span>
+              <span class="chip"><i class="bi bi-calendar-event"></i> Set schedule: JP</span>
+              <span class="chip"><i class="bi bi-megaphone"></i> Posted announcement</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===== OFFCANVAS: Notifications ===== -->
+  <div class="offcanvas offcanvas-end" tabindex="-1" id="notifCanvas">
+    <div class="offcanvas-header">
+      <h5 class="offcanvas-title"><i class="bi bi-bell me-2"></i>Notifications</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body">
+      <div class="list-group list-group-flush">
+        <div class="list-group-item d-flex gap-3 align-items-start">
+          <i class="bi bi-megaphone fs-5 text-primary"></i>
+          <div>
+            <div class="fw-semibold">New Announcement: Orientation</div>
+            <div class="small text-secondary">Aug 27 • 2:00 PM</div>
+          </div>
+        </div>
+        <div class="list-group-item d-flex gap-3 align-items-start">
+          <i class="bi bi-envelope-check fs-5 text-success"></i>
+          <div>
+            <div class="fw-semibold">Email verified: Ana Cruz</div>
+            <div class="small text-secondary">Aug 26 • 6:14 PM</div>
+          </div>
+        </div>
+        <div class="list-group-item d-flex gap-3 align-items-start">
+          <i class="bi bi-bell fs-5 text-warning"></i>
+          <div>
+            <div class="fw-semibold">Upcoming schedule in 1 hour</div>
+            <div class="small text-secondary">Aug 27 • 4:00 PM</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: Create Lead ===== -->
+  <div class="modal fade" id="createLeadModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-plus-square me-2"></i>Create Lead</h5>
+          <button class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-12 col-md-6">
+              <label class="form-label">First name</label>
+              <input class="form-control" placeholder="e.g., Juan"/>
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label">Last name</label>
+              <input class="form-control" placeholder="e.g., Dela Cruz"/>
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label">Source</label>
+              <select class="form-select">
+                <option>Facebook</option>
+                <option>Walk-in</option>
+                <option>School referral</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label">Municipality</label>
+              <select class="form-select">
+                <option>General Trias</option>
+                <option>Rosario</option>
+                <option>Tanza</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Notes</label>
+              <textarea class="form-control" rows="3" placeholder="Quick context…"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-primary">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Today
+      const dt = new Date();
+      document.getElementById('today').textContent = dt.toLocaleDateString(undefined, {year:'numeric', month:'short', day:'2-digit'});
+
+      // Sidebar collapse (desktop)
+      const collapseBtn = document.getElementById('collapseBtn');
+      collapseBtn?.addEventListener('click', () => document.body.classList.toggle('sidebar-collapsed'));
+
+      // Sidebar mobile
+      const mobileToggle = document.getElementById('mobileToggle');
+      const backdrop = document.getElementById('backdrop');
+      mobileToggle?.addEventListener('click', () => document.body.classList.toggle('sidebar-open'));
+      backdrop?.addEventListener('click', () => document.body.classList.remove('sidebar-open'));
+
+      // Tooltips
+      const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+      tooltipTriggerList.map(el => new bootstrap.Tooltip(el));
+
+      // Global search (mock filter recent table rows)
+      const search = document.getElementById('globalSearch');
+      search?.addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase();
+        document.querySelectorAll('#recentTable tr').forEach(tr => {
+          tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+      });
+
+      // Charts
+      const bar = new Chart(document.getElementById('stageBar'), {
+        type: 'bar',
+        data: {
+          labels: ['New','Contacted','Qualified','Applied','Verified','Scheduled'],
+          datasets: [{
+            label: 'Count',
+            data: [320, 248, 176, 210, 168, 140],
+            borderWidth: 0,
+            borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, ticks: { precision: 0 } }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { intersect: false }
+          }
+        }
+      });
+
+      const pie = new Chart(document.getElementById('sourcePie'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Facebook','Walk-in','School Referral','Website'],
+          datasets: [{ data: [46, 22, 20, 12] }]
+        },
+        options: {
+          cutout: '62%',
+          plugins: {
+            legend: { position: 'bottom' },
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>
