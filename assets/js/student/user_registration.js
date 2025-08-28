@@ -42,6 +42,13 @@ function showStep(stepNumber) {
     currentStep = stepNumber;
     updateRequiredFields();
     
+    // ADD THIS: Setup date restrictions when Step 2 is shown
+    if (stepNumber === 2) {
+        setTimeout(() => {
+            setupDateOfBirthRestriction();
+        }, 100);
+    }
+    
     // Save progress when changing steps
     if (stepNumber > 1) {
         hasUnsavedChanges = true;
@@ -254,6 +261,126 @@ function setupRealTimeValidation() {
     });
 }
 
+// ========================================
+// DATE OF BIRTH RESTRICTION FUNCTION
+// ========================================
+
+function setupDateOfBirthRestriction() {
+    console.log('🔍 Starting date of birth restriction setup...');
+    
+    // Wait for Step 2 to be visible
+    const step2 = document.getElementById('step-2');
+    if (!step2 || step2.classList.contains('d-none')) {
+        console.log('❌ Step 2 not visible yet, waiting...');
+        return;
+    }
+    
+    // Try to find the date input
+    let dobInput = null;
+    
+    // Method 1: Try by name "bdate" (your actual HTML)
+    dobInput = document.querySelector('input[name="bdate"]');
+    if (dobInput) {
+        console.log('✅ Found date input by name="bdate":', dobInput);
+    } else {
+        console.log('❌ No element found with name="bdate"');
+        
+        // Method 2: Try by type="date" within Step 2
+        const dateInputs = step2.querySelectorAll('input[type="date"]');
+        console.log(`🔍 Found ${dateInputs.length} date input(s) in Step 2:`, dateInputs);
+        
+        if (dateInputs.length > 0) {
+            dobInput = dateInputs[0];
+            console.log('✅ Using first date input found in Step 2:', dobInput);
+        }
+    }
+    
+    // If still not found, list all inputs in Step 2
+    if (!dobInput) {
+        console.log('❌ Date input still not found. All inputs in Step 2:');
+        const allInputs = step2.querySelectorAll('input');
+        allInputs.forEach((input, index) => {
+            console.log(`Input ${index + 1}:`, {
+                type: input.type,
+                id: input.id,
+                name: input.name,
+                placeholder: input.placeholder,
+                className: input.className,
+                element: input
+            });
+        });
+        return;
+    }
+    
+    // Apply restrictions if input found
+    if (dobInput) {
+        const currentYear = new Date().getFullYear();
+        const minYear = currentYear - 10; // Youngest possible collegian (10 years old)
+        const maxYear = 1900; // Reasonable oldest year
+        
+        // Set the max date (youngest allowed: current year - 10)
+        const maxDate = `${minYear}-12-31`;
+        
+        // Set the min date (oldest allowed)
+        const minDate = `${maxYear}-01-01`;
+        
+        console.log(`📅 Applying restrictions:`, {
+            currentYear,
+            minYear,
+            maxYear,
+            maxDate,
+            minDate,
+            inputElement: dobInput
+        });
+        
+        // Set attributes
+        dobInput.setAttribute('max', maxDate);
+        dobInput.setAttribute('min', minDate);
+        
+        // Force browser to recognize the new constraints
+        dobInput.dispatchEvent(new Event('change'));
+        
+        // Verify attributes were set
+        console.log('🔍 Verification - Attributes after setting:', {
+            max: dobInput.getAttribute('max'),
+            min: dobInput.getAttribute('min'),
+            type: dobInput.type,
+            name: dobInput.name
+        });
+        
+        // Clear any existing value that might be invalid
+        if (dobInput.value) {
+            const selectedDate = new Date(dobInput.value);
+            const selectedYear = selectedDate.getFullYear();
+            if (selectedYear > minYear) {
+                dobInput.value = ''; // Clear invalid value
+                console.log('🧹 Cleared invalid existing value');
+            }
+        }
+        
+        // Add validation event listener
+        dobInput.addEventListener('input', function() {
+            const selectedDate = new Date(this.value);
+            const selectedYear = selectedDate.getFullYear();
+            
+            if (selectedYear > minYear) {
+                console.log('❌ User tried to select year too recent:', selectedYear);
+                showNotifier(`Students must be at least 10 years old. Please select a date before ${minYear + 1}.`, 'error');
+                this.classList.add('missing-field');
+            } else {
+                this.classList.remove('missing-field');
+            }
+        });
+        
+        console.log(`✅ Date restrictions applied successfully!`);
+        console.log(`📅 Maximum year: ${minYear} (current year - 10)`);
+        console.log(`📅 Date range: ${minDate} to ${maxDate}`);
+        
+        // Show success message
+        showNotifier(`Date restriction applied: Maximum birth year is ${minYear}`, 'success');
+    }
+}
+
 function nextStep() {
     if (currentStep === 6) return;
 
@@ -320,7 +447,6 @@ function addVibrationToButtons() {
         });
     });
 }
-
 document.addEventListener('DOMContentLoaded', () => {
     // Check for existing progress
     const saved = localStorage.getItem(CONFIG.STORAGE_KEY);
@@ -355,6 +481,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Add vibration to all buttons
         addVibrationToButtons();
+        
+        // REMOVE THIS LINE - Date restriction will be called when Step 2 is shown
+        // setupDateOfBirthRestriction();
         
         // Add listeners to name fields to re-validate filename if changed
         document.querySelector('input[name="first_name"]').addEventListener('input', function() {
@@ -870,7 +999,7 @@ style.textContent = `
 document.head.appendChild(style);
 
 // ========================================
-// SAVE STATE FUNCTIONALITY (UNCHANGED)
+// SAVE STATE FUNCTIONALITY
 // ========================================
 
 function saveProgress() {
@@ -1225,4 +1354,3 @@ function showProgressRestoreDialog() {
         modal.remove();
     });
 }
-
