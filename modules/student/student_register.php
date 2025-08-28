@@ -790,6 +790,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     ?>
 
     <div id="notifier" class="notifier"></div>
-    <script src="../../assets/js/student/user_registration.js"></script>
+    <!-- Make sure this is included BEFORE your custom JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- OR if you have local Bootstrap files -->
+<script src="../../assets/js/bootstrap.bundle.min.js"></script>
+
+<!-- Your registration JavaScript should come AFTER Bootstrap -->
+<script src="../../assets/js/student/user_registration.js"></script>
 </body>
 </html>
