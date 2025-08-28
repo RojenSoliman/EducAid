@@ -61,40 +61,242 @@ function showNotifier(message, type = 'error') {
     }, 3000);
 }
 
-function nextStep() {
-    if (currentStep === 6) return;
+// ========================================
+// SIMPLIFIED FORM VALIDATION WITH MOBILE VIBRATION
+// ========================================
 
-    let isValid = true;
+function highlightMissingFields(fields) {
+    // Clear any existing highlights first
+    clearFieldHighlights();
+    
+    let firstMissingField = null;
+    
+    fields.forEach(field => {
+        if (field) {
+            // Add red border styling to the field
+            field.classList.add('missing-field');
+            
+            // Track first missing field for scrolling
+            if (!firstMissingField) {
+                firstMissingField = field;
+            }
+            
+            // Add shake animation
+            field.classList.add('shake-field');
+            setTimeout(() => {
+                field.classList.remove('shake-field');
+            }, 600);
+        }
+    });
+    
+    // Vibrate on mobile devices
+    triggerMobileVibration('error');
+    
+    // Scroll to first missing field
+    if (firstMissingField) {
+        scrollToField(firstMissingField);
+    }
+}
+
+function clearFieldHighlights() {
+    // Remove all error styling
+    document.querySelectorAll('.missing-field').forEach(el => {
+        el.classList.remove('missing-field');
+    });
+}
+
+function scrollToField(field) {
+    // Smooth scroll to the field
+    field.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+    });
+    
+    // Focus the field after scroll
+    setTimeout(() => {
+        field.focus();
+        
+        // Add pulse effect
+        field.classList.add('pulse-field');
+        setTimeout(() => {
+            field.classList.remove('pulse-field');
+        }, 1000);
+    }, 500);
+}
+
+function validateCurrentStep() {
     const currentPanel = document.getElementById(`step-${currentStep}`);
-    const inputs = currentPanel.querySelectorAll('input[required], select[required], textarea[required]');
-
-    inputs.forEach(input => {
+    const requiredInputs = currentPanel.querySelectorAll('input[required], select[required], textarea[required]');
+    const missingFields = [];
+    
+    requiredInputs.forEach(input => {
+        let isValid = true;
+        
         if (input.type === 'radio') {
             const radioGroupName = input.name;
             if (!document.querySelector(`input[name="${radioGroupName}"]:checked`)) {
+                // Only add one radio button per group to missing fields
+                if (!missingFields.find(field => field.name === radioGroupName)) {
+                    missingFields.push(input);
+                }
                 isValid = false;
             }
         } else if (input.type === 'checkbox') {
             if (!input.checked) {
+                missingFields.push(input);
                 isValid = false;
             }
         } else if (!input.value.trim()) {
+            missingFields.push(input);
             isValid = false;
         }
+        
+        // Clear previous validation state if field is now valid
+        if (isValid) {
+            input.classList.remove('missing-field');
+        }
     });
+    
+    return missingFields;
+}
 
-    if (!isValid) {
-        showNotifier('Please fill in all required fields for the current step.', 'error');
+function validateSpecialFields() {
+    const specialValidations = [];
+    
+    // Email validation
+    const emailField = document.getElementById('emailInput');
+    if (emailField && emailField.value && !/\S+@\S+\.\S+/.test(emailField.value)) {
+        specialValidations.push(emailField);
+    }
+    
+    // Password strength validation
+    const passwordField = document.getElementById('password');
+    if (passwordField && passwordField.value) {
+        const strength = calculatePasswordStrength(passwordField.value);
+        if (strength < 75) {
+            specialValidations.push(passwordField);
+        }
+    }
+    
+    // Confirm password validation
+    const confirmPasswordField = document.getElementById('confirmPassword');
+    if (confirmPasswordField && confirmPasswordField.value && passwordField && passwordField.value !== confirmPasswordField.value) {
+        specialValidations.push(confirmPasswordField);
+    }
+    
+    return specialValidations;
+}
+
+function calculatePasswordStrength(password) {
+    let strength = 0;
+    if (password.length >= 12) strength += 25;
+    if (/[A-Z]/.test(password)) strength += 25;
+    if (/[a-z]/.test(password)) strength += 25;
+    if (/[0-9]/.test(password)) strength += 25;
+    if (/[^A-Za-z0-9]/.test(password)) strength += 25;
+    return Math.min(strength, 100);
+}
+
+// Mobile vibration functionality
+function triggerMobileVibration(type = 'default') {
+    // Check if device supports vibration
+    if ('vibrate' in navigator) {
+        let pattern;
+        
+        switch (type) {
+            case 'error':
+                pattern = [100, 50, 100, 50, 100]; // Triple vibration for errors
+                break;
+            case 'success':
+                pattern = [200]; // Single long vibration for success
+                break;
+            case 'warning':
+                pattern = [100, 100, 100]; // Double vibration for warnings
+                break;
+            default:
+                pattern = [50]; // Short single vibration
+                break;
+        }
+        
+        navigator.vibrate(pattern);
+    }
+}
+
+// Real-time validation
+function setupRealTimeValidation() {
+    const form = document.getElementById('multiStepForm');
+    
+    // Add event listeners for real-time validation
+    form.addEventListener('input', (e) => {
+        const field = e.target;
+        
+        // Clear error state when user starts typing
+        if (field.classList.contains('missing-field')) {
+            field.classList.remove('missing-field');
+        }
+    });
+    
+    form.addEventListener('change', (e) => {
+        const field = e.target;
+        
+        // Clear error state for dropdowns and checkboxes
+        if (field.classList.contains('missing-field')) {
+            field.classList.remove('missing-field');
+        }
+    });
+    
+    // Add vibration feedback for successful interactions
+    form.addEventListener('input', () => {
+        // Light vibration for typing (only occasionally to avoid annoyance)
+        if (Math.random() < 0.1) { // 10% chance
+            triggerMobileVibration('default');
+        }
+    });
+}
+
+function nextStep() {
+    if (currentStep === 6) return;
+
+    // Clear any existing highlights first
+    clearFieldHighlights();
+    
+    // Validate current step
+    const missingFields = validateCurrentStep();
+    const specialValidationErrors = validateSpecialFields();
+    
+    // Combine all validation errors
+    const allErrors = [...missingFields, ...specialValidationErrors];
+    
+    if (allErrors.length > 0) {
+        highlightMissingFields(allErrors);
+        showNotifier(`Please complete all required fields before proceeding. (${allErrors.length} field${allErrors.length > 1 ? 's' : ''} missing)`, 'error');
         return;
     }
 
+    // Step-specific validations
     if (currentStep === 5) {
         if (!otpVerified) {
+            const otpField = document.getElementById('otp');
+            highlightMissingFields([otpField]);
             showNotifier('Please verify your OTP before proceeding.', 'error');
             return;
         }
+        // Success vibration when moving to final step
+        triggerMobileVibration('success');
+        showStep(currentStep + 1);
+    } else if (currentStep === 4) {
+        if (!documentVerified) {
+            const fileField = document.getElementById('enrollmentForm');
+            highlightMissingFields([fileField]);
+            showNotifier('Please upload and verify your enrollment form before proceeding.', 'error');
+            return;
+        }
+        // Success vibration for document verification
+        triggerMobileVibration('success');
         showStep(currentStep + 1);
     } else if (currentStep < 6) {
+        // Success vibration for normal step progression
+        triggerMobileVibration('success');
         showStep(currentStep + 1);
     }
     
@@ -105,8 +307,18 @@ function nextStep() {
 
 function prevStep() {
     if (currentStep > 1) {
+        triggerMobileVibration('default');
         showStep(currentStep - 1);
     }
+}
+
+// Add vibration to button clicks
+function addVibrationToButtons() {
+    document.querySelectorAll('button, .btn').forEach(button => {
+        button.addEventListener('click', () => {
+            triggerMobileVibration('default');
+        });
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -138,6 +350,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Setup auto-save functionality
         setupAutoSave();
         
+        // Setup real-time validation
+        setupRealTimeValidation();
+        
+        // Add vibration to all buttons
+        addVibrationToButtons();
+        
         // Add listeners to name fields to re-validate filename if changed
         document.querySelector('input[name="first_name"]').addEventListener('input', function() {
             hasUnsavedChanges = true;
@@ -164,6 +382,7 @@ document.getElementById("sendOtpBtn").addEventListener("click", function() {
     const email = emailInput.value;
 
     if (!email || !/\S+@\S+\.\S+/.test(email)) {
+        highlightMissingFields([emailInput]);
         showNotifier('Please enter a valid email address before sending OTP.', 'error');
         return;
     }
@@ -184,12 +403,14 @@ document.getElementById("sendOtpBtn").addEventListener("click", function() {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
+            triggerMobileVibration('success');
             showNotifier(data.message, 'success');
             document.getElementById("otpSection").classList.remove("d-none");
             document.getElementById("sendOtpBtn").classList.add("d-none");
             document.getElementById("resendOtpBtn").style.display = 'block';
             startOtpTimer();
         } else {
+            triggerMobileVibration('error');
             showNotifier(data.message, 'error');
             sendOtpBtn.disabled = false;
             sendOtpBtn.textContent = "Send OTP (Email)";
@@ -198,6 +419,7 @@ document.getElementById("sendOtpBtn").addEventListener("click", function() {
     })
     .catch(error => {
         console.error('Error sending OTP:', error);
+        triggerMobileVibration('error');
         showNotifier('Failed to send OTP. Please try again.', 'error');
         sendOtpBtn.disabled = false;
         sendOtpBtn.textContent = "Send OTP (Email)";
@@ -228,9 +450,11 @@ document.getElementById("resendOtpBtn").addEventListener("click", function() {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
+            triggerMobileVibration('success');
             showNotifier(data.message, 'success');
             startOtpTimer();
         } else {
+            triggerMobileVibration('error');
             showNotifier(data.message, 'error');
             resendOtpBtn.disabled = false;
             resendOtpBtn.textContent = "Resend OTP";
@@ -238,6 +462,7 @@ document.getElementById("resendOtpBtn").addEventListener("click", function() {
     })
     .catch(error => {
         console.error('Error sending OTP:', error);
+        triggerMobileVibration('error');
         showNotifier('Failed to send OTP. Please try again.', 'error');
         resendOtpBtn.disabled = false;
         resendOtpBtn.textContent = "Resend OTP";
@@ -249,6 +474,7 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
     const emailForOtpVerification = document.getElementById('emailInput').value;
 
     if (!enteredOtp) {
+        highlightMissingFields([document.getElementById('otp')]);
         showNotifier('Please enter the OTP.', 'error');
         return;
     }
@@ -269,6 +495,7 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
+            triggerMobileVibration('success');
             showNotifier(data.message, 'success');
             otpVerified = true;
             document.getElementById('otp').disabled = true;
@@ -282,6 +509,7 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
             document.getElementById('emailInput').disabled = true;
             document.getElementById('emailInput').classList.add('verified-email');
         } else {
+            triggerMobileVibration('error');
             showNotifier(data.message, 'error');
             verifyOtpBtn.disabled = false;
             verifyOtpBtn.textContent = "Verify OTP";
@@ -290,6 +518,7 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
     })
     .catch(error => {
         console.error('Error verifying OTP:', error);
+        triggerMobileVibration('error');
         showNotifier('Failed to verify OTP. Please try again.', 'error');
         verifyOtpBtn.disabled = false;
         verifyOtpBtn.textContent = "Verify OTP";
@@ -308,6 +537,7 @@ function startOtpTimer() {
 
         if (timeLeft <= 0) {
             clearInterval(countdown);
+            triggerMobileVibration('warning');
             document.getElementById('timer').textContent = "OTP expired. Please request a new OTP.";
             document.getElementById('otp').disabled = false;
             document.getElementById('verifyOtpBtn').disabled = false;
@@ -351,6 +581,7 @@ function updatePasswordStrength() {
     } else {
         strengthBar.classList.add('bg-success');
         strengthText.textContent = 'Strong';
+        triggerMobileVibration('success'); // Vibrate when password becomes strong
     }
 
     if (password.length === 0) {
@@ -364,8 +595,11 @@ passwordInput.addEventListener('input', updatePasswordStrength);
 confirmPasswordInput.addEventListener('input', function() {
     if (passwordInput.value !== confirmPasswordInput.value) {
         confirmPasswordInput.setCustomValidity('Passwords do not match');
+        this.classList.add('missing-field');
     } else {
         confirmPasswordInput.setCustomValidity('');
+        this.classList.remove('missing-field');
+        triggerMobileVibration('success'); // Vibrate when passwords match
     }
 });
 
@@ -373,6 +607,7 @@ confirmPasswordInput.addEventListener('input', function() {
 document.getElementById('multiStepForm').addEventListener('submit', function(e) {
     if (currentStep !== 6) {
         e.preventDefault();
+        triggerMobileVibration('error');
         showNotifier('Please complete all steps first.', 'error');
         return;
     }
@@ -384,6 +619,8 @@ document.getElementById('multiStepForm').addEventListener('submit', function(e) 
     document.querySelectorAll('input, select, textarea').forEach(el => {
         el.disabled = false;
     });
+    
+    triggerMobileVibration('success'); // Success vibration on form submission
 });
 
 // ----- DOCUMENT UPLOAD AND OCR FUNCTIONALITY -----
@@ -415,11 +652,14 @@ document.getElementById('enrollmentForm').addEventListener('change', function(e)
     const filenameError = document.getElementById('filenameError');
 
     if (file) {
+        triggerMobileVibration('success'); // File selected vibration
+        
         // Get form data for filename validation
         const firstName = document.querySelector('input[name="first_name"]').value.trim();
         const lastName = document.querySelector('input[name="last_name"]').value.trim();
 
         if (!firstName || !lastName) {
+            this.classList.add('missing-field');
             showNotifier('Please fill in your first and last name first.', 'error');
             this.value = '';
             return;
@@ -429,6 +669,8 @@ document.getElementById('enrollmentForm').addEventListener('change', function(e)
         filenameValid = validateFilename(file.name, firstName, lastName);
 
         if (!filenameValid) {
+            this.classList.add('missing-field');
+            triggerMobileVibration('error');
             filenameError.style.display = 'block';
             filenameError.innerHTML = `
                 <small><i class="bi bi-exclamation-triangle me-1"></i>
@@ -438,6 +680,8 @@ document.getElementById('enrollmentForm').addEventListener('change', function(e)
             document.getElementById('uploadPreview').classList.add('d-none');
             document.getElementById('ocrSection').classList.add('d-none');
         } else {
+            this.classList.remove('missing-field');
+            triggerMobileVibration('success');
             filenameError.style.display = 'none';
 
             const previewContainer = document.getElementById('uploadPreview');
@@ -478,11 +722,13 @@ document.getElementById('processOcrBtn').addEventListener('click', function() {
     const file = fileInput.files[0];
 
     if (!file) {
+        highlightMissingFields([fileInput]);
         showNotifier('Please select a file first.', 'error');
         return;
     }
 
     if (!filenameValid) {
+        highlightMissingFields([fileInput]);
         showNotifier('Please rename your file to follow the required format: Lastname_Firstname_EAF', 'error');
         return;
     }
@@ -511,13 +757,16 @@ document.getElementById('processOcrBtn').addEventListener('click', function() {
         processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
 
         if (data.status === 'success') {
+            triggerMobileVibration('success');
             displayVerificationResults(data.verification);
         } else {
+            triggerMobileVibration('error');
             showNotifier(data.message, 'error');
         }
     })
     .catch(error => {
         console.error('Error processing OCR:', error);
+        triggerMobileVibration('error');
         showNotifier('Failed to process document. Please try again.', 'error');
         processBtn.disabled = false;
         processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
@@ -554,6 +803,7 @@ function displayVerificationResults(verification) {
     });
 
     if (verification.overall_success) {
+        triggerMobileVibration('success');
         feedbackContainer.style.display = 'none';
         feedbackContainer.className = 'alert alert-success mt-3';
         feedbackContainer.innerHTML = '<strong>Verification Successful!</strong> Your document has been validated.';
@@ -562,6 +812,7 @@ function displayVerificationResults(verification) {
         document.getElementById('nextStep4Btn').disabled = false;
         showNotifier('Document verification successful!', 'success');
     } else {
+        triggerMobileVibration('error');
         feedbackContainer.style.display = 'none';
         feedbackContainer.className = 'alert alert-warning mt-3';
         feedbackContainer.innerHTML = '<strong>Verification Failed:</strong> Please ensure your document is clear and contains all required information. Upload a clearer image or check that the document matches your registration details.';
@@ -572,7 +823,7 @@ function displayVerificationResults(verification) {
     }
 }
 
-// Add CSS for verification checklist
+// Add CSS for simple field highlighting
 const style = document.createElement('style');
 style.textContent = `
     .verification-checklist .form-check {
@@ -587,11 +838,39 @@ style.textContent = `
     .verification-checklist .form-check span {
         font-size: 14px;
     }
+    
+    /* Simple red border for missing fields */
+    .missing-field {
+        border-color: #dc3545 !important;
+        box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+    }
+    
+    /* Shake animation */
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        10%, 30%, 50%, 70%, 90% { transform: translateX(-3px); }
+        20%, 40%, 60%, 80% { transform: translateX(3px); }
+    }
+    
+    .shake-field {
+        animation: shake 0.6s ease-in-out;
+    }
+    
+    /* Pulse animation */
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(0, 104, 218, 0.4); }
+        70% { box-shadow: 0 0 0 8px rgba(0, 104, 218, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(0, 104, 218, 0); }
+    }
+    
+    .pulse-field {
+        animation: pulse 1s ease-in-out;
+    }
 `;
 document.head.appendChild(style);
 
 // ========================================
-// SAVE STATE FUNCTIONALITY
+// SAVE STATE FUNCTIONALITY (UNCHANGED)
 // ========================================
 
 function saveProgress() {
@@ -882,10 +1161,12 @@ function showProgressRestoreDialog() {
         
         if (restore) {
             if (loadProgress()) {
+                triggerMobileVibration('success');
                 showNotifier('Previous progress restored successfully!', 'success');
             }
         } else {
             clearProgress();
+            triggerMobileVibration('default');
             showNotifier('Starting fresh registration', 'success');
         }
         return;
@@ -925,6 +1206,7 @@ function showProgressRestoreDialog() {
     
     document.getElementById('restoreProgressBtn').addEventListener('click', () => {
         if (loadProgress()) {
+            triggerMobileVibration('success');
             showNotifier('Previous progress restored successfully!', 'success');
         }
         bootstrapModal.hide();
@@ -933,6 +1215,7 @@ function showProgressRestoreDialog() {
     
     document.getElementById('startFreshBtn').addEventListener('click', () => {
         clearProgress();
+        triggerMobileVibration('default');
         showNotifier('Starting fresh registration', 'success');
         bootstrapModal.hide();
         modal.remove();
