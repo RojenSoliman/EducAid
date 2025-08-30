@@ -167,6 +167,41 @@ function validateCurrentStep() {
     return missingFields;
 }
 
+function validateNameFields() {
+    const nameValidations = [];
+    
+    // Get name fields from Step 1
+    const firstNameField = document.querySelector('input[name="first_name"]');
+    const middleNameField = document.querySelector('input[name="middle_name"]');
+    const lastNameField = document.querySelector('input[name="last_name"]');
+    
+    // Regular expression to allow only letters, spaces, hyphens, and apostrophes
+    const namePattern = /^[A-Za-z\s\-']+$/;
+    
+    // Validate first name
+    if (firstNameField && firstNameField.value) {
+        if (!namePattern.test(firstNameField.value)) {
+            nameValidations.push(firstNameField);
+        }
+    }
+    
+    // Validate middle name (if provided)
+    if (middleNameField && middleNameField.value) {
+        if (!namePattern.test(middleNameField.value)) {
+            nameValidations.push(middleNameField);
+        }
+    }
+    
+    // Validate last name
+    if (lastNameField && lastNameField.value) {
+        if (!namePattern.test(lastNameField.value)) {
+            nameValidations.push(lastNameField);
+        }
+    }
+    
+    return nameValidations;
+}
+
 function validateSpecialFields() {
     const specialValidations = [];
     
@@ -191,17 +226,13 @@ function validateSpecialFields() {
         specialValidations.push(confirmPasswordField);
     }
     
+    // ADD NAME VALIDATION FOR STEP 1
+    if (currentStep === 1) {
+        const nameValidationErrors = validateNameFields();
+        specialValidations.push(...nameValidationErrors);
+    }
+    
     return specialValidations;
-}
-
-function calculatePasswordStrength(password) {
-    let strength = 0;
-    if (password.length >= 12) strength += 25;
-    if (/[A-Z]/.test(password)) strength += 25;
-    if (/[a-z]/.test(password)) strength += 25;
-    if (/[0-9]/.test(password)) strength += 25;
-    if (/[^A-Za-z0-9]/.test(password)) strength += 25;
-    return Math.min(strength, 100);
 }
 
 // Mobile vibration functionality
@@ -240,6 +271,21 @@ function setupRealTimeValidation() {
         // Clear error state when user starts typing
         if (field.classList.contains('missing-field')) {
             field.classList.remove('missing-field');
+        }
+        
+        // REAL-TIME NAME VALIDATION
+        if (field.name === 'first_name' || field.name === 'middle_name' || field.name === 'last_name') {
+            const namePattern = /^[A-Za-z\s\-']+$/;
+            
+            if (field.value && !namePattern.test(field.value)) {
+                field.classList.add('missing-field');
+                // Show warning but don't prevent typing
+                if (field.value.length > 2) { // Only show after typing a few characters
+                    showNotifier('Names can only contain letters, spaces, hyphens (-), and apostrophes (\').', 'error');
+                }
+            } else {
+                field.classList.remove('missing-field');
+            }
         }
     });
     
@@ -396,6 +442,20 @@ function nextStep() {
     
     if (allErrors.length > 0) {
         highlightMissingFields(allErrors);
+        
+        // ENHANCED ERROR MESSAGE FOR STEP 1 NAME VALIDATION
+        if (currentStep === 1) {
+            const nameFields = ['first_name', 'middle_name', 'last_name'];
+            const invalidNameFields = allErrors.filter(field => 
+                nameFields.includes(field.name) && field.value && !/^[A-Za-z\s\-']+$/.test(field.value)
+            );
+            
+            if (invalidNameFields.length > 0) {
+                showNotifier('Names can only contain letters, spaces, hyphens (-), and apostrophes (\').', 'error');
+                return;
+            }
+        }
+        
         showNotifier(`Please complete all required fields before proceeding. (${allErrors.length} field${allErrors.length > 1 ? 's' : ''} missing)`, 'error');
         return;
     }
