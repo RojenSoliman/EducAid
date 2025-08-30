@@ -558,6 +558,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         }
         .notifier.success { background-color: #d4edda; color: #155724; }
         .verified-email { background-color: #e9f7e9; color: #28a745; }
+        
+        /* ADD THIS: Enhanced required asterisk styling */
+        .form-label .text-danger {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        
+        .form-label .text-muted {
+            font-size: 0.85em;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -578,15 +589,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 <!-- Step 1: Personal Information -->
                 <div class="step-panel" id="step-1">
                     <div class="mb-3">
-                        <label class="form-label">First Name</label>
+                        <label class="form-label">First Name <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="first_name" required />
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Middle Name</label>
+                        <label class="form-label">Middle Name <span class="text-muted">(Optional)</span></label>
                         <input type="text" class="form-control" name="middle_name" />
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Last Name</label>
+                        <label class="form-label">Last Name <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="last_name" required />
                     </div>
                     <button type="button" class="btn btn-primary w-100" onclick="nextStep()">Next</button>
