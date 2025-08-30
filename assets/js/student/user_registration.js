@@ -748,34 +748,139 @@ const strengthText = document.getElementById('strengthText');
 
 function updatePasswordStrength() {
     const password = passwordInput.value;
-    let strength = 0;
-
-    if (password.length >= 12) strength += 25;
-    if (/[A-Z]/.test(password)) strength += 25;
-    if (/[a-z]/.test(password)) strength += 25;
-    if (/[0-9]/.test(password)) strength += 25;
-    if (/[^A-Za-z0-9]/.test(password)) strength += 25;
-
-    strength = Math.min(strength, 100);
-
-    strengthBar.style.width = strength + '%';
-    strengthBar.className = 'progress-bar';
-
-    if (strength < 50) {
-        strengthBar.classList.add('bg-danger');
-        strengthText.textContent = 'Weak';
-    } else if (strength < 75) {
-        strengthBar.classList.add('bg-warning');
-        strengthText.textContent = 'Medium';
-    } else {
-        strengthBar.classList.add('bg-success');
-        strengthText.textContent = 'Strong';
-        triggerMobileVibration('success'); // Vibrate when password becomes strong
-    }
 
     if (password.length === 0) {
         strengthBar.style.width = '0%';
         strengthText.textContent = '';
+        return;
+    }
+
+    let strength = 0;
+    let feedback = [];
+
+    // 1. LENGTH SCORING (0-30 points) - Enhanced scoring
+    if (password.length >= 16) {
+        strength += 30;
+    } else if (password.length >= 12) {
+        strength += 25;
+    } else if (password.length >= 8) {
+        strength += 15;
+        feedback.push('Consider longer password');
+    } else {
+        strength += 5;
+        feedback.push('Password too short');
+    }
+
+    // 2. CHARACTER VARIETY (0-40 points) - Same as before but better scoring
+    if (/[A-Z]/.test(password)) strength += 10;  // Uppercase
+    if (/[a-z]/.test(password)) strength += 10;  // Lowercase
+    if (/[0-9]/.test(password)) strength += 10;  // Numbers
+    if (/[^A-Za-z0-9]/.test(password)) strength += 10; // Special characters
+
+    // 3. REPETITION PENALTY (deduct up to -25 points) - NEW ANTI-GAMING FEATURE
+    const charCount = {};
+    for (let char of password) {
+        charCount[char] = (charCount[char] || 0) + 1;
+    }
+    
+    let repetitionPenalty = 0;
+    Object.values(charCount).forEach(count => {
+        if (count > 3) {
+            repetitionPenalty += (count - 3) * 4; // Heavy penalty for excessive repetition
+        } else if (count > 2) {
+            repetitionPenalty += (count - 2) * 2; // Moderate penalty
+        }
+    });
+    
+    // Check for consecutive repeated characters (e.g., "aaa", "111")
+    let consecutiveCount = 1;
+    for (let i = 1; i < password.length; i++) {
+        if (password[i] === password[i-1]) {
+            consecutiveCount++;
+        } else {
+            if (consecutiveCount > 2) {
+                repetitionPenalty += consecutiveCount * 2;
+            }
+            consecutiveCount = 1;
+        }
+    }
+    if (consecutiveCount > 2) {
+        repetitionPenalty += consecutiveCount * 2;
+    }
+    
+    strength -= Math.min(repetitionPenalty, 25);
+    if (repetitionPenalty > 10) {
+        feedback.push('Avoid repeating characters');
+    }
+
+    // 4. PATTERN DETECTION PENALTY (deduct up to -20 points) - NEW ANTI-GAMING FEATURE
+    let patternPenalty = 0;
+    const commonPatterns = [
+        /123456/i,     // Sequential numbers
+        /abcdef/i,     // Sequential letters  
+        /qwerty/i,     // Keyboard patterns
+        /asdfgh/i,     // Keyboard patterns
+        /password/i,   // Common word
+        /admin/i,      // Common word
+        /(\d)\1{2,}/,  // Repeated digits (111, 222, etc.)
+        /([a-zA-Z])\1{2,}/i, // Repeated letters (aaa, BBB, etc.)
+    ];
+    
+    commonPatterns.forEach(pattern => {
+        if (pattern.test(password)) {
+            patternPenalty += 5;
+        }
+    });
+    
+    strength -= Math.min(patternPenalty, 20);
+    if (patternPenalty > 5) {
+        feedback.push('Avoid predictable patterns');
+    }
+
+    // 5. BONUS POINTS FOR EXCELLENT PASSWORDS (up to +20 points)
+    if (password.length >= 16 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password) && /[^A-Za-z0-9]/.test(password)) {
+        strength += 10; // Bonus for very long passwords with all character types
+    }
+    
+    // Multiple special characters bonus
+    const specialChars = password.match(/[^A-Za-z0-9]/g);
+    if (specialChars && specialChars.length >= 3) {
+        strength += 5;
+    }
+    
+    // Mixed case bonus
+    if (/[A-Z]/.test(password) && /[a-z]/.test(password)) {
+        strength += 5;
+    }
+
+    // Ensure strength is between 0-100
+    strength = Math.max(0, Math.min(strength, 100));
+
+    // UPDATE VISUAL DISPLAY WITH 5 LEVELS INSTEAD OF 3
+    strengthBar.style.width = strength + '%';
+    strengthBar.className = 'progress-bar';
+
+    if (strength < 30) {
+        strengthBar.classList.add('bg-danger');
+        strengthText.textContent = 'Very Weak';
+        strengthText.style.color = '#dc3545';
+    } else if (strength < 50) {
+        strengthBar.classList.add('bg-warning');
+        strengthText.textContent = 'Weak';
+        strengthText.style.color = '#fd7e14';
+    } else if (strength < 70) {
+        strengthBar.classList.add('bg-info');
+        strengthText.textContent = 'Fair';
+        strengthText.style.color = '#17a2b8';
+    } else if (strength < 85) {
+        strengthBar.classList.add('bg-primary');
+        strengthText.textContent = 'Good';
+        strengthText.style.color = '#007bff';
+    } else {
+        strengthBar.classList.add('bg-success');
+        strengthText.textContent = 'Very Strong';
+        strengthText.style.color = '#28a745';
+        triggerMobileVibration('success'); // Vibrate when password becomes very strong
     }
 }
 
