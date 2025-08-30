@@ -12,7 +12,13 @@ function check_documents($connection, $student_id) {
     $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
     $uploaded = [];
     while ($row = pg_fetch_assoc($query)) $uploaded[] = $row['type'];
-    return count(array_diff($required, $uploaded)) === 0;
+    
+    // Check if grades are uploaded
+    $grades_query = pg_query_params($connection, "SELECT COUNT(*) as count FROM grade_uploads WHERE student_id = $1", [$student_id]);
+    $grades_row = pg_fetch_assoc($grades_query);
+    $has_grades = $grades_row['count'] > 0;
+    
+    return count(array_diff($required, $uploaded)) === 0 && $has_grades;
 }
 
 // Pagination & Filtering logic
@@ -113,6 +119,43 @@ function render_table($applicants, $connection) {
                                         }
                                     }
                                 } else echo "<p class='text-muted'>No documents uploaded.</p>";
+                                
+                                // Check for grades
+                                $grades_query = pg_query_params($connection, "SELECT * FROM grade_uploads WHERE student_id = $1 ORDER BY upload_date DESC LIMIT 1", [$student_id]);
+                                if (pg_num_rows($grades_query) > 0) {
+                                    $grade_upload = pg_fetch_assoc($grades_query);
+                                    echo "<hr><div class='grades-section'>";
+                                    echo "<h6><i class='bi bi-file-earmark-text me-2'></i>Academic Grades</h6>";
+                                    echo "<div class='d-flex justify-content-between align-items-center mb-2'>";
+                                    echo "<span><strong>Status:</strong> <span class='badge bg-" . 
+                                         ($grade_upload['validation_status'] === 'passed' ? 'success' : 
+                                          ($grade_upload['validation_status'] === 'failed' ? 'danger' : 'warning')) . 
+                                         "'>" . ucfirst($grade_upload['validation_status']) . "</span></span>";
+                                    if ($grade_upload['ocr_confidence']) {
+                                        echo "<span><strong>OCR Confidence:</strong> " . round($grade_upload['ocr_confidence'], 1) . "%</span>";
+                                    }
+                                    echo "</div>";
+                                    
+                                    if ($grade_upload['file_path']) {
+                                        $grades_file_path = htmlspecialchars($grade_upload['file_path']);
+                                        if (preg_match('/\.(jpg|jpeg|png|gif)$/i', $grades_file_path)) {
+                                            echo "<img src='$grades_file_path' alt='Grades' class='img-fluid rounded border mb-2' style='max-height: 200px; max-width: 100%;' onclick='openImageZoom(this.src, \"Grades\")'>";
+                                        } elseif (preg_match('/\.pdf$/i', $grades_file_path)) {
+                                            echo "<iframe src='$grades_file_path' width='100%' height='300' style='border: 1px solid #ccc;'></iframe>";
+                                        }
+                                    }
+                                    
+                                    echo "<div class='mt-2'>";
+                                    echo "<a href='validate_grades.php' class='btn btn-outline-primary btn-sm'>";
+                                    echo "<i class='bi bi-eye me-1'></i>Review in Grades Validator</a>";
+                                    echo "</div>";
+                                    echo "</div>";
+                                } else {
+                                    echo "<hr><div class='alert alert-warning'>";
+                                    echo "<i class='bi bi-exclamation-triangle me-2'></i>";
+                                    echo "<strong>Missing:</strong> Academic grades not uploaded.";
+                                    echo "</div>";
+                                }
                                 ?>
                             </div>
                             <div class="modal-footer">
