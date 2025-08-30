@@ -467,7 +467,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     }
 
     $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'under_registration', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $municipality_id,
@@ -782,8 +782,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                         <small id="strengthText" class="text-muted"></small>
                     </div>
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" name="agree_terms" required />
-                        <label class="form-check-label">I agree to the Terms</label>
+                        <input type="checkbox" class="form-check-input" name="agree_terms" id="agreeTerms" required />
+                        <label class="form-check-label" for="agreeTerms">
+                            I agree to the 
+                            <a href="#" class="text-primary" data-bs-toggle="modal" data-bs-target="#termsModal">
+                                Terms and Conditions
+                            </a>
+                            <span class="text-danger">*</span>
+                        </label>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
                     <button type="submit" name="register" class="btn btn-success w-100">Submit</button>
@@ -809,5 +815,80 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
 <!-- Your registration JavaScript should come AFTER Bootstrap -->
 <script src="../../assets/js/student/user_registration.js"></script>
+
+<!-- ADD this modal HTML before closing </body> tag -->
+<!-- Terms and Conditions Modal -->
+<div class="modal fade" id="termsModal" tabindex="-1" aria-labelledby="termsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="termsModalLabel">
+                    <i class="bi bi-file-text me-2"></i>Terms and Conditions
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="terms-content">
+                    <h6>1. Eligibility Requirements</h6>
+                    <p>To be eligible for EducAid scholarship, applicants must:</p>
+                    <ul>
+                        <li>Be currently enrolled in an accredited university/college</li>
+                        <li>Maintain good academic standing</li>
+                        <li>Be a resident of the participating municipality</li>
+                        <li>Meet financial need requirements</li>
+                    </ul>
+
+                    <h6>2. Application Process</h6>
+                    <p>All applicants must complete the online registration process and provide:</p>
+                    <ul>
+                        <li>Valid enrollment assessment form</li>
+                        <li>Accurate personal and academic information</li>
+                        <li>Valid email address and phone number for verification</li>
+                    </ul>
+
+                    <h6>3. Data Privacy and Security</h6>
+                    <p>By registering, you consent to the collection and processing of your personal data for:</p>
+                    <ul>
+                        <li>Scholarship application evaluation</li>
+                        <li>Communication regarding application status</li>
+                        <li>Academic monitoring and reporting</li>
+                        <li>Statistical analysis for program improvement</li>
+                    </ul>
+
+                    <h6>4. Obligations and Responsibilities</h6>
+                    <p>If selected for the scholarship, recipients must:</p>
+                    <ul>
+                        <li>Maintain satisfactory academic performance</li>
+                        <li>Provide regular updates on academic progress</li>
+                        <li>Attend mandatory orientation and meetings</li>
+                        <li>Use scholarship funds exclusively for educational purposes</li>
+                    </ul>
+
+                    <h6>5. Program Rules and Regulations</h6>
+                    <ul>
+                        <li>Scholarship awards are subject to available funding</li>
+                        <li>Recipients must complete their program within the standard timeframe</li>
+                        <li>Failure to meet requirements may result in scholarship termination</li>
+                        <li>False information in the application may lead to immediate disqualification</li>
+                    </ul>
+
+                    <h6>6. Contact and Support</h6>
+                    <p>For questions or concerns about the EducAid program, please contact:</p>
+                    <ul>
+                        <li>Email: support@educaid.gov.ph</li>
+                        <li>Phone: (123) 456-7890</li>
+                        <li>Office Hours: Monday to Friday, 8:00 AM - 5:00 PM</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="acceptTermsBtn" data-bs-dismiss="modal">
+                    <i class="bi bi-check-circle me-2"></i>I Accept
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 </body>
 </html>

@@ -1519,3 +1519,132 @@ function showProgressRestoreDialog() {
         modal.remove();
     });
 }
+
+// Enhanced Terms Modal with Scroll Requirement
+document.addEventListener('DOMContentLoaded', () => {
+    const acceptTermsBtn = document.getElementById('acceptTermsBtn');
+    const agreeTermsCheckbox = document.getElementById('agreeTerms');
+    const termsModal = document.getElementById('termsModal');
+    let hasScrolledToBottom = false;
+    
+    if (acceptTermsBtn && agreeTermsCheckbox && termsModal) {
+        // Initially disable the accept button
+        acceptTermsBtn.disabled = true;
+        acceptTermsBtn.innerHTML = '<i class="bi bi-arrow-down me-2"></i>Please scroll to read all terms';
+        
+        // Handle scroll detection in modal body
+        const modalBody = termsModal.querySelector('.modal-body');
+        if (modalBody) {
+            modalBody.addEventListener('scroll', function() {
+                // Check if user has scrolled to the bottom (with small tolerance)
+                const scrollTop = this.scrollTop;
+                const scrollHeight = this.scrollHeight;
+                const clientHeight = this.clientHeight;
+                const scrolledToBottom = scrollTop + clientHeight >= scrollHeight - 10;
+                
+                if (scrolledToBottom && !hasScrolledToBottom) {
+                    hasScrolledToBottom = true;
+                    
+                    // Enable accept button
+                    acceptTermsBtn.disabled = false;
+                    acceptTermsBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>I Accept';
+                    acceptTermsBtn.classList.remove('btn-secondary');
+                    acceptTermsBtn.classList.add('btn-primary');
+                    
+                    // Success vibration
+                    triggerMobileVibration('success');
+                    
+                    // Show success notification
+                    showNotifier('Thank you for reading the terms! You can now accept them.', 'success');
+                    
+                    // Add visual feedback - highlight the button briefly
+                    acceptTermsBtn.classList.add('pulse-field');
+                    setTimeout(() => {
+                        acceptTermsBtn.classList.remove('pulse-field');
+                    }, 1000);
+                }
+            });
+        }
+        
+        // Handle Accept Terms button click
+        acceptTermsBtn.addEventListener('click', () => {
+            if (!hasScrolledToBottom) {
+                showNotifier('Please scroll through and read all terms and conditions first.', 'error');
+                triggerMobileVibration('error');
+                return;
+            }
+            
+            agreeTermsCheckbox.checked = true;
+            agreeTermsCheckbox.classList.remove('missing-field');
+            
+            // Success vibration
+            triggerMobileVibration('success');
+            
+            // Show success notification
+            showNotifier('Terms and conditions accepted successfully!', 'success');
+        });
+    }
+    
+    // Handle modal show event - Reset state when modal opens
+    if (termsModal) {
+        termsModal.addEventListener('show.bs.modal', () => {
+            // Reset state when modal opens
+            hasScrolledToBottom = false;
+            if (acceptTermsBtn) {
+                acceptTermsBtn.disabled = true;
+                acceptTermsBtn.innerHTML = '<i class="bi bi-arrow-down me-2"></i>Please scroll to read all terms';
+                acceptTermsBtn.classList.remove('btn-primary');
+                acceptTermsBtn.classList.add('btn-secondary');
+            }
+            
+            // Reset scroll position to top
+            const modalBody = termsModal.querySelector('.modal-body');
+            if (modalBody) {
+                modalBody.scrollTop = 0;
+            }
+        });
+        
+        termsModal.addEventListener('shown.bs.modal', () => {
+            // Light vibration when modal opens
+            triggerMobileVibration('default');
+            
+            // Show instruction notification
+            showNotifier('Please scroll down to read all terms and conditions.', 'warning');
+        });
+        
+        termsModal.addEventListener('hidden.bs.modal', () => {
+            // Check if terms were accepted
+            if (agreeTermsCheckbox && agreeTermsCheckbox.checked) {
+                // Focus on submit button if terms are accepted
+                const submitBtn = document.querySelector('button[name="register"]');
+                if (submitBtn) {
+                    submitBtn.focus();
+                }
+            }
+        });
+    }
+    
+    // Prevent checking terms checkbox directly without reading modal
+    if (agreeTermsCheckbox) {
+        agreeTermsCheckbox.addEventListener('click', function(e) {
+            if (!hasScrolledToBottom) {
+                e.preventDefault();
+                showNotifier('Please read the terms and conditions by clicking the link first.', 'error');
+                triggerMobileVibration('error');
+                
+                // Open the modal to force reading
+                const modal = new bootstrap.Modal(termsModal);
+                modal.show();
+            }
+        });
+    }
+});
+
+// Enhanced function to show terms modal programmatically
+function showTermsModal() {
+    const termsModal = document.getElementById('termsModal');
+    if (termsModal) {
+        const modal = new bootstrap.Modal(termsModal);
+        modal.show();
+    }
+}
