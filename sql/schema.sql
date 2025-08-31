@@ -217,3 +217,42 @@ CREATE TABLE qr_codes (
 );
 
 ALTER TABLE qr_codes ADD COLUMN unique_id TEXT;
+
+-- Add last_login column to students table
+ALTER TABLE students ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;
+
+-- Grades upload tables for OCR processing
+CREATE TABLE IF NOT EXISTS grade_uploads (
+    upload_id SERIAL PRIMARY KEY,
+    student_id INTEGER REFERENCES students(student_id),
+    file_path VARCHAR(255) NOT NULL,
+    file_type VARCHAR(10) NOT NULL, -- 'pdf' or 'image'
+    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ocr_processed BOOLEAN DEFAULT FALSE,
+    ocr_confidence DECIMAL(5,2), -- 0.00 to 100.00
+    extracted_text TEXT,
+    validation_status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'passed', 'failed', 'manual_review'
+    admin_reviewed BOOLEAN DEFAULT FALSE,
+    admin_notes TEXT,
+    reviewed_by INTEGER REFERENCES admins(admin_id),
+    reviewed_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS extracted_grades (
+    grade_id SERIAL PRIMARY KEY,
+    upload_id INTEGER REFERENCES grade_uploads(upload_id),
+    subject_name VARCHAR(100),
+    grade_value VARCHAR(10), -- Store as string to handle different formats
+    grade_numeric DECIMAL(4,2), -- Normalized numeric value (1.0-5.0 scale)
+    grade_percentage DECIMAL(5,2), -- Percentage equivalent (60-100)
+    semester VARCHAR(20),
+    school_year VARCHAR(10),
+    extraction_confidence DECIMAL(5,2),
+    is_passing BOOLEAN DEFAULT FALSE
+);
+
+-- Indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_grade_uploads_student ON grade_uploads(student_id);
+CREATE INDEX IF NOT EXISTS idx_grade_uploads_status ON grade_uploads(validation_status);
+CREATE INDEX IF NOT EXISTS idx_extracted_grades_upload ON extracted_grades(upload_id);
+CREATE INDEX IF NOT EXISTS idx_students_last_login ON students(last_login);

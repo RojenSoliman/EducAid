@@ -49,6 +49,12 @@ if (isset($_SESSION['admin_id'])) {
         <span class="links_name">Manage Applicants</span>
       </a>
     </li>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'validate_grades.php' ? 'active' : ''; ?>">
+      <a href="validate_grades.php">
+        <i class="bi bi-file-earmark-check icon"></i>
+        <span class="links_name">Validate Grades</span>
+      </a>
+    </li>
     <?php if ($admin_role === 'super_admin'): ?>
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'verify_students.php' ? 'active' : ''; ?>">
       <a href="verify_students.php">
