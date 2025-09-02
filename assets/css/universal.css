@@ -332,12 +332,31 @@ body {
 
 /* Form Styles */
 .step {
-    display: none;
-    animation: slideInRight 300ms ease-out;
+    display: none !important;
 }
 
 .step.active {
-    display: block;
+    display: block !important;
+}
+
+/* Ensure form elements are visible */
+.step.active form,
+.step.active .form-group,
+.step.active .form-control,
+.step.active .btn,
+.step.active .text-center,
+.step.active p,
+.step.active h5,
+.step.active label {
+    display: block !important;
+}
+
+.step.active .d-grid {
+    display: grid !important;
+}
+
+.step.active .btn {
+    display: inline-block !important;
 }
 
 @keyframes slideInRight {
@@ -1460,3 +1479,11 @@ footer .container-fluid {
     overflow: visible !important;
 }
 footer { margin-top: 0 !important; }
+/* Simple fix - add this to your universal.css */
+.step.active {
+    display: block !important;
+}
+
+.step.active * {
+    display: inherit !important;
+}

@@ -416,6 +416,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                     <div class="text-center mb-4">
                                         <i class="bi bi-check-circle text-primary" style="font-size: 3rem;"></i>
                                         <h5 class="mt-3">Enter Reset Code</h5>
+                                        
                                         <p class="text-muted">Enter the 6-digit code sent to your email</p>
                                     </div>
                                     <form id="forgotOtpForm">
