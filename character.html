@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EducAid Chatbot Mascot</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+
+  body {
+    margin: 0;
+    font-family: 'Poppins', sans-serif;
+    background: #f4f4f6;
+  }
+
+  /* Chatbot mascot button */
+  .chat-mascot {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 70px;
+    height: 70px;
+    background: #8D0000;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    animation: bounce 2s infinite;
+  }
+
+  /* Simple eyes to give character */
+  .chat-mascot::before,
+  .chat-mascot::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: white;
+    border-radius: 50%;
+  }
+
+  .chat-mascot::before { left: 18px; top: 20px; }
+  .chat-mascot::after { right: 18px; top: 20px; }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  /* Chat panel */
+  .chat-panel {
+    position: fixed;
+    bottom: 120px;
+    right: 30px;
+    width: 360px;
+    max-height: 500px;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: scale(0);
+    transform-origin: bottom right;
+    transition: transform 0.3s ease;
+  }
+
+  .chat-panel.active {
+    transform: scale(1);
+  }
+
+  .chat-header {
+    background: #8D0000;
+    color: white;
+    padding: 15px;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .chat-body {
+    padding: 15px;
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .bot-message {
+    background: #8D0000;
+    color: white;
+    padding: 10px 15px;
+    border-radius: 20px;
+    max-width: 70%;
+    font-size: 14px;
+    align-self: flex-start;
+    position: relative;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .bot-message::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 15px;
+    width: 0;
+    height: 0;
+    border: 10px solid transparent;
+    border-top-color: #8D0000;
+    border-bottom: 0;
+    margin-left: -5px;
+    margin-bottom: -10px;
+  }
+
+  .user-message {
+    align-self: flex-end;
+    background: #eee;
+    color: #333;
+    padding: 10px 15px;
+    border-radius: 20px;
+    max-width: 70%;
+    font-size: 14px;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px);}
+    to { opacity: 1; transform: translateY(0);}
+  }
+
+  .chat-input {
+    display: flex;
+    border-top: 1px solid #ddd;
+  }
+
+  .chat-input input {
+    flex: 1;
+    padding: 10px 15px;
+    border: none;
+    outline: none;
+    font-size: 14px;
+  }
+
+  .chat-input button {
+    background: #8D0000;
+    color: #fff;
+    border: none;
+    padding: 0 20px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Chatbot mascot -->
+<div class="chat-mascot" id="chat-mascot"></div>
+
+<!-- Chat panel -->
+<div class="chat-panel" id="chat-panel">
+  <div class="chat-header">EducAid Assistant</div>
+  <div class="chat-body" id="chat-body">
+    <div class="bot-message">Hi! I’m your EducAid assistant 👋</div>
+  </div>
+  <div class="chat-input">
+    <input type="text" id="user-input" placeholder="Type your message..." />
+    <button onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script>
+  const mascot = document.getElementById('chat-mascot');
+  const panel = document.getElementById('chat-panel');
+  const chatBody = document.getElementById('chat-body');
+
+  // Toggle chat panel
+  mascot.addEventListener('click', () => {
+    panel.classList.toggle('active');
+  });
+
+  // Send message
+  function sendMessage() {
+    const input = document.getElementById('user-input');
+    const message = input.value.trim();
+    if (!message) return;
+
+    // Add user message
+    const userMsg = document.createElement('div');
+    userMsg.classList.add('user-message');
+    userMsg.textContent = message;
+    chatBody.appendChild(userMsg);
+    input.value = '';
+    chatBody.scrollTop = chatBody.scrollHeight;
+
+    // Add bot typing animation
+    const botMsg = document.createElement('div');
+    botMsg.classList.add('bot-message');
+    botMsg.textContent = "...";
+    chatBody.appendChild(botMsg);
+    chatBody.scrollTop = chatBody.scrollHeight;
+
+    setTimeout(() => {
+      botMsg.textContent = "This is a mock reply from EducAid assistant.";
+      chatBody.scrollTop = chatBody.scrollHeight;
+    }, 1200);
+  }
+</script>
+
+</body>
+</html>

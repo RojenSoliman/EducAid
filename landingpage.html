@@ -109,7 +109,7 @@
       <div class="row align-items-center g-4">
         <div class="col-lg-6">
           <h2 class="section-title mb-3">What is <span class="text-primary">EducAid</span>?</h2>
-          <p class="section-lead">EducAid is the City of General Trias’ official Educational Assistance Management System. Built with transparency and accessibility in mind, it streamlines application, evaluation, release, and reporting of aid for qualified students.</p>
+          <p class="section-lead">EducAid is the City of General Trias' official Educational Assistance Management System. Built with transparency and accessibility in mind, it streamlines application, evaluation, release, and reporting of aid for qualified students.</p>
           <div class="row g-3 mt-2">
             <div class="col-md-6">
               <div class="soft-card p-3">
@@ -153,34 +153,34 @@
   </section>
 
   <!-- How it works -->
-  <section id="how">
+  <section id="how" class="fade-in">
     <div class="container">
       <div class="row mb-4">
-        <div class="col-lg-8">
+        <div class="col-lg-8 fade-in-left">
           <h2 class="section-title">How it works</h2>
           <p class="section-lead">A simple four-step process from online application to aid claiming.</p>
         </div>
       </div>
-      <div class="row g-3 g-lg-4">
-        <div class="col-md-6 col-lg-3">
+      <div class="row g-3 g-lg-4 fade-in-stagger">
+        <div class="col-md-6 col-lg-3 fade-in">
           <div class="soft-card p-3 h-100">
             <div class="step mb-2"><div class="step-badge">1</div><h6 class="mb-0">Create & Verify</h6></div>
             <p class="small text-body-secondary mb-0">Register using your email and mobile. Verify via OTP to secure your account.</p>
           </div>
         </div>
-        <div class="col-md-6 col-lg-3">
+        <div class="col-md-6 col-lg-3 fade-in">
           <div class="soft-card p-3 h-100">
             <div class="step mb-2"><div class="step-badge">2</div><h6 class="mb-0">Apply Online</h6></div>
             <p class="small text-body-secondary mb-0">Complete your profile, select your barangay, and upload required documents.</p>
           </div>
         </div>
-        <div class="col-md-6 col-lg-3">
+        <div class="col-md-6 col-lg-3 fade-in">
           <div class="soft-card p-3 h-100">
             <div class="step mb-2"><div class="step-badge">3</div><h6 class="mb-0">Get Evaluated</h6></div>
             <p class="small text-body-secondary mb-0">Admins validate eligibility and post status updates with reminders.</p>
           </div>
         </div>
-        <div class="col-md-6 col-lg-3">
+        <div class="col-md-6 col-lg-3 fade-in">
           <div class="soft-card p-3 h-100">
             <div class="step mb-2"><div class="step-badge">4</div><h6 class="mb-0">Claim with QR</h6></div>
             <p class="small text-body-secondary mb-0">Receive your QR code and bring it on distribution day for quick claiming.</p>
@@ -191,16 +191,15 @@
   </section>
 
   <!-- Announcements -->
-  <section id="announcements" class="bg-body-tertiary">
+  <section id="announcements" class="bg-body-tertiary fade-in">
     <div class="container">
-      <div class="d-flex align-items-end justify-content-between mb-3">
-        <div>
+      <div class="row mb-4">
+        <div class="col-lg-8 fade-in-left">
           <h2 class="section-title">Latest Announcements</h2>
-          <p class="section-lead mb-0">Schedules, locations, and reminders from the City Hall.</p>
+          <p class="section-lead">Stay updated with the latest news and information.</p>
         </div>
-        <a href="#" class="btn btn-sm btn-outline-primary">View all</a>
       </div>
-      <div class="row g-4">
+      <div class="row g-3 g-lg-4 fade-in-stagger">
         <div class="col-md-6 col-lg-4">
           <div class="soft-card h-100 ann-card">
             <img src="https://images.unsplash.com/photo-1606761568499-6d2451b23c56?q=80&w=1200&auto=format&fit=crop" alt="Announcement" class="img-fluid" />
@@ -239,7 +238,7 @@
   </section>
 
   <!-- Requirements -->
-  <section id="requirements">
+  <section id="requirements" class="fade-in-scale">
     <div class="container">
       <div class="row mb-4">
         <div class="col-lg-8">
@@ -348,7 +347,7 @@
             <div class="brand-badge">EA</div>
             <div>
               <div class="footer-logo">EducAid • General Trias</div>
-              <small>Let’s join forces for a more progressive GenTrias.</small>
+              <small>Let's join forces for a more progressive GenTrias.</small>
             </div>
           </div>
         </div>
@@ -400,25 +399,28 @@
   </div>
 </div>
 
-  <script>
-    // Smooth anchor highlighting
-    const links = document.querySelectorAll('.nav-link');
-    const sections = [...links].map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
-    const obs = new IntersectionObserver((entries)=>{
-      entries.forEach(e=>{
-        const id = '#'+e.target.id;
-        const link = document.querySelector(`.nav-link[href="${id}"]`);
-        if(link){ link.classList.toggle('active', e.isIntersecting && e.intersectionRatio > .5); }
-      });
-    }, {threshold:[.6]});
-    sections.forEach(s=>obs.observe(s));
+  <!-- Keep only these scripts before closing </body> -->
 
-    // Current year
-    document.getElementById('year').textContent = new Date().getFullYear();
-  </script>
+<script>
+  // Smooth anchor highlighting
+  const links = document.querySelectorAll('.nav-link');
+  const sections = [...links].map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  const obs = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      const id = '#'+e.target.id;
+      const link = document.querySelector(`.nav-link[href="${id}"]`);
+      if(link){ link.classList.toggle('active', e.isIntersecting && e.intersectionRatio > .5); }
+    });
+  }, {threshold:[.6]});
+  sections.forEach(s=>obs.observe(s));
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<!-- REPLACE your existing chatbot script with this enhanced version -->
+  // Current year
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- Chatbot script -->
 <script>
 // Enhanced EducAid Chatbot
 document.addEventListener('DOMContentLoaded', function() {
@@ -543,5 +545,60 @@ function formatChatbotResponse(text) {
     .replace(/\*/g, '');
 }
 </script>
+
+<!-- Enhanced scroll animations - KEEP ONLY THIS ONE -->
+<script>
+class ScrollAnimations {
+  constructor() {
+    this.observerOptions = {
+      threshold: 0.1,
+      rootMargin: '0px 0px -10% 0px'
+    };
+    
+    this.init();
+  }
+  
+  init() {
+    this.createObserver();
+    this.observeElements();
+  }
+  
+  createObserver() {
+    this.observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          this.animateElement(entry.target);
+          this.observer.unobserve(entry.target);
+        }
+      });
+    }, this.observerOptions);
+  }
+  
+  observeElements() {
+    const elements = document.querySelectorAll('.fade-in, .fade-in-left, .fade-in-right, .fade-in-scale');
+    elements.forEach(el => this.observer.observe(el));
+  }
+  
+  animateElement(element) {
+    element.classList.add('visible');
+    
+    // Add stagger effect for child elements
+    if (element.classList.contains('fade-in-stagger')) {
+      const children = element.querySelectorAll('.fade-in');
+      children.forEach((child, index) => {
+        setTimeout(() => {
+          child.classList.add('visible');
+        }, index * 100);
+      });
+    }
+  }
+}
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  new ScrollAnimations();
+});
+</script>
+
 </body>
 </html>

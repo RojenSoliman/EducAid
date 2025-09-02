@@ -78,6 +78,8 @@ html, body {
   place-items: center;
   background: var(--thm-light-bg);
   z-index: 0; /* ensure hero is below quick-links */
+  opacity: 0;
+  animation: heroFadeIn 1.2s ease-out 0.2s forwards;
 }
 .hero::after {
   content: "";
@@ -95,19 +97,31 @@ html, body {
   box-shadow: var(--shadow);
   position: relative;
   z-index: 1;
+  opacity: 0;
+  transform: scale(0.9);
+  animation: cardZoomIn 0.8s ease-out 0.6s forwards;
 }
 .hero h1 {
   font-weight: 800;
   letter-spacing: .2px;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: textSlideUp 0.6s ease-out 0.8s forwards;
 }
 .hero p {
   color: var(--thm-gray);
+  opacity: 0;
+  transform: translateY(20px);
+  animation: textSlideUp 0.6s ease-out 1s forwards;
 }
 .cta-btn {
   border: none;
   border-radius: 999px;
   padding: .85rem 1.25rem;
   font-weight: 600;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: textSlideUp 0.6s ease-out 1.2s forwards;
 }
 .btn-primary-custom {
   background: var(--thm-primary);
@@ -160,8 +174,11 @@ html, body {
   height: 46px;
   border-radius: 999px;
   background: var(--thm-primary);
-  color: #fff;
+  color: white !important; /* Force white color */
   font-size: 1.2rem;
+}
+.ql-icon i {
+  color: white !important; /* Ensure icon elements are white */
 }
 .ql-card span {
   color: var(--thm-black);
@@ -177,7 +194,45 @@ html, body {
 }
 .ql-card:hover .ql-icon {
   background: var(--thm-green);
-  color: #fff;
+  color: white !important; /* Keep white on hover */
+}
+.ql-card:hover .ql-icon i {
+  color: white !important; /* Keep icon elements white on hover */
+}
+
+/* ADD quick links cascade animation */
+
+.ql-card {
+  opacity: 0;
+  transform: translateY(40px);
+  animation: cardSlideUp 0.6s ease-out forwards;
+}
+
+/* Stagger the animation for each quick link */
+.ql-card:nth-child(1) { animation-delay: 1.4s; }
+.ql-card:nth-child(2) { animation-delay: 1.6s; }
+.ql-card:nth-child(3) { animation-delay: 1.8s; }
+.ql-card:nth-child(4) { animation-delay: 2s; }
+
+@keyframes cardSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Enhanced hover effect for quick links */
+.ql-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ql-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
 }
 
 /* Section base */
@@ -727,4 +782,172 @@ footer a {
 .ea-chat__bubble strong {
     color: var(--thm-primary, #0d6efd);
     font-weight: 600;
+}
+
+/* ADD preloader styles */
+
+.preloader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--thm-light-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    transition: opacity 0.5s ease-out;
+}
+
+.preloader.fade-out {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.preloader-logo {
+    width: 80px;
+    height: 80px;
+    background: var(--thm-primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 2rem;
+    font-weight: 800;
+    animation: logoSpin 1s ease-in-out infinite;
+}
+
+@keyframes logoSpin {
+    0%, 100% { transform: scale(1) rotate(0deg); }
+    50% { transform: scale(1.1) rotate(180deg); }
+}
+
+/* ADD these hero entrance animations to your landing_page.css */
+
+/* Hero fade-in and slide-up animation */
+.hero {
+  opacity: 0;
+  animation: heroFadeIn 1.2s ease-out 0.2s forwards;
+}
+
+@keyframes heroFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hero card entrance with scale effect */
+.hero-card {
+  opacity: 0;
+  transform: scale(0.9);
+  animation: cardZoomIn 0.8s ease-out 0.6s forwards;
+}
+
+@keyframes cardZoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Staggered text animation */
+.hero h1 {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: textSlideUp 0.6s ease-out 0.8s forwards;
+}
+
+.hero p {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: textSlideUp 0.6s ease-out 1s forwards;
+}
+
+.hero .cta-btn {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: textSlideUp 0.6s ease-out 1.2s forwards;
+}
+
+@keyframes textSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Scroll-triggered fade-in animations */
+.fade-in {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.fade-in.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Staggered animations for child elements */
+.fade-in-stagger .fade-in:nth-child(1) { transition-delay: 0.1s; }
+.fade-in-stagger .fade-in:nth-child(2) { transition-delay: 0.2s; }
+.fade-in-stagger .fade-in:nth-child(3) { transition-delay: 0.3s; }
+.fade-in-stagger .fade-in:nth-child(4) { transition-delay: 0.4s; }
+.fade-in-stagger .fade-in:nth-child(5) { transition-delay: 0.5s; }
+
+/* Different animation directions */
+.fade-in-left {
+  opacity: 0;
+  transform: translateX(-30px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.fade-in-right {
+  opacity: 0;
+  transform: translateX(30px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.fade-in-left.visible,
+.fade-in-right.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Scale animation */
+.fade-in-scale {
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.fade-in-scale.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .fade-in,
+  .fade-in-left,
+  .fade-in-right,
+  .fade-in-scale {
+    transform: none !important;
+    transition: opacity 0.3s ease !important;
+  }
 }
