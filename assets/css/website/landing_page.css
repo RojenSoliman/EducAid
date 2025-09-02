@@ -127,8 +127,14 @@ html, body {
   background: var(--thm-primary);
   color: #fff;
 }
-.btn-primary-custom:hover {
-  background: var(--thm-dark-black);
+.btn-primary-custom:hover,
+.btn-primary-custom:active,
+.btn-primary-custom:focus {
+  background: var(--thm-green) !important;
+  border-color: var(--thm-green) !important;
+  color: #fff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(24, 165, 74, 0.3);
 }
 .btn-outline-custom {
   border: 2px solid var(--thm-primary);
@@ -701,7 +707,7 @@ footer a {
 }
 
 .ea-chat__send { 
-  background: var(--thm-green); 
+  background: var(--thm-primary); 
   color: #fff; 
   border: none; 
   border-radius: 999px; 
@@ -711,17 +717,46 @@ footer a {
   transition: all 0.2s;
 }
 
-.ea-chat__send:hover {
-  background: var(--thm-primary);
+.ea-chat__send:hover,
+.ea-chat__send:active,
+.ea-chat__send:focus {
+  background: var(--thm-green) !important;
   transform: scale(1.05);
 }
 
-.ea-typing { 
-  font-size: 12px; 
-  color: var(--bs-secondary, #6c757d); 
-  padding: 0 12px 8px; 
-  display: none;
-  font-style: italic;
+/* Typing indicator */
+.ea-chat__typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--bs-light);
+  border-radius: 12px;
+  font-size: 0.9rem;
+  color: var(--bs-secondary, #6c757d);
+  animation: typing 1.4s infinite;
+}
+
+.ea-chat__typing span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: typingDot 1.4s infinite;
+}
+
+.ea-chat__typing span:nth-child(2) { animation-delay: 0.2s; }
+.ea-chat__typing span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-8px); }
+}
+
+@keyframes typingDot {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.5); }
 }
 
 /* Mobile responsive */
@@ -950,4 +985,71 @@ footer a {
     transform: none !important;
     transition: opacity 0.3s ease !important;
   }
+}
+
+/* REPLACE the typing indicator styles in your landing_page.css */
+
+/* Typing indicator - make it look like a chat bubble */
+.ea-typing {
+  display: none; /* Hidden by default */
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 12px;
+  max-width: 80%;
+  box-shadow: 0 2px 8px rgba(2,6,23,.08);
+  font-size: 0.9rem;
+  color: var(--bs-secondary, #6c757d);
+  font-style: italic;
+  position: relative;
+}
+
+/* Add typing dots animation */
+.ea-typing::after {
+  content: '';
+  display: inline-block;
+  width: 20px;
+  height: 6px;
+  background: 
+    radial-gradient(circle, #6c757d 20%, transparent 20%),
+    radial-gradient(circle, #6c757d 20%, transparent 20%),
+    radial-gradient(circle, #6c757d 20%, transparent 20%);
+  background-size: 6px 6px;
+  background-position: 0 0, 8px 0, 16px 0;
+  animation: typingDots 1.4s infinite;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+@keyframes typingDots {
+  0%, 60%, 100% { 
+    background-position: 0 0, 8px 0, 16px 0; 
+    opacity: 0.3;
+  }
+  30% { 
+    background-position: 0 -8px, 8px 0, 16px 0;
+    opacity: 1;
+  }
+  40% { 
+    background-position: 0 0, 8px -8px, 16px 0;
+    opacity: 1;
+  }
+  50% { 
+    background-position: 0 0, 8px 0, 16px -8px;
+    opacity: 1;
+  }
+}
+
+/* Alternative simpler typing indicator */
+.ea-typing-simple {
+  display: none;
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  max-width: fit-content;
+  font-size: 0.9rem;
+  color: #6c757d;
+  font-style: italic;
 }
