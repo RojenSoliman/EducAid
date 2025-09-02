@@ -483,7 +483,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const botMsg = document.createElement('div');
       botMsg.className = 'ea-chat__msg';
       botMsg.innerHTML = `<div class="ea-chat__bubble"></div>`;
-      botMsg.querySelector('.ea-chat__bubble').textContent = reply;
+      const formattedReply = formatChatbotResponse(reply);
+      botMsg.querySelector('.ea-chat__bubble').innerHTML = formattedReply;
       body.appendChild(botMsg);
 
     } catch (error) {
@@ -520,6 +521,27 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 });
+
+// ALTERNATIVE: Simpler formatting function
+function formatChatbotResponse(text) {
+  return text
+    // Clean up single asterisks first (remove them)
+    .replace(/(?<!\*)\*(?!\*)/g, '')
+    
+    // Convert bold headers with colons - add spacing class
+    .replace(/\*\*([^:]+):\*\*/g, '<div class="req-header-spaced"><strong>$1:</strong></div>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    
+    // Convert bullet points/dashes to list items
+    .replace(/^[-•]\s*(.+)$/gm, '<div class="req-item">$1</div>')
+    
+    // Handle line breaks - keep double breaks as section separators
+    .replace(/\n\n+/g, '<div class="req-spacer"></div>')
+    .replace(/\n/g, '<br>')
+    
+    // Clean up any remaining asterisks
+    .replace(/\*/g, '');
+}
 </script>
 </body>
 </html>
