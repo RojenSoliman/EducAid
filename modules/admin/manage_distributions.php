@@ -77,6 +77,39 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 
 // Get search and filter parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+// Handle revert all students to applicant action
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['revert_all_to_applicant'])) {
+    try {
+        // Begin transaction
+        pg_query($connection, "BEGIN");
+        
+        // Update all students with 'given' status to 'applicant' and clear payroll numbers and QR codes
+        $update_students = pg_query($connection, "UPDATE students SET status = 'applicant', payroll_no = NULL, qr_code = NULL WHERE status = 'given'");
+        
+        // Delete all distribution records for these students
+        $delete_distributions = pg_query($connection, "DELETE FROM distributions WHERE student_id IN (SELECT student_id FROM students WHERE status = 'applicant')");
+        
+        // Delete all QR codes
+        $delete_qr_codes = pg_query($connection, "DELETE FROM qr_codes");
+        
+        // Delete all schedules
+        $delete_schedules = pg_query($connection, "DELETE FROM schedules");
+        
+        if ($update_students && $delete_distributions && $delete_qr_codes && $delete_schedules) {
+            pg_query($connection, "COMMIT");
+            $_SESSION['success_message'] = 'All students reverted to applicant status. Payroll numbers, QR codes, distribution records, and schedules cleared.';
+        } else {
+            pg_query($connection, "ROLLBACK");
+            $_SESSION['error_message'] = 'Failed to revert all students. Transaction rolled back.';
+        }
+    } catch (Exception $e) {
+        pg_query($connection, "ROLLBACK");
+        $_SESSION['error_message'] = 'Error occurred: ' . $e->getMessage();
+    }
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
+    exit;
+}
 $barangay_filter = isset($_GET['barangay']) ? $_GET['barangay'] : '';
 $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
 $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
@@ -226,11 +259,38 @@ $total_distributions = pg_fetch_assoc($count_result)['total'];
                         <h1 class="fw-bold mb-1">Manage Distributions</h1>
                         <p class="text-muted mb-0">Track and manage distributed aid to students</p>
                     </div>
-                    <a href="?export=csv<?php echo !empty($_SERVER['QUERY_STRING']) ? '&' . http_build_query(array_diff_key($_GET, ['export' => ''])) : ''; ?>" 
-                       class="btn btn-export">
-                        <i class="bi bi-download me-2"></i>Export to CSV
-                    </a>
+                    <div class="d-flex gap-2">
+                        <a href="?export=csv<?php echo !empty($_SERVER['QUERY_STRING']) ? '&' . http_build_query(array_diff_key($_GET, ['export' => ''])) : ''; ?>" 
+                           class="btn btn-export">
+                            <i class="bi bi-download me-2"></i>Export to CSV
+                        </a>
+                        <form method="POST" style="display: inline;">
+                            <button type="submit" name="revert_all_to_applicant" class="btn btn-danger" 
+                                    onclick="return confirm('WARNING: This will revert ALL students to applicant status and remove all payroll numbers, QR codes, and distribution records. This action cannot be undone. Are you sure?');">
+                                <i class="bi bi-arrow-counterclockwise me-2"></i>Revert All to Applicant
+                            </button>
+                        </form>
+                    </div>
                 </div>
+
+                <!-- Flash Messages -->
+                <?php if (isset($_SESSION['success_message'])): ?>
+                    <div class="alert alert-success alert-dismissible fade show">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <?php echo htmlspecialchars($_SESSION['success_message']); ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    <?php unset($_SESSION['success_message']); ?>
+                <?php endif; ?>
+
+                <?php if (isset($_SESSION['error_message'])): ?>
+                    <div class="alert alert-danger alert-dismissible fade show">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <?php echo htmlspecialchars($_SESSION['error_message']); ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    <?php unset($_SESSION['error_message']); ?>
+                <?php endif; ?>
 
                 <!-- Statistics Card -->
                 <div class="stats-card">
@@ -361,12 +421,41 @@ $total_distributions = pg_fetch_assoc($count_result)['total'];
                         </table>
                     </div>
                 </div>
+                
+                <!-- System Reset Section -->
+                <div class="table-card mt-4">
+                    <div class="p-4">
+                        <h5 class="mb-3"><i class="bi bi-exclamation-triangle text-warning me-2"></i>System Reset</h5>
+                        <div class="alert alert-warning mb-3">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Warning:</strong> This action will reset the entire system by:
+                            <ul class="mb-0 mt-2">
+                                <li>Reverting ALL students to applicant status</li>
+                                <li>Clearing all payroll numbers</li>
+                                <li>Deleting all QR codes</li>
+                                <li>Removing all distribution records</li>
+                                <li>Deleting all schedules</li>
+                            </ul>
+                            <strong class="text-danger">This action cannot be undone!</strong>
+                        </div>
+                        <form method="POST" onsubmit="return confirmSystemReset()" class="d-inline">
+                            <button type="submit" name="revert_all_to_applicant" class="btn btn-danger">
+                                <i class="bi bi-arrow-counterclockwise me-2"></i>Reset Entire System
+                            </button>
+                        </form>
+                    </div>
+                </div>
             </div>
         </section>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/admin/sidebar.js"></script>
+    <script>
+    function confirmSystemReset() {
+        return confirm('⚠️ CRITICAL WARNING ⚠️\n\nYou are about to RESET THE ENTIRE SYSTEM!\n\nThis will:\n• Revert ALL students to applicant status\n• Clear all payroll numbers\n• Delete all QR codes\n• Remove all distribution records\n• Delete all schedules\n\nTHIS ACTION CANNOT BE UNDONE!\n\nAre you absolutely sure you want to proceed?');
+    }
+    </script>
 </body>
 </html>
 
