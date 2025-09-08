@@ -1,3 +1,6 @@
+<?php
+// filepath: c:\xampp\htdocs\EducAid\landingpage.php
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,44 +18,9 @@
   <link href="assets/css/website/landing_page.css" rel="stylesheet" />
 </head>
 <body>
-  <!-- Top information bar -->
-  <div class="topbar py-2">
-    <div class="container d-flex align-items-center justify-content-between gap-3 flex-wrap">
-      <div class="d-flex align-items-center gap-3">
-        <i class="bi bi-envelope-paper"></i>
-        <a href="mailto:educaid@generalltrias.gov.ph">educaid@generaltrias.gov.ph</a>
-        <span class="vr mx-2 d-none d-md-inline"></span>
-        <i class="bi bi-telephone"></i>
-        <span>(046) 886-4454</span>
-      </div>
-      <form class="d-flex" role="search" onsubmit="event.preventDefault(); document.getElementById('faq').scrollIntoView({behavior:'smooth'});">
-        <input class="form-control" type="search" placeholder="Search FAQs, requirements…" aria-label="Search" />
-      </form>
-    </div>
-  </div>
-
-  <!-- Navbar -->
-  <nav class="navbar navbar-expand-lg bg-white sticky-top">
-    <div class="container">
-      <a class="navbar-brand" href="#">
-        <span class="brand-badge">EA</span>
-        <span>EducAid <span class="text-body-secondary d-none d-sm-inline">• City of General Trias</span></span>
-      </a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="nav">
-        <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
-          <li class="nav-item"><a class="nav-link active" href="#home">Home</a></li>
-          <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
-          <li class="nav-item"><a class="nav-link" href="#how">How it works</a></li>
-          <li class="nav-item"><a class="nav-link" href="#announcements">Announcements</a></li>
-          <li class="nav-item"><a class="nav-link" href="#requirements">Requirements</a></li>
-          <li class="nav-item"><a class="nav-link" href="#contact">Contact</a></li>
-        </ul>
-      </div>
-    </div>
-  </nav>
+  
+  <?php include 'includes/webpage/topbar.php'; ?>
+  <?php include 'includes/webpage/navbar.php'; ?>
 
   <!-- Hero -->
   <header id="home" class="hero">
