@@ -12,6 +12,24 @@ if (!isset($_SESSION['admin_username'])) {
 $municipality_id = 1; // Default municipality
 $otpService = new OTPService($connection);
 
+// Ensure OTP verification table exists
+$createTableQuery = "
+CREATE TABLE IF NOT EXISTS admin_otp_verifications (
+    id SERIAL PRIMARY KEY,
+    admin_id INTEGER NOT NULL,
+    otp_code VARCHAR(6) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    purpose VARCHAR(50) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    used_at TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_otp_admin_id ON admin_otp_verifications(admin_id);
+CREATE INDEX IF NOT EXISTS idx_admin_otp_expires ON admin_otp_verifications(expires_at);
+";
+pg_query($connection, $createTableQuery);
+
 // Fetch municipality max capacity
 $capacityResult = pg_query_params($connection, "SELECT max_capacity FROM municipalities WHERE municipality_id = $1", [$municipality_id]);
 $maxCapacity = null;
@@ -31,12 +49,61 @@ if ($currentTotalStudentsQuery) {
     $currentTotalStudents = intval($currentTotalRow['total']);
 }
 
+// Get current admin information for display
+$currentAdmin = null;
+$admin_id = $_SESSION['admin_id'] ?? null;
+if (!$admin_id && isset($_SESSION['admin_username'])) {
+  $adminQuery = pg_query_params($connection, "SELECT admin_id, username, email, first_name, middle_name, last_name FROM admins WHERE username = $1", [$_SESSION['admin_username']]);
+  if ($adminQuery && pg_num_rows($adminQuery) > 0) {
+    $currentAdmin = pg_fetch_assoc($adminQuery);
+    $_SESSION['admin_id'] = $currentAdmin['admin_id']; // Cache for future use
+  }
+} else if ($admin_id) {
+  $adminQuery = pg_query_params($connection, "SELECT admin_id, username, email, first_name, middle_name, last_name FROM admins WHERE admin_id = $1", [$admin_id]);
+  if ($adminQuery && pg_num_rows($adminQuery) > 0) {
+    $currentAdmin = pg_fetch_assoc($adminQuery);
+  }
+}
+
 // Path to JSON settings
 $jsonPath = __DIR__ . '/../../data/deadlines.json';
 $deadlines = file_exists($jsonPath) ? json_decode(file_get_contents($jsonPath), true) : [];
 
+// Clean up stale OTP sessions on normal page load (GET request)
+// This prevents issues when users navigate back to the page after some time
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+  // Check if there are any OTP sessions without an active OTP process
+  if (isset($_SESSION['otp_step'])) {
+    // If we're not in the middle of an OTP verification process, clear stale data
+    $clearStaleSession = true;
+    
+    // Don't clear if we have temp data that suggests an active process
+    if ((isset($_SESSION['temp_new_email']) || isset($_SESSION['temp_new_password']))) {
+      // Allow keeping session if OTP was recently sent (within last 10 minutes)
+      // This is a safety check - in normal flow, the session should be cleared properly
+      $clearStaleSession = false;
+    }
+    
+    if ($clearStaleSession) {
+      unset($_SESSION['otp_step']);
+      unset($_SESSION['temp_new_email']);
+      unset($_SESSION['temp_new_password']);
+      unset($_SESSION['otp_retry_count']);
+    }
+  }
+}
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  // Handle clearing OTP session when modal is closed
+  if (isset($_POST['clear_otp_session'])) {
+    unset($_SESSION['otp_step']);
+    unset($_SESSION['temp_new_email']);
+    unset($_SESSION['temp_new_password']);
+    unset($_SESSION['otp_retry_count']);
+    exit(); // Just exit, no response needed
+  }
+  
   // Handle profile updates
   if (isset($_POST['update_profile'])) {
     $new_email = trim($_POST['email']);
@@ -118,6 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Send OTP to new email
       if ($otpService->sendOTP($new_email, 'email_change', $admin_id)) {
         $_SESSION['temp_new_email'] = $new_email;
+        $_SESSION['otp_step'] = 'email_verification';
         $otp_success = "OTP has been sent to your new email address. Please check your inbox.";
       } else {
         $otp_error = "Failed to send OTP. Please try again.";
@@ -128,6 +196,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   // Handle OTP generation for password change
   elseif (isset($_POST['send_password_otp'])) {
     $current_password = $_POST['current_password'];
+    $new_password = $_POST['new_password'];
+    $confirm_password = $_POST['confirm_password'];
     
     // Get current admin info
     $admin_id = $_SESSION['admin_id'] ?? null;
@@ -141,15 +211,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     if (!$adminData || !password_verify($current_password, $adminData['password'])) {
-      $otp_error = "Current password is incorrect.";
+      $password_error = "Current password is incorrect.";
+    } elseif ($current_password === $new_password) {
+      $password_error = "New password cannot be the same as your current password.";
+    } elseif ($new_password !== $confirm_password) {
+      $password_error = "New passwords do not match.";
+    } elseif (strlen($new_password) < 8) {
+      $password_error = "New password must be at least 8 characters.";
     } elseif (empty($adminData['email'])) {
-      $otp_error = "No email address found in your profile. Please contact administrator.";
+      $password_error = "No email address found in your profile. Please contact administrator.";
     } else {
+      // Store new password temporarily in session
+      $_SESSION['temp_new_password'] = $new_password;
+      
       // Send OTP to current email
       if ($otpService->sendOTP($adminData['email'], 'password_change', $admin_id)) {
-        $otp_success = "OTP has been sent to your email address. Please check your inbox.";
+        $_SESSION['otp_step'] = 'password_verification';
+        $password_success = "OTP has been sent to your email address. Please check your inbox.";
       } else {
-        $otp_error = "Failed to send OTP. Please try again.";
+        $password_error = "Failed to send OTP. Please try again.";
       }
     }
   }
@@ -165,33 +245,116 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $adminData = pg_fetch_assoc($adminQuery);
       $admin_id = $adminData['admin_id'];
     }
+
+    // Check if this is an AJAX request
+    $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
     
     if (empty($new_email)) {
       $otp_error = "Session expired. Please start the email change process again.";
-    } elseif ($otpService->verifyOTP($admin_id, $otp, 'email_change')) {
+      if ($isAjax) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'error', 'message' => $otp_error]);
+        exit();
+      }
+    } else {
+      // Debug: Log the verification attempt
+      error_log("OTP Verification attempt: admin_id=$admin_id, otp=$otp, purpose=email_change");
+      
+      // Temporary debug output for troubleshooting
+      $debug_info = "DEBUG: admin_id=$admin_id, otp=$otp, new_email=$new_email, purpose=email_change";
+      
+      $otpVerified = $otpService->verifyOTP($admin_id, $otp, 'email_change');
+      error_log("OTP Verification result: " . ($otpVerified ? 'SUCCESS' : 'FAILED'));
+      
+      // Add more detailed debugging
+      $debug_info .= " | OTP Verified: " . ($otpVerified ? 'YES' : 'NO');
+      
+      if ($otpVerified) {
+        $debug_info .= " | Attempting database update...";
       // Update email
       $result = pg_query_params($connection, "UPDATE admins SET email = $1 WHERE admin_id = $2", [$new_email, $admin_id]);
       
       if ($result) {
-        // Add admin notification
-        $notification_msg = "Admin email updated to " . $new_email;
-        pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        // Check if any rows were actually updated
+        $affectedRows = pg_affected_rows($result);
+        $debug_info .= " | Query executed, affected rows: $affectedRows";
         
-        unset($_SESSION['temp_new_email']);
-        $profile_success = "Email address updated successfully!";
+        if ($affectedRows > 0) {
+          $debug_info .= " | SUCCESS: Email updated";
+          // Clear session variables
+          unset($_SESSION['temp_new_email']);
+          unset($_SESSION['otp_step']);
+          unset($_SESSION['otp_retry_count']);
+          
+          // Add admin notification
+          $notification_msg = "Admin email updated to " . $new_email;
+          pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+          
+          if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['status' => 'success', 'message' => 'Email address updated successfully!']);
+            exit();
+          } else {
+            // Set success message and redirect
+            $_SESSION['success_message'] = "Email address updated successfully!";
+            header("Location: settings.php");
+            exit();
+          }
+        } else {
+          $debug_info .= " | FAILED: No rows updated (admin_id may not exist)";
+          $otp_error = "Failed to update email address - no records updated.";
+          if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['status' => 'error', 'message' => $otp_error]);
+            exit();
+          }
+        }
       } else {
-        $otp_error = "Failed to update email address.";
+        $pg_error = pg_last_error($connection);
+        $debug_info .= " | DATABASE ERROR: " . $pg_error;
+        $otp_error = "Database error: " . $pg_error;
+        if ($isAjax) {
+          header('Content-Type: application/json');
+          echo json_encode(['status' => 'error', 'message' => $otp_error]);
+          exit();
+        }
       }
     } else {
-      $otp_error = "Invalid or expired OTP. Please try again.";
+      $debug_info .= " | OTP VERIFICATION FAILED";
+      
+      // Provide user-friendly error messages
+      if (empty($otp)) {
+        $otp_error = "Please enter the verification code.";
+      } else {
+        $otp_error = "The verification code you entered is incorrect or has expired. Please check your email for the latest code and try again.";
+      }
+      // Keep the session variables for retry, but add a counter to prevent infinite loops
+      if (!isset($_SESSION['otp_retry_count'])) {
+        $_SESSION['otp_retry_count'] = 1;
+      } else {
+        $_SESSION['otp_retry_count']++;
+        if ($_SESSION['otp_retry_count'] > 3) {
+          // Too many failed attempts, clear everything
+          unset($_SESSION['temp_new_email']);
+          unset($_SESSION['otp_step']);
+          unset($_SESSION['otp_retry_count']);
+          $otp_error = "Too many failed attempts. Please start the process again.";
+        }
+      }
+      
+      if ($isAjax) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'error', 'message' => $otp_error]);
+        exit();
+      }
     }
+  }
   }
   
   // Handle password change with OTP verification
   elseif (isset($_POST['verify_password_otp'])) {
     $otp = trim($_POST['otp']);
-    $new_password = trim($_POST['new_password']);
-    $confirm_password = trim($_POST['confirm_password']);
+    $new_password = $_SESSION['temp_new_password'] ?? '';
     
     $admin_id = $_SESSION['admin_id'] ?? null;
     if (!$admin_id && isset($_SESSION['admin_username'])) {
@@ -199,28 +362,123 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $adminData = pg_fetch_assoc($adminQuery);
       $admin_id = $adminData['admin_id'];
     }
+
+    // Check if this is an AJAX request
+    $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
     
-    if ($new_password !== $confirm_password) {
-      $otp_error = "New passwords do not match.";
-    } elseif (strlen($new_password) < 6) {
-      $otp_error = "New password must be at least 6 characters.";
-    } elseif ($otpService->verifyOTP($admin_id, $otp, 'password_change')) {
-      // Update password
-      $hashedPassword = password_hash($new_password, PASSWORD_DEFAULT);
-      $result = pg_query_params($connection, "UPDATE admins SET password = $1 WHERE admin_id = $2", [$hashedPassword, $admin_id]);
-      
-      if ($result) {
-        // Add admin notification
-        $notification_msg = "Admin password updated";
-        pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
-        
-        $profile_success = "Password updated successfully!";
-      } else {
-        $otp_error = "Failed to update password.";
+    if (empty($new_password)) {
+      $password_error = "Session expired. Please try again.";
+      if ($isAjax) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'error', 'message' => $password_error]);
+        exit();
       }
     } else {
-      $otp_error = "Invalid or expired OTP. Please try again.";
+      // Debug: Log the verification attempt
+      error_log("Password OTP Verification attempt: admin_id=$admin_id, otp=$otp, purpose=password_change");
+      
+      // Temporary debug output for troubleshooting
+      $debug_password_info = "DEBUG PASSWORD: admin_id=$admin_id, otp=$otp, purpose=password_change";
+      
+      $otpVerified = $otpService->verifyOTP($admin_id, $otp, 'password_change');
+      error_log("Password OTP Verification result: " . ($otpVerified ? 'SUCCESS' : 'FAILED'));
+      
+      // Add more detailed debugging
+      $debug_password_info .= " | OTP Verified: " . ($otpVerified ? 'YES' : 'NO');
+      
+      if ($otpVerified) {
+        $debug_password_info .= " | Attempting password update...";
+        // Update password
+        $hashedPassword = password_hash($new_password, PASSWORD_DEFAULT);
+        $result = pg_query_params($connection, "UPDATE admins SET password = $1 WHERE admin_id = $2", [$hashedPassword, $admin_id]);
+        
+        if ($result) {
+          // Check if any rows were actually updated
+          $affectedRows = pg_affected_rows($result);
+          $debug_password_info .= " | Query executed, affected rows: $affectedRows";
+          
+          if ($affectedRows > 0) {
+            $debug_password_info .= " | SUCCESS: Password updated";
+            // Clear session variables
+            unset($_SESSION['temp_new_password']);
+            unset($_SESSION['otp_step']);
+            unset($_SESSION['otp_retry_count']);
+            
+            // Add admin notification
+            $notification_msg = "Admin password updated";
+            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+            
+            if ($isAjax) {
+              header('Content-Type: application/json');
+              echo json_encode(['status' => 'success', 'message' => 'Password updated successfully!']);
+              exit();
+            } else {
+              // Set success message and redirect
+              $_SESSION['success_message'] = "Password updated successfully!";
+              header("Location: settings.php");
+              exit();
+            }
+          } else {
+            $debug_password_info .= " | FAILED: No rows updated";
+            $password_error = "Failed to update password - no records updated.";
+            if ($isAjax) {
+              header('Content-Type: application/json');
+              echo json_encode(['status' => 'error', 'message' => $password_error]);
+              exit();
+            }
+          }
+        } else {
+          $pg_error = pg_last_error($connection);
+          $debug_password_info .= " | DATABASE ERROR: " . $pg_error;
+          $password_error = "Database error: " . $pg_error;
+          if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['status' => 'error', 'message' => $password_error]);
+            exit();
+          }
+        }
+      } else {
+        $debug_password_info .= " | OTP VERIFICATION FAILED";
+        
+        // Provide user-friendly error messages
+        if (empty($otp)) {
+          $password_error = "Please enter the verification code.";
+        } else {
+          $password_error = "The verification code you entered is incorrect or has expired. Please check your email for the latest code and try again.";
+        }
+        // Keep the session variables for retry, but add a counter to prevent infinite loops
+        if (!isset($_SESSION['otp_retry_count'])) {
+          $_SESSION['otp_retry_count'] = 1;
+        } else {
+          $_SESSION['otp_retry_count']++;
+          if ($_SESSION['otp_retry_count'] > 3) {
+            // Too many failed attempts, clear everything
+            unset($_SESSION['temp_new_password']);
+            unset($_SESSION['otp_step']);
+            unset($_SESSION['otp_retry_count']);
+            $password_error = "Too many failed attempts. Please start the process again.";
+          }
+        }
+        
+        if ($isAjax) {
+          header('Content-Type: application/json');
+          echo json_encode(['status' => 'error', 'message' => $password_error]);
+          exit();
+        }
+      }
     }
+  }
+  
+  // Handle error session clearing (when error alerts are dismissed)
+  elseif (isset($_POST['clear_error_session'])) {
+    unset($_SESSION['otp_step']);
+    unset($_SESSION['temp_new_email']);
+    unset($_SESSION['temp_new_password']);
+    unset($_SESSION['otp_retry_count']);
+    // Return success response for AJAX
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'success']);
+    exit();
   }
   
   // Handle capacity updates
@@ -335,6 +593,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="container-fluid py-4 px-4">
       <h4 class="fw-bold mb-4"><i class="bi bi-gear me-2 text-primary"></i>Settings</h4>
       
+      <?php if (isset($_SESSION['success_message'])): ?>
+        <div class="alert alert-success alert-dismissible fade show">
+          <i class="bi bi-check-circle me-2"></i><?= htmlspecialchars($_SESSION['success_message']) ?>
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        <?php unset($_SESSION['success_message']); ?>
+      <?php endif; ?>
+      
+      <!-- Email Change Error Alert -->
+      <?php if (isset($otp_error) && isset($_SESSION['otp_step']) && $_SESSION['otp_step'] === 'email_verification'): ?>
+        <div class="alert alert-danger alert-dismissible fade show">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          <strong>Email Change Error:</strong> <?= htmlspecialchars($otp_error) ?>
+          <br><small class="text-muted">Click "Change Email" below to try again with a new verification code.</small>
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      <?php endif; ?>
+      
+      <!-- Password Change Error Alert -->
+      <?php if (isset($password_error) && isset($_SESSION['otp_step']) && $_SESSION['otp_step'] === 'password_verification'): ?>
+        <div class="alert alert-danger alert-dismissible fade show">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          <strong>Password Change Error:</strong> <?= htmlspecialchars($password_error) ?>
+          <br><small class="text-muted">Click "Change Password" below to try again with a new verification code.</small>
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      <?php endif; ?>
+      
+      <!-- General OTP Error Alert -->
+      <?php if ((isset($otp_error) && !isset($_SESSION['otp_step'])) || (isset($password_error) && !isset($_SESSION['otp_step']))): ?>
+        <div class="alert alert-danger alert-dismissible fade show">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          <?php if (isset($otp_error)): ?>
+            <strong>Email Verification Error:</strong> <?= htmlspecialchars($otp_error) ?>
+          <?php elseif (isset($password_error)): ?>
+            <strong>Password Verification Error:</strong> <?= htmlspecialchars($password_error) ?>
+          <?php endif; ?>
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      <?php endif; ?>
+      
       <!-- Profile Management Section -->
       <div class="card mb-4">
         <div class="card-header bg-primary text-white">
@@ -346,6 +645,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <?php endif; ?>
           <?php if (isset($profile_error)): ?>
             <div class="alert alert-danger"><?= htmlspecialchars($profile_error) ?></div>
+          <?php endif; ?>
+          
+          <!-- Current Profile Information -->
+          <?php if ($currentAdmin): ?>
+          <div class="row mb-4">
+            <div class="col-12">
+              <div class="bg-light p-3 rounded">
+                <h6 class="text-primary mb-3"><i class="bi bi-person me-2"></i>Current Profile Information</h6>
+                <div class="row">
+                <div class="col-md-4">
+                    <strong>Name:</strong><br>
+                    <span class="text-muted"><?= htmlspecialchars(trim(($currentAdmin['first_name'] ?? '') . ' ' . ($currentAdmin['middle_name'] ?? '') . ' ' . ($currentAdmin['last_name'] ?? '')) ?: 'Not set') ?></span>
+                  </div>
+                  <div class="col-md-4">
+                    <strong>Username:</strong><br>
+                    <span class="text-muted"><?= htmlspecialchars($currentAdmin['username']) ?></span>
+                  </div>
+                  <div class="col-md-4">
+                    <strong>Email:</strong><br>
+                    <span class="text-muted"><?= htmlspecialchars($currentAdmin['email'] ?? 'Not set') ?></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
           <?php endif; ?>
           
           <div class="row">
@@ -558,23 +882,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       
       <!-- Step 2: OTP Verification -->
       <div id="emailStep2" style="display: none;">
-        <form method="POST">
+        <form onsubmit="event.preventDefault(); handleOTPVerification(this, 'email');">
+          <input type="hidden" name="verify_email_otp" value="1">
           <div class="modal-body">
             <div class="alert alert-info">
               <i class="bi bi-info-circle me-2"></i>
               We've sent a verification code to your new email address. Please check your inbox and enter the 6-digit code below.
             </div>
+            
+            <!-- OTP Error Display -->
+            <div id="emailOtpErrorDiv" style="display: none;">
+              <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <span id="emailOtpErrorMessage"></span>
+              </div>
+            </div>
+            
             <div class="mb-3">
               <label for="modal_email_otp" class="form-label">Verification Code <span class="text-danger">*</span></label>
               <input type="text" class="form-control text-center" id="modal_email_otp" name="otp" 
                      maxlength="6" pattern="[0-9]{6}" required placeholder="000000"
-                     style="font-size: 18px; letter-spacing: 3px;">
+                     style="font-size: 18px; letter-spacing: 3px;"
+                     oninput="hideModalError('email')">
               <small class="text-muted">Enter the 6-digit code sent to your email</small>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" onclick="backToEmailStep1()">Back</button>
-            <button type="submit" name="verify_email_otp" class="btn btn-success">
+            <button type="submit" class="btn btn-success">
               <i class="bi bi-check-circle me-1"></i> Verify & Update
             </button>
           </div>
@@ -631,23 +966,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       
       <!-- Step 2: OTP Verification -->
       <div id="passwordStep2" style="display: none;">
-        <form method="POST">
+        <form onsubmit="event.preventDefault(); handleOTPVerification(this, 'password');">
+          <input type="hidden" name="verify_password_otp" value="1">
           <div class="modal-body">
             <div class="alert alert-info">
               <i class="bi bi-info-circle me-2"></i>
               We've sent a verification code to your email address. Please check your inbox and enter the 6-digit code below.
             </div>
+            
+            <!-- OTP Error Display -->
+            <div id="passwordOtpErrorDiv" style="display: none;">
+              <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <span id="passwordOtpErrorMessage"></span>
+              </div>
+            </div>
+            
             <div class="mb-3">
               <label for="modal_password_otp" class="form-label">Verification Code <span class="text-danger">*</span></label>
               <input type="text" class="form-control text-center" id="modal_password_otp" name="otp" 
                      maxlength="6" pattern="[0-9]{6}" required placeholder="000000"
-                     style="font-size: 18px; letter-spacing: 3px;">
+                     style="font-size: 18px; letter-spacing: 3px;"
+                     oninput="hideModalError('password')">
               <small class="text-muted">Enter the 6-digit code sent to your email</small>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" onclick="backToPasswordStep1()">Back</button>
-            <button type="submit" name="verify_password_otp" class="btn btn-success">
+            <button type="submit" class="btn btn-success">
               <i class="bi bi-check-circle me-1"></i> Verify & Update
             </button>
           </div>
@@ -777,6 +1123,115 @@ function addDeadlineRow() {
 }
 
 // OTP Modal Management
+
+// Show inline error in modal
+function showModalError(modalType, message) {
+  const errorDiv = document.getElementById(modalType + 'OtpErrorDiv');
+  const errorMessage = document.getElementById(modalType + 'OtpErrorMessage');
+  
+  if (errorDiv && errorMessage) {
+    errorMessage.textContent = message;
+    errorDiv.style.display = 'block';
+  }
+}
+
+// Hide inline error in modal
+function hideModalError(modalType) {
+  const errorDiv = document.getElementById(modalType + 'OtpErrorDiv');
+  if (errorDiv) {
+    errorDiv.style.display = 'none';
+  }
+}
+
+// Handle OTP verification with AJAX
+function handleOTPVerification(formElement, verificationType) {
+  const formData = new FormData(formElement);
+  const submitButton = formElement.querySelector('button[type="submit"]');
+  const originalText = submitButton.innerHTML;
+  
+  // Disable button and show loading
+  submitButton.disabled = true;
+  submitButton.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Verifying...';
+  
+  // Hide any existing error
+  hideModalError(verificationType);
+  
+  fetch(window.location.href, {
+    method: 'POST',
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: formData
+  })
+  .then(response => {
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return response.json();
+    }
+    return response.text();
+  })
+  .then(data => {
+    if (typeof data === 'object') {
+      // JSON response from AJAX handler
+      if (data.status === 'success') {
+        // Success - reload page to show success message
+        window.location.reload();
+      } else if (data.status === 'error') {
+        // Show error in modal
+        showModalError(verificationType, data.message);
+        
+        // Handle special cases that should close modal
+        if (data.message.includes('Too many failed attempts') || data.message.includes('Session expired')) {
+          setTimeout(() => {
+            const modal = bootstrap.Modal.getInstance(formElement.closest('.modal'));
+            if (modal) modal.hide();
+          }, 3000);
+        }
+      }
+    } else {
+      // Text response - check for success redirect
+      if (data.includes('success_message') || data.includes('Location: settings.php')) {
+        // Success - reload page to show success message
+        window.location.reload();
+      } else {
+        // Parse response for error message
+        let errorMessage = 'Verification failed. Please try again.';
+        
+        // Check for specific error patterns in response
+        if (data.includes('incorrect or has expired')) {
+          errorMessage = 'The verification code you entered is incorrect or has expired. Please check your email for the latest code and try again.';
+        } else if (data.includes('too many failed attempts') || data.includes('Too many failed attempts')) {
+          errorMessage = 'Too many failed attempts. Please start the process again.';
+          // Clear form and close modal after showing error
+          setTimeout(() => {
+            const modal = bootstrap.Modal.getInstance(formElement.closest('.modal'));
+            if (modal) modal.hide();
+          }, 3000);
+        } else if (data.includes('Session expired')) {
+          errorMessage = 'Session expired. Please start the process again.';
+          setTimeout(() => {
+            const modal = bootstrap.Modal.getInstance(formElement.closest('.modal'));
+            if (modal) modal.hide();
+          }, 3000);
+        }
+        
+        // Show error in modal
+        showModalError(verificationType, errorMessage);
+      }
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    showModalError(verificationType, 'Network error. Please check your connection and try again.');
+  })
+  .finally(() => {
+    // Re-enable button
+    submitButton.disabled = false;
+    submitButton.disabled = false;
+    submitButton.innerHTML = originalText;
+  });
+}
+
 function showEmailOTPStep() {
   document.getElementById('emailStep1').style.display = 'none';
   document.getElementById('emailStep2').style.display = 'block';
@@ -803,6 +1258,15 @@ document.getElementById('emailModal').addEventListener('hidden.bs.modal', functi
   document.getElementById('emailStep2').style.display = 'none';
   this.querySelectorAll('form')[0].reset();
   this.querySelectorAll('form')[1].reset();
+  
+  // Clear any remaining OTP session data when user manually closes modal
+  fetch('settings.php', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: 'clear_otp_session=1'
+  });
 });
 
 document.getElementById('passwordModal').addEventListener('hidden.bs.modal', function () {
@@ -810,23 +1274,44 @@ document.getElementById('passwordModal').addEventListener('hidden.bs.modal', fun
   document.getElementById('passwordStep2').style.display = 'none';
   this.querySelectorAll('form')[0].reset();
   this.querySelectorAll('form')[1].reset();
+  
+  // Clear any remaining OTP session data when user manually closes modal
+  fetch('settings.php', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: 'clear_otp_session=1'
+  });
 });
 
 // Auto-show OTP step if OTP was sent
-<?php if (isset($_SESSION['otp_step']) && $_SESSION['otp_step'] === 'email_verification'): ?>
-  document.addEventListener('DOMContentLoaded', function() {
-    var emailModal = new bootstrap.Modal(document.getElementById('emailModal'));
-    emailModal.show();
-    showEmailOTPStep();
-  });
-<?php endif; ?>
-
-<?php if (isset($_SESSION['otp_step']) && $_SESSION['otp_step'] === 'password_verification'): ?>
-  document.addEventListener('DOMContentLoaded', function() {
-    var passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
-    passwordModal.show();
-    showPasswordOTPStep();
-  });
+<?php if (isset($_SESSION['otp_step'])): ?>
+  <?php if ($_SESSION['otp_step'] === 'email_verification'): ?>
+    document.addEventListener('DOMContentLoaded', function() {
+      var emailModal = new bootstrap.Modal(document.getElementById('emailModal'));
+      emailModal.show();
+      showEmailOTPStep();
+    });
+  <?php elseif ($_SESSION['otp_step'] === 'password_verification'): ?>
+    document.addEventListener('DOMContentLoaded', function() {
+      var passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
+      passwordModal.show();
+      showPasswordOTPStep();
+    });
+  <?php endif; ?>
+  
+  <?php 
+    // Clear the session flag more intelligently
+    // Keep the session during error states so the appropriate modal can be reopened
+    if (!isset($_POST['verify_email_otp']) && !isset($_POST['verify_password_otp']) && 
+        !isset($_POST['send_email_otp']) && !isset($_POST['send_password_otp'])) {
+      // Clear session if we're not in an active OTP process and not showing an error
+      if (!isset($otp_error) && !isset($password_error)) {
+        unset($_SESSION['otp_step']);
+      }
+    }
+  ?>
 <?php endif; ?>
 
 // OTP input formatting
@@ -836,6 +1321,23 @@ document.getElementById('modal_email_otp')?.addEventListener('input', function(e
 
 document.getElementById('modal_password_otp')?.addEventListener('input', function(e) {
   this.value = this.value.replace(/\D/g, '');
+});
+
+// Clear OTP session when error alerts are dismissed
+document.addEventListener('DOMContentLoaded', function() {
+  const errorAlerts = document.querySelectorAll('.alert-danger .btn-close');
+  errorAlerts.forEach(function(closeBtn) {
+    closeBtn.addEventListener('click', function() {
+      // Clear OTP session when error alert is dismissed
+      fetch(window.location.href, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'clear_error_session=1'
+      });
+    });
+  });
 });
 </script>
 <script src="../../assets/js/admin/sidebar.js"></script>

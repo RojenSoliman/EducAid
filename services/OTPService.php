@@ -16,6 +16,7 @@ class OTPService {
      */
     public function sendOTP($email, $purpose, $adminId) {
         $otp = $this->generateOTP();
+        // Use PostgreSQL's timezone-aware NOW() function for consistency
         $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
         
         // Store OTP in database
@@ -36,13 +37,27 @@ class OTPService {
             ORDER BY created_at DESC LIMIT 1
         ";
         
+        // Debug: Log the verification query parameters
+        error_log("OTPService verifyOTP: adminId=$adminId, otp=$otp, purpose=$purpose");
+        
         $result = pg_query_params($this->connection, $query, [$adminId, $otp, $purpose]);
         
-        if ($result && pg_num_rows($result) > 0) {
-            // Mark OTP as used
-            $otpData = pg_fetch_assoc($result);
-            $this->markOTPAsUsed($otpData['id']);
-            return true;
+        if ($result) {
+            $rowCount = pg_num_rows($result);
+            error_log("OTPService verifyOTP: Query executed, found $rowCount matching records");
+            
+            if ($rowCount > 0) {
+                // Mark OTP as used
+                $otpData = pg_fetch_assoc($result);
+                error_log("OTPService verifyOTP: Found valid OTP, marking as used");
+                $this->markOTPAsUsed($otpData['id']);
+                return true;
+            } else {
+                error_log("OTPService verifyOTP: No valid OTP found");
+            }
+        } else {
+            $error = pg_last_error($this->connection);
+            error_log("OTPService verifyOTP: Query failed - $error");
         }
         
         return false;
@@ -66,11 +81,11 @@ class OTPService {
             WHERE admin_id = $1 AND purpose = $2 AND used = FALSE
         ", [$adminId, $purpose]);
         
-        // Insert new OTP
+        // Insert new OTP with PostgreSQL's NOW() + interval for consistent timezone handling
         pg_query_params($this->connection, "
             INSERT INTO admin_otp_verifications (admin_id, otp, email, purpose, expires_at) 
-            VALUES ($1, $2, $3, $4, $5)
-        ", [$adminId, $otp, $email, $purpose, $expiresAt]);
+            VALUES ($1, $2, $3, $4, NOW() + INTERVAL '10 minutes')
+        ", [$adminId, $otp, $email, $purpose]);
     }
     
     /**
