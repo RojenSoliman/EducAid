@@ -85,6 +85,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         header("Location: manage_slots.php?status=deleted");
         exit;
+    } elseif (isset($_POST['finish_current_slot'])) {
+        $admin_password = $_POST['admin_password'];
+
+        // Get admin password using admin_id from session
+        if (isset($_SESSION['admin_id'])) {
+            // New unified login system
+            $admin_id = $_SESSION['admin_id'];
+            $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE admin_id = $1", [$admin_id]);
+        } elseif (isset($_SESSION['admin_username'])) {
+            // Legacy login system fallback
+            $admin_username = $_SESSION['admin_username'];
+            $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE username = $1", [$admin_username]);
+        } else {
+            header("Location: manage_slots.php?error=session_invalid");
+            exit;
+        }
+        
+        $adminRow = pg_fetch_assoc($adminQuery);
+        if (!$adminRow || !password_verify($admin_password, $adminRow['password'])) {
+            header("Location: manage_slots.php?error=invalid_password");
+            exit;
+        }
+
+        // Get current active slot details for notification
+        $currentSlotQuery = pg_query_params($connection, "
+            SELECT slot_count, semester, academic_year FROM signup_slots 
+            WHERE is_active = TRUE AND municipality_id = $1 
+            ORDER BY created_at DESC LIMIT 1
+        ", [$municipality_id]);
+        $currentSlotData = pg_fetch_assoc($currentSlotQuery);
+
+        // Mark current active slot as finished
+        pg_query_params($connection, "
+            UPDATE signup_slots 
+            SET is_active = FALSE 
+            WHERE is_active = TRUE AND municipality_id = $1
+        ", [$municipality_id]);
+
+        // Add admin notification for slot finish
+        if ($currentSlotData) {
+            $notification_msg = "Slot manually finished: " . $currentSlotData['slot_count'] . " slots for " . $currentSlotData['semester'] . " " . $currentSlotData['academic_year'];
+            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        }
+
+        header("Location: manage_slots.php?status=slot_finished");
+        exit;
     } elseif (isset($_POST['export_csv']) && $_POST['export_csv'] === '1') {
         header('Content-Type: text/csv');
         header('Content-Disposition: attachment; filename="registrations.csv"');
@@ -168,16 +214,35 @@ if ($slotInfo) {
 // Fetch past slots
 $pastReleases = [];
 $res = pg_query_params($connection, "SELECT * FROM signup_slots WHERE municipality_id = $1 AND is_active = FALSE ORDER BY created_at DESC", [$municipality_id]);
-while ($row = pg_fetch_assoc($res)) {
-    $nextSlotRes = pg_query_params($connection, "SELECT created_at FROM signup_slots WHERE municipality_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 1", [$municipality_id, $row['created_at']]);
-    $nextCreated = pg_fetch_result($nextSlotRes, 0, 'created_at') ?? date('Y-m-d H:i:s');
-    $countRes = pg_query_params($connection, "
-        SELECT COUNT(*) FROM students 
-        WHERE (status = 'applicant' OR status = 'active') AND municipality_id = $1 
-        AND application_date >= $2 AND application_date < $3
-    ", [$municipality_id, $row['created_at'], $nextCreated]);
-    $row['slots_used'] = intval(pg_fetch_result($countRes, 0, 0));
-    $pastReleases[] = $row;
+
+if ($res) {
+    while ($row = pg_fetch_assoc($res)) {
+        // Set default values for backward compatibility
+        $row['manually_finished'] = false;
+        $row['finished_at'] = null;
+        
+        $nextSlotRes = pg_query_params($connection, "SELECT created_at FROM signup_slots WHERE municipality_id = $1 AND created_at > $2 ORDER BY created_at ASC LIMIT 1", [$municipality_id, $row['created_at']]);
+        
+        // Safely get the next created timestamp
+        if ($nextSlotRes && pg_num_rows($nextSlotRes) > 0) {
+            $nextCreated = pg_fetch_result($nextSlotRes, 0, 0);
+        } else {
+            $nextCreated = date('Y-m-d H:i:s');
+        }
+        
+        $countRes = pg_query_params($connection, "
+            SELECT COUNT(*) FROM students 
+            WHERE (status = 'applicant' OR status = 'active') AND municipality_id = $1 
+            AND application_date >= $2 AND application_date < $3
+        ", [$municipality_id, $row['created_at'], $nextCreated]);
+        
+        if ($countRes) {
+            $row['slots_used'] = intval(pg_fetch_result($countRes, 0, 0));
+        } else {
+            $row['slots_used'] = 0;
+        }
+        $pastReleases[] = $row;
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -219,6 +284,11 @@ while ($row = pg_fetch_assoc($res)) {
           } elseif ($_GET['status'] === 'deleted') {
               echo '<div class="alert alert-info alert-dismissible fade show" role="alert">
                       <i class="bi bi-trash-fill"></i> Slot deleted successfully!
+                      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>';
+          } elseif ($_GET['status'] === 'slot_finished') {
+              echo '<div class="alert alert-success alert-dismissible fade show" role="alert">
+                      <i class="bi bi-check-square-fill"></i> Current slot finished successfully!
                       <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>';
           }
@@ -310,6 +380,13 @@ while ($row = pg_fetch_assoc($res)) {
             <?php endif; ?>
             <p><strong>Remaining:</strong> <span class="badge badge-pill <?= $slotsLeft > 0 ? 'badge-green' : 'badge-red' ?>"><?= max(0, $slotsLeft) ?> slots left</span></p>
 
+            <!-- Finish Current Slot Button -->
+            <div class="d-flex gap-2 mb-3">
+              <button type="button" id="finishSlotBtn" class="btn btn-warning">
+                <i class="bi bi-stop-circle"></i> Finish Current Slot
+              </button>
+            </div>
+
             <?php if (!empty($applicantList)): ?>
               <form method="POST" class="mb-3">
                 <input type="hidden" name="export_csv" value="1">
@@ -372,8 +449,15 @@ while ($row = pg_fetch_assoc($res)) {
               <h2 class="accordion-header" id="heading<?= $i ?>">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
                         data-bs-target="#collapse<?= $i ?>" aria-expanded="false" aria-controls="collapse<?= $i ?>">
-                  <i class="bi bi-calendar-event"></i>
-                  <?= date('F j, Y — h:i A', strtotime($h['created_at'])) ?> — <?= $h['slot_count'] ?> slots
+                  <div class="d-flex justify-content-between align-items-center w-100 me-3">
+                    <span>
+                      <i class="bi bi-calendar-event"></i>
+                      <?= date('F j, Y — h:i A', strtotime($h['created_at'])) ?> — <?= $h['slot_count'] ?> slots
+                    </span>
+                    <span class="badge bg-secondary">
+                      Past Release
+                    </span>
+                  </div>
                 </button>
               </h2>
               <div id="collapse<?= $i ?>" class="accordion-collapse collapse" data-bs-parent="#pastSlotsAccordion">
@@ -414,6 +498,32 @@ while ($row = pg_fetch_assoc($res)) {
   </div>
 </div>
 
+<!-- Finish Slot Password Modal -->
+<div class="modal fade" id="finishSlotModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Finish Current Slot</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          <strong>Warning:</strong> This will permanently finish the current slot and move it to past releases. 
+          Students will no longer be able to register using this slot configuration.
+        </div>
+        <input type="password" id="finish_modal_admin_password" class="form-control" placeholder="Enter your password to confirm" required>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-warning" id="confirmFinishBtn">
+          <i class="bi bi-stop-circle"></i> Finish Slot
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
 <script>
@@ -435,6 +545,38 @@ while ($row = pg_fetch_assoc($res)) {
     input.value = pass;
     form.submit();
   });
+
+  // Finish Slot functionality
+  <?php if ($slotInfo): ?>
+  document.getElementById('finishSlotBtn').addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('finishSlotModal')).show();
+  });
+
+  document.getElementById('confirmFinishBtn').addEventListener('click', () => {
+    const pass = document.getElementById('finish_modal_admin_password').value;
+    if (!pass) return alert('Please enter your password.');
+    
+    // Create and submit form for finishing slot
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.style.display = 'none';
+    
+    const finishInput = document.createElement('input');
+    finishInput.type = 'hidden';
+    finishInput.name = 'finish_current_slot';
+    finishInput.value = '1';
+    form.appendChild(finishInput);
+    
+    const passwordInput = document.createElement('input');
+    passwordInput.type = 'hidden';
+    passwordInput.name = 'admin_password';
+    passwordInput.value = pass;
+    form.appendChild(passwordInput);
+    
+    document.body.appendChild(form);
+    form.submit();
+  });
+  <?php endif; ?>
 </script>
 </body>
 </html>

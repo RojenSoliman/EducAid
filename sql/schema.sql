@@ -256,3 +256,13 @@ CREATE INDEX IF NOT EXISTS idx_grade_uploads_student ON grade_uploads(student_id
 CREATE INDEX IF NOT EXISTS idx_grade_uploads_status ON grade_uploads(validation_status);
 CREATE INDEX IF NOT EXISTS idx_extracted_grades_upload ON extracted_grades(upload_id);
 CREATE INDEX IF NOT EXISTS idx_students_last_login ON students(last_login);
+
+-- Add flag to track manually finished slots
+ALTER TABLE signup_slots 
+ADD COLUMN manually_finished BOOLEAN DEFAULT FALSE,
+ADD COLUMN finished_at TIMESTAMP NULL;
+
+-- Update existing inactive slots to show they were not manually finished
+UPDATE signup_slots 
+SET manually_finished = FALSE 
+WHERE is_active = FALSE;
