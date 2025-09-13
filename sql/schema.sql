@@ -266,3 +266,28 @@ ADD COLUMN finished_at TIMESTAMP NULL;
 UPDATE signup_slots 
 SET manually_finished = FALSE 
 WHERE is_active = FALSE;
+
+-- Add maximum capacity column to municipalities table
+ALTER TABLE municipalities 
+ADD COLUMN IF NOT EXISTS max_capacity INT DEFAULT NULL;
+
+-- Set a default capacity if none exists
+UPDATE municipalities 
+SET max_capacity = 1000 
+WHERE max_capacity IS NULL AND municipality_id = 1;
+
+-- Create admin OTP verification table
+CREATE TABLE IF NOT EXISTS admin_otp_verifications (
+    id SERIAL PRIMARY KEY,
+    admin_id INT REFERENCES admins(admin_id) ON DELETE CASCADE,
+    otp VARCHAR(6) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    purpose VARCHAR(50) NOT NULL, -- 'email_change' or 'password_change'
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_admin_otp_admin_purpose ON admin_otp_verifications(admin_id, purpose);
+CREATE INDEX IF NOT EXISTS idx_admin_otp_expires ON admin_otp_verifications(expires_at);

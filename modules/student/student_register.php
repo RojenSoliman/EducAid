@@ -14,7 +14,11 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
     $slotInfo = pg_fetch_assoc($slotRes);
     $slotsLeft = 0;
+    $noSlotsAvailable = false;
+    $slotsFull = false;
+    
     if ($slotInfo) {
+        // There is an active slot, check if it's full
         $countRes = pg_query_params($connection, "
             SELECT COUNT(*) AS total FROM students
             WHERE (status = 'under_registration' OR status = 'applicant' OR status = 'active')
@@ -22,15 +26,36 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
         ", [$slotInfo['created_at']]);
         $countRow = pg_fetch_assoc($countRes);
         $slotsLeft = intval($slotInfo['slot_count']) - intval($countRow['total']);
+        
+        if ($slotsLeft <= 0) {
+            $slotsFull = true;
+        }
+    } else {
+        // No active slot available
+        $noSlotsAvailable = true;
     }
-    if ($slotsLeft <= 0) {
+    
+    if ($noSlotsAvailable || $slotsFull) {
+        // Determine the appropriate message and styling
+        if ($noSlotsAvailable) {
+            $title = "EducAid – Registration Not Available";
+            $headerText = "Registration is currently closed.";
+            $messageText = "Please wait for the next opening of slots.";
+            $iconColor = "text-warning";
+        } else {
+            $title = "EducAid – Registration Closed";
+            $headerText = "Slots are full.";
+            $messageText = "Please wait for the next announcement before registering again.";
+            $iconColor = "text-danger";
+        }
+        
         echo <<<HTML
         <!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <title>EducAid – Registration Closed</title>
+            <title>$title</title>
             <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
             <link href="../../assets/css/homepage.css" rel="stylesheet" /> 
             <style>
@@ -56,13 +81,13 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
         <body class="bg-light">
             <div class="container alert-container">
                 <div class="text-center">
-                    <svg class="spinner text-danger" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid">
+                    <svg class="spinner $iconColor" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid">
                         <circle cx="50" cy="50" fill="none" stroke="currentColor" stroke-width="10" r="35" stroke-dasharray="164.93361431346415 56.97787143782138">
                             <animateTransform attributeName="transform" type="rotate" repeatCount="indefinite" dur="1s" values="0 50 50;360 50 50" keyTimes="0;1"/>
                         </circle>
                     </svg>
-                    <h4 class="text-danger">Slots are full.</h4>
-                    <p>Please wait for the next announcement before registering again.</p>
+                    <h4 class="$iconColor">$headerText</h4>
+                    <p>$messageText</p>
                     <a href="../../unified_login.php" class="btn btn-outline-primary mt-3">Back to Login</a>
                 </div>
             </div>
@@ -399,7 +424,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
     $slotInfo = pg_fetch_assoc($slotRes);
     if (!$slotInfo) {
-        echo "<script>alert('No active slot found for your municipality.'); window.location.href = '../../unified_login.php';</script>";
+        echo "<script>alert('Registration is currently closed. Please wait for the next opening of slots.'); window.location.href = '../../unified_login.php';</script>";
         exit;
     }
 
@@ -413,7 +438,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $slotsLeft = intval($slotInfo['slot_count']) - $slotsUsed;
 
     if ($slotsLeft <= 0) {
-        echo "<script>alert('Registration slots are full. Please wait for the next round.'); window.location.href = '../../unified_login.php';</script>";
+        echo "<script>alert('Registration slots are full. Please wait for the next announcement.'); window.location.href = '../../unified_login.php';</script>";
         exit;
     }
 

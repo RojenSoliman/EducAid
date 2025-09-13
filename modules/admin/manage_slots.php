@@ -49,6 +49,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        // Additional validation: Check if academic year/semester is valid
+        // Get the most recent slot to compare against
+        $latestSlotQuery = pg_query_params($connection, "
+            SELECT academic_year, semester FROM signup_slots 
+            WHERE municipality_id = $1 
+            ORDER BY created_at DESC LIMIT 1
+        ", [$municipality_id]);
+        
+        if (pg_num_rows($latestSlotQuery) > 0) {
+            $latestSlot = pg_fetch_assoc($latestSlotQuery);
+            $latestAcademicYear = $latestSlot['academic_year'];
+            $latestSemester = $latestSlot['semester'];
+            
+            // Extract years for comparison
+            $latestYearParts = explode('-', $latestAcademicYear);
+            $newYearParts = explode('-', $academic_year);
+            
+            if (count($latestYearParts) === 2 && count($newYearParts) === 2) {
+                $latestStartYear = intval($latestYearParts[0]);
+                $newStartYear = intval($newYearParts[0]);
+                
+                // Check if new academic year is before the latest one
+                if ($newStartYear < $latestStartYear) {
+                    header("Location: manage_slots.php?error=past_academic_year");
+                    exit;
+                }
+                
+                // If same academic year, check semester progression
+                if ($newStartYear === $latestStartYear) {
+                    // Convert semesters to numeric for comparison
+                    $semesterOrder = [
+                        '1st Semester' => 1,
+                        '2nd Semester' => 2
+                    ];
+                    
+                    $latestSemesterNum = $semesterOrder[$latestSemester] ?? 0;
+                    $newSemesterNum = $semesterOrder[$semester] ?? 0;
+                    
+                    // Don't allow going backwards in the same academic year
+                    if ($newSemesterNum <= $latestSemesterNum) {
+                        header("Location: manage_slots.php?error=past_semester");
+                        exit;
+                    }
+                }
+            }
+        }
+
         $existingCheck = pg_query_params($connection, "
             SELECT 1 FROM signup_slots 
             WHERE municipality_id = $1 AND semester = $2 AND academic_year = $3
@@ -162,6 +209,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $slotInfo = pg_fetch_assoc(pg_query_params($connection, "
     SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1
 ", [$municipality_id]));
+
+// Fetch latest slot for validation (used in form hints and JavaScript validation)
+$latestSlotForValidation = null;
+$latestSlotValidationQuery = pg_query_params($connection, "
+    SELECT academic_year, semester FROM signup_slots 
+    WHERE municipality_id = $1 
+    ORDER BY created_at DESC LIMIT 1
+", [$municipality_id]);
+if (pg_num_rows($latestSlotValidationQuery) > 0) {
+    $latestSlotForValidation = pg_fetch_assoc($latestSlotValidationQuery);
+}
+
+// Fetch municipality max capacity
+$capacityResult = pg_query_params($connection, "SELECT max_capacity FROM municipalities WHERE municipality_id = $1", [$municipality_id]);
+$maxCapacity = null;
+if ($capacityResult && pg_num_rows($capacityResult) > 0) {
+    $capacityRow = pg_fetch_assoc($capacityResult);
+    $maxCapacity = $capacityRow['max_capacity'];
+}
+
+// Get current total students count for capacity management
+$currentTotalStudentsQuery = pg_query_params($connection, "
+    SELECT COUNT(*) as total FROM students 
+    WHERE municipality_id = $1 AND status IN ('under_registration', 'applicant', 'active')
+", [$municipality_id]);
+$currentTotalStudents = 0;
+if ($currentTotalStudentsQuery) {
+    $currentTotalRow = pg_fetch_assoc($currentTotalStudentsQuery);
+    $currentTotalStudents = intval($currentTotalRow['total']);
+}
 
 $slotsUsed = 0;
 $slotsLeft = 0;
@@ -306,6 +383,12 @@ if ($res) {
               case 'duplicate_slot':
                   $errorMsg = 'A slot for this semester and academic year already exists.';
                   break;
+              case 'past_academic_year':
+                  $errorMsg = 'Cannot create a slot for a past academic year. Please select a current or future academic year.';
+                  break;
+              case 'past_semester':
+                  $errorMsg = 'Cannot create a slot for a past semester in the same academic year. Please select the next semester or a future academic year.';
+                  break;
               case 'session_invalid':
                   $errorMsg = 'Session error. Please log out and log in again.';
                   break;
@@ -319,13 +402,129 @@ if ($res) {
       }
       ?>
 
+      <!-- Program Capacity Overview -->
+      <div class="card border-info mb-4">
+        <div class="card-header bg-info text-white">
+          <h5 class="mb-0"><i class="bi bi-speedometer2 me-2"></i>Program Capacity Overview</h5>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-3">
+              <div class="text-center">
+                <h6 class="text-muted mb-1">Current Students</h6>
+                <h4 class="text-primary mb-0" id="currentStudentsCount"><?= number_format($currentTotalStudents) ?></h4>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h6 class="text-muted mb-1">Maximum Capacity</h6>
+                <h4 class="text-<?= $maxCapacity !== null ? 'success' : 'warning' ?> mb-0">
+                  <?= $maxCapacity !== null ? number_format($maxCapacity) : 'Not Set' ?>
+                </h4>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h6 class="text-muted mb-1">Remaining Slots</h6>
+                <h4 class="text-<?= $maxCapacity !== null && ($maxCapacity - $currentTotalStudents) > 0 ? 'info' : 'danger' ?> mb-0" id="remainingCapacity">
+                  <?php 
+                    if ($maxCapacity !== null) {
+                        $remaining = $maxCapacity - $currentTotalStudents;
+                        echo $remaining > 0 ? number_format($remaining) : '0';
+                    } else {
+                        echo 'N/A';
+                    }
+                  ?>
+                </h4>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-center">
+                <h6 class="text-muted mb-1">Utilization</h6>
+                <h4 class="mb-0" id="utilizationPercentage">
+                  <?php 
+                    if ($maxCapacity !== null && $maxCapacity > 0) {
+                        $utilization = ($currentTotalStudents / $maxCapacity) * 100;
+                        $colorClass = $utilization >= 90 ? 'text-danger' : ($utilization >= 75 ? 'text-warning' : 'text-success');
+                        echo '<span class="' . $colorClass . '">' . round($utilization, 1) . '%</span>';
+                    } else {
+                        echo '<span class="text-muted">N/A</span>';
+                    }
+                  ?>
+                </h4>
+              </div>
+            </div>
+          </div>
+          
+          <?php if ($maxCapacity !== null): ?>
+          <div class="mt-3">
+            <div class="progress" style="height: 15px;">
+              <?php 
+              $percentage = ($currentTotalStudents / max(1, $maxCapacity)) * 100;
+              $barClass = 'bg-success';
+              if ($percentage >= 90) $barClass = 'bg-danger';
+              elseif ($percentage >= 75) $barClass = 'bg-warning';
+              ?>
+              <div class="progress-bar <?= $barClass ?>" style="width: <?= min(100, $percentage) ?>%">
+                <?= round($percentage, 1) ?>%
+              </div>
+            </div>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ($maxCapacity === null): ?>
+          <div class="alert alert-warning mt-3 mb-0">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>Notice:</strong> Maximum capacity not set. Please configure it in 
+            <a href="settings.php" class="alert-link">Settings</a> to get slot recommendations.
+          </div>
+          <?php endif; ?>
+        </div>
+      </div>
+
       <!-- Release New Slot -->
       <form id="releaseSlotsForm" method="POST" class="card p-4 shadow-sm mb-4">
         <h5 class="fw-semibold mb-3 text-secondary"><i class="bi bi-plus-circle"></i> Release New Slot</h5>
+        
+        <!-- Smart Recommendations -->
+        <?php if ($maxCapacity !== null): ?>
+        <div class="alert alert-info" id="slotRecommendation">
+          <i class="bi bi-lightbulb me-2"></i>
+          <strong>Smart Suggestion:</strong> 
+          <span id="recommendationText">
+            <?php 
+              $remainingCapacity = $maxCapacity - $currentTotalStudents;
+              if ($remainingCapacity > 0) {
+                  $suggestedSlots = min($remainingCapacity, 50); // Cap at 50 for practical reasons
+                  echo "Based on remaining capacity ({$remainingCapacity} students), we suggest {$suggestedSlots} slots.";
+              } else {
+                  echo "Program is at maximum capacity. Consider increasing capacity in Settings before releasing new slots.";
+              }
+            ?>
+          </span>
+        </div>
+        <?php endif; ?>
+        
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label">Slot Count</label>
-            <input type="number" name="slot_count" class="form-control" required min="1">
+            <div class="input-group">
+              <input type="number" name="slot_count" id="slotCountInput" class="form-control" required min="1" 
+                     <?php if ($maxCapacity !== null && ($maxCapacity - $currentTotalStudents) > 0): ?>
+                       placeholder="<?= min($maxCapacity - $currentTotalStudents, 50) ?>"
+                     <?php endif; ?>>
+              <?php if ($maxCapacity !== null && ($maxCapacity - $currentTotalStudents) > 0): ?>
+              <button type="button" class="btn btn-outline-info" id="useSuggestionBtn" 
+                      data-suggestion="<?= min($maxCapacity - $currentTotalStudents, 50) ?>">
+                <i class="bi bi-magic"></i> Use Suggestion
+              </button>
+              <?php endif; ?>
+            </div>
+            <small class="text-muted" id="slotValidationText">
+              <?php if ($maxCapacity !== null): ?>
+                Max remaining: <?= max(0, $maxCapacity - $currentTotalStudents) ?> students
+              <?php endif; ?>
+            </small>
           </div>
           <div class="col-md-4">
             <label class="form-label">Semester</label>
@@ -333,11 +532,21 @@ if ($res) {
               <option value="1st Semester">1st Semester</option>
               <option value="2nd Semester">2nd Semester</option>
             </select>
+            <?php if ($latestSlotForValidation): ?>
+              <small class="text-muted">Latest: <?= htmlspecialchars($latestSlotForValidation['semester']) ?> <?= htmlspecialchars($latestSlotForValidation['academic_year']) ?></small>
+            <?php endif; ?>
           </div>
           <div class="col-md-4">
             <label class="form-label">Academic Year</label>
             <input type="text" name="academic_year" class="form-control" pattern="^\d{4}-\d{4}$" placeholder="2025-2026" required>
+            <small class="text-muted">Format: YYYY-YYYY (e.g., 2025-2026)</small>
           </div>
+        </div>
+        <div class="mt-2">
+          <small class="text-info">
+            <i class="bi bi-info-circle"></i> 
+            All fields are required. Academic year must be progressive (cannot go backwards from latest slot).
+          </small>
         </div>
         <button type="button" id="showPasswordModalBtn" class="btn btn-primary mt-3">
           <i class="bi bi-upload"></i> Release
@@ -353,7 +562,17 @@ if ($res) {
           </div>
           <div id="currentSlotBody" class="collapse show card-body">
             <p><strong>Released:</strong> <?= date('F j, Y — h:i A', strtotime($slotInfo['created_at'])) ?></p>
-            <p><strong>Total Used:</strong> <?= $slotsUsed ?> / <?= $slotInfo['slot_count'] ?></p>
+            <p><strong>Slot Usage:</strong> <?= $slotsUsed ?> / <?= $slotInfo['slot_count'] ?></p>
+            <?php if ($maxCapacity !== null): ?>
+            <p><strong>Program Capacity:</strong> 
+              <span class="badge <?= $currentTotalStudents >= $maxCapacity ? 'bg-danger' : 'bg-info' ?>">
+                <?= $currentTotalStudents ?> / <?= number_format($maxCapacity) ?>
+              </span>
+              <?php if ($currentTotalStudents >= $maxCapacity): ?>
+                <small class="text-danger">⚠️ At maximum capacity</small>
+              <?php endif; ?>
+            </p>
+            <?php endif; ?>
             <div class="row mb-3">
               <div class="col-md-6">
                 <p><strong>Pending Approval:</strong> <span class="badge bg-warning"><?= $pendingCount ?></span></p>
@@ -528,8 +747,121 @@ if ($res) {
 <script src="../../assets/js/admin/sidebar.js"></script>
 <script>
   document.getElementById('showPasswordModalBtn').addEventListener('click', () => {
+    // Comprehensive validation before showing password modal
+    if (!validateAllFields()) {
+      return; // Don't show modal if validation fails
+    }
     new bootstrap.Modal(document.getElementById('passwordModal')).show();
   });
+
+  // Comprehensive field validation function
+  function validateAllFields() {
+    const slotCountInput = document.querySelector('input[name="slot_count"]');
+    const semesterSelect = document.querySelector('select[name="semester"]');
+    const academicYearInput = document.querySelector('input[name="academic_year"]');
+    
+    // Check if all fields are filled
+    if (!slotCountInput.value || slotCountInput.value <= 0) {
+      alert('Please enter a valid slot count (must be greater than 0).');
+      slotCountInput.focus();
+      return false;
+    }
+    
+    // Check capacity constraints if max capacity is set
+    if (maxCapacity && parseInt(slotCountInput.value) > remainingCapacity) {
+      const exceed = parseInt(slotCountInput.value) - remainingCapacity;
+      if (!confirm(`This slot count exceeds program capacity by ${exceed} students. Do you want to proceed anyway? Consider increasing capacity in Settings first.`)) {
+        slotCountInput.focus();
+        return false;
+      }
+    }
+    
+    if (!semesterSelect.value) {
+      alert('Please select a semester.');
+      semesterSelect.focus();
+      return false;
+    }
+    
+    if (!academicYearInput.value) {
+      alert('Please enter an academic year.');
+      academicYearInput.focus();
+      return false;
+    }
+    
+    // Validate academic year format
+    const academicYearPattern = /^\d{4}-\d{4}$/;
+    if (!academicYearPattern.test(academicYearInput.value)) {
+      alert('Please enter a valid academic year format (YYYY-YYYY, e.g., 2025-2026).');
+      academicYearInput.focus();
+      return false;
+    }
+    
+    // Validate academic year logic (start year should be exactly 1 year before end year)
+    const yearParts = academicYearInput.value.split('-');
+    const startYear = parseInt(yearParts[0]);
+    const endYear = parseInt(yearParts[1]);
+    
+    if (endYear !== startYear + 1) {
+      alert('Academic year format is invalid. End year should be exactly 1 year after start year (e.g., 2025-2026).');
+      academicYearInput.focus();
+      return false;
+    }
+    
+    // Check slot progression constraints
+    if (!validateSlotProgression()) {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // Slot progression validation (moved from existing code)
+  function validateSlotProgression() {
+    const academicYearInput = document.querySelector('input[name="academic_year"]');
+    const semesterSelect = document.querySelector('select[name="semester"]');
+    
+    const currentAcademicYear = academicYearInput.value;
+    const currentSemester = semesterSelect.value;
+    
+    // Get latest slot info for validation (already fetched in PHP)
+    const latestSlotInfo = {
+      academicYear: <?= json_encode($latestSlotForValidation['academic_year'] ?? '') ?>,
+      semester: <?= json_encode($latestSlotForValidation['semester'] ?? '') ?>
+    };
+    
+    if (!latestSlotInfo.academicYear) return true; // No previous slots, allow any
+    
+    // Parse years
+    const currentYearParts = currentAcademicYear.split('-');
+    const latestYearParts = latestSlotInfo.academicYear.split('-');
+    
+    if (currentYearParts.length !== 2 || latestYearParts.length !== 2) return true;
+    
+    const currentStartYear = parseInt(currentYearParts[0]);
+    const latestStartYear = parseInt(latestYearParts[0]);
+    
+    // Check if trying to go backwards in academic year
+    if (currentStartYear < latestStartYear) {
+      alert(`Cannot create slot for ${currentAcademicYear}. Latest slot is for ${latestSlotInfo.academicYear}. Please use ${latestStartYear}-${latestStartYear + 1} or later.`);
+      academicYearInput.focus();
+      return false;
+    }
+    
+    // Check if same year but trying to go backwards in semester
+    if (currentStartYear === latestStartYear) {
+      const semesterOrder = {'1st Semester': 1, '2nd Semester': 2};
+      const currentSemesterNum = semesterOrder[currentSemester] || 0;
+      const latestSemesterNum = semesterOrder[latestSlotInfo.semester] || 0;
+      
+      if (currentSemesterNum <= latestSemesterNum) {
+        alert(`Cannot create slot for ${currentAcademicYear} ${currentSemester}. Latest slot is for ${latestSlotInfo.academicYear} ${latestSlotInfo.semester}. Please select the next semester or a future academic year.`);
+        semesterSelect.focus();
+        return false;
+      }
+    }
+    
+    return true;
+  }
 
   document.getElementById('confirmReleaseBtn').addEventListener('click', () => {
     const pass = document.getElementById('modal_admin_password').value;
@@ -577,6 +909,72 @@ if ($res) {
     form.submit();
   });
   <?php endif; ?>
+
+  // Smart slot recommendations and real-time validation
+  const maxCapacity = <?= $maxCapacity ?? 'null' ?>;
+  const currentStudents = <?= $currentTotalStudents ?>;
+  const remainingCapacity = maxCapacity ? (maxCapacity - currentStudents) : null;
+
+  // Use suggestion button
+  const useSuggestionBtn = document.getElementById('useSuggestionBtn');
+  if (useSuggestionBtn) {
+    useSuggestionBtn.addEventListener('click', () => {
+      const suggestion = parseInt(useSuggestionBtn.dataset.suggestion);
+      document.getElementById('slotCountInput').value = suggestion;
+      updateSlotValidation(suggestion);
+    });
+  }
+
+  // Real-time slot count validation and feedback
+  const slotCountInput = document.getElementById('slotCountInput');
+  if (slotCountInput) {
+    slotCountInput.addEventListener('input', (e) => {
+      const value = parseInt(e.target.value) || 0;
+      updateSlotValidation(value);
+    });
+  }
+
+  function updateSlotValidation(slotCount) {
+    const validationText = document.getElementById('slotValidationText');
+    const recommendationText = document.getElementById('recommendationText');
+    
+    if (!maxCapacity || !validationText) return;
+
+    let message = '';
+    let alertClass = 'text-muted';
+    let recommendationMessage = '';
+
+    if (slotCount <= 0) {
+      message = `Max remaining: ${remainingCapacity} students`;
+      alertClass = 'text-muted';
+    } else if (slotCount > remainingCapacity) {
+      message = `⚠️ Exceeds capacity! Max remaining: ${remainingCapacity} students`;
+      alertClass = 'text-danger';
+      recommendationMessage = `This exceeds program capacity by ${slotCount - remainingCapacity} students. Consider reducing to ${remainingCapacity} or increasing capacity in Settings.`;
+    } else if (slotCount === remainingCapacity) {
+      message = `✓ Perfect! Uses all remaining capacity (${remainingCapacity} students)`;
+      alertClass = 'text-success';
+      recommendationMessage = `Excellent! This will fully utilize the remaining program capacity.`;
+    } else {
+      const remaining = remainingCapacity - slotCount;
+      message = `✓ Good choice! ${remaining} students will remain available`;
+      alertClass = 'text-success';
+      recommendationMessage = `Good allocation! After this slot, ${remaining} students can still be accommodated.`;
+    }
+
+    validationText.innerHTML = message;
+    validationText.className = `form-text ${alertClass}`;
+    
+    if (recommendationText) {
+      recommendationText.innerHTML = recommendationMessage;
+    }
+  }
+
+  // Update capacity display periodically (optional - for future real-time updates)
+  function updateCapacityDisplay() {
+    // This could be enhanced to fetch updated counts via AJAX
+    // For now, it's static but the structure is ready for real-time updates
+  }
 </script>
 </body>
 </html>
