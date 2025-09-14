@@ -1,18 +1,23 @@
 {
     "schedule_meta": {
-        "start_date": "2025-09-30",
-        "end_date": "2025-09-30",
-        "start_times": [
-            "07:00",
-            "15:00"
+        "start_date": "2025-09-17",
+        "end_date": "2025-09-15",
+        "location": "People's Park, Barangay Biclatan, General Trias, Cavite",
+        "batches": [
+            {
+                "batch_number": 1,
+                "start_time": "08:00",
+                "end_time": "09:00",
+                "capacity": 50
+            },
+            {
+                "batch_number": 2,
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "capacity": 50
+            }
         ],
-        "end_times": [
-            "09:00",
-            "17:00"
-        ],
-        "batch1_capacity": 5,
-        "batch2_capacity": 5,
-        "location": "People's Park, Barangay Biclatan, General Trias, Cavite"
+        "total_students": 0
     },
-    "schedule_published": true
+    "schedule_published": false
 }
