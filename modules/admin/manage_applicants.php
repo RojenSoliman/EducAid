@@ -82,6 +82,16 @@ function render_table($applicants, $connection) {
                         <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#modal<?= $student_id ?>">
                             <i class="bi bi-eye"></i> View
                         </button>
+                        <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
+                        <button class="btn btn-danger btn-sm ms-1" 
+                                onclick="showBlacklistModal(<?= $student_id ?>, '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
+                                    barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
+                                    status: 'Applicant'
+                                })"
+                                title="Blacklist Student">
+                            <i class="bi bi-shield-exclamation"></i>
+                        </button>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <!-- Modal -->
@@ -172,6 +182,19 @@ function render_table($applicants, $connection) {
                                     </form>
                                 <?php else: ?>
                                     <span class="text-muted">Incomplete documents</span>
+                                <?php endif; ?>
+                                
+                                <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
+                                <div class="ms-auto">
+                                    <button class="btn btn-outline-danger btn-sm" 
+                                            onclick="showBlacklistModal(<?= $student_id ?>, '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
+                                                barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
+                                                status: 'Applicant'
+                                            })"
+                                            data-bs-dismiss="modal">
+                                        <i class="bi bi-shield-exclamation me-1"></i> Blacklist Student
+                                    </button>
+                                </div>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -337,6 +360,10 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest') {
     </div>
   </section>
 </div>
+
+<!-- Include Blacklist Modal -->
+<?php include '../../includes/admin/blacklist_modal.php'; ?>
+
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>

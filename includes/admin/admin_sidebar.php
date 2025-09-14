@@ -110,6 +110,14 @@ if (isset($_SESSION['admin_id'])) {
       </a>
     </li>
     <?php if ($admin_role === 'super_admin'): ?>
+    <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'blacklist_archive.php' ? 'active' : ''; ?>">
+      <a href="blacklist_archive.php">
+        <i class="bi bi-person-x-fill icon"></i>
+        <span class="links_name">Blacklist Archive</span>
+      </a>
+    </li>
+    <?php endif; ?>
+    <?php if ($admin_role === 'super_admin'): ?>
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'admin_management.php' ? 'active' : ''; ?>">
       <a href="admin_management.php">
         <i class="bi bi-people-fill icon"></i>

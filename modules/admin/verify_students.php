@@ -344,8 +344,8 @@ while ($row = pg_fetch_assoc($barangayResult)) {
                         $qr_img = '../../modules/admin/phpqrcode/generate_qr.php?data=' . urlencode($unique_id);
                       }
                   ?>
-                      <tr>
-                        <td>
+                      <tr onclick="showStudentOptions(<?= $id ?>, '<?= htmlspecialchars($name, ENT_QUOTES) ?>', '<?= htmlspecialchars($email, ENT_QUOTES) ?>', '<?= htmlspecialchars($barangay, ENT_QUOTES) ?>')" style="cursor: pointer;" title="Click for options">
+                        <td onclick="event.stopPropagation();">
                           <input type="checkbox" name="selected_actives[]" value="<?= $id ?>" <?= $isFinalized ? 'disabled' : '' ?>>
                         </td>
                         <td><?= $name ?></td>
@@ -501,6 +501,34 @@ while ($row = pg_fetch_assoc($barangayResult)) {
   </div>
 </div>
 
+<!-- Student Options Modal -->
+<div class="modal fade" id="studentOptionsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Student Options</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="studentOptionsInfo"></p>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-info" onclick="viewStudentDetails()">
+                        <i class="bi bi-eye me-2"></i>View Student Details
+                    </button>
+                    <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
+                    <button type="button" class="btn btn-danger" onclick="triggerBlacklistFromOptions()">
+                        <i class="bi bi-shield-exclamation me-2"></i>Blacklist Student
+                    </button>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Include Blacklist Modal -->
+<?php include '../../includes/admin/blacklist_modal.php'; ?>
+
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
@@ -577,6 +605,53 @@ while ($row = pg_fetch_assoc($barangayResult)) {
       });
     }
   });
+
+  // Student options functionality
+  let currentStudent = null;
+
+  function showStudentOptions(studentId, studentName, studentEmail, barangay) {
+    currentStudent = {
+      id: studentId,
+      name: studentName,
+      email: studentEmail,
+      barangay: barangay
+    };
+    
+    document.getElementById('studentOptionsInfo').innerHTML = `
+      <strong>Student:</strong> ${studentName}<br>
+      <strong>Email:</strong> ${studentEmail}<br>
+      <strong>Barangay:</strong> ${barangay}
+    `;
+    
+    new bootstrap.Modal(document.getElementById('studentOptionsModal')).show();
+  }
+
+  function viewStudentDetails() {
+    if (currentStudent) {
+      // You can implement student details viewing here
+      alert('View details functionality can be implemented here for: ' + currentStudent.name);
+    }
+  }
+
+  function triggerBlacklistFromOptions() {
+    if (currentStudent) {
+      // Close the options modal first
+      bootstrap.Modal.getInstance(document.getElementById('studentOptionsModal')).hide();
+      
+      // Show blacklist modal
+      setTimeout(() => {
+        showBlacklistModal(
+          currentStudent.id, 
+          currentStudent.name, 
+          currentStudent.email, 
+          {
+            barangay: currentStudent.barangay,
+            status: 'Active Student'
+          }
+        );
+      }, 300);
+    }
+  }
 </script>
 </body>
 </html>

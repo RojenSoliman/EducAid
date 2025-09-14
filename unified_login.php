@@ -38,6 +38,33 @@ if (
     if ($studentRow = pg_fetch_assoc($studentRes)) {
         $user = $studentRow;
         $user['id'] = $user['student_id'];
+        
+        // Check if student is blacklisted
+        if ($user['status'] === 'blacklisted') {
+            // Get blacklist reason
+            $blacklistQuery = pg_query_params($connection,
+                "SELECT reason_category, detailed_reason FROM blacklisted_students WHERE student_id = $1",
+                [$user['id']]
+            );
+            $blacklistInfo = pg_fetch_assoc($blacklistQuery);
+            
+            $reasonText = 'violation of terms';
+            if ($blacklistInfo) {
+                switch($blacklistInfo['reason_category']) {
+                    case 'fraudulent_activity': $reasonText = 'fraudulent activity'; break;
+                    case 'academic_misconduct': $reasonText = 'academic misconduct'; break;
+                    case 'system_abuse': $reasonText = 'system abuse'; break;
+                    case 'other': $reasonText = 'policy violation'; break;
+                }
+            }
+            
+            echo json_encode([
+                'status' => 'error',
+                'message' => "Account permanently suspended due to {$reasonText}. Please contact the Office of the Mayor for assistance.",
+                'is_blacklisted' => true
+            ]);
+            exit;
+        }
     } elseif ($adminRow = pg_fetch_assoc($adminRes)) {
         $user = $adminRow;
         $user['id'] = $user['admin_id'];
@@ -147,8 +174,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     if ($_POST['forgot_action'] === 'send_otp' && !empty($_POST['forgot_email'])) {
         $email = trim($_POST['forgot_email']);
         
-        // Check both tables (exclude students under registration)
-        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status != 'under_registration'", [$email]);
+        // Check both tables (exclude students under registration and blacklisted)
+        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status NOT IN ('under_registration', 'blacklisted')", [$email]);
         $adminRes = pg_query_params($connection, "SELECT admin_id, 'admin' as role FROM admins WHERE email = $1", [$email]);
         
         $user = null;
@@ -165,10 +192,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                 [$email]
             );
             
+            // Check if it's a blacklisted student
+            $blacklistedCheck = pg_query_params($connection,
+                "SELECT student_id FROM students WHERE email = $1 AND status = 'blacklisted'",
+                [$email]
+            );
+            
             if (pg_fetch_assoc($underRegistrationCheck)) {
                 echo json_encode([
                     'status'=>'error',
                     'message'=>'Your account is still under review. Password reset is not available until your account is approved.'
+                ]);
+            } elseif (pg_fetch_assoc($blacklistedCheck)) {
+                echo json_encode([
+                    'status'=>'error',
+                    'message'=>'Account suspended. Please contact the Office of the Mayor for assistance.'
                 ]);
             } else {
                 echo json_encode(['status'=>'error','message'=>'Email not found.']);

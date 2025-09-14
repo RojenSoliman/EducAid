@@ -691,6 +691,17 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                                         onclick="viewDetails(<?php echo $registration['student_id']; ?>)">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
+                                                <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
+                                                <button type="button" class="btn btn-outline-danger btn-sm" 
+                                                        onclick="showBlacklistModal(<?php echo $registration['student_id']; ?>, '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($registration['email'], ENT_QUOTES); ?>', {
+                                                            barangay: '<?php echo htmlspecialchars($registration['barangay'] ?? 'N/A', ENT_QUOTES); ?>',
+                                                            university: '<?php echo htmlspecialchars($registration['university'] ?? 'N/A', ENT_QUOTES); ?>',
+                                                            status: 'Under Registration'
+                                                        })"
+                                                        title="Blacklist Student">
+                                                    <i class="bi bi-shield-exclamation"></i>
+                                                </button>
+                                                <?php endif; ?>
                                             </div>
                                         </td>
                                     </tr>
@@ -1153,6 +1164,9 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             document.getElementById('downloadBtn').style.display = 'none';
         });
     </script>
+
+    <!-- Include Blacklist Modal -->
+    <?php include '../../includes/admin/blacklist_modal.php'; ?>
 </body>
 </html>
 
