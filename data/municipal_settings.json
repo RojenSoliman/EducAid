@@ -1,22 +1,18 @@
 {
     "schedule_meta": {
-        "start_date": "2025-07-26",
-        "end_date": "2025-07-31",
+        "start_date": "2025-09-30",
+        "end_date": "2025-09-30",
         "start_times": [
-            "07:55",
-            "10:57",
-            "07:55",
-            "10:57"
+            "07:00",
+            "15:00"
         ],
         "end_times": [
-            "07:58",
-            "11:58",
-            "07:58",
-            "11:58"
+            "09:00",
+            "17:00"
         ],
-        "batch1_capacity": 99,
-        "batch2_capacity": 99,
-        "location": "asdasda"
+        "batch1_capacity": 5,
+        "batch2_capacity": 5,
+        "location": "People's Park, Barangay Biclatan, General Trias, Cavite"
     },
-    "schedule_published": false
+    "schedule_published": true
 }

@@ -7,6 +7,30 @@ if (!isset($_SESSION['student_username'])) {
 // Include database connection
 include __DIR__ . '/../../config/database.php';
 
+// Fetch past distributions where this student participated
+$studentId = $_SESSION['student_id'];
+$past_participation_query = "
+    SELECT DISTINCT
+        ds.distribution_date,
+        ds.location,
+        ds.academic_year,
+        ds.semester,
+        ds.finalized_at,
+        ds.notes,
+        CONCAT(a.first_name, ' ', a.last_name) as finalized_by_name
+    FROM distribution_snapshots ds
+    LEFT JOIN admins a ON ds.finalized_by = a.admin_id
+    WHERE ds.students_data::text LIKE '%\"student_id\":\"' || $1 || '\"%'
+       OR ds.students_data::text LIKE '%\"student_id\":' || $1 || ',%'
+       OR ds.students_data::text LIKE '%\"student_id\":' || $1 || '}%'
+       OR ds.students_data::text LIKE '%\"student_id\": \"' || $1 || '\"%'
+       OR ds.students_data::text LIKE '%\"student_id\": ' || $1 || ',%'
+       OR ds.students_data::text LIKE '%\"student_id\": ' || $1 || '}%'
+    ORDER BY ds.finalized_at DESC
+    LIMIT 5
+";
+$past_participation_result = pg_query_params($connection, $past_participation_query, [$studentId]);
+
 if (!isset($_SESSION['schedule_modal_shown'])) {
     $_SESSION['schedule_modal_shown'] = true;
     $showScheduleModal = true;
@@ -194,6 +218,88 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
             }
         }
         ?>
+
+        <!-- Past Distributions Section -->
+        <?php if ($past_participation_result && pg_num_rows($past_participation_result) > 0): ?>
+        <div class="custom-card mb-4 shadow-sm section-spacing">
+            <div class="custom-card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-archive me-2"></i>Your Distribution History</h5>
+            </div>
+            <div class="custom-card-body">
+                <p class="text-muted mb-3">Previous distributions you have participated in:</p>
+                <div class="row g-3">
+                    <?php while ($dist = pg_fetch_assoc($past_participation_result)): ?>
+                        <div class="col-md-6">
+                            <div class="border rounded p-3 h-100">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="mb-0 text-success fw-bold">
+                                        <i class="bi bi-calendar-check me-1"></i>
+                                        <?php echo date('M d, Y', strtotime($dist['distribution_date'])); ?>
+                                    </h6>
+                                    <span class="badge bg-success">Distributed</span>
+                                </div>
+                                
+                                <div class="mb-2">
+                                    <small class="text-muted d-block">
+                                        <i class="bi bi-geo-alt me-1"></i>
+                                        <strong>Location:</strong> <?php echo htmlspecialchars($dist['location']); ?>
+                                    </small>
+                                </div>
+                                
+                                <?php if (!empty($dist['academic_year']) || !empty($dist['semester'])): ?>
+                                <div class="mb-2">
+                                    <small class="text-muted d-block">
+                                        <i class="bi bi-mortarboard me-1"></i>
+                                        <strong>Academic Period:</strong> 
+                                        <?php 
+                                        $period_parts = [];
+                                        if (!empty($dist['academic_year'])) $period_parts[] = 'AY ' . $dist['academic_year'];
+                                        if (!empty($dist['semester'])) $period_parts[] = $dist['semester'];
+                                        echo htmlspecialchars(implode(', ', $period_parts));
+                                        ?>
+                                    </small>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <div class="mb-2">
+                                    <small class="text-muted d-block">
+                                        <i class="bi bi-clock me-1"></i>
+                                        <strong>Processed:</strong> <?php echo date('M d, Y g:i A', strtotime($dist['finalized_at'])); ?>
+                                    </small>
+                                </div>
+                                
+                                <?php if (!empty($dist['finalized_by_name'])): ?>
+                                <div class="mb-2">
+                                    <small class="text-muted d-block">
+                                        <i class="bi bi-person-check me-1"></i>
+                                        <strong>Processed by:</strong> <?php echo htmlspecialchars($dist['finalized_by_name']); ?>
+                                    </small>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($dist['notes'])): ?>
+                                <div class="mt-2 pt-2 border-top">
+                                    <small class="text-muted">
+                                        <i class="bi bi-sticky me-1"></i>
+                                        <strong>Notes:</strong> <?php echo htmlspecialchars($dist['notes']); ?>
+                                    </small>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endwhile; ?>
+                </div>
+                
+                <!-- Link to view more if needed -->
+                <div class="text-center mt-3">
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Showing your most recent distributions
+                    </small>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <!-- Announcements -->
         <?php

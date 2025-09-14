@@ -77,6 +77,9 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 
 // Get search and filter parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$records_per_page = 10;
+$offset = ($page - 1) * $records_per_page;
 
 // Handle finalize distribution action
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution'])) {
@@ -84,6 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution
     $password = $_POST['admin_password'] ?? '';
     $location = $_POST['distribution_location'] ?? '';
     $notes = $_POST['distribution_notes'] ?? '';
+    $academic_year = trim($_POST['academic_year'] ?? '');
+    $semester = trim($_POST['semester'] ?? '');
     
     if (empty($password)) {
         $_SESSION['error_message'] = 'Password is required to finalize distribution.';
@@ -93,6 +98,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution
     
     if (empty($location)) {
         $_SESSION['error_message'] = 'Distribution location is required.';
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
+        exit;
+    }
+    
+    if (empty($academic_year)) {
+        $_SESSION['error_message'] = 'Academic year is required to finalize distribution.';
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
+        exit;
+    }
+    
+    if (empty($semester)) {
+        $_SESSION['error_message'] = 'Semester is required to finalize distribution.';
         header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
         exit;
     }
@@ -186,12 +203,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution
             }
         }
         
-        // Get current active slot info
+        // Get current active slot info (for reference, but prioritize manual input)
         $slot_query = "SELECT slot_id, academic_year, semester FROM signup_slots WHERE is_active = true LIMIT 1";
         $slot_result = pg_query($connection, $slot_query);
         $slot_data = $slot_result ? pg_fetch_assoc($slot_result) : null;
         
-        // Create distribution snapshot
+        // Create distribution snapshot using manual input for academic period
         $snapshot_query = "
             INSERT INTO distribution_snapshots 
             (distribution_date, location, total_students_count, active_slot_id, academic_year, semester, 
@@ -204,8 +221,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution
             $location,
             $total_students,
             $slot_data['slot_id'] ?? null,
-            $slot_data['academic_year'] ?? '',
-            $slot_data['semester'] ?? '',
+            $academic_year,  // Use manual input
+            $semester,       // Use manual input
             $admin_id,
             $notes,
             json_encode($schedules_data),
@@ -277,7 +294,25 @@ if (!empty($date_to)) {
 
 $where_clause = implode(' AND ', $where_conditions);
 
-// Main query
+// Count total records for pagination
+$count_query = "
+    SELECT COUNT(*) as total
+    FROM students s
+    LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
+    LEFT JOIN distributions d ON s.student_id = d.student_id
+    WHERE $where_clause
+";
+
+if (!empty($params)) {
+    $count_result = pg_query_params($connection, $count_query, $params);
+} else {
+    $count_result = pg_query($connection, $count_query);
+}
+
+$total_filtered_records = $count_result ? pg_fetch_assoc($count_result)['total'] : 0;
+$total_pages = ceil($total_filtered_records / $records_per_page);
+
+// Main query with pagination
 $query = "
     SELECT 
         s.student_id,
@@ -298,6 +333,7 @@ $query = "
     LEFT JOIN admins a ON d.verified_by = a.admin_id
     WHERE $where_clause
     ORDER BY d.date_given DESC
+    LIMIT $records_per_page OFFSET $offset
 ";
 
 if (!empty($params)) {
@@ -314,6 +350,44 @@ $barangays_result = pg_query($connection, $barangays_query);
 $count_query = "SELECT COUNT(*) as total FROM students WHERE status = 'given'";
 $count_result = pg_query($connection, $count_query);
 $total_distributions = pg_fetch_assoc($count_result)['total'];
+
+// Load municipal settings for location
+$settingsPath = __DIR__ . '/../../data/municipal_settings.json';
+$settings = file_exists($settingsPath) ? json_decode(file_get_contents($settingsPath), true) : [];
+$distribution_location = $settings['schedule_meta']['location'] ?? '';
+
+// Fetch past distributions with pagination
+$past_distributions_page = isset($_GET['dist_page']) ? max(1, intval($_GET['dist_page'])) : 1;
+$past_distributions_per_page = 10;
+$past_distributions_offset = ($past_distributions_page - 1) * $past_distributions_per_page;
+
+$past_distributions_count_query = "SELECT COUNT(*) as total FROM distribution_snapshots";
+$past_distributions_count_result = pg_query($connection, $past_distributions_count_query);
+$total_past_distributions = $past_distributions_count_result ? pg_fetch_assoc($past_distributions_count_result)['total'] : 0;
+$total_past_distributions_pages = ceil($total_past_distributions / $past_distributions_per_page);
+
+$past_distributions_query = "
+    SELECT 
+        ds.snapshot_id,
+        ds.distribution_date,
+        ds.location,
+        ds.total_students_count,
+        ds.academic_year,
+        ds.semester,
+        ds.finalized_at,
+        ds.notes,
+        CONCAT(a.first_name, ' ', a.last_name) as finalized_by_name
+    FROM distribution_snapshots ds
+    LEFT JOIN admins a ON ds.finalized_by = a.admin_id
+    ORDER BY ds.finalized_at DESC
+    LIMIT $past_distributions_per_page OFFSET $past_distributions_offset
+";
+$past_distributions_result = pg_query($connection, $past_distributions_query);
+
+// Get current active slot info for modal display
+$slot_query = "SELECT slot_id, academic_year, semester FROM signup_slots WHERE is_active = true LIMIT 1";
+$slot_result = pg_query($connection, $slot_query);
+$slot_data = $slot_result ? pg_fetch_assoc($slot_result) : null;
 ?>
 
 <!DOCTYPE html>
@@ -546,7 +620,230 @@ $total_distributions = pg_fetch_assoc($count_result)['total'];
                             </tbody>
                         </table>
                     </div>
+                    
+                    <!-- Pagination for Current Distributions -->
+                    <?php if ($total_pages > 1): ?>
+                    <div class="p-3 border-top">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="text-muted">
+                                Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $records_per_page, $total_filtered_records); ?> of <?php echo $total_filtered_records; ?> distributions
+                            </div>
+                            <nav aria-label="Distribution pagination">
+                                <ul class="pagination pagination-sm mb-0">
+                                    <!-- Previous Page -->
+                                    <?php if ($page > 1): ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['page' => $page - 1])); ?>">
+                                                <i class="bi bi-chevron-left"></i>
+                                            </a>
+                                        </li>
+                                    <?php else: ?>
+                                        <li class="page-item disabled">
+                                            <span class="page-link"><i class="bi bi-chevron-left"></i></span>
+                                        </li>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Page Numbers -->
+                                    <?php
+                                    $start_page = max(1, $page - 2);
+                                    $end_page = min($total_pages, $page + 2);
+                                    
+                                    if ($start_page > 1): ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['page' => 1])); ?>">1</a>
+                                        </li>
+                                        <?php if ($start_page > 2): ?>
+                                            <li class="page-item disabled">
+                                                <span class="page-link">...</span>
+                                            </li>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                    
+                                    <?php for ($i = $start_page; $i <= $end_page; $i++): ?>
+                                        <li class="page-item <?php echo $i == $page ? 'active' : ''; ?>">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['page' => $i])); ?>">
+                                                <?php echo $i; ?>
+                                            </a>
+                                        </li>
+                                    <?php endfor; ?>
+                                    
+                                    <?php if ($end_page < $total_pages): ?>
+                                        <?php if ($end_page < $total_pages - 1): ?>
+                                            <li class="page-item disabled">
+                                                <span class="page-link">...</span>
+                                            </li>
+                                        <?php endif; ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['page' => $total_pages])); ?>">
+                                                <?php echo $total_pages; ?>
+                                            </a>
+                                        </li>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Next Page -->
+                                    <?php if ($page < $total_pages): ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['page' => $page + 1])); ?>">
+                                                <i class="bi bi-chevron-right"></i>
+                                            </a>
+                                        </li>
+                                    <?php else: ?>
+                                        <li class="page-item disabled">
+                                            <span class="page-link"><i class="bi bi-chevron-right"></i></span>
+                                        </li>
+                                    <?php endif; ?>
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </div>
+                
+                <!-- Past Distributions Section -->
+                <?php if ($total_past_distributions > 0): ?>
+                <div class="table-card mt-4">
+                    <div class="p-4 border-bottom">
+                        <h5 class="mb-0"><i class="bi bi-archive text-primary me-2"></i>Past Distributions (<?php echo $total_past_distributions; ?>)</h5>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Distribution Date</th>
+                                    <th>Location</th>
+                                    <th>Students Count</th>
+                                    <th>Academic Period</th>
+                                    <th>Finalized By</th>
+                                    <th>Finalized Date</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if ($past_distributions_result && pg_num_rows($past_distributions_result) > 0): ?>
+                                    <?php while ($dist = pg_fetch_assoc($past_distributions_result)): ?>
+                                        <tr>
+                                            <td>
+                                                <strong><?php echo date('M d, Y', strtotime($dist['distribution_date'])); ?></strong>
+                                            </td>
+                                            <td>
+                                                <i class="bi bi-geo-alt text-primary me-1"></i>
+                                                <?php echo htmlspecialchars($dist['location']); ?>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-success">
+                                                    <i class="bi bi-people me-1"></i>
+                                                    <?php echo $dist['total_students_count']; ?> students
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="small">
+                                                    <strong>AY:</strong> <?php echo htmlspecialchars($dist['academic_year']); ?><br>
+                                                    <strong>Sem:</strong> <?php echo htmlspecialchars($dist['semester']); ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <?php echo $dist['finalized_by_name'] ? htmlspecialchars($dist['finalized_by_name']) : '<span class="text-muted">System</span>'; ?>
+                                            </td>
+                                            <td>
+                                                <div class="small">
+                                                    <?php echo date('M d, Y g:i A', strtotime($dist['finalized_at'])); ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <?php if (!empty($dist['notes'])): ?>
+                                                    <span class="text-truncate d-inline-block" style="max-width: 200px;" 
+                                                          title="<?php echo htmlspecialchars($dist['notes']); ?>">
+                                                        <?php echo htmlspecialchars($dist['notes']); ?>
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">-</span>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Pagination for Past Distributions -->
+                    <?php if ($total_past_distributions_pages > 1): ?>
+                    <div class="p-3 border-top">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="text-muted">
+                                Showing <?php echo $past_distributions_offset + 1; ?> to <?php echo min($past_distributions_offset + $past_distributions_per_page, $total_past_distributions); ?> of <?php echo $total_past_distributions; ?> past distributions
+                            </div>
+                            <nav aria-label="Past distributions pagination">
+                                <ul class="pagination pagination-sm mb-0">
+                                    <!-- Previous Page -->
+                                    <?php if ($past_distributions_page > 1): ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['dist_page' => $past_distributions_page - 1])); ?>">
+                                                <i class="bi bi-chevron-left"></i>
+                                            </a>
+                                        </li>
+                                    <?php else: ?>
+                                        <li class="page-item disabled">
+                                            <span class="page-link"><i class="bi bi-chevron-left"></i></span>
+                                        </li>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Page Numbers -->
+                                    <?php
+                                    $dist_start_page = max(1, $past_distributions_page - 2);
+                                    $dist_end_page = min($total_past_distributions_pages, $past_distributions_page + 2);
+                                    
+                                    if ($dist_start_page > 1): ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['dist_page' => 1])); ?>">1</a>
+                                        </li>
+                                        <?php if ($dist_start_page > 2): ?>
+                                            <li class="page-item disabled">
+                                                <span class="page-link">...</span>
+                                            </li>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                    
+                                    <?php for ($i = $dist_start_page; $i <= $dist_end_page; $i++): ?>
+                                        <li class="page-item <?php echo $i == $past_distributions_page ? 'active' : ''; ?>">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['dist_page' => $i])); ?>">
+                                                <?php echo $i; ?>
+                                            </a>
+                                        </li>
+                                    <?php endfor; ?>
+                                    
+                                    <?php if ($dist_end_page < $total_past_distributions_pages): ?>
+                                        <?php if ($dist_end_page < $total_past_distributions_pages - 1): ?>
+                                            <li class="page-item disabled">
+                                                <span class="page-link">...</span>
+                                            </li>
+                                        <?php endif; ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['dist_page' => $total_past_distributions_pages])); ?>">
+                                                <?php echo $total_past_distributions_pages; ?>
+                                            </a>
+                                        </li>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Next Page -->
+                                    <?php if ($past_distributions_page < $total_past_distributions_pages): ?>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?<?php echo http_build_query(array_merge($_GET, ['dist_page' => $past_distributions_page + 1])); ?>">
+                                                <i class="bi bi-chevron-right"></i>
+                                            </a>
+                                        </li>
+                                    <?php else: ?>
+                                        <li class="page-item disabled">
+                                            <span class="page-link"><i class="bi bi-chevron-right"></i></span>
+                                        </li>
+                                    <?php endif; ?>
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 
                 <!-- Finalize Distribution Section -->
                 <div class="table-card mt-4">
@@ -599,9 +896,65 @@ $total_distributions = pg_fetch_assoc($count_result)['total'];
                                         <label for="distribution_location" class="form-label">
                                             <i class="bi bi-geo-alt me-1"></i>Distribution Location <span class="text-danger">*</span>
                                         </label>
-                                        <input type="text" class="form-control" id="distribution_location" name="distribution_location" 
-                                               placeholder="e.g., Municipal Hall, Barangay Center, etc." required>
+                                        <?php if (!empty($distribution_location)): ?>
+                                            <input type="text" class="form-control" id="distribution_location" name="distribution_location" 
+                                                   value="<?php echo htmlspecialchars($distribution_location); ?>" readonly>
+                                            <div class="form-text">
+                                                <i class="bi bi-info-circle me-1"></i>Location set from Schedule Management. 
+                                                <a href="manage_schedules.php" class="text-decoration-none">Edit in Manage Schedules</a>
+                                            </div>
+                                        <?php else: ?>
+                                            <input type="text" class="form-control border-warning" id="distribution_location" name="distribution_location" 
+                                                   placeholder="Location not set in schedule. Please enter manually." required>
+                                            <div class="form-text text-warning">
+                                                <i class="bi bi-exclamation-triangle me-1"></i>No location found in schedule settings. Please set location in 
+                                                <a href="manage_schedules.php" class="text-warning text-decoration-none">Manage Schedules</a> or enter manually.
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
+                                    
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="academic_year" class="form-label">
+                                                    <i class="bi bi-calendar-range me-1"></i>Academic Year <span class="text-danger">*</span>
+                                                </label>
+                                                <input type="text" class="form-control" id="academic_year" name="academic_year" 
+                                                       value="<?php echo htmlspecialchars($slot_data['academic_year'] ?? ''); ?>" 
+                                                       placeholder="e.g., 2024-2025" required>
+                                                <div class="form-text">
+                                                    <i class="bi bi-info-circle me-1"></i>Format: YYYY-YYYY (e.g., 2024-2025)
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="semester" class="form-label">
+                                                    <i class="bi bi-calendar-check me-1"></i>Semester <span class="text-danger">*</span>
+                                                </label>
+                                                <select class="form-select" id="semester" name="semester" required>
+                                                    <option value="">Select Semester</option>
+                                                    <option value="1st Semester" <?php echo ($slot_data['semester'] ?? '') === '1st Semester' ? 'selected' : ''; ?>>1st Semester</option>
+                                                    <option value="2nd Semester" <?php echo ($slot_data['semester'] ?? '') === '2nd Semester' ? 'selected' : ''; ?>>2nd Semester</option>
+                                                </select>
+                                                <div class="form-text">
+                                                    <i class="bi bi-info-circle me-1"></i>Academic period for this distribution
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <?php if (!empty($slot_data['academic_year']) || !empty($slot_data['semester'])): ?>
+                                    <div class="alert alert-info mb-3">
+                                        <i class="bi bi-info-circle me-2"></i>
+                                        <strong>Active Slot Found:</strong> Academic period pre-filled from active slot. You can modify these values if needed.
+                                    </div>
+                                    <?php else: ?>
+                                    <div class="alert alert-warning mb-3">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>
+                                        <strong>No Active Slot:</strong> Please specify the academic year and semester for this distribution manually.
+                                    </div>
+                                    <?php endif; ?>
                                     
                                     <div class="mb-3">
                                         <label for="distribution_notes" class="form-label">
@@ -671,10 +1024,24 @@ $total_distributions = pg_fetch_assoc($count_result)['total'];
             finalizeForm.addEventListener('submit', function(e) {
                 const location = document.getElementById('distribution_location').value.trim();
                 const password = document.getElementById('admin_password').value.trim();
+                const academicYear = document.getElementById('academic_year').value.trim();
+                const semester = document.getElementById('semester').value.trim();
                 
                 if (!location) {
                     e.preventDefault();
                     alert('Please enter the distribution location.');
+                    return false;
+                }
+                
+                if (!academicYear) {
+                    e.preventDefault();
+                    alert('Please enter the academic year.');
+                    return false;
+                }
+                
+                if (!semester) {
+                    e.preventDefault();
+                    alert('Please select the semester.');
                     return false;
                 }
                 
@@ -688,6 +1055,8 @@ $total_distributions = pg_fetch_assoc($count_result)['total'];
                     'You are about to FINALIZE the distribution!\n\n' +
                     'This will:\n' +
                     '• Create a permanent snapshot of current distribution\n' +
+                    '• Record for Academic Year: ' + academicYear + '\n' +
+                    '• Record for Semester: ' + semester + '\n' +
                     '• Reset ALL students to applicant status\n' +
                     '• Clear all payroll numbers and QR codes\n' +
                     '• Delete all schedules and distribution records\n\n' +
