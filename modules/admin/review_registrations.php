@@ -82,25 +82,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['success_message'] = "Registration approved successfully!";
             }
         } elseif ($action === 'reject') {
-            // Update student status to disabled
-            $updateQuery = "UPDATE students SET status = 'disabled' WHERE student_id = $1";
-            $result = pg_query_params($connection, $updateQuery, [$student_id]);
+            // Get student information before deletion
+            $studentQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1";
+            $studentResult = pg_query_params($connection, $studentQuery, [$student_id]);
+            $student = pg_fetch_assoc($studentResult);
             
-            if ($result) {
-                // Get student email for notification
-                $emailQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1";
-                $emailResult = pg_query_params($connection, $emailQuery, [$student_id]);
-                $student = pg_fetch_assoc($emailResult);
+            if ($student) {
+                // Delete related records first (due to foreign key constraints)
+                pg_query_params($connection, "DELETE FROM qr_logs WHERE student_id = $1", [$student_id]);
+                pg_query_params($connection, "DELETE FROM distributions WHERE student_id = $1", [$student_id]);
+                pg_query_params($connection, "DELETE FROM enrollment_forms WHERE student_id = $1", [$student_id]);
+                pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$student_id]);
+                pg_query_params($connection, "DELETE FROM applications WHERE student_id = $1", [$student_id]);
                 
-                // Send rejection email
-                sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], false, $remarks);
+                // Finally delete the student record - this frees up the slot completely
+                $deleteResult = pg_query_params($connection, "DELETE FROM students WHERE student_id = $1", [$student_id]);
                 
-                // Add admin notification
-                $student_name = $student['first_name'] . ' ' . $student['last_name'];
-                $notification_msg = "Registration rejected for student: " . $student_name . " (ID: " . $student_id . ")" . ($remarks ? " - Reason: " . $remarks : "");
-                pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
-                
-                $_SESSION['success_message'] = "Registration rejected.";
+                if ($deleteResult) {
+                    // Send rejection email
+                    sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], false, $remarks);
+                    
+                    // Add admin notification
+                    $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                    $notification_msg = "Registration rejected and removed for student: " . $student_name . " (ID: " . $student_id . ")" . ($remarks ? " - Reason: " . $remarks : "") . " - Slot freed up";
+                    pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                    
+                    $_SESSION['success_message'] = "Registration rejected and student data removed. Slot has been freed up.";
+                } else {
+                    $_SESSION['error_message'] = "Error rejecting registration.";
+                }
+            } else {
+                $_SESSION['error_message'] = "Student not found.";
             }
         }
         

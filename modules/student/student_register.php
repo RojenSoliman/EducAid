@@ -21,9 +21,8 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
         // There is an active slot, check if it's full
         $countRes = pg_query_params($connection, "
             SELECT COUNT(*) AS total FROM students
-            WHERE (status = 'under_registration' OR status = 'applicant' OR status = 'active')
-            AND application_date >= $1
-        ", [$slotInfo['created_at']]);
+            WHERE slot_id = $1
+        ", [$slotInfo['slot_id']]);
         $countRow = pg_fetch_assoc($countRes);
         $slotsLeft = intval($slotInfo['slot_count']) - intval($countRow['total']);
         
@@ -491,8 +490,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         exit;
     }
 
-    $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'under_registration', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
+    // Get current active slot ID for tracking
+    $activeSlotQuery = pg_query_params($connection, "SELECT slot_id FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
+    $activeSlot = pg_fetch_assoc($activeSlotQuery);
+    $slot_id = $activeSlot ? $activeSlot['slot_id'] : null;
+
+    $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id, slot_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'under_registration', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13, $14) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $municipality_id,
@@ -507,7 +511,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $barangay,
         $university,
         $year_level,
-        $unique_student_id
+        $unique_student_id,
+        $slot_id
     ]);
 
 

@@ -49,6 +49,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        // Check if there are unfinalized distributions (students with 'given' status)
+        $unfinalizedDistributionsQuery = pg_query($connection, "SELECT COUNT(*) as count FROM students WHERE status = 'given'");
+        $unfinalizedCount = pg_fetch_assoc($unfinalizedDistributionsQuery)['count'];
+        
+        if ($unfinalizedCount > 0) {
+            header("Location: manage_slots.php?error=unfinalized_distributions&count=" . $unfinalizedCount);
+            exit;
+        }
+
         // Additional validation: Check if academic year/semester is valid
         // Get the most recent slot to compare against
         $latestSlotQuery = pg_query_params($connection, "
@@ -248,37 +257,37 @@ $applicantList = [];
 $totalApplicants = 0;
 
 if ($slotInfo) {
-    $createdAt = $slotInfo['created_at'];
+    $slot_id = $slotInfo['slot_id'];
 
-    // Count total registrations (pending + approved)
+    // Count total registrations for this slot (all non-rejected students)
     $countResult = pg_query_params($connection, "
         SELECT COUNT(*) FROM students 
-        WHERE (status = 'under_registration' OR status = 'applicant') AND municipality_id = $1 AND application_date >= $2
-    ", [$municipality_id, $createdAt]);
+        WHERE slot_id = $1 AND municipality_id = $2
+    ", [$slot_id, $municipality_id]);
     $totalApplicants = intval(pg_fetch_result($countResult, 0, 0));
 
-    // Count pending registrations
+    // Count pending registrations for this slot (under_registration status)
     $pendingCountResult = pg_query_params($connection, "
         SELECT COUNT(*) FROM students 
-        WHERE status = 'under_registration' AND municipality_id = $1 AND application_date >= $2
-    ", [$municipality_id, $createdAt]);
+        WHERE slot_id = $1 AND status = 'under_registration' AND municipality_id = $2
+    ", [$slot_id, $municipality_id]);
     $pendingCount = intval(pg_fetch_result($pendingCountResult, 0, 0));
 
-    // Count approved registrations
+    // Count approved registrations for this slot (applicant, verified, given)
     $approvedCountResult = pg_query_params($connection, "
         SELECT COUNT(*) FROM students 
-        WHERE status = 'applicant' AND municipality_id = $1 AND application_date >= $2
-    ", [$municipality_id, $createdAt]);
+        WHERE slot_id = $1 AND status IN ('applicant', 'verified', 'given') AND municipality_id = $2
+    ", [$slot_id, $municipality_id]);
     $approvedCount = intval(pg_fetch_result($approvedCountResult, 0, 0));
 
     $res = pg_query_params($connection, "
         SELECT s.first_name, s.middle_name, s.last_name, s.application_date, s.status, a.semester, a.academic_year
         FROM students s
         LEFT JOIN applications a ON s.student_id = a.student_id
-        WHERE (s.status = 'under_registration' OR s.status = 'applicant') AND s.municipality_id = $1 AND s.application_date >= $2
+        WHERE s.slot_id = $1 AND (s.status = 'under_registration' OR s.status = 'applicant') AND s.municipality_id = $2
         ORDER BY s.status DESC, s.application_date DESC
         LIMIT $3 OFFSET $4
-    ", [$municipality_id, $createdAt, $limit, $offset]);
+    ", [$slot_id, $municipality_id, $limit, $offset]);
 
     while ($row = pg_fetch_assoc($res)) {
         $applicantList[] = $row;
@@ -309,9 +318,8 @@ if ($res) {
         
         $countRes = pg_query_params($connection, "
             SELECT COUNT(*) FROM students 
-            WHERE (status = 'applicant' OR status = 'active') AND municipality_id = $1 
-            AND application_date >= $2 AND application_date < $3
-        ", [$municipality_id, $row['created_at'], $nextCreated]);
+            WHERE slot_id = $1 AND municipality_id = $2
+        ", [$row['slot_id'], $municipality_id]);
         
         if ($countRes) {
             $row['slots_used'] = intval(pg_fetch_result($countRes, 0, 0));
@@ -389,6 +397,10 @@ if ($res) {
               case 'past_semester':
                   $errorMsg = 'Cannot create a slot for a past semester in the same academic year. Please select the next semester or a future academic year.';
                   break;
+              case 'unfinalized_distributions':
+                  $unfinalizedCount = isset($_GET['count']) ? intval($_GET['count']) : 0;
+                  $errorMsg = "Cannot create new slots while there are unfinalized distributions! There are currently {$unfinalizedCount} students with 'given' status. Please finalize the current distribution in <a href='manage_distributions.php' class='alert-link'>Manage Distributions</a> before creating new slots.";
+                  break;
               case 'session_invalid':
                   $errorMsg = 'Session error. Please log out and log in again.';
                   break;
@@ -396,7 +408,7 @@ if ($res) {
                   $errorMsg = 'An error occurred. Please try again.';
           }
           echo '<div class="alert alert-danger alert-dismissible fade show" role="alert">
-                  <i class="bi bi-exclamation-triangle-fill"></i> ' . htmlspecialchars($errorMsg) . '
+                  <i class="bi bi-exclamation-triangle-fill"></i> ' . $errorMsg . '
                   <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>';
       }
@@ -483,8 +495,35 @@ if ($res) {
       </div>
 
       <!-- Release New Slot -->
-      <form id="releaseSlotsForm" method="POST" class="card p-4 shadow-sm mb-4">
-        <h5 class="fw-semibold mb-3 text-secondary"><i class="bi bi-plus-circle"></i> Release New Slot</h5>
+      <?php
+      // Check for unfinalized distributions before showing form
+      $unfinalizedCheck = pg_query($connection, "SELECT COUNT(*) as count FROM students WHERE status = 'given'");
+      $hasUnfinalizedDistributions = pg_fetch_assoc($unfinalizedCheck)['count'] > 0;
+      ?>
+      
+      <?php if ($hasUnfinalizedDistributions): ?>
+      <div class="alert alert-warning">
+        <h5><i class="bi bi-exclamation-triangle-fill me-2"></i>Distribution In Progress</h5>
+        <p class="mb-2">
+          <strong>Cannot create new slots:</strong> There are students with distributed aid that need to be finalized first.
+        </p>
+        <p class="mb-0">
+          Please complete the current distribution cycle in 
+          <a href="manage_distributions.php" class="alert-link">
+            <i class="bi bi-box-seam me-1"></i>Manage Distributions
+          </a>
+          before creating new slots.
+        </p>
+      </div>
+      <?php endif; ?>
+      
+      <form id="releaseSlotsForm" method="POST" class="card p-4 shadow-sm mb-4" <?php echo $hasUnfinalizedDistributions ? 'style="opacity: 0.6; pointer-events: none;"' : ''; ?>>
+        <h5 class="fw-semibold mb-3 text-secondary">
+          <i class="bi bi-plus-circle"></i> Release New Slot
+          <?php if ($hasUnfinalizedDistributions): ?>
+            <span class="badge bg-warning ms-2">Blocked</span>
+          <?php endif; ?>
+        </h5>
         
         <!-- Smart Recommendations -->
         <?php if ($maxCapacity !== null): ?>
@@ -562,23 +601,23 @@ if ($res) {
           </div>
           <div id="currentSlotBody" class="collapse show card-body">
             <p><strong>Released:</strong> <?= date('F j, Y — h:i A', strtotime($slotInfo['created_at'])) ?></p>
-            <p><strong>Slot Usage:</strong> <?= $slotsUsed ?> / <?= $slotInfo['slot_count'] ?></p>
+            <p><strong>Slot Usage:</strong> <span id="slotUsageDisplay"><?= $slotsUsed ?> / <?= $slotInfo['slot_count'] ?></span></p>
             <?php if ($maxCapacity !== null): ?>
             <p><strong>Program Capacity:</strong> 
-              <span class="badge <?= $currentTotalStudents >= $maxCapacity ? 'bg-danger' : 'bg-info' ?>">
+              <span id="capacityDisplay" class="badge <?= $currentTotalStudents >= $maxCapacity ? 'bg-danger' : 'bg-info' ?>">
                 <?= $currentTotalStudents ?> / <?= number_format($maxCapacity) ?>
               </span>
-              <?php if ($currentTotalStudents >= $maxCapacity): ?>
+              <span id="capacityWarning" <?php if ($currentTotalStudents < $maxCapacity): ?>style="display: none;"<?php endif; ?>>
                 <small class="text-danger">⚠️ At maximum capacity</small>
-              <?php endif; ?>
+              </span>
             </p>
             <?php endif; ?>
             <div class="row mb-3">
               <div class="col-md-6">
-                <p><strong>Pending Approval:</strong> <span class="badge bg-warning"><?= $pendingCount ?></span></p>
+                <p><strong>Pending Approval:</strong> <span id="pendingCount" class="badge bg-warning"><?= $pendingCount ?></span></p>
               </div>
               <div class="col-md-6">
-                <p><strong>Approved:</strong> <span class="badge bg-success"><?= $approvedCount ?></span></p>
+                <p><strong>Approved:</strong> <span id="approvedCount" class="badge bg-success"><?= $approvedCount ?></span></p>
               </div>
             </div>
             <?php
@@ -590,14 +629,14 @@ if ($res) {
               $expired = (strtotime('now') - strtotime($slotInfo['created_at'])) >= (14 * 24 * 60 * 60);
             ?>
             <div class="progress mb-3">
-              <div class="progress-bar <?= $barClass ?>" style="width: <?= $percentage ?>%">
-                <?= round($percentage) ?>%
+              <div id="progressBar" class="progress-bar <?= $barClass ?>" style="width: <?= $percentage ?>%">
+                <span id="progressText"><?= round($percentage) ?>%</span>
               </div>
             </div>
             <?php if ($expired): ?>
               <div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill"></i> This slot is more than 14 days old.</div>
             <?php endif; ?>
-            <p><strong>Remaining:</strong> <span class="badge badge-pill <?= $slotsLeft > 0 ? 'badge-green' : 'badge-red' ?>"><?= max(0, $slotsLeft) ?> slots left</span></p>
+            <p><strong>Remaining:</strong> <span id="remainingSlots" class="badge badge-pill <?= $slotsLeft > 0 ? 'badge-green' : 'badge-red' ?>"><?= max(0, $slotsLeft) ?> slots left</span></p>
 
             <!-- Finish Current Slot Button -->
             <div class="d-flex gap-2 mb-3">
@@ -975,6 +1014,149 @@ if ($res) {
     // This could be enhanced to fetch updated counts via AJAX
     // For now, it's static but the structure is ready for real-time updates
   }
+
+  // Real-time slot updates
+  let updateInterval;
+  let isUpdating = false;
+
+  function updateSlotStats() {
+    if (isUpdating) return; // Prevent concurrent requests
+    isUpdating = true;
+
+    fetch('get_slot_stats.php', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Update slot usage display
+        const slotUsageDisplay = document.getElementById('slotUsageDisplay');
+        if (slotUsageDisplay) {
+          slotUsageDisplay.textContent = `${data.slotsUsed} / ${data.slotCount}`;
+        }
+
+        // Update pending and approved counts
+        const pendingCount = document.getElementById('pendingCount');
+        if (pendingCount) {
+          pendingCount.textContent = data.pendingCount;
+        }
+
+        const approvedCount = document.getElementById('approvedCount');
+        if (approvedCount) {
+          approvedCount.textContent = data.approvedCount;
+        }
+
+        // Update remaining slots
+        const remainingSlots = document.getElementById('remainingSlots');
+        if (remainingSlots) {
+          remainingSlots.textContent = `${data.slotsLeft} slots left`;
+          remainingSlots.className = `badge badge-pill ${data.slotsLeft > 0 ? 'badge-green' : 'badge-red'}`;
+        }
+
+        // Update progress bar
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        if (progressBar && progressText) {
+          progressBar.style.width = `${data.percentage}%`;
+          progressBar.className = `progress-bar ${data.barClass}`;
+          progressText.textContent = `${Math.round(data.percentage)}%`;
+        }
+
+        // Update capacity display
+        const capacityDisplay = document.getElementById('capacityDisplay');
+        const capacityWarning = document.getElementById('capacityWarning');
+        if (capacityDisplay && data.maxCapacity) {
+          capacityDisplay.textContent = `${data.currentTotalStudents} / ${data.maxCapacity.toLocaleString()}`;
+          capacityDisplay.className = `badge ${data.atCapacity ? 'bg-danger' : 'bg-info'}`;
+          
+          if (capacityWarning) {
+            capacityWarning.style.display = data.atCapacity ? 'inline' : 'none';
+          }
+        }
+
+        // Add visual feedback for updates
+        const currentSlotBody = document.getElementById('currentSlotBody');
+        if (currentSlotBody) {
+          currentSlotBody.style.transition = 'background-color 0.3s ease';
+          currentSlotBody.style.backgroundColor = '#e8f5e8';
+          setTimeout(() => {
+            currentSlotBody.style.backgroundColor = '';
+          }, 500);
+        }
+
+        console.log('Slot stats updated:', data.lastUpdated);
+      } else {
+        console.error('Error updating slot stats:', data.error);
+      }
+    })
+    .catch(error => {
+      console.error('Error fetching slot stats:', error);
+    })
+    .finally(() => {
+      isUpdating = false;
+    });
+  }
+
+  function startRealTimeUpdates() {
+    // Update immediately
+    updateSlotStats();
+    
+    // Then update every 30 seconds
+    updateInterval = setInterval(updateSlotStats, 30000);
+    
+    // Visual indicator that real-time updates are active
+    const indicator = document.createElement('div');
+    indicator.id = 'realTimeIndicator';
+    indicator.innerHTML = '<small class="text-success"><i class="bi bi-broadcast"></i> Live updates active</small>';
+    indicator.style.position = 'fixed';
+    indicator.style.bottom = '20px';
+    indicator.style.right = '20px';
+    indicator.style.background = 'rgba(255, 255, 255, 0.9)';
+    indicator.style.padding = '5px 10px';
+    indicator.style.borderRadius = '5px';
+    indicator.style.border = '1px solid #28a745';
+    indicator.style.zIndex = '1000';
+    document.body.appendChild(indicator);
+    
+    console.log('Real-time slot updates started');
+  }
+
+  function stopRealTimeUpdates() {
+    if (updateInterval) {
+      clearInterval(updateInterval);
+      updateInterval = null;
+    }
+    
+    const indicator = document.getElementById('realTimeIndicator');
+    if (indicator) {
+      indicator.remove();
+    }
+    
+    console.log('Real-time slot updates stopped');
+  }
+
+  // Start real-time updates when page loads
+  document.addEventListener('DOMContentLoaded', function() {
+    // Only start if there's an active slot
+    if (document.getElementById('slotUsageDisplay')) {
+      startRealTimeUpdates();
+    }
+
+    // Stop updates when page is about to unload
+    window.addEventListener('beforeunload', stopRealTimeUpdates);
+    
+    // Pause updates when tab is not visible (optional performance optimization)
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) {
+        stopRealTimeUpdates();
+      } else if (document.getElementById('slotUsageDisplay')) {
+        startRealTimeUpdates();
+      }
+    });
+  });
 </script>
 </body>
 </html>

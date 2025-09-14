@@ -257,8 +257,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution
             // Save the reset settings
             file_put_contents($settings_reset_path, json_encode($current_settings, JSON_PRETTY_PRINT));
             
+            // Close all active signup slots
+            $close_slots = pg_query($connection, "UPDATE signup_slots SET is_active = FALSE WHERE is_active = TRUE");
+            
             pg_query($connection, "COMMIT");
-            $_SESSION['success_message'] = "Distribution finalized successfully! $total_students students reset to applicant status. Distribution snapshot created. Schedule system reset - students will not see new schedules until manually published.";
+            $_SESSION['success_message'] = "Distribution finalized successfully! $total_students students reset to applicant status. Distribution snapshot created. Schedule system reset and signup slots closed - students will not see new schedules until manually published.";
         } else {
             pg_query($connection, "ROLLBACK");
             $_SESSION['error_message'] = 'Failed to finalize distribution. Transaction rolled back.';
