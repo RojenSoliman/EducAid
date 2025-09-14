@@ -15,15 +15,25 @@ class OTPService {
      * Generate and send OTP to email
      */
     public function sendOTP($email, $purpose, $adminId) {
+        error_log("OTPService: sendOTP called with email=$email, purpose=$purpose, adminId=$adminId");
+        
         $otp = $this->generateOTP();
+        error_log("OTPService: Generated OTP: $otp");
+        
         // Use PostgreSQL's timezone-aware NOW() function for consistency
         $expiresAt = date('Y-m-d H:i:s', strtotime('+10 minutes'));
         
         // Store OTP in database
+        error_log("OTPService: About to store OTP in database");
         $this->storeOTP($adminId, $otp, $email, $purpose, $expiresAt);
+        error_log("OTPService: OTP stored in database");
         
         // Send email
-        return $this->sendOTPEmail($email, $otp, $purpose);
+        error_log("OTPService: About to send email");
+        $emailResult = $this->sendOTPEmail($email, $otp, $purpose);
+        error_log("OTPService: Email sending result: " . ($emailResult ? 'SUCCESS' : 'FAILED'));
+        
+        return $emailResult;
     }
     
     /**
