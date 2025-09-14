@@ -246,8 +246,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution
         $delete_schedules = pg_query($connection, "DELETE FROM schedules");
         
         if ($update_students && $delete_distributions && $delete_qr_codes && $delete_schedules) {
+            // Reset schedule settings to unpublished state
+            $settings_reset_path = __DIR__ . '/../../data/municipal_settings.json';
+            $current_settings = file_exists($settings_reset_path) ? json_decode(file_get_contents($settings_reset_path), true) : [];
+            
+            // Clear schedule metadata and set published to false
+            unset($current_settings['schedule_meta']);
+            $current_settings['schedule_published'] = false;
+            
+            // Save the reset settings
+            file_put_contents($settings_reset_path, json_encode($current_settings, JSON_PRETTY_PRINT));
+            
             pg_query($connection, "COMMIT");
-            $_SESSION['success_message'] = "Distribution finalized successfully! $total_students students reset to applicant status. Distribution snapshot created.";
+            $_SESSION['success_message'] = "Distribution finalized successfully! $total_students students reset to applicant status. Distribution snapshot created. Schedule system reset - students will not see new schedules until manually published.";
         } else {
             pg_query($connection, "ROLLBACK");
             $_SESSION['error_message'] = 'Failed to finalize distribution. Transaction rolled back.';

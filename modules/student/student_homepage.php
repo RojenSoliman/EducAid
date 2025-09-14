@@ -27,7 +27,6 @@ $past_participation_query = "
        OR ds.students_data::text LIKE '%\"student_id\": ' || $1 || ',%'
        OR ds.students_data::text LIKE '%\"student_id\": ' || $1 || '}%'
     ORDER BY ds.finalized_at DESC
-    LIMIT 5
 ";
 $past_participation_result = pg_query_params($connection, $past_participation_query, [$studentId]);
 
@@ -227,74 +226,123 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
             </div>
             <div class="custom-card-body">
                 <p class="text-muted mb-3">Previous distributions you have participated in:</p>
-                <div class="row g-3">
-                    <?php while ($dist = pg_fetch_assoc($past_participation_result)): ?>
-                        <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <div class="d-flex justify-content-between align-items-start mb-2">
-                                    <h6 class="mb-0 text-success fw-bold">
-                                        <i class="bi bi-calendar-check me-1"></i>
-                                        <?php echo date('M d, Y', strtotime($dist['distribution_date'])); ?>
-                                    </h6>
-                                    <span class="badge bg-success">Distributed</span>
-                                </div>
-                                
-                                <div class="mb-2">
-                                    <small class="text-muted d-block">
-                                        <i class="bi bi-geo-alt me-1"></i>
-                                        <strong>Location:</strong> <?php echo htmlspecialchars($dist['location']); ?>
-                                    </small>
-                                </div>
-                                
-                                <?php if (!empty($dist['academic_year']) || !empty($dist['semester'])): ?>
-                                <div class="mb-2">
-                                    <small class="text-muted d-block">
-                                        <i class="bi bi-mortarboard me-1"></i>
-                                        <strong>Academic Period:</strong> 
-                                        <?php 
-                                        $period_parts = [];
-                                        if (!empty($dist['academic_year'])) $period_parts[] = 'AY ' . $dist['academic_year'];
-                                        if (!empty($dist['semester'])) $period_parts[] = $dist['semester'];
-                                        echo htmlspecialchars(implode(', ', $period_parts));
+                
+                <!-- Carousel Container -->
+                <div class="distribution-carousel-container">
+                    <div class="distribution-carousel" id="distributionCarousel">
+                        <div class="carousel-track" id="carouselTrack">
+                            <?php 
+                            $distributions = [];
+                            while ($dist = pg_fetch_assoc($past_participation_result)) {
+                                $distributions[] = $dist;
+                            }
+                            
+                            // Group distributions into sets of 3 for carousel pages
+                            $itemsPerPage = 3;
+                            $totalPages = ceil(count($distributions) / $itemsPerPage);
+                            
+                            for ($page = 0; $page < $totalPages; $page++):
+                                $pageStart = $page * $itemsPerPage;
+                                $pageEnd = min($pageStart + $itemsPerPage, count($distributions));
+                            ?>
+                                <div class="carousel-page">
+                                    <div class="row g-3">
+                                        <?php for ($i = $pageStart; $i < $pageEnd; $i++): 
+                                            $dist = $distributions[$i];
                                         ?>
-                                    </small>
+                                            <div class="col-md-4">
+                                                <div class="distribution-card border rounded p-3 h-100">
+                                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                                        <h6 class="mb-0 text-success fw-bold">
+                                                            <i class="bi bi-calendar-check me-1"></i>
+                                                            <?php echo date('M d, Y', strtotime($dist['distribution_date'])); ?>
+                                                        </h6>
+                                                        <span class="badge bg-success">Distributed</span>
+                                                    </div>
+                                                    
+                                                    <div class="mb-2">
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-geo-alt me-1"></i>
+                                                            <strong>Location:</strong> <?php echo htmlspecialchars($dist['location']); ?>
+                                                        </small>
+                                                    </div>
+                                                    
+                                                    <?php if (!empty($dist['academic_year']) || !empty($dist['semester'])): ?>
+                                                    <div class="mb-2">
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-mortarboard me-1"></i>
+                                                            <strong>Academic Period:</strong> 
+                                                            <?php 
+                                                            $period_parts = [];
+                                                            if (!empty($dist['academic_year'])) $period_parts[] = 'AY ' . $dist['academic_year'];
+                                                            if (!empty($dist['semester'])) $period_parts[] = $dist['semester'];
+                                                            echo htmlspecialchars(implode(', ', $period_parts));
+                                                            ?>
+                                                        </small>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    
+                                                    <div class="mb-2">
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-clock me-1"></i>
+                                                            <strong>Processed:</strong> <?php echo date('M d, Y g:i A', strtotime($dist['finalized_at'])); ?>
+                                                        </small>
+                                                    </div>
+                                                    
+                                                    <?php if (!empty($dist['finalized_by_name'])): ?>
+                                                    <div class="mb-2">
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-person-check me-1"></i>
+                                                            <strong>Processed by:</strong> <?php echo htmlspecialchars($dist['finalized_by_name']); ?>
+                                                        </small>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    
+                                                    <?php if (!empty($dist['notes'])): ?>
+                                                    <div class="mt-2 pt-2 border-top">
+                                                        <small class="text-muted">
+                                                            <i class="bi bi-sticky me-1"></i>
+                                                            <strong>Notes:</strong> <?php echo htmlspecialchars($dist['notes']); ?>
+                                                        </small>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+                                        <?php endfor; ?>
+                                    </div>
                                 </div>
-                                <?php endif; ?>
-                                
-                                <div class="mb-2">
-                                    <small class="text-muted d-block">
-                                        <i class="bi bi-clock me-1"></i>
-                                        <strong>Processed:</strong> <?php echo date('M d, Y g:i A', strtotime($dist['finalized_at'])); ?>
-                                    </small>
-                                </div>
-                                
-                                <?php if (!empty($dist['finalized_by_name'])): ?>
-                                <div class="mb-2">
-                                    <small class="text-muted d-block">
-                                        <i class="bi bi-person-check me-1"></i>
-                                        <strong>Processed by:</strong> <?php echo htmlspecialchars($dist['finalized_by_name']); ?>
-                                    </small>
-                                </div>
-                                <?php endif; ?>
-                                
-                                <?php if (!empty($dist['notes'])): ?>
-                                <div class="mt-2 pt-2 border-top">
-                                    <small class="text-muted">
-                                        <i class="bi bi-sticky me-1"></i>
-                                        <strong>Notes:</strong> <?php echo htmlspecialchars($dist['notes']); ?>
-                                    </small>
-                                </div>
-                                <?php endif; ?>
-                            </div>
+                            <?php endfor; ?>
                         </div>
-                    <?php endwhile; ?>
+                    </div>
+                    
+                    <!-- Navigation Controls -->
+                    <?php if ($totalPages > 1): ?>
+                    <div class="carousel-controls">
+                        <button class="carousel-btn carousel-prev" id="carouselPrev">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <button class="carousel-btn carousel-next" id="carouselNext">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Dot Indicators -->
+                    <div class="carousel-indicators">
+                        <?php for ($i = 0; $i < $totalPages; $i++): ?>
+                        <button class="carousel-dot <?php echo $i === 0 ? 'active' : ''; ?>" data-page="<?php echo $i; ?>"></button>
+                        <?php endfor; ?>
+                    </div>
+                    <?php endif; ?>
                 </div>
                 
-                <!-- Link to view more if needed -->
+                <!-- Summary Info -->
                 <div class="text-center mt-3">
                     <small class="text-muted">
                         <i class="bi bi-info-circle me-1"></i>
-                        Showing your most recent distributions
+                        Showing <?php echo count($distributions); ?> distribution<?php echo count($distributions) !== 1 ? 's' : ''; ?>
+                        <?php if ($totalPages > 1): ?>
+                            across <?php echo $totalPages; ?> page<?php echo $totalPages !== 1 ? 's' : ''; ?>
+                        <?php endif; ?>
                     </small>
                 </div>
             </div>
@@ -391,6 +439,167 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
         window.location.href = 'logout.php';
       }
     }
+
+    // Distribution Carousel Functionality
+    document.addEventListener('DOMContentLoaded', function() {
+      const carousel = document.getElementById('distributionCarousel');
+      if (!carousel) return; // Exit if no carousel found
+
+      const track = document.getElementById('carouselTrack');
+      const prevBtn = document.getElementById('carouselPrev');
+      const nextBtn = document.getElementById('carouselNext');
+      const dots = document.querySelectorAll('.carousel-dot');
+      
+      let currentPage = 0;
+      const totalPages = dots.length;
+      let startX = 0;
+      let currentX = 0;
+      let isDragging = false;
+      let dragThreshold = 50;
+
+      // Initialize carousel
+      function updateCarousel(animate = true) {
+        if (!animate) {
+          track.classList.add('carousel-loading');
+          track.style.transition = 'none';
+        }
+        
+        const translateX = -currentPage * 100;
+        track.style.transform = `translateX(${translateX}%)`;
+        
+        // Update navigation buttons
+        if (prevBtn && nextBtn) {
+          prevBtn.disabled = currentPage === 0;
+          nextBtn.disabled = currentPage === totalPages - 1;
+        }
+        
+        // Update dot indicators
+        dots.forEach((dot, index) => {
+          dot.classList.toggle('active', index === currentPage);
+        });
+        
+        setTimeout(() => {
+          if (!animate) {
+            track.classList.remove('carousel-loading');
+            track.style.transition = '';
+          }
+        }, 50);
+      }
+
+      // Navigation functions
+      function goToPage(page) {
+        if (page >= 0 && page < totalPages) {
+          currentPage = page;
+          updateCarousel();
+        }
+      }
+
+      function nextPage() {
+        if (currentPage < totalPages - 1) {
+          currentPage++;
+          updateCarousel();
+        }
+      }
+
+      function prevPage() {
+        if (currentPage > 0) {
+          currentPage--;
+          updateCarousel();
+        }
+      }
+
+      // Event listeners for buttons
+      if (prevBtn) prevBtn.addEventListener('click', prevPage);
+      if (nextBtn) nextBtn.addEventListener('click', nextPage);
+
+      // Dot indicators
+      dots.forEach((dot, index) => {
+        dot.addEventListener('click', () => goToPage(index));
+      });
+
+      // Touch/Mouse events for swipe functionality
+      function handleStart(e) {
+        isDragging = true;
+        startX = e.type === 'mousedown' ? e.clientX : e.touches[0].clientX;
+        currentX = startX;
+        track.classList.add('swiping');
+      }
+
+      function handleMove(e) {
+        if (!isDragging) return;
+        
+        e.preventDefault();
+        currentX = e.type === 'mousemove' ? e.clientX : e.touches[0].clientX;
+        const deltaX = currentX - startX;
+        const currentTranslate = -currentPage * 100;
+        const newTranslate = currentTranslate + (deltaX / track.offsetWidth) * 100;
+        
+        track.style.transform = `translateX(${newTranslate}%)`;
+      }
+
+      function handleEnd() {
+        if (!isDragging) return;
+        
+        isDragging = false;
+        track.classList.remove('swiping');
+        track.classList.add('snapping');
+        
+        const deltaX = currentX - startX;
+        const threshold = dragThreshold;
+        
+        if (Math.abs(deltaX) > threshold) {
+          if (deltaX > 0 && currentPage > 0) {
+            prevPage();
+          } else if (deltaX < 0 && currentPage < totalPages - 1) {
+            nextPage();
+          } else {
+            updateCarousel();
+          }
+        } else {
+          updateCarousel();
+        }
+        
+        setTimeout(() => {
+          track.classList.remove('snapping');
+        }, 300);
+      }
+
+      // Mouse events
+      track.addEventListener('mousedown', handleStart);
+      document.addEventListener('mousemove', handleMove);
+      document.addEventListener('mouseup', handleEnd);
+
+      // Touch events
+      track.addEventListener('touchstart', handleStart, { passive: true });
+      track.addEventListener('touchmove', handleMove, { passive: false });
+      track.addEventListener('touchend', handleEnd);
+
+      // Keyboard navigation
+      document.addEventListener('keydown', function(e) {
+        if (!carousel.closest('.custom-card').matches(':hover')) return;
+        
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          prevPage();
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          nextPage();
+        }
+      });
+
+      // Initialize carousel state
+      updateCarousel(false);
+
+      // Auto-resize handling
+      window.addEventListener('resize', function() {
+        updateCarousel(false);
+      });
+
+      // Prevent text selection while dragging
+      track.addEventListener('selectstart', function(e) {
+        if (isDragging) e.preventDefault();
+      });
+    });
   </script>
 </body>
 </html>
