@@ -1100,37 +1100,7 @@ if ($res) {
           }
         }
 
-        // Add visual feedback for updates
-        const currentSlotBody = document.getElementById('currentSlotBody');
-        if (currentSlotBody) {
-          currentSlotBody.style.transition = 'background-color 0.3s ease';
-          currentSlotBody.style.backgroundColor = '#e8f5e8';
-          setTimeout(() => {
-            currentSlotBody.style.backgroundColor = '';
-          }, 500);
-        }
-
-        // Add timestamp update indicator
-        const lastUpdateIndicator = document.getElementById('lastUpdateIndicator');
-        if (lastUpdateIndicator) {
-          lastUpdateIndicator.textContent = `Last updated: ${data.lastUpdated}`;
-          lastUpdateIndicator.style.display = 'block';
-        } else {
-          // Create update indicator if it doesn't exist
-          const indicator = document.createElement('small');
-          indicator.id = 'lastUpdateIndicator';
-          indicator.className = 'text-muted';
-          indicator.textContent = `Last updated: ${data.lastUpdated}`;
-          indicator.style.display = 'block';
-          indicator.style.marginTop = '10px';
-          
-          const slotBody = document.getElementById('currentSlotBody');
-          if (slotBody) {
-            slotBody.appendChild(indicator);
-          }
-        }
-
-        console.log('Slot stats updated:', data.lastUpdated);
+        console.log('Slot stats updated silently');
       } else {
         console.warn('Failed to update slot stats:', data.error || 'Unknown error');
       }
@@ -1147,36 +1117,16 @@ if ($res) {
     // Update immediately
     updateSlotStats();
     
-    // Then update every 10 seconds for more responsive updates
-    updateInterval = setInterval(updateSlotStats, 10000);
+    // Then update every 100ms for real-time updates
+    updateInterval = setInterval(updateSlotStats, 100);
     
-    // Visual indicator that real-time updates are active
-    const indicator = document.createElement('div');
-    indicator.id = 'realTimeIndicator';
-    indicator.innerHTML = '<small class="text-success"><i class="bi bi-broadcast"></i> Live updates active (every 10s)</small>';
-    indicator.style.position = 'fixed';
-    indicator.style.bottom = '20px';
-    indicator.style.right = '20px';
-    indicator.style.background = 'rgba(255, 255, 255, 0.95)';
-    indicator.style.padding = '8px 12px';
-    indicator.style.borderRadius = '6px';
-    indicator.style.border = '1px solid #28a745';
-    indicator.style.zIndex = '1000';
-    indicator.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
-    document.body.appendChild(indicator);
-    
-    console.log('Real-time slot updates started (every 10 seconds)');
+    console.log('Real-time slot updates started (every 100ms)');
   }
 
   function stopRealTimeUpdates() {
     if (updateInterval) {
       clearInterval(updateInterval);
       updateInterval = null;
-    }
-    
-    const indicator = document.getElementById('realTimeIndicator');
-    if (indicator) {
-      indicator.remove();
     }
     
     console.log('Real-time slot updates stopped');
