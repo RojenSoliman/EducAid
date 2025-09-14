@@ -20,10 +20,10 @@ if (
     $em = trim($_POST['email']);
     $pw = $_POST['password'];
 
-    // Check if user is a student (simplified query)
+    // Check if user is a student (only allow active students to login)
     $studentRes = pg_query_params($connection,
-        "SELECT student_id, password, first_name, last_name, 'student' as role FROM students
-         WHERE email = $1",
+        "SELECT student_id, password, first_name, last_name, status, 'student' as role FROM students
+         WHERE email = $1 AND status != 'under_registration'",
         [$em]
     );
     
@@ -44,7 +44,20 @@ if (
     }
 
     if (!$user) {
-        echo json_encode(['status'=>'error','message'=>'Email not found.']);
+        // Check if the email exists but with 'under_registration' status
+        $underRegistrationCheck = pg_query_params($connection,
+            "SELECT student_id FROM students WHERE email = $1 AND status = 'under_registration'",
+            [$em]
+        );
+        
+        if (pg_fetch_assoc($underRegistrationCheck)) {
+            echo json_encode([
+                'status'=>'error',
+                'message'=>'Your account is still under review. Please wait for admin approval before logging in.'
+            ]);
+        } else {
+            echo json_encode(['status'=>'error','message'=>'Email not found.']);
+        }
         exit;
     }
     
@@ -134,8 +147,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     if ($_POST['forgot_action'] === 'send_otp' && !empty($_POST['forgot_email'])) {
         $email = trim($_POST['forgot_email']);
         
-        // Check both tables
-        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1", [$email]);
+        // Check both tables (exclude students under registration)
+        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status != 'under_registration'", [$email]);
         $adminRes = pg_query_params($connection, "SELECT admin_id, 'admin' as role FROM admins WHERE email = $1", [$email]);
         
         $user = null;
@@ -146,7 +159,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
         }
         
         if (!$user) {
-            echo json_encode(['status'=>'error','message'=>'Email not found.']);
+            // Check if it's a student under registration
+            $underRegistrationCheck = pg_query_params($connection,
+                "SELECT student_id FROM students WHERE email = $1 AND status = 'under_registration'",
+                [$email]
+            );
+            
+            if (pg_fetch_assoc($underRegistrationCheck)) {
+                echo json_encode([
+                    'status'=>'error',
+                    'message'=>'Your account is still under review. Password reset is not available until your account is approved.'
+                ]);
+            } else {
+                echo json_encode(['status'=>'error','message'=>'Email not found.']);
+            }
             exit;
         }
         

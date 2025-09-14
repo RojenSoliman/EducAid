@@ -162,7 +162,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
          exit;
     }
 
-    if ((time() - $_SESSION['otp_timestamp']) > 40) {
+    if ((time() - $_SESSION['otp_timestamp']) > 300) {
         unset($_SESSION['otp'], $_SESSION['otp_email'], $_SESSION['otp_timestamp']);
         echo json_encode(['status' => 'error', 'message' => 'OTP has expired. Please request a new OTP.']);
         exit;
@@ -492,7 +492,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     }
 
     $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applicant', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'under_registration', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $municipality_id,
@@ -784,7 +784,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                         <button type="button" class="btn btn-warning w-100 mt-3" id="resendOtpBtn" style="display:none;" disabled>Resend OTP</button>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" onclick="nextStep()">Next</button>
                 </div>
                 <!-- Step 6: Password and Confirmation -->
                 <div class="step-panel d-none" id="step-6">

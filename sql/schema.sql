@@ -291,3 +291,24 @@ CREATE TABLE IF NOT EXISTS admin_otp_verifications (
 -- Create index for faster lookups
 CREATE INDEX IF NOT EXISTS idx_admin_otp_admin_purpose ON admin_otp_verifications(admin_id, purpose);
 CREATE INDEX IF NOT EXISTS idx_admin_otp_expires ON admin_otp_verifications(expires_at);
+
+-- Distribution snapshots for tracking finalized distributions
+CREATE TABLE IF NOT EXISTS distribution_snapshots (
+    snapshot_id SERIAL PRIMARY KEY,
+    distribution_date DATE NOT NULL,
+    location TEXT NOT NULL,
+    total_students_count INT NOT NULL,
+    active_slot_id INT,
+    academic_year TEXT,
+    semester TEXT,
+    finalized_by INT REFERENCES admins(admin_id),
+    finalized_at TIMESTAMP DEFAULT NOW(),
+    notes TEXT,
+    -- Store JSON data for schedules and student details
+    schedules_data JSONB,
+    students_data JSONB
+);
+
+-- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_distribution_snapshots_date ON distribution_snapshots(distribution_date);
+CREATE INDEX IF NOT EXISTS idx_distribution_snapshots_finalized_by ON distribution_snapshots(finalized_by);

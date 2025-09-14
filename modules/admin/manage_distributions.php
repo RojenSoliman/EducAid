@@ -78,17 +78,149 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 // Get search and filter parameters
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-// Handle revert all students to applicant action
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['revert_all_to_applicant'])) {
+// Handle finalize distribution action
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution'])) {
+    // Verify admin password
+    $password = $_POST['admin_password'] ?? '';
+    $location = $_POST['distribution_location'] ?? '';
+    $notes = $_POST['distribution_notes'] ?? '';
+    
+    if (empty($password)) {
+        $_SESSION['error_message'] = 'Password is required to finalize distribution.';
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
+        exit;
+    }
+    
+    if (empty($location)) {
+        $_SESSION['error_message'] = 'Distribution location is required.';
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
+        exit;
+    }
+    
+    // Verify admin password
+    $admin_id = $_SESSION['admin_id'] ?? null;
+    if (!$admin_id) {
+        // Try to get admin_id from admin_username if not set
+        $username = $_SESSION['admin_username'] ?? null;
+        if ($username) {
+            $admin_lookup = pg_query_params($connection, 
+                "SELECT admin_id FROM admins WHERE username = $1", 
+                [$username]
+            );
+            if ($admin_lookup && pg_num_rows($admin_lookup) > 0) {
+                $admin_data_lookup = pg_fetch_assoc($admin_lookup);
+                $admin_id = $admin_data_lookup['admin_id'];
+                $_SESSION['admin_id'] = $admin_id; // Set for future use
+            }
+        }
+        
+        if (!$admin_id) {
+            $_SESSION['error_message'] = 'Admin session invalid.';
+            header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
+            exit;
+        }
+    }
+    
+    $password_check = pg_query_params($connection, 
+        "SELECT password FROM admins WHERE admin_id = $1", 
+        [$admin_id]
+    );
+    
+    if (!$password_check || pg_num_rows($password_check) === 0) {
+        $_SESSION['error_message'] = 'Admin not found.';
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
+        exit;
+    }
+    
+    $admin_data = pg_fetch_assoc($password_check);
+    if (!password_verify($password, $admin_data['password'])) {
+        $_SESSION['error_message'] = 'Incorrect password.';
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
+        exit;
+    }
+    
     try {
         // Begin transaction
         pg_query($connection, "BEGIN");
+        
+        // Get current distribution data before clearing
+        $students_query = "
+            SELECT 
+                s.student_id, s.payroll_no, s.first_name, s.last_name, s.email, s.mobile,
+                b.name as barangay, u.name as university, yl.name as year_level,
+                d.date_given, d.remarks as distribution_remarks
+            FROM students s
+            LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
+            LEFT JOIN universities u ON s.university_id = u.university_id
+            LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
+            LEFT JOIN distributions d ON s.student_id = d.student_id
+            WHERE s.status = 'given'
+            ORDER BY s.payroll_no
+        ";
+        
+        $schedules_query = "
+            SELECT 
+                schedule_id, student_id, payroll_no, batch_no, distribution_date,
+                time_slot, location as schedule_location, status
+            FROM schedules
+            ORDER BY distribution_date, time_slot
+        ";
+        
+        $students_result = pg_query($connection, $students_query);
+        $schedules_result = pg_query($connection, $schedules_query);
+        
+        $students_data = [];
+        $schedules_data = [];
+        $total_students = 0;
+        
+        if ($students_result) {
+            while ($row = pg_fetch_assoc($students_result)) {
+                $students_data[] = $row;
+                $total_students++;
+            }
+        }
+        
+        if ($schedules_result) {
+            while ($row = pg_fetch_assoc($schedules_result)) {
+                $schedules_data[] = $row;
+            }
+        }
+        
+        // Get current active slot info
+        $slot_query = "SELECT slot_id, academic_year, semester FROM signup_slots WHERE is_active = true LIMIT 1";
+        $slot_result = pg_query($connection, $slot_query);
+        $slot_data = $slot_result ? pg_fetch_assoc($slot_result) : null;
+        
+        // Create distribution snapshot
+        $snapshot_query = "
+            INSERT INTO distribution_snapshots 
+            (distribution_date, location, total_students_count, active_slot_id, academic_year, semester, 
+             finalized_by, notes, schedules_data, students_data)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ";
+        
+        $snapshot_result = pg_query_params($connection, $snapshot_query, [
+            date('Y-m-d'),
+            $location,
+            $total_students,
+            $slot_data['slot_id'] ?? null,
+            $slot_data['academic_year'] ?? '',
+            $slot_data['semester'] ?? '',
+            $admin_id,
+            $notes,
+            json_encode($schedules_data),
+            json_encode($students_data)
+        ]);
+        
+        if (!$snapshot_result) {
+            throw new Exception('Failed to create distribution snapshot.');
+        }
         
         // Update all students with 'given' status to 'applicant' and clear payroll numbers and QR codes
         $update_students = pg_query($connection, "UPDATE students SET status = 'applicant', payroll_no = NULL, qr_code = NULL WHERE status = 'given'");
         
         // Delete all distribution records for these students
-        $delete_distributions = pg_query($connection, "DELETE FROM distributions WHERE student_id IN (SELECT student_id FROM students WHERE status = 'applicant')");
+        $delete_distributions = pg_query($connection, "DELETE FROM distributions");
         
         // Delete all QR codes
         $delete_qr_codes = pg_query($connection, "DELETE FROM qr_codes");
@@ -98,10 +230,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['revert_all_to_applica
         
         if ($update_students && $delete_distributions && $delete_qr_codes && $delete_schedules) {
             pg_query($connection, "COMMIT");
-            $_SESSION['success_message'] = 'All students reverted to applicant status. Payroll numbers, QR codes, distribution records, and schedules cleared.';
+            $_SESSION['success_message'] = "Distribution finalized successfully! $total_students students reset to applicant status. Distribution snapshot created.";
         } else {
             pg_query($connection, "ROLLBACK");
-            $_SESSION['error_message'] = 'Failed to revert all students. Transaction rolled back.';
+            $_SESSION['error_message'] = 'Failed to finalize distribution. Transaction rolled back.';
         }
     } catch (Exception $e) {
         pg_query($connection, "ROLLBACK");
@@ -264,12 +396,6 @@ $total_distributions = pg_fetch_assoc($count_result)['total'];
                            class="btn btn-export">
                             <i class="bi bi-download me-2"></i>Export to CSV
                         </a>
-                        <form method="POST" style="display: inline;">
-                            <button type="submit" name="revert_all_to_applicant" class="btn btn-danger" 
-                                    onclick="return confirm('WARNING: This will revert ALL students to applicant status and remove all payroll numbers, QR codes, and distribution records. This action cannot be undone. Are you sure?');">
-                                <i class="bi bi-arrow-counterclockwise me-2"></i>Revert All to Applicant
-                            </button>
-                        </form>
                     </div>
                 </div>
 
@@ -422,27 +548,95 @@ $total_distributions = pg_fetch_assoc($count_result)['total'];
                     </div>
                 </div>
                 
-                <!-- System Reset Section -->
+                <!-- Finalize Distribution Section -->
                 <div class="table-card mt-4">
                     <div class="p-4">
-                        <h5 class="mb-3"><i class="bi bi-exclamation-triangle text-warning me-2"></i>System Reset</h5>
-                        <div class="alert alert-warning mb-3">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            <strong>Warning:</strong> This action will reset the entire system by:
+                        <h5 class="mb-3"><i class="bi bi-check-circle text-success me-2"></i>Finalize Distribution</h5>
+                        <div class="alert alert-info mb-3">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Information:</strong> Finalizing the distribution will:
                             <ul class="mb-0 mt-2">
-                                <li>Reverting ALL students to applicant status</li>
-                                <li>Clearing all payroll numbers</li>
-                                <li>Deleting all QR codes</li>
-                                <li>Removing all distribution records</li>
-                                <li>Deleting all schedules</li>
+                                <li>Create a permanent snapshot of the current distribution</li>
+                                <li>Record distribution date, location, and student details</li>
+                                <li>Reset ALL students to applicant status for the next cycle</li>
+                                <li>Clear all payroll numbers and QR codes</li>
+                                <li>Remove all current schedules and distribution records</li>
                             </ul>
-                            <strong class="text-danger">This action cannot be undone!</strong>
+                            <strong class="text-warning">This action cannot be undone!</strong>
                         </div>
-                        <form method="POST" onsubmit="return confirmSystemReset()" class="d-inline">
-                            <button type="submit" name="revert_all_to_applicant" class="btn btn-danger">
-                                <i class="bi bi-arrow-counterclockwise me-2"></i>Reset Entire System
-                            </button>
-                        </form>
+                        
+                        <?php if ($total_distributions > 0): ?>
+                        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#finalizeModal">
+                            <i class="bi bi-check-circle me-2"></i>Finalize Distribution (<?php echo $total_distributions; ?> students)
+                        </button>
+                        <?php else: ?>
+                        <button type="button" class="btn btn-secondary" disabled>
+                            <i class="bi bi-info-circle me-2"></i>No distributions to finalize
+                        </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                
+                <!-- Finalize Distribution Modal -->
+                <div class="modal fade" id="finalizeModal" tabindex="-1" aria-labelledby="finalizeModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header bg-success text-white">
+                                <h5 class="modal-title" id="finalizeModalLabel">
+                                    <i class="bi bi-check-circle me-2"></i>Finalize Distribution
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <form method="POST" id="finalizeForm">
+                                <div class="modal-body">
+                                    <div class="alert alert-warning">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>
+                                        <strong>Final Confirmation Required</strong>
+                                        <p class="mb-0 mt-2">You are about to finalize the distribution for <strong><?php echo $total_distributions; ?> students</strong>. This will create a permanent record and reset the system for the next distribution cycle.</p>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="distribution_location" class="form-label">
+                                            <i class="bi bi-geo-alt me-1"></i>Distribution Location <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="text" class="form-control" id="distribution_location" name="distribution_location" 
+                                               placeholder="e.g., Municipal Hall, Barangay Center, etc." required>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="distribution_notes" class="form-label">
+                                            <i class="bi bi-sticky me-1"></i>Additional Notes (Optional)
+                                        </label>
+                                        <textarea class="form-control" id="distribution_notes" name="distribution_notes" rows="3" 
+                                                  placeholder="Any additional information about this distribution..."></textarea>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="admin_password" class="form-label">
+                                            <i class="bi bi-shield-lock me-1"></i>Your Password <span class="text-danger">*</span>
+                                        </label>
+                                        <div class="input-group">
+                                            <input type="password" class="form-control" id="admin_password" name="admin_password" 
+                                                   placeholder="Enter your admin password to confirm" required>
+                                            <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                                <i class="bi bi-eye" id="passwordIcon"></i>
+                                            </button>
+                                        </div>
+                                        <div class="form-text">
+                                            <i class="bi bi-info-circle me-1"></i>Your password is required to authorize this critical action.
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                        <i class="bi bi-x-circle me-2"></i>Cancel
+                                    </button>
+                                    <button type="submit" name="finalize_distribution" class="btn btn-success">
+                                        <i class="bi bi-check-circle me-2"></i>Finalize Distribution
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -452,9 +646,61 @@ $total_distributions = pg_fetch_assoc($count_result)['total'];
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/admin/sidebar.js"></script>
     <script>
-    function confirmSystemReset() {
-        return confirm('⚠️ CRITICAL WARNING ⚠️\n\nYou are about to RESET THE ENTIRE SYSTEM!\n\nThis will:\n• Revert ALL students to applicant status\n• Clear all payroll numbers\n• Delete all QR codes\n• Remove all distribution records\n• Delete all schedules\n\nTHIS ACTION CANNOT BE UNDONE!\n\nAre you absolutely sure you want to proceed?');
-    }
+    // Password visibility toggle
+    document.addEventListener('DOMContentLoaded', function() {
+        const togglePassword = document.getElementById('togglePassword');
+        const passwordInput = document.getElementById('admin_password');
+        const passwordIcon = document.getElementById('passwordIcon');
+        
+        if (togglePassword && passwordInput && passwordIcon) {
+            togglePassword.addEventListener('click', function() {
+                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                passwordInput.setAttribute('type', type);
+                
+                if (type === 'password') {
+                    passwordIcon.className = 'bi bi-eye';
+                } else {
+                    passwordIcon.className = 'bi bi-eye-slash';
+                }
+            });
+        }
+        
+        // Form validation
+        const finalizeForm = document.getElementById('finalizeForm');
+        if (finalizeForm) {
+            finalizeForm.addEventListener('submit', function(e) {
+                const location = document.getElementById('distribution_location').value.trim();
+                const password = document.getElementById('admin_password').value.trim();
+                
+                if (!location) {
+                    e.preventDefault();
+                    alert('Please enter the distribution location.');
+                    return false;
+                }
+                
+                if (!password) {
+                    e.preventDefault();
+                    alert('Please enter your password to confirm.');
+                    return false;
+                }
+                
+                const confirmMessage = '⚠️ FINAL CONFIRMATION ⚠️\n\n' +
+                    'You are about to FINALIZE the distribution!\n\n' +
+                    'This will:\n' +
+                    '• Create a permanent snapshot of current distribution\n' +
+                    '• Reset ALL students to applicant status\n' +
+                    '• Clear all payroll numbers and QR codes\n' +
+                    '• Delete all schedules and distribution records\n\n' +
+                    'THIS ACTION CANNOT BE UNDONE!\n\n' +
+                    'Are you absolutely sure you want to proceed?';
+                
+                if (!confirm(confirmMessage)) {
+                    e.preventDefault();
+                    return false;
+                }
+            });
+        }
+    });
     </script>
 </body>
 </html>

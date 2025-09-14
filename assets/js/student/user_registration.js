@@ -462,6 +462,7 @@ function nextStep() {
 
     // Step-specific validations
     if (currentStep === 5) {
+        console.log('Step 5 validation - otpVerified:', otpVerified); // Debug log
         if (!otpVerified) {
             const otpField = document.getElementById('otp');
             highlightMissingFields([otpField]);
@@ -470,6 +471,7 @@ function nextStep() {
         }
         // Success vibration when moving to final step
         triggerMobileVibration('success');
+        console.log('Moving from step 5 to step 6'); // Debug log
         showStep(currentStep + 1);
     } else if (currentStep === 4) {
         if (!documentVerified) {
@@ -530,8 +532,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function initializeForm() {
         showStep(1);
         updateRequiredFields();
-        document.getElementById('nextStep5Btn').disabled = true;
-        document.getElementById('nextStep5Btn').addEventListener('click', nextStep);
+        
+        // Setup nextStep5Btn with error handling
+        const nextStep5Btn = document.getElementById('nextStep5Btn');
+        if (nextStep5Btn) {
+            nextStep5Btn.disabled = true;
+            nextStep5Btn.addEventListener('click', nextStep);
+        } else {
+            console.warn('nextStep5Btn not found during initialization');
+        }
         
         // Setup auto-save functionality
         setupAutoSave();
@@ -683,6 +692,7 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
     })
     .then(response => response.json())
     .then(data => {
+        console.log('OTP verification response:', data); // Debug log
         if (data.status === 'success') {
             triggerMobileVibration('success');
             showNotifier(data.message, 'success');
@@ -694,7 +704,26 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
             clearInterval(countdown);
             document.getElementById('timer').textContent = '';
             document.getElementById('resendOtpBtn').style.display = 'none';
-            document.getElementById('nextStep5Btn').disabled = false;
+            
+            // Enable and highlight the next step button
+            const nextBtn = document.getElementById('nextStep5Btn');
+            if (nextBtn) {
+                nextBtn.disabled = false;
+                nextBtn.classList.add('btn-success');
+                nextBtn.textContent = 'Continue to Next Step';
+                
+                // Ensure the button has a click event listener
+                if (!nextBtn.onclick && !nextBtn._hasEventListener) {
+                    nextBtn.addEventListener('click', nextStep);
+                    nextBtn._hasEventListener = true;
+                    console.log('Added event listener to nextStep5Btn during OTP verification');
+                }
+                
+                console.log('Next step button enabled successfully'); // Debug log
+            } else {
+                console.error('nextStep5Btn not found'); // Debug log
+            }
+            
             document.getElementById('emailInput').disabled = true;
             document.getElementById('emailInput').classList.add('verified-email');
         } else {
@@ -716,7 +745,7 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
 });
 
 function startOtpTimer() {
-    let timeLeft = 40;
+    let timeLeft = 300;
     clearInterval(countdown);
     document.getElementById('timer').textContent = `Time left: ${timeLeft} seconds`;
 
@@ -1648,3 +1677,43 @@ function showTermsModal() {
         modal.show();
     }
 }
+
+// Backup event listener setup for nextStep5Btn
+document.addEventListener('DOMContentLoaded', () => {
+    // Wait a bit for all DOM elements to be ready
+    setTimeout(() => {
+        const nextStep5Btn = document.getElementById('nextStep5Btn');
+        if (nextStep5Btn && !nextStep5Btn.onclick) {
+            console.log('Setting up backup event listener for nextStep5Btn');
+            nextStep5Btn.addEventListener('click', nextStep);
+        }
+    }, 100);
+});
+
+// Debug functions for testing (can be called from browser console)
+window.debugRegistration = {
+    forceEnableNextStep: function() {
+        const btn = document.getElementById('nextStep5Btn');
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.add('btn-success');
+            btn.textContent = 'Continue to Next Step';
+            otpVerified = true;
+            console.log('Forced nextStep5Btn enabled');
+        }
+    },
+    testNextStep: function() {
+        console.log('Testing nextStep function...');
+        console.log('Current step:', currentStep);
+        console.log('OTP verified:', otpVerified);
+        nextStep();
+    },
+    checkButton: function() {
+        const btn = document.getElementById('nextStep5Btn');
+        console.log('Button element:', btn);
+        console.log('Button disabled:', btn ? btn.disabled : 'N/A');
+        console.log('Button onclick:', btn ? btn.onclick : 'N/A');
+        console.log('OTP verified:', otpVerified);
+        console.log('Current step:', currentStep);
+    }
+};

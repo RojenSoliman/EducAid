@@ -83,6 +83,30 @@ while ($row = pg_fetch_assoc($yearLevelRes)) {
     $yearLevelVerified[] = (int)$row['verified'];
     $yearLevelApplicant[] = (int)$row['applicant'];
 }
+
+// Fetch past distributions (most recent 5)
+$pastDistributionsRes = pg_query($connection, "
+  SELECT 
+    ds.snapshot_id,
+    ds.distribution_date,
+    ds.location,
+    ds.total_students_count,
+    ds.academic_year,
+    ds.semester,
+    ds.finalized_at,
+    ds.notes,
+    CONCAT(a.first_name, ' ', a.last_name) as finalized_by_name
+  FROM distribution_snapshots ds
+  LEFT JOIN admins a ON ds.finalized_by = a.admin_id
+  ORDER BY ds.finalized_at DESC
+  LIMIT 5
+");
+$pastDistributions = [];
+if ($pastDistributionsRes) {
+    while ($row = pg_fetch_assoc($pastDistributionsRes)) {
+        $pastDistributions[] = $row;
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -193,6 +217,87 @@ while ($row = pg_fetch_assoc($yearLevelRes)) {
             </div>
           </div>
         </div>
+
+        <!-- Past Distributions Section -->
+        <?php if (!empty($pastDistributions)): ?>
+        <div class="row g-4 mt-4">
+          <div class="col-12">
+            <div class="custom-card">
+              <div class="custom-card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <h5><i class="bi bi-clock-history me-2"></i>Recent Distribution History</h5>
+                <a href="manage_distributions.php" class="btn btn-light btn-sm">
+                  <i class="bi bi-arrow-right me-1"></i>View All
+                </a>
+              </div>
+              <div class="custom-card-body">
+                <div class="table-responsive">
+                  <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th><i class="bi bi-calendar me-1"></i>Date</th>
+                        <th><i class="bi bi-geo-alt me-1"></i>Location</th>
+                        <th><i class="bi bi-people me-1"></i>Students</th>
+                        <th><i class="bi bi-mortarboard me-1"></i>Academic Period</th>
+                        <th><i class="bi bi-person-check me-1"></i>Finalized By</th>
+                        <th><i class="bi bi-clock me-1"></i>Finalized At</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <?php foreach ($pastDistributions as $distribution): ?>
+                      <tr>
+                        <td>
+                          <span class="badge bg-primary">
+                            <?php echo date('M d, Y', strtotime($distribution['distribution_date'])); ?>
+                          </span>
+                        </td>
+                        <td>
+                          <i class="bi bi-geo-alt text-muted me-1"></i>
+                          <?php echo htmlspecialchars($distribution['location']); ?>
+                        </td>
+                        <td>
+                          <span class="badge bg-success">
+                            <?php echo number_format($distribution['total_students_count']); ?> students
+                          </span>
+                        </td>
+                        <td>
+                          <?php if ($distribution['academic_year'] && $distribution['semester']): ?>
+                            <small class="text-muted">
+                              <?php echo htmlspecialchars($distribution['academic_year'] . ' - ' . $distribution['semester']); ?>
+                            </small>
+                          <?php else: ?>
+                            <small class="text-muted">-</small>
+                          <?php endif; ?>
+                        </td>
+                        <td>
+                          <small class="text-muted">
+                            <?php echo htmlspecialchars($distribution['finalized_by_name'] ?: 'Unknown'); ?>
+                          </small>
+                        </td>
+                        <td>
+                          <small class="text-muted">
+                            <?php echo date('M d, Y H:i', strtotime($distribution['finalized_at'])); ?>
+                          </small>
+                        </td>
+                      </tr>
+                      <?php endforeach; ?>
+                    </tbody>
+                  </table>
+                </div>
+                
+                <?php if (!empty($pastDistributions[0]['notes'])): ?>
+                <div class="mt-3">
+                  <h6 class="text-muted mb-2">Latest Distribution Notes:</h6>
+                  <div class="alert alert-light border">
+                    <i class="bi bi-sticky me-2"></i>
+                    <?php echo nl2br(htmlspecialchars($pastDistributions[0]['notes'])); ?>
+                  </div>
+                </div>
+                <?php endif; ?>
+              </div>
+            </div>
+          </div>
+        </div>
+        <?php endif; ?>
       </div>
     </section>
   </div>
