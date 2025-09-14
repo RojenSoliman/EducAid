@@ -151,11 +151,33 @@ if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
     if ($pending['role'] === 'student') {
         $_SESSION['student_id'] = $pending['user_id'];
         $_SESSION['student_username'] = $pending['name'];
+        
+        // Get the previous login time before updating (for display purposes)
+        $prev_login_result = pg_query_params($connection,
+            "SELECT last_login FROM students WHERE student_id = $1",
+            [$pending['user_id']]
+        );
+        $prev_login = pg_fetch_assoc($prev_login_result);
+        $_SESSION['previous_login'] = $prev_login['last_login'] ?? null;
+        
+        // Update last_login timestamp for student
+        pg_query_params($connection, 
+            "UPDATE students SET last_login = NOW() WHERE student_id = $1", 
+            [$pending['user_id']]
+        );
+        
         $redirect = 'modules/student/student_homepage.php';
     } else {
         $_SESSION['admin_id'] = $pending['user_id'];
         $_SESSION['admin_username'] = $pending['name'];
         $_SESSION['admin_role'] = $pending['role']; // Store the actual admin role
+        
+        // Update last_login timestamp for admin
+        pg_query_params($connection, 
+            "UPDATE admins SET last_login = NOW() WHERE admin_id = $1", 
+            [$pending['user_id']]
+        );
+        
         $redirect = 'modules/admin/homepage.php';
     }
     

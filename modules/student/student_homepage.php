@@ -7,8 +7,75 @@ if (!isset($_SESSION['student_username'])) {
 // Include database connection
 include __DIR__ . '/../../config/database.php';
 
-// Fetch past distributions where this student participated
+// Fetch student info including last login
 $studentId = $_SESSION['student_id'];
+$student_info_query = "SELECT last_login, first_name, last_name FROM students WHERE student_id = $1";
+$student_info_result = pg_query_params($connection, $student_info_query, [$studentId]);
+$student_info = pg_fetch_assoc($student_info_result);
+
+// Check if this is a fresh login (within last 5 minutes) and adjust display
+$current_time = new DateTime('now', new DateTimeZone('Asia/Manila'));
+$display_login_time = null;
+
+if ($student_info['last_login']) {
+    $last_login_time = new DateTime($student_info['last_login']);
+    $last_login_time->setTimezone(new DateTimeZone('Asia/Manila'));
+    $time_diff = $current_time->diff($last_login_time);
+    
+    // If login was very recent (within 5 minutes), it's likely the current session
+    // So we should show a different message or use the session previous_login if available
+    if ($time_diff->days == 0 && $time_diff->h == 0 && $time_diff->i <= 5) {
+        // Recent login - use session previous_login if available
+        $display_login_time = $_SESSION['previous_login'] ?? null;
+        
+        // If no session previous_login, this might be first time login
+        if (!$display_login_time) {
+            $display_login_time = "first_time";
+        }
+    } else {
+        // Not a recent login, safe to show database value
+        $display_login_time = $student_info['last_login'];
+    }
+} else {
+    $display_login_time = "first_time";
+}
+
+// Helper function to format last login time
+function formatLastLogin($last_login_string) {
+    if (!$last_login_string || $last_login_string === "first_time") {
+        return "First time login - Welcome!";
+    }
+    
+    try {
+        $last_login = new DateTime($last_login_string);
+        $last_login->setTimezone(new DateTimeZone('Asia/Manila'));
+        $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        $diff = $now->diff($last_login);
+        
+        // If login was today, show relative time
+        if ($diff->days == 0) {
+            if ($diff->h == 0 && $diff->i < 30) {
+                return "Last login: Just now";
+            } elseif ($diff->h == 0) {
+                return "Last login: " . $diff->i . " minute" . ($diff->i != 1 ? "s" : "") . " ago";
+            } else {
+                return "Last login: " . $diff->h . " hour" . ($diff->h != 1 ? "s" : "") . " ago";
+            }
+        }
+        // If login was yesterday
+        elseif ($diff->days == 1) {
+            return "Last login: Yesterday at " . $last_login->format('g:i A');
+        }
+        // For older logins, show full date
+        else {
+            return "Last login: " . $last_login->format('F j, Y – g:i A');
+        }
+    } catch (Exception $e) {
+        return "Last login: " . htmlspecialchars($last_login_string);
+    }
+}
+
+// Fetch past distributions where this student participated
 $past_participation_query = "
     SELECT DISTINCT
         ds.distribution_date,
@@ -76,7 +143,27 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
           <img src="../../assets/images/default/profile.png" class="rounded-circle me-3" width="60" height="60" alt="Student Profile">
           <div>
             <h2 class="fw-bold mb-1">Welcome, <?php echo htmlspecialchars($_SESSION['student_username']); ?>!</h2>
-            <small class="text-muted">Last login: July 10, 2025 – 9:14 AM</small>
+            <small class="text-muted">
+              <?php 
+              // Temporary debug output (remove after fixing)
+              if (isset($_GET['debug'])) {
+                echo "<br><strong>DEBUG:</strong><br>";
+                echo "Database last_login: " . ($student_info['last_login'] ?? 'NULL') . "<br>";
+                echo "Session previous_login: " . (($_SESSION['previous_login'] ?? null) ? $_SESSION['previous_login'] : 'NULL') . "<br>";
+                echo "Calculated display_login_time: " . ($display_login_time === "first_time" ? "FIRST_TIME" : ($display_login_time ?? 'NULL')) . "<br>";
+                
+                if ($student_info['last_login']) {
+                    $last_login_time = new DateTime($student_info['last_login']);
+                    $current_time = new DateTime();
+                    $diff = $current_time->diff($last_login_time);
+                    echo "Time since DB login: {$diff->i} minutes ago<br>";
+                }
+                echo "Formatted: ";
+              }
+              
+              echo formatLastLogin($display_login_time);
+              ?>
+            </small>
           </div>
         </div>
 
