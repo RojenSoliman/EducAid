@@ -520,27 +520,27 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $student_id_row = pg_fetch_assoc($result);
         $student_id = $student_id_row['student_id'];
 
-        // Save enrollment form if it exists in temp folder
+        // Save enrollment form to temporary folder (not permanent until approved)
         $tempFormPath = 'assets/uploads/temp/';
         $tempFiles = glob($tempFormPath . '*');
         if (!empty($tempFiles)) {
-            // Create permanent upload directory
-            $permanentDir = '../../assets/uploads/enrollment_forms/';
-            if (!file_exists($permanentDir)) {
-                mkdir($permanentDir, 0777, true);
+            // Create temporary enrollment forms directory for pending students
+            $tempEnrollmentDir = '../../assets/uploads/temp/enrollment_forms/';
+            if (!file_exists($tempEnrollmentDir)) {
+                mkdir($tempEnrollmentDir, 0777, true);
             }
 
-            // Move the file to permanent location
+            // Move the file to temporary enrollment location with student ID
             $tempFile = $tempFiles[0]; // Get the first (and should be only) file
             $filename = basename($tempFile);
-            $permanentPath = $permanentDir . $student_id . '_' . $filename;
+            $tempEnrollmentPath = $tempEnrollmentDir . $student_id . '_' . $filename;
 
-            if (copy($tempFile, $permanentPath)) {
-                // Save form record to database
+            if (copy($tempFile, $tempEnrollmentPath)) {
+                // Save form record to database with temporary path
                 $formQuery = "INSERT INTO enrollment_forms (student_id, file_path, original_filename) VALUES ($1, $2, $3)";
-                pg_query_params($connection, $formQuery, [$student_id, $permanentPath, $filename]);
+                pg_query_params($connection, $formQuery, [$student_id, $tempEnrollmentPath, $filename]);
 
-                // Clean up temp file
+                // Clean up original temp file
                 unlink($tempFile);
             }
         }

@@ -241,7 +241,7 @@ if ($capacityResult && pg_num_rows($capacityResult) > 0) {
 // Get current total students count for capacity management
 $currentTotalStudentsQuery = pg_query_params($connection, "
     SELECT COUNT(*) as total FROM students 
-    WHERE municipality_id = $1 AND status IN ('under_registration', 'applicant', 'active')
+    WHERE municipality_id = $1 AND status IN ('under_registration', 'applicant', 'verified', 'active', 'given')
 ", [$municipality_id]);
 $currentTotalStudents = 0;
 if ($currentTotalStudentsQuery) {
@@ -1022,6 +1022,8 @@ if ($res) {
   function updateSlotStats() {
     if (isUpdating) return; // Prevent concurrent requests
     isUpdating = true;
+    
+    console.log('Fetching updated slot stats...');
 
     fetch('get_slot_stats.php', {
       method: 'GET',
@@ -1031,6 +1033,8 @@ if ($res) {
     })
     .then(response => response.json())
     .then(data => {
+      console.log('Received slot stats data:', data);
+      
       if (data.success) {
         // Update slot usage display
         const slotUsageDisplay = document.getElementById('slotUsageDisplay');
@@ -1065,6 +1069,25 @@ if ($res) {
           progressText.textContent = `${Math.round(data.percentage)}%`;
         }
 
+        // Update program capacity overview section
+        const currentStudentsCount = document.getElementById('currentStudentsCount');
+        if (currentStudentsCount && data.currentTotalStudents !== undefined) {
+          currentStudentsCount.textContent = data.currentTotalStudents.toLocaleString();
+        }
+
+        const remainingCapacity = document.getElementById('remainingCapacity');
+        if (remainingCapacity && data.maxCapacity) {
+          const remaining = data.maxCapacity - data.currentTotalStudents;
+          remainingCapacity.textContent = remaining.toLocaleString();
+          remainingCapacity.className = `text-${remaining > 0 ? 'info' : 'danger'} mb-0`;
+        }
+
+        const utilizationPercentage = document.getElementById('utilizationPercentage');
+        if (utilizationPercentage && data.maxCapacity) {
+          const utilization = (data.currentTotalStudents / data.maxCapacity) * 100;
+          utilizationPercentage.textContent = `${Math.round(utilization)}%`;
+        }
+
         // Update capacity display
         const capacityDisplay = document.getElementById('capacityDisplay');
         const capacityWarning = document.getElementById('capacityWarning');
@@ -1087,9 +1110,29 @@ if ($res) {
           }, 500);
         }
 
+        // Add timestamp update indicator
+        const lastUpdateIndicator = document.getElementById('lastUpdateIndicator');
+        if (lastUpdateIndicator) {
+          lastUpdateIndicator.textContent = `Last updated: ${data.lastUpdated}`;
+          lastUpdateIndicator.style.display = 'block';
+        } else {
+          // Create update indicator if it doesn't exist
+          const indicator = document.createElement('small');
+          indicator.id = 'lastUpdateIndicator';
+          indicator.className = 'text-muted';
+          indicator.textContent = `Last updated: ${data.lastUpdated}`;
+          indicator.style.display = 'block';
+          indicator.style.marginTop = '10px';
+          
+          const slotBody = document.getElementById('currentSlotBody');
+          if (slotBody) {
+            slotBody.appendChild(indicator);
+          }
+        }
+
         console.log('Slot stats updated:', data.lastUpdated);
       } else {
-        console.error('Error updating slot stats:', data.error);
+        console.warn('Failed to update slot stats:', data.error || 'Unknown error');
       }
     })
     .catch(error => {
@@ -1104,24 +1147,25 @@ if ($res) {
     // Update immediately
     updateSlotStats();
     
-    // Then update every 30 seconds
-    updateInterval = setInterval(updateSlotStats, 30000);
+    // Then update every 10 seconds for more responsive updates
+    updateInterval = setInterval(updateSlotStats, 10000);
     
     // Visual indicator that real-time updates are active
     const indicator = document.createElement('div');
     indicator.id = 'realTimeIndicator';
-    indicator.innerHTML = '<small class="text-success"><i class="bi bi-broadcast"></i> Live updates active</small>';
+    indicator.innerHTML = '<small class="text-success"><i class="bi bi-broadcast"></i> Live updates active (every 10s)</small>';
     indicator.style.position = 'fixed';
     indicator.style.bottom = '20px';
     indicator.style.right = '20px';
-    indicator.style.background = 'rgba(255, 255, 255, 0.9)';
-    indicator.style.padding = '5px 10px';
-    indicator.style.borderRadius = '5px';
+    indicator.style.background = 'rgba(255, 255, 255, 0.95)';
+    indicator.style.padding = '8px 12px';
+    indicator.style.borderRadius = '6px';
     indicator.style.border = '1px solid #28a745';
     indicator.style.zIndex = '1000';
+    indicator.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
     document.body.appendChild(indicator);
     
-    console.log('Real-time slot updates started');
+    console.log('Real-time slot updates started (every 10 seconds)');
   }
 
   function stopRealTimeUpdates() {

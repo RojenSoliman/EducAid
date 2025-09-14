@@ -37,10 +37,10 @@ try {
         $maxCapacity = intval(pg_fetch_assoc($capacityResult)['max_capacity']);
     }
 
-    // Count current total students
+    // Count current total students (including active status)
     $currentTotalStudentsQuery = pg_query_params($connection, "
         SELECT COUNT(*) as total FROM students 
-        WHERE municipality_id = $1 AND status IN ('under_registration', 'applicant', 'active')
+        WHERE municipality_id = $1 AND status IN ('under_registration', 'applicant', 'verified', 'active', 'given')
     ", [$municipality_id]);
     $currentTotalStudents = intval(pg_fetch_assoc($currentTotalStudentsQuery)['total']);
 

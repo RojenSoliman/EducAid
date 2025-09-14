@@ -23,25 +23,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if (!empty($student_ids) && in_array($action, ['approve', 'reject'])) {
             $success_count = 0;
-            $status = $action === 'approve' ? 'applicant' : 'disabled';
             
             foreach ($student_ids as $student_id) {
-                $updateQuery = "UPDATE students SET status = $1 WHERE student_id = $2 AND status = 'under_registration'";
-                $result = pg_query_params($connection, $updateQuery, [$status, $student_id]);
-                
-                if ($result && pg_affected_rows($result) > 0) {
-                    $success_count++;
+                if ($action === 'approve') {
+                    // Update student status to applicant
+                    $updateQuery = "UPDATE students SET status = 'applicant' WHERE student_id = $1 AND status = 'under_registration'";
+                    $result = pg_query_params($connection, $updateQuery, [$student_id]);
                     
-                    // Get student email for notification
-                    $emailQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1";
-                    $emailResult = pg_query_params($connection, $emailQuery, [$student_id]);
-                    if ($student = pg_fetch_assoc($emailResult)) {
-                        sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], $action === 'approve', '');
+                    if ($result && pg_affected_rows($result) > 0) {
+                        // Move enrollment form from temporary to permanent location
+                        $enrollmentQuery = "SELECT file_path, original_filename FROM enrollment_forms WHERE student_id = $1";
+                        $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student_id]);
                         
-                        // Add admin notification
-                        $student_name = $student['first_name'] . ' ' . $student['last_name'];
-                        $notification_msg = "Registration " . ($action === 'approve' ? 'approved' : 'rejected') . " for student: " . $student_name . " (ID: " . $student_id . ")";
-                        pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                        if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
+                            $tempPath = $enrollmentRow['file_path'];
+                            $originalFilename = $enrollmentRow['original_filename'];
+                            
+                            // Create permanent directory if it doesn't exist
+                            $permanentDir = __DIR__ . '/../../assets/uploads/enrollment_forms/';
+                            if (!file_exists($permanentDir)) {
+                                mkdir($permanentDir, 0777, true);
+                            }
+                            
+                            // Define permanent path
+                            $permanentPath = $permanentDir . $student_id . '_' . $originalFilename;
+                            
+                            // Move file from temporary to permanent location
+                            if (file_exists($tempPath) && copy($tempPath, $permanentPath)) {
+                                // Update database with permanent path
+                                $updateFilePathQuery = "UPDATE enrollment_forms SET file_path = $1 WHERE student_id = $2";
+                                pg_query_params($connection, $updateFilePathQuery, [$permanentPath, $student_id]);
+                                
+                                // Delete temporary file
+                                unlink($tempPath);
+                            }
+                        }
+                        
+                        $success_count++;
+                        
+                        // Get student email for notification
+                        $emailQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1";
+                        $emailResult = pg_query_params($connection, $emailQuery, [$student_id]);
+                        if ($student = pg_fetch_assoc($emailResult)) {
+                            sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], true, '');
+                            
+                            // Add admin notification
+                            $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                            $notification_msg = "Registration approved for student: " . $student_name . " (ID: " . $student_id . ")";
+                            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                        }
+                    }
+                } elseif ($action === 'reject') {
+                    // Get student information before deletion
+                    $studentQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1 AND status = 'under_registration'";
+                    $studentResult = pg_query_params($connection, $studentQuery, [$student_id]);
+                    $student = pg_fetch_assoc($studentResult);
+                    
+                    if ($student) {
+                        // Get and delete temporary enrollment form file before deleting database records
+                        $enrollmentQuery = "SELECT file_path FROM enrollment_forms WHERE student_id = $1";
+                        $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student_id]);
+                        
+                        if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
+                            $tempFilePath = $enrollmentRow['file_path'];
+                            // Delete the temporary file if it exists
+                            if (file_exists($tempFilePath)) {
+                                unlink($tempFilePath);
+                            }
+                        }
+                        
+                        // Delete related records first (due to foreign key constraints)
+                        pg_query_params($connection, "DELETE FROM qr_logs WHERE student_id = $1", [$student_id]);
+                        pg_query_params($connection, "DELETE FROM distributions WHERE student_id = $1", [$student_id]);
+                        pg_query_params($connection, "DELETE FROM enrollment_forms WHERE student_id = $1", [$student_id]);
+                        pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$student_id]);
+                        pg_query_params($connection, "DELETE FROM applications WHERE student_id = $1", [$student_id]);
+                        
+                        // Finally delete the student record
+                        $deleteResult = pg_query_params($connection, "DELETE FROM students WHERE student_id = $1", [$student_id]);
+                        
+                        if ($deleteResult) {
+                            $success_count++;
+                            
+                            // Send rejection email
+                            sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], false, '');
+                            
+                            // Add admin notification
+                            $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                            $notification_msg = "Registration rejected and removed for student: " . $student_name . " (ID: " . $student_id . ") - Slot freed up and files deleted";
+                            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                        }
                     }
                 }
             }
@@ -66,6 +137,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = pg_query_params($connection, $updateQuery, [$student_id]);
             
             if ($result) {
+                // Move enrollment form from temporary to permanent location
+                $enrollmentQuery = "SELECT file_path, original_filename FROM enrollment_forms WHERE student_id = $1";
+                $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student_id]);
+                
+                if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
+                    $tempPath = $enrollmentRow['file_path'];
+                    $originalFilename = $enrollmentRow['original_filename'];
+                    
+                    // Create permanent directory if it doesn't exist
+                    $permanentDir = __DIR__ . '/../../assets/uploads/enrollment_forms/';
+                    if (!file_exists($permanentDir)) {
+                        mkdir($permanentDir, 0777, true);
+                    }
+                    
+                    // Define permanent path
+                    $permanentPath = $permanentDir . $student_id . '_' . $originalFilename;
+                    
+                    // Move file from temporary to permanent location
+                    if (file_exists($tempPath) && copy($tempPath, $permanentPath)) {
+                        // Update database with permanent path
+                        $updateFilePathQuery = "UPDATE enrollment_forms SET file_path = $1 WHERE student_id = $2";
+                        pg_query_params($connection, $updateFilePathQuery, [$permanentPath, $student_id]);
+                        
+                        // Delete temporary file
+                        unlink($tempPath);
+                    }
+                }
+                
                 // Get student email for notification
                 $emailQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1";
                 $emailResult = pg_query_params($connection, $emailQuery, [$student_id]);
@@ -88,6 +187,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $student = pg_fetch_assoc($studentResult);
             
             if ($student) {
+                // Get and delete temporary enrollment form file before deleting database records
+                $enrollmentQuery = "SELECT file_path FROM enrollment_forms WHERE student_id = $1";
+                $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student_id]);
+                
+                if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
+                    $tempFilePath = $enrollmentRow['file_path'];
+                    // Delete the temporary file if it exists
+                    if (file_exists($tempFilePath)) {
+                        unlink($tempFilePath);
+                    }
+                }
+                
                 // Delete related records first (due to foreign key constraints)
                 pg_query_params($connection, "DELETE FROM qr_logs WHERE student_id = $1", [$student_id]);
                 pg_query_params($connection, "DELETE FROM distributions WHERE student_id = $1", [$student_id]);
@@ -104,10 +215,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Add admin notification
                     $student_name = $student['first_name'] . ' ' . $student['last_name'];
-                    $notification_msg = "Registration rejected and removed for student: " . $student_name . " (ID: " . $student_id . ")" . ($remarks ? " - Reason: " . $remarks : "") . " - Slot freed up";
+                    $notification_msg = "Registration rejected and removed for student: " . $student_name . " (ID: " . $student_id . ")" . ($remarks ? " - Reason: " . $remarks : "") . " - Slot freed up and files deleted";
                     pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                     
-                    $_SESSION['success_message'] = "Registration rejected and student data removed. Slot has been freed up.";
+                    $_SESSION['success_message'] = "Registration rejected, student data removed, and files deleted. Slot has been freed up.";
                 } else {
                     $_SESSION['error_message'] = "Error rejecting registration.";
                 }
