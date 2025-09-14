@@ -27,9 +27,9 @@ if (
         [$em]
     );
     
-    // Check if user is an admin (simplified query)
+    // Check if user is an admin (get actual role from database)
     $adminRes = pg_query_params($connection,
-        "SELECT admin_id, password, first_name, last_name, 'admin' as role FROM admins
+        "SELECT admin_id, password, first_name, last_name, role FROM admins
          WHERE email = $1",
         [$em]
     );
@@ -155,6 +155,7 @@ if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
     } else {
         $_SESSION['admin_id'] = $pending['user_id'];
         $_SESSION['admin_username'] = $pending['name'];
+        $_SESSION['admin_role'] = $pending['role']; // Store the actual admin role
         $redirect = 'modules/admin/homepage.php';
     }
     
@@ -176,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
         
         // Check both tables (exclude students under registration and blacklisted)
         $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status NOT IN ('under_registration', 'blacklisted')", [$email]);
-        $adminRes = pg_query_params($connection, "SELECT admin_id, 'admin' as role FROM admins WHERE email = $1", [$email]);
+        $adminRes = pg_query_params($connection, "SELECT admin_id, role FROM admins WHERE email = $1", [$email]);
         
         $user = null;
         if ($studentRow = pg_fetch_assoc($studentRes)) {
@@ -391,6 +392,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
 
                                 <!-- Messages Container -->
                                 <div id="messages" class="message-container mb-3"></div>
+
+                                <!-- Logout Success Message -->
+                                <?php if (isset($_SESSION['logout_message'])): ?>
+                                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                    <i class="bi bi-check-circle-fill me-2"></i>
+                                    <?= htmlspecialchars($_SESSION['logout_message']) ?>
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                                <?php unset($_SESSION['logout_message']); ?>
+                                <?php endif; ?>
 
                                 <!-- Step 1: Simplified Credentials (Email + Password Only) -->
                                 <div id="step1" class="step active">

@@ -138,7 +138,7 @@ if (isset($_SESSION['admin_id'])) {
     </li>
     <?php endif; ?>
     <li class="nav-item logout">
-      <a href="logout.php" onclick="return confirm('Are you sure you want to logout?');">
+      <a href="logout.php" onclick="return confirmLogout();">
         <i class="bi bi-box-arrow-right icon"></i>
         <span class="links_name">Logout</span>
       </a>
@@ -146,3 +146,9 @@ if (isset($_SESSION['admin_id'])) {
   </ul>
 </div>
 <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+
+<script>
+function confirmLogout() {
+    return confirm('Are you sure you want to logout?\n\nThis will clear all your session data and return you to the login page.');
+}
+</script>

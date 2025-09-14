@@ -171,6 +171,8 @@ function initiateBlacklist() {
     const formData = new FormData(document.getElementById('blacklistForm'));
     formData.append('action', 'initiate_blacklist');
     
+    console.log('Initiating blacklist...'); // Debug log
+    
     // Validate required fields
     if (!formData.get('reason_category')) {
         alert('Please select a reason for blacklisting.');
@@ -192,8 +194,27 @@ function initiateBlacklist() {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Response status:', response.status); // Debug log
+        console.log('Response headers:', response.headers); // Debug log
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return response.text().then(text => {
+            console.log('Raw response:', text); // Debug log
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                console.error('JSON parse error:', e);
+                throw new Error('Invalid JSON response: ' + text);
+            }
+        });
+    })
     .then(data => {
+        console.log('Parsed data:', data); // Debug log
+        
         if (data.status === 'otp_sent') {
             // Show OTP section
             document.getElementById('otpSection').style.display = 'block';
@@ -209,13 +230,14 @@ function initiateBlacklist() {
             }, 500);
             
         } else {
-            showAlert('danger', data.message);
+            showAlert('danger', data.message || 'Unknown error occurred');
             sendBtn.innerHTML = originalText;
             sendBtn.disabled = false;
         }
     })
     .catch(error => {
-        showAlert('danger', 'Network error occurred. Please try again.');
+        console.error('Fetch error:', error); // Debug log
+        showAlert('danger', 'Network error: ' + error.message);
         sendBtn.innerHTML = originalText;
         sendBtn.disabled = false;
     });

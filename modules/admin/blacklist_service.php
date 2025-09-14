@@ -4,9 +4,16 @@ session_start();
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
-require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
+require_once '../../phpmailer/vendor/autoload.php';
+
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
 header('Content-Type: application/json');
+
+// Better error handling
+try {
 
 if (!isset($_SESSION['admin_username'])) {
     echo json_encode(['status' => 'error', 'message' => 'Unauthorized access']);
@@ -15,8 +22,8 @@ if (!isset($_SESSION['admin_username'])) {
 
 $admin_id = $_SESSION['admin_id'];
 
-// Get admin info
-$adminQuery = pg_query_params($connection, "SELECT email, first_name, last_name FROM admins WHERE admin_id = $1", [$admin_id]);
+// Get admin info including password for verification
+$adminQuery = pg_query_params($connection, "SELECT email, first_name, last_name, password FROM admins WHERE admin_id = $1", [$admin_id]);
 $admin = pg_fetch_assoc($adminQuery);
 
 if (!$admin) {
@@ -69,23 +76,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $otp = sprintf('%06d', rand(0, 999999));
         $expires_at = date('Y-m-d H:i:s', time() + 300); // 5 minutes
         
-        // Store session data
-        $session_data = json_encode([
-            'student_id' => $student_id,
-            'reason_category' => $reason_category,
-            'detailed_reason' => $detailed_reason,
-            'admin_notes' => $admin_notes
-        ]);
-        
         // Clean old verifications for this admin
         pg_query_params($connection, 
             "DELETE FROM admin_blacklist_verifications WHERE admin_id = $1 AND expires_at < NOW()", 
             [$admin_id]
         );
         
-        // Insert new verification record
+        // Get student details for storage
+        $student_name = $student['first_name'] . ' ' . $student['last_name'];
+        $student_email = $student['email'];
+        
+        // Store all the form data in session_data as JSON
+        $session_data = json_encode([
+            'reason_category' => $reason_category,
+            'detailed_reason' => $detailed_reason,
+            'admin_notes' => $admin_notes,
+            'student_name' => $student_name,
+            'student_email' => $student_email,
+            'student_status' => $student['status'],
+            'admin_name' => $admin['first_name'] . ' ' . $admin['last_name']
+        ]);
+        
+        // Insert new verification record (only using columns that exist)
         $insertResult = pg_query_params($connection,
-            "INSERT INTO admin_blacklist_verifications (admin_id, student_id, otp, email, expires_at, session_data) 
+            "INSERT INTO admin_blacklist_verifications 
+             (admin_id, student_id, otp, email, expires_at, session_data) 
              VALUES ($1, $2, $3, $4, $5, $6)",
             [$admin_id, $student_id, $otp, $admin['email'], $expires_at, $session_data]
         );
@@ -163,13 +178,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // Parse session data
-        $session_data = json_decode($verification['session_data'], true);
-        
         // Begin transaction
         pg_query($connection, "BEGIN");
         
         try {
+            // Decode session data to get stored form information
+            $session_data = json_decode($verification['session_data'], true);
+            
             // Update student status to blacklisted
             $updateStudent = pg_query_params($connection,
                 "UPDATE students SET status = 'blacklisted' WHERE student_id = $1",
@@ -180,16 +195,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Failed to update student status');
             }
             
-            // Insert blacklist record
+            // Insert blacklist record using the correct table structure
             $insertBlacklist = pg_query_params($connection,
-                "INSERT INTO blacklisted_students (student_id, reason_category, detailed_reason, blacklisted_by, admin_email, admin_notes) 
+                "INSERT INTO blacklisted_students 
+                 (student_id, reason_category, detailed_reason, blacklisted_by, admin_email, admin_notes) 
                  VALUES ($1, $2, $3, $4, $5, $6)",
                 [
                     $student_id,
                     $session_data['reason_category'],
                     $session_data['detailed_reason'],
                     $admin_id,
-                    $admin['email'],
+                    $verification['email'], // This is the admin email from verification table
                     $session_data['admin_notes']
                 ]
             );
@@ -205,13 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             
             // Add admin notification
-            $studentName = '';
-            $studentQuery = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$student_id]);
-            if ($student = pg_fetch_assoc($studentQuery)) {
-                $studentName = $student['first_name'] . ' ' . $student['last_name'];
-            }
-            
-            $notification_msg = "BLACKLIST: {$studentName} has been permanently blacklisted by {$admin['first_name']} {$admin['last_name']}";
+            $notification_msg = "BLACKLIST: {$session_data['student_name']} has been permanently blacklisted by {$session_data['admin_name']}";
             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
             
             pg_query($connection, "COMMIT");
@@ -231,4 +241,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 echo json_encode(['status' => 'error', 'message' => 'Invalid request']);
+
+} catch (Exception $e) {
+    echo json_encode(['status' => 'error', 'message' => 'System error: ' . $e->getMessage()]);
+}
 ?>
