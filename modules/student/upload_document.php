@@ -545,7 +545,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
             
             if (uploadResult.success) {
                 // Send to OCR processing
-                const ocrResponse = await                       fetch('process_manual_grades_review.php', {
+                const ocrResponse = await fetch('process_ocr_grades.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

@@ -7,48 +7,6 @@ use PHPMailer\PHPMailer\Exception;
 
 require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 
-/**
- * Convert different grading systems to 4.0 GPA scale for calculation
- */
-function convertGradeToGPA($grade, $system) {
-    switch ($system) {
-        case 'gpa':
-            // Traditional 1.0-5.0 scale (1.0 = highest), convert to 4.0 scale
-            $gpa_5_scale = min(max(floatval($grade), 1.0), 5.0);
-            return max(0, 5.0 - $gpa_5_scale); // Convert to 4.0 scale
-            
-        case 'dlsu_gpa':
-            // DLSU 4.0 scale (4.0 = 100%, 0.0 = failed)
-            return min(max(floatval($grade), 0), 4.0);
-            
-        case 'letter':
-            $letterToGPA = [
-                'A+' => 4.0, 'A' => 4.0, 'A-' => 3.7,
-                'B+' => 3.3, 'B' => 3.0, 'B-' => 2.7,
-                'C+' => 2.3, 'C' => 2.0, 'C-' => 1.7,
-                'D+' => 1.3, 'D' => 1.0, 'D-' => 0.7,
-                'F' => 0.0
-            ];
-            return $letterToGPA[strtoupper($grade)] ?? 0.0;
-            
-        case 'percentage':
-        default:
-            $percentage = floatval($grade);
-            if ($percentage >= 97) return 4.0;
-            else if ($percentage >= 93) return 3.7;
-            else if ($percentage >= 90) return 3.3;
-            else if ($percentage >= 87) return 3.0;
-            else if ($percentage >= 83) return 2.7;
-            else if ($percentage >= 80) return 2.3;
-            else if ($percentage >= 77) return 2.0;
-            else if ($percentage >= 73) return 1.7;
-            else if ($percentage >= 70) return 1.3;
-            else if ($percentage >= 65) return 1.0;
-            else if ($percentage >= 60) return 0.7;
-            else return 0.0;
-    }
-}
-
 $municipality_id = 1;
 
 // --- Slot check ---
@@ -1470,118 +1428,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";
         pg_query_params($connection, $applicationQuery, [$student_id, $semester, $academic_year]);
 
-        // Process grades data if provided
-        if (isset($_POST['grading_system']) && !empty($_POST['grading_system'])) {
-            $grading_system = filter_var($_POST['grading_system'], FILTER_SANITIZE_STRING);
-            
-            // Collect all grades data
-            $grades_data = [];
-            $i = 1;
-            while (isset($_POST["subject_$i"]) && isset($_POST["grade_$i"]) && isset($_POST["units_$i"])) {
-                $subject = trim($_POST["subject_$i"]);
-                $grade = trim($_POST["grade_$i"]);
-                $units = filter_var($_POST["units_$i"], FILTER_VALIDATE_INT);
-                
-                if (!empty($subject) && !empty($grade) && $units > 0) {
-                    $grades_data[] = [
-                        'subject' => $subject,
-                        'grade' => $grade,
-                        'units' => $units
-                    ];
-                }
-                $i++;
-            }
-            
-            // Save grades if any were provided
-            if (!empty($grades_data)) {
-                try {
-                    // Insert individual grades
-                    $grade_insert_sql = "INSERT INTO student_grades (
-                        student_id, subject_name, grade_value, grade_system, units, 
-                        semester, academic_year, source, verification_status, created_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'registration', 'pending', NOW())";
-                    
-                    $total_units = 0;
-                    $total_grade_points = 0;
-                    
-                    foreach ($grades_data as $grade_data) {
-                        // Convert grade to GPA for calculation
-                        $grade_point = convertGradeToGPA($grade_data['grade'], $grading_system);
-                        
-                        // Insert grade record
-                        pg_query_params($connection, $grade_insert_sql, [
-                            $student_id,
-                            $grade_data['subject'],
-                            $grade_data['grade'],
-                            $grading_system,
-                            $grade_data['units'],
-                            $semester,
-                            $academic_year
-                        ]);
-                        
-                        // Calculate totals
-                        $total_units += $grade_data['units'];
-                        $total_grade_points += ($grade_point * $grade_data['units']);
-                    }
-                    
-                    // Calculate and save GPA summary
-                    $gpa = $total_units > 0 ? $total_grade_points / $total_units : 0;
-                    
-                    $gpa_insert_sql = "INSERT INTO student_gpa_summary (
-                        student_id, semester, academic_year, total_units, gpa, 
-                        grading_system, source, created_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, 'registration', NOW())";
-                    
-                    pg_query_params($connection, $gpa_insert_sql, [
-                        $student_id,
-                        $semester,
-                        $academic_year,
-                        $total_units,
-                        round($gpa, 2),
-                        $grading_system
-                    ]);
-                    
-                } catch (Exception $e) {
-                    error_log("Grade processing error during registration: " . $e->getMessage());
-                    // Continue with registration even if grades fail - they can be added later
-                }
-            }
-        }
-        
-        // Process grade document if uploaded
-        $gradeTempFiles = glob($tempFormPath . 'grade_*');
-        if (!empty($gradeTempFiles)) {
-            // Create temporary grade documents directory
-            $tempGradeDir = '../../assets/uploads/temp/grade_documents/';
-            if (!file_exists($tempGradeDir)) {
-                mkdir($tempGradeDir, 0777, true);
-            }
-
-            // Move the grade document to temporary location with student ID
-            $gradeTempFile = $gradeTempFiles[0];
-            $gradeFilename = basename($gradeTempFile);
-            $gradeTempPath = $tempGradeDir . $student_id . '_grade_document_' . str_replace('grade_', '', $gradeFilename);
-
-            if (copy($gradeTempFile, $gradeTempPath)) {
-                // Save grade document record to database
-                $gradeDocQuery = "INSERT INTO grade_documents (
-                    student_id, file_name, file_path, file_type, upload_source, 
-                    processing_status, verification_status, created_at
-                ) VALUES ($1, $2, $3, $4, 'registration', 'pending', 'pending', NOW())";
-                
-                $file_type = mime_content_type($gradeTempPath);
-                pg_query_params($connection, $gradeDocQuery, [
-                    $student_id, 
-                    $gradeFilename, 
-                    $gradeTempPath, 
-                    $file_type
-                ]);
-
-                // Clean up original temp grade file
-                unlink($gradeTempFile);
-            }
-        }
-
         unset($_SESSION['otp_verified']);
 
         echo "<script>alert('Registration submitted successfully! Your application is under review. You will receive an email notification once approved.'); window.location.href = '../../unified_login.php';</script>";
@@ -1618,23 +1464,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             border-radius: 5px; display: none; box-shadow: 0 0 10px rgba(0,0,0,0.1);
             z-index: 1000;
         }
-        /* Spinning animation for loading icons */
-        .spin {
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        /* Grade entry styles */
-        .grade-row {
-            border-bottom: 1px solid #eee;
-            padding-bottom: 10px;
-            margin-bottom: 10px !important;
-        }
-        .grade-row:last-child {
-            border-bottom: none;
-        }
         .notifier.success { background-color: #d4edda; color: #155724; }
         .verified-email { background-color: #e9f7e9; color: #28a745; }
         
@@ -1665,7 +1494,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 <span class="step" id="step-indicator-6">6</span>
                 <span class="step" id="step-indicator-7">7</span>
                 <span class="step" id="step-indicator-8">8</span>
-                <span class="step" id="step-indicator-9">9</span>
             </div>
             <form id="multiStepForm" method="POST" autocomplete="off">
                 <!-- Step 1: Personal Information -->
@@ -1832,183 +1660,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" disabled onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 5: Academic Grades Entry and Document Upload -->
+                <!-- Step 5: Letter to Mayor Upload and OCR Verification -->
                 <div class="step-panel d-none" id="step-5">
-                    <div class="mb-4">
-                        <h5 class="text-primary">
-                            <i class="bi bi-file-earmark-spreadsheet me-2"></i>
-                            Academic Grades Information
-                        </h5>
-                        <p class="text-muted mb-3">
-                            Please enter your academic grades manually and upload supporting documents for verification.
-                            <br><strong>Minimum Requirements:</strong> 75% average or 3.00 GPA (1.0-5.0 scale)
-                        </p>
-                    </div>
-
-                    <!-- Grading System Selection -->
-                    <div class="mb-4">
-                        <label class="form-label">Grading System Used by Your School</label>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="grading_system" id="percentage" value="percentage" checked>
-                                    <label class="form-check-label" for="percentage">
-                                        Percentage Scale (0% - 100%)
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="grading_system" id="gpa" value="gpa">
-                                    <label class="form-check-label" for="gpa">
-                                        1.0 - 5.0 GPA Scale (1.0 = Highest)
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="grading_system" id="dlsu_gpa" value="dlsu_gpa">
-                                    <label class="form-check-label" for="dlsu_gpa">
-                                        4.0 GPA Scale (4.0 = 100%, 0.0 = Failed)
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="grading_system" id="letter" value="letter">
-                                    <label class="form-check-label" for="letter">
-                                        Letter Grades (A, B, C, D, F)
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Manual Grade Entry Section -->
-                    <div class="mb-4">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h6>Enter Your Grades</h6>
-                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addGradeRow()">
-                                <i class="bi bi-plus-circle me-1"></i>Add Subject
-                            </button>
-                        </div>
-                        <div id="gradesContainer">
-                            <div class="grade-rows">
-                                <!-- Initial grade row -->
-                                <div class="row mb-2 grade-row">
-                                    <div class="col-md-5">
-                                        <input type="text" class="form-control" name="subject_1" placeholder="Subject Name" required>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <input type="text" class="form-control grade-input" name="grade_1" placeholder="Grade" required>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <input type="number" class="form-control units-input" name="units_1" placeholder="Units" min="1" max="6" required>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <button type="button" class="btn btn-danger btn-sm" onclick="removeGradeRow(this)">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mt-3">
-                            <small class="text-muted">
-                                <i class="bi bi-info-circle me-1"></i>
-                                Add all subjects from your most recent semester/year. Minimum 3 subjects required.
-                            </small>
-                        </div>
-                    </div>
-
-                    <!-- Grade Summary -->
-                    <div class="mb-4" id="gradeSummary" style="display: none;">
-                        <div class="card bg-light">
-                            <div class="card-body">
-                                <h6 class="card-title">Grade Summary</h6>
-                                <div class="row">
-                                    <div class="col-6">
-                                        <small class="text-muted">Total Subjects:</small><br>
-                                        <strong id="totalSubjects">0</strong>
-                                    </div>
-                                    <div class="col-6">
-                                        <small class="text-muted">Average:</small><br>
-                                        <strong id="averageGrade">0.00</strong>
-                                    </div>
-                                </div>
-                                <div class="mt-2">
-                                    <span id="statusBadge" class="badge"></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Document Upload Section -->
-                    <div class="mb-4">
-                        <h6>Upload Supporting Document</h6>
-                        <p class="text-muted small">
-                            Upload your official transcript, report card, or grade sheet as proof of the grades entered above.
-                        </p>
-                        <div class="upload-area border rounded p-3" style="border-style: dashed !important;">
-                            <input type="file" class="form-control" id="gradeDocument" name="gradeDocument" accept=".pdf,.jpg,.jpeg,.png" 
-                                   onchange="handleGradeDocumentUpload(this)">
-                            <div class="text-center mt-2">
-                                <i class="bi bi-cloud-upload text-muted fs-3"></i>
-                                <div class="text-muted">Choose file or drag and drop</div>
-                                <small class="text-muted">PDF, JPG, PNG up to 10MB</small>
-                            </div>
-                        </div>
-                        
-                        <!-- Document Preview -->
-                        <div id="gradeDocumentPreview" class="mt-3" style="display: none;">
-                            <div class="card">
-                                <div class="card-body">
-                                    <h6 class="card-title">
-                                        <i class="bi bi-file-check me-2"></i>
-                                        Document Uploaded
-                                    </h6>
-                                    <p class="card-text mb-2" id="documentFileName"></p>
-                                    <div class="d-flex gap-2">
-                                        <button type="button" class="btn btn-outline-info btn-sm" onclick="previewDocument()">
-                                            <i class="bi bi-eye me-1"></i>Preview
-                                        </button>
-                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="extractTextForReference()">
-                                            <i class="bi bi-file-text me-1"></i>Extract Text
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Extracted Text Preview -->
-                        <div id="extractedTextPreview" class="mt-3" style="display: none;">
-                            <div class="card border-info">
-                                <div class="card-header bg-info bg-opacity-10">
-                                    <h6 class="mb-0">
-                                        <i class="bi bi-file-earmark-text me-2"></i>
-                                        Extracted Text (For Reference)
-                                    </h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="alert alert-info py-2">
-                                        <small>
-                                            <i class="bi bi-info-circle me-1"></i>
-                                            This text is extracted for your reference. Please ensure your manual entries above match your document.
-                                        </small>
-                                    </div>
-                                    <div id="extractedTextContent" style="max-height: 200px; overflow-y: auto; font-size: 0.9em; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 4px;">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" disabled onclick="nextStep()">Next</button>
-                </div>
-                
-                <!-- Step 6: Letter to Mayor Upload and OCR Verification -->
-                <div class="step-panel d-none" id="step-6">
                     <div class="mb-3">
                         <label class="form-label">Upload Letter to Mayor</label>
                         <small class="form-text text-muted d-block">
@@ -2072,8 +1725,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" disabled onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 7: Certificate of Indigency Upload and OCR Verification -->
-                <div class="step-panel d-none" id="step-7">
+                <!-- Step 6: Certificate of Indigency Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-6">
                     <div class="mb-3">
                         <label class="form-label">Upload Certificate of Indigency</label>
                         <small class="form-text text-muted d-block mb-2">
@@ -2141,8 +1794,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" disabled onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 8: OTP Verification -->
-                <div class="step-panel d-none" id="step-8">
+                <!-- Step 7: OTP Verification -->
+                <div class="step-panel d-none" id="step-7">
                       <div class="mb-3">
                         <label class="form-label">Email</label>
                         <input type="email" class="form-control" name="email" id="emailInput" required />
@@ -2165,10 +1818,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                         <button type="button" class="btn btn-warning w-100 mt-3" id="resendOtpBtn" style="display:none;" disabled>Resend OTP</button>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep8Btn" onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep7Btn" onclick="nextStep()">Next</button>
                 </div>
-                <!-- Step 9: Password and Confirmation -->
-                <div class="step-panel d-none" id="step-9">
+                <!-- Step 8: Password and Confirmation -->
+                <div class="step-panel d-none" id="step-8">
                     <div class="mb-3">
                         <label class="form-label">Password</label>
                         <input type="password" class="form-control" name="password" id="password" minlength="12" required />
@@ -2568,304 +2221,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             nextButton.classList.add('btn-primary');
         }
     }
-    
-    // Grades Management JavaScript Functions
-    function addGradeRow() {
-        const container = document.getElementById('gradesContainer');
-        const gradeRowsContainer = container.querySelector('.grade-rows');
-        const rowCount = gradeRowsContainer.children.length + 1;
-        
-        const newRow = document.createElement('div');
-        newRow.className = 'row mb-2 grade-row';
-        newRow.innerHTML = `
-            <div class="col-md-5">
-                <input type="text" class="form-control" name="subject_${rowCount}" placeholder="Subject Name" required>
-            </div>
-            <div class="col-md-3">
-                <input type="text" class="form-control grade-input" name="grade_${rowCount}" placeholder="Grade" required>
-            </div>
-            <div class="col-md-2">
-                <input type="number" class="form-control units-input" name="units_${rowCount}" placeholder="Units" min="1" max="6" required>
-            </div>
-            <div class="col-md-2">
-                <button type="button" class="btn btn-danger btn-sm" onclick="removeGradeRow(this)">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </div>
-        `;
-        
-        gradeRowsContainer.appendChild(newRow);
-        updateGradeInputs();
-        calculateGradeSummary();
-    }
-    
-    function removeGradeRow(button) {
-        const row = button.closest('.grade-row');
-        row.remove();
-        calculateGradeSummary();
-    }
-    
-    function updateGradeInputs() {
-        const gradingSystem = document.querySelector('input[name="grading_system"]:checked')?.value || 'percentage';
-        const gradeInputs = document.querySelectorAll('.grade-input');
-        
-        gradeInputs.forEach(input => {
-            switch(gradingSystem) {
-                case 'gpa':
-                    input.placeholder = 'e.g., 1.50';
-                    input.type = 'number';
-                    input.step = '0.01';
-                    input.min = '1.0';
-                    input.max = '5.0';
-                    break;
-                case 'dlsu_gpa':
-                    input.placeholder = 'e.g., 3.75';
-                    input.type = 'number';
-                    input.step = '0.01';
-                    input.min = '0.0';
-                    input.max = '4.0';
-                    break;
-                case 'letter':
-                    input.placeholder = 'e.g., A+';
-                    input.type = 'text';
-                    input.removeAttribute('step');
-                    input.removeAttribute('min');
-                    input.removeAttribute('max');
-                    break;
-                default: // percentage
-                    input.placeholder = 'e.g., 95';
-                    input.type = 'number';
-                    input.step = '0.1';
-                    input.min = '0';
-                    input.max = '100';
-                    break;
-            }
-        });
-        
-        calculateGradeSummary();
-    }
-    
-    function calculateGradeSummary() {
-        const gradingSystem = document.querySelector('input[name="grading_system"]:checked')?.value || 'percentage';
-        const gradeInputs = document.querySelectorAll('.grade-input');
-        const unitsInputs = document.querySelectorAll('.units-input');
-        const summaryDiv = document.getElementById('gradeSummary');
-        
-        let totalGradePoints = 0;
-        let totalUnits = 0;
-        let validGrades = 0;
-        
-        gradeInputs.forEach((gradeInput, index) => {
-            const grade = gradeInput.value.trim();
-            const units = parseFloat(unitsInputs[index]?.value) || 0;
-            
-            if (grade && units > 0) {
-                let gradePoint = 0;
-                
-                switch(gradingSystem) {
-                    case 'gpa':
-                        // Traditional 1.0-5.0 scale (1.0 = highest)
-                        gradePoint = parseFloat(grade) || 0;
-                        // Convert to 4.0 scale for standardized calculation
-                        gradePoint = Math.max(0, 5.0 - gradePoint);
-                        break;
-                    case 'dlsu_gpa':
-                        // DLSU 4.0 scale (4.0 = 100%, 0.0 = failed)
-                        gradePoint = parseFloat(grade) || 0;
-                        break;
-                    case 'letter':
-                        // Convert letter grades to 4.0 GPA equivalent
-                        const letterToGPA = {
-                            'A+': 4.0, 'A': 4.0, 'A-': 3.7,
-                            'B+': 3.3, 'B': 3.0, 'B-': 2.7,
-                            'C+': 2.3, 'C': 2.0, 'C-': 1.7,
-                            'D+': 1.3, 'D': 1.0, 'F': 0.0
-                        };
-                        gradePoint = letterToGPA[grade.toUpperCase()] || 0;
-                        break;
-                    default: // percentage
-                        const percentage = parseFloat(grade) || 0;
-                        // Convert percentage to 4.0 GPA scale
-                        if (percentage >= 97) gradePoint = 4.0;
-                        else if (percentage >= 93) gradePoint = 3.7;
-                        else if (percentage >= 90) gradePoint = 3.3;
-                        else if (percentage >= 87) gradePoint = 3.0;
-                        else if (percentage >= 83) gradePoint = 2.7;
-                        else if (percentage >= 80) gradePoint = 2.3;
-                        else if (percentage >= 77) gradePoint = 2.0;
-                        else if (percentage >= 73) gradePoint = 1.7;
-                        else if (percentage >= 70) gradePoint = 1.3;
-                        else if (percentage >= 65) gradePoint = 1.0;
-                        else gradePoint = 0.0;
-                        break;
-                }
-                
-                totalGradePoints += gradePoint * units;
-                totalUnits += units;
-                validGrades++;
-            }
-        });
-        
-        if (validGrades > 0 && totalUnits > 0) {
-            const gpa = totalGradePoints / totalUnits;
-            
-            // Determine status based on grading system
-            let status = '';
-            let statusClass = '';
-            
-            switch(gradingSystem) {
-                case 'gpa':
-                    status = gpa >= 2.0 ? 'Good Standing' : 'Below Requirements';
-                    statusClass = gpa >= 2.0 ? 'bg-success' : 'bg-danger';
-                    break;
-                case 'dlsu_gpa':
-                    status = gpa >= 2.0 ? 'Good Standing' : 'Below Requirements';
-                    statusClass = gpa >= 2.0 ? 'bg-success' : 'bg-danger';
-                    break;
-                case 'letter':
-                    status = gpa >= 2.0 ? 'Good Standing' : 'Below Requirements';
-                    statusClass = gpa >= 2.0 ? 'bg-success' : 'bg-danger';
-                    break;
-                default: // percentage
-                    status = gpa >= 2.0 ? 'Good Standing (75%+)' : 'Below Requirements';
-                    statusClass = gpa >= 2.0 ? 'bg-success' : 'bg-danger';
-                    break;
-            }
-            
-            summaryDiv.innerHTML = `
-                <div class="alert alert-info">
-                    <strong>Grade Summary:</strong><br>
-                    Subjects Entered: ${validGrades}<br>
-                    Total Units: ${totalUnits}<br>
-                    Calculated GPA: ${gpa.toFixed(2)}<br>
-                    <span class="badge ${statusClass} mt-1">${status}</span>
-                </div>
-            `;
-            summaryDiv.style.display = 'block';
-        } else {
-            summaryDiv.style.display = 'none';
-        }
-    }
-    
-    function handleGradeDocumentUpload(event) {
-        const file = event.target.files[0];
-        const previewContainer = document.getElementById('gradeUploadPreview');
-        const previewImage = document.getElementById('gradePreviewImage');
-        const pdfPreview = document.getElementById('gradePdfPreview');
-        const ocrSection = document.getElementById('gradeOcrSection');
-        const processBtn = document.getElementById('processGradeOcrBtn');
-        
-        if (file) {
-            // Show preview section
-            previewContainer.classList.remove('d-none');
-            ocrSection.classList.remove('d-none');
-            
-            // Handle different file types
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    previewImage.src = e.target.result;
-                    previewImage.classList.remove('d-none');
-                    pdfPreview.classList.add('d-none');
-                };
-                reader.readAsDataURL(file);
-            } else if (file.type === 'application/pdf') {
-                previewImage.classList.add('d-none');
-                pdfPreview.classList.remove('d-none');
-                pdfPreview.innerHTML = `<p class="text-muted">PDF: ${file.name}</p>`;
-            }
-            
-            // Enable process button
-            processBtn.disabled = false;
-        } else {
-            previewContainer.classList.add('d-none');
-            ocrSection.classList.add('d-none');
-        }
-    }
-    
-    function processGradeOCR() {
-        const fileInput = document.getElementById('gradeDocument');
-        const file = fileInput.files[0];
-        const ocrResults = document.getElementById('gradeOcrResults');
-        const processBtn = document.getElementById('processGradeOcrBtn');
-        
-        if (!file) {
-            alert('Please select a file first');
-            return;
-        }
-        
-        // Show processing state
-        processBtn.disabled = true;
-        processBtn.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> Processing...';
-        ocrResults.innerHTML = '<div class="text-muted">Processing document...</div>';
-        
-        // Create form data
-        const formData = new FormData();
-        formData.append('gradeDocument', file);
-        
-        // Send to OCR processing endpoint
-        fetch('../../services/process_real_grades_ocr.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Display OCR results
-                ocrResults.innerHTML = `
-                    <div class="alert alert-success">
-                        <h6>OCR Text Extracted:</h6>
-                        <pre class="small">${data.text}</pre>
-                        ${data.grades && data.grades.length > 0 ? `
-                            <h6 class="mt-3">Detected Grades:</h6>
-                            <ul class="small">
-                                ${data.grades.map(grade => `<li>${grade.subject}: ${grade.grade} (${grade.units} units)</li>`).join('')}
-                            </ul>
-                        ` : ''}
-                        <small class="text-muted">Please verify this information matches your uploaded document.</small>
-                    </div>
-                `;
-            } else {
-                ocrResults.innerHTML = `
-                    <div class="alert alert-warning">
-                        <strong>OCR Processing Note:</strong> ${data.message}<br>
-                        <small>Please ensure your document is clear and readable, or enter grades manually.</small>
-                    </div>
-                `;
-            }
-        })
-        .catch(error => {
-            console.error('OCR Error:', error);
-            ocrResults.innerHTML = `
-                <div class="alert alert-danger">
-                    <strong>Error:</strong> Could not process document. Please try again or enter grades manually.
-                </div>
-            `;
-        })
-        .finally(() => {
-            // Reset button state
-            processBtn.disabled = false;
-            processBtn.innerHTML = '<i class="bi bi-magic"></i> Process with OCR';
-        });
-    }
-    
-    // Add event listeners for grade system change
-    document.addEventListener('DOMContentLoaded', function() {
-        const gradingSystemInputs = document.querySelectorAll('input[name="grading_system"]');
-        gradingSystemInputs.forEach(input => {
-            input.addEventListener('change', updateGradeInputs);
-        });
-        
-        // Add event listeners for grade inputs to calculate summary on change
-        document.addEventListener('input', function(e) {
-            if (e.target.classList.contains('grade-input') || e.target.classList.contains('units-input')) {
-                calculateGradeSummary();
-            }
-        });
-        
-        // Initialize with default values
-        updateGradeInputs();
-    });
 </script>
 
 <!-- ADD this modal HTML before closing </body> tag -->

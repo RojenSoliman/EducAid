@@ -1771,13 +1771,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // Debug functions for testing (can be called from browser console)
 window.debugRegistration = {
     forceEnableNextStep: function() {
-        const btn = document.getElementById('nextStep5Btn');
+        const btn = document.getElementById('nextStep7Btn');
         if (btn) {
             btn.disabled = false;
             btn.classList.add('btn-success');
             btn.textContent = 'Continue to Next Step';
             otpVerified = true;
-            console.log('Forced nextStep5Btn enabled');
+            console.log('Forced nextStep7Btn enabled');
         }
     },
     testNextStep: function() {
@@ -1787,7 +1787,7 @@ window.debugRegistration = {
         nextStep();
     },
     checkButton: function() {
-        const btn = document.getElementById('nextStep5Btn');
+        const btn = document.getElementById('nextStep7Btn');
         console.log('Button element:', btn);
         console.log('Button disabled:', btn ? btn.disabled : 'N/A');
         console.log('Button onclick:', btn ? btn.onclick : 'N/A');
