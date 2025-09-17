@@ -185,12 +185,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         exit;
     }
 
-    $uploadDir = '../../assets/uploads/temp/';
+    $uploadDir = '../../assets/uploads/temp/enrollment_forms/';
     if (!file_exists($uploadDir)) {
         mkdir($uploadDir, 0777, true);
     }
 
-    // Clear temp folder
+    // Clear temp folder - delete previous EAF files for this session
     $files = glob($uploadDir . '*');
     foreach ($files as $file) {
         if (is_file($file)) unlink($file);
@@ -581,19 +581,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
         exit;
     }
 
-    $uploadDir = '../../assets/uploads/temp/';
+    $uploadDir = '../../assets/uploads/temp/letter_mayor/';
     if (!file_exists($uploadDir)) {
         mkdir($uploadDir, 0777, true);
     }
 
-    // Clear temp folder for letter files
-    $letterFiles = glob($uploadDir . 'letter_*');
+    // Clear temp folder for letter files - auto-delete previous uploads
+    $letterFiles = glob($uploadDir . '*');
     foreach ($letterFiles as $file) {
         if (is_file($file)) unlink($file);
     }
 
     $uploadedFile = $_FILES['letter_to_mayor'];
-    $fileName = 'letter_' . basename($uploadedFile['name']);
+    $fileName = basename($uploadedFile['name']);
     $targetPath = $uploadDir . $fileName;
 
     if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
@@ -889,19 +889,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
         exit;
     }
 
-    $uploadDir = '../../assets/uploads/temp/';
+    $uploadDir = '../../assets/uploads/temp/indigency/';
     if (!file_exists($uploadDir)) {
         mkdir($uploadDir, 0777, true);
     }
 
-    // Clear temp folder for certificate files
-    $certificateFiles = glob($uploadDir . 'certificate_*');
+    // Clear temp folder for certificate files - auto-delete previous uploads
+    $certificateFiles = glob($uploadDir . '*');
     foreach ($certificateFiles as $file) {
         if (is_file($file)) unlink($file);
     }
 
     $uploadedFile = $_FILES['certificate_of_indigency'];
-    $fileName = 'certificate_' . basename($uploadedFile['name']);
+    $fileName = basename($uploadedFile['name']);
     $targetPath = $uploadDir . $fileName;
 
     if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
@@ -1382,7 +1382,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $allFiles = glob($tempEnrollmentDir . '*');
         $tempFiles = array_filter($allFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && strpos(basename($file), 'eaf') !== false;
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
         });
         
         if (!empty($tempFiles)) {
@@ -1392,51 +1392,43 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 mkdir($tempEnrollmentDir, 0777, true);
             }
 
-            // Move the file to temporary enrollment location with student ID and name
-            $tempFile = $tempFiles[0]; // Get the first file
-            $originalFilename = basename($tempFile);
-            $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
-            
-            // Check if file is already properly named with student ID
-            if (strpos($originalFilename, $student_id . '_') === 0) {
-                // File is already properly named, just use it directly
-                $tempEnrollmentPath = $tempFile;
-                error_log("EAF file already properly named: $tempEnrollmentPath");
-            } else {
-                // File needs to be renamed
-                $newFilename = $namePrefix . '_eaf.' . $extension;
-                $tempEnrollmentPath = $tempEnrollmentDir . $student_id . '_' . $newFilename;
+            // Process all EAF files and rename them with student ID
+            foreach ($tempFiles as $tempFile) {
+                $originalFilename = basename($tempFile);
+                $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+                
+                // Always rename with student ID prefix for consistent naming
+                $newFilename = $student_id . '_' . $namePrefix . '_eaf.' . $extension;
+                $tempEnrollmentPath = $tempEnrollmentDir . $newFilename;
                 
                 if (!copy($tempFile, $tempEnrollmentPath)) {
                     error_log("Failed to copy EAF file from $tempFile to $tempEnrollmentPath");
-                    $tempEnrollmentPath = null; // Mark as failed
+                    continue; // Skip this file and try others
                 } else {
-                    unlink($tempFile);
-                }
-            }
-            
-            // Only proceed if we have a valid file path
-            if ($tempEnrollmentPath) {
-                // Get OCR confidence score from temp file
-                $enrollmentConfidenceFile = $tempEnrollmentDir . 'enrollment_confidence.json';
-                $enrollmentConfidence = 75.0; // default
-                if (file_exists($enrollmentConfidenceFile)) {
-                    $confidenceData = json_decode(file_get_contents($enrollmentConfidenceFile), true);
-                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
-                        $enrollmentConfidence = $confidenceData['overall_confidence'];
+                    unlink($tempFile); // Remove original file
+                    
+                    // Get OCR confidence score from temp file
+                    $enrollmentConfidenceFile = $tempEnrollmentDir . 'enrollment_confidence.json';
+                    $enrollmentConfidence = 75.0; // default
+                    if (file_exists($enrollmentConfidenceFile)) {
+                        $confidenceData = json_decode(file_get_contents($enrollmentConfidenceFile), true);
+                        if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                            $enrollmentConfidence = $confidenceData['overall_confidence'];
+                        }
+                        unlink($enrollmentConfidenceFile); // Clean up confidence file
                     }
-                    unlink($enrollmentConfidenceFile); // Clean up confidence file
+
+                    // Save form record to database with temporary path
+                    $formQuery = "INSERT INTO enrollment_forms (student_id, file_path, original_filename) VALUES ($1, $2, $3)";
+                    pg_query_params($connection, $formQuery, [$student_id, $tempEnrollmentPath, $originalFilename]);
+
+                    // Also save to documents table with OCR confidence for confidence calculation
+                    $docQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    pg_query_params($connection, $docQuery, [$student_id, 'eaf', $tempEnrollmentPath, false, $enrollmentConfidence]);
+                    
+                    error_log("Successfully saved EAF to database for student $student_id with confidence $enrollmentConfidence%");
+                    break; // Only process the first valid file
                 }
-
-                // Save form record to database with temporary path
-                $formQuery = "INSERT INTO enrollment_forms (student_id, file_path, original_filename) VALUES ($1, $2, $3)";
-                pg_query_params($connection, $formQuery, [$student_id, $tempEnrollmentPath, $originalFilename]);
-
-                // Also save to documents table with OCR confidence for confidence calculation
-                $docQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                pg_query_params($connection, $docQuery, [$student_id, 'eaf', $tempEnrollmentPath, false, $enrollmentConfidence]);
-                
-                error_log("Successfully saved EAF to database for student $student_id with confidence $enrollmentConfidence%");
             }
         }
 
@@ -1445,9 +1437,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $allLetterFiles = glob($tempLetterDir . '*');
         $letterTempFiles = array_filter($allLetterFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && strpos(basename($file), 'lettertomayor') !== false;
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
         });
-        error_log("Looking for letter files in: " . $tempLetterDir . 'letter_*');
+        error_log("Looking for letter files in: " . $tempLetterDir);
         error_log("Found letter files: " . print_r($letterTempFiles, true));
         if (!empty($letterTempFiles)) {
             // Directory already exists (created during upload)
@@ -1455,42 +1447,46 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 mkdir($tempLetterDir, 0777, true);
             }
 
-            // Move the letter file to temporary location with student ID and name
-            $letterTempFile = $letterTempFiles[0]; // Get the first (and should be only) letter file
-            $originalLetterFilename = basename($letterTempFile);
-            $letterExtension = pathinfo($originalLetterFilename, PATHINFO_EXTENSION);
-            $newLetterFilename = $namePrefix . '_lettertomayor.' . $letterExtension;
-            $letterTempPath = $tempLetterDir . $student_id . '_' . $newLetterFilename;
-
-            // Get OCR confidence score from temp file
-            $letterConfidenceFile = $tempLetterDir . 'letter_confidence.json';
-            $letterConfidence = 75.0; // default
-            if (file_exists($letterConfidenceFile)) {
-                $confidenceData = json_decode(file_get_contents($letterConfidenceFile), true);
-                if ($confidenceData && isset($confidenceData['overall_confidence'])) {
-                    $letterConfidence = $confidenceData['overall_confidence'];
-                }
-                unlink($letterConfidenceFile); // Clean up confidence file
-            }
-
-            if (copy($letterTempFile, $letterTempPath)) {
-                // Save letter record to database with temporary path and OCR confidence
-                $letterQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                $letterResult = pg_query_params($connection, $letterQuery, [$student_id, 'letter_to_mayor', $letterTempPath, false, $letterConfidence]);
+            // Process all letter files and rename them with student ID
+            foreach ($letterTempFiles as $letterTempFile) {
+                $originalLetterFilename = basename($letterTempFile);
+                $letterExtension = pathinfo($originalLetterFilename, PATHINFO_EXTENSION);
                 
-                if (!$letterResult) {
-                    error_log("Failed to save letter to database: " . pg_last_error($connection));
-                } else {
-                    error_log("Successfully saved letter to database for student $student_id with confidence $letterConfidence%");
+                // Always rename with student ID prefix for consistent naming
+                $newLetterFilename = $student_id . '_' . $namePrefix . '_lettertomayor.' . $letterExtension;
+                $letterTempPath = $tempLetterDir . $newLetterFilename;
+
+                // Get OCR confidence score from temp file
+                $letterConfidenceFile = $tempLetterDir . 'letter_confidence.json';
+                $letterConfidence = 75.0; // default
+                if (file_exists($letterConfidenceFile)) {
+                    $confidenceData = json_decode(file_get_contents($letterConfidenceFile), true);
+                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                        $letterConfidence = $confidenceData['overall_confidence'];
+                    }
+                    unlink($letterConfidenceFile); // Clean up confidence file
                 }
 
-                // Clean up original temp letter file
-                unlink($letterTempFile);
-            } else {
-                error_log("Failed to copy letter file from $letterTempFile to $letterTempPath");
+                if (copy($letterTempFile, $letterTempPath)) {
+                    // Save letter record to database with temporary path and OCR confidence
+                    $letterQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $letterResult = pg_query_params($connection, $letterQuery, [$student_id, 'letter_to_mayor', $letterTempPath, false, $letterConfidence]);
+                    
+                    if (!$letterResult) {
+                        error_log("Failed to save letter to database: " . pg_last_error($connection));
+                    } else {
+                        error_log("Successfully saved letter to database for student $student_id with confidence $letterConfidence%");
+                    }
+
+                    // Clean up original temp letter file
+                    unlink($letterTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy letter file from $letterTempFile to $letterTempPath");
+                }
             }
         } else {
-            error_log("No letter temp files found in path: " . $tempLetterDir . 'letter_*');
+            error_log("No letter temp files found in path: " . $tempLetterDir);
         }
 
         // Save certificate of indigency to temporary folder (not permanent until approved)
@@ -1498,9 +1494,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $allCertificateFiles = glob($tempIndigencyDir . '*');
         $certificateTempFiles = array_filter($allCertificateFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && strpos(basename($file), 'indigency') !== false;
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
         });
-        error_log("Looking for certificate files in: " . $tempIndigencyDir . 'certificate_*');
+        error_log("Looking for certificate files in: " . $tempIndigencyDir);
         error_log("Found certificate files: " . print_r($certificateTempFiles, true));
         if (!empty($certificateTempFiles)) {
             // Create temporary indigency directory for pending students
@@ -1509,42 +1505,46 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 mkdir($tempIndigencyDir, 0777, true);
             }
 
-            // Move the certificate file to temporary location with student ID and name
-            $certificateTempFile = $certificateTempFiles[0]; // Get the first (and should be only) certificate file
-            $originalCertificateFilename = basename($certificateTempFile);
-            $certificateExtension = pathinfo($originalCertificateFilename, PATHINFO_EXTENSION);
-            $newCertificateFilename = $namePrefix . '_indigency.' . $certificateExtension;
-            $certificateTempPath = $tempIndigencyDir . $student_id . '_' . $newCertificateFilename;
-
-            // Get OCR confidence score from temp file
-            $certificateConfidenceFile = $tempIndigencyDir . 'certificate_confidence.json';
-            $certificateConfidence = 75.0; // default
-            if (file_exists($certificateConfidenceFile)) {
-                $confidenceData = json_decode(file_get_contents($certificateConfidenceFile), true);
-                if ($confidenceData && isset($confidenceData['overall_confidence'])) {
-                    $certificateConfidence = $confidenceData['overall_confidence'];
-                }
-                unlink($certificateConfidenceFile); // Clean up confidence file
-            }
-
-            if (copy($certificateTempFile, $certificateTempPath)) {
-                // Save certificate record to database with temporary path and OCR confidence
-                $certificateQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                $certificateResult = pg_query_params($connection, $certificateQuery, [$student_id, 'certificate_of_indigency', $certificateTempPath, false, $certificateConfidence]);
+            // Process all certificate files and rename them with student ID
+            foreach ($certificateTempFiles as $certificateTempFile) {
+                $originalCertificateFilename = basename($certificateTempFile);
+                $certificateExtension = pathinfo($originalCertificateFilename, PATHINFO_EXTENSION);
                 
-                if (!$certificateResult) {
-                    error_log("Failed to save certificate to database: " . pg_last_error($connection));
-                } else {
-                    error_log("Successfully saved certificate to database for student $student_id with confidence $certificateConfidence%");
+                // Always rename with student ID prefix for consistent naming
+                $newCertificateFilename = $student_id . '_' . $namePrefix . '_indigency.' . $certificateExtension;
+                $certificateTempPath = $tempIndigencyDir . $newCertificateFilename;
+
+                // Get OCR confidence score from temp file
+                $certificateConfidenceFile = $tempIndigencyDir . 'certificate_confidence.json';
+                $certificateConfidence = 75.0; // default
+                if (file_exists($certificateConfidenceFile)) {
+                    $confidenceData = json_decode(file_get_contents($certificateConfidenceFile), true);
+                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                        $certificateConfidence = $confidenceData['overall_confidence'];
+                    }
+                    unlink($certificateConfidenceFile); // Clean up confidence file
                 }
 
-                // Clean up original temp certificate file
-                unlink($certificateTempFile);
-            } else {
-                error_log("Failed to copy certificate file from $certificateTempFile to $certificateTempPath");
+                if (copy($certificateTempFile, $certificateTempPath)) {
+                    // Save certificate record to database with temporary path and OCR confidence
+                    $certificateQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $certificateResult = pg_query_params($connection, $certificateQuery, [$student_id, 'certificate_of_indigency', $certificateTempPath, false, $certificateConfidence]);
+                    
+                    if (!$certificateResult) {
+                        error_log("Failed to save certificate to database: " . pg_last_error($connection));
+                    } else {
+                        error_log("Successfully saved certificate to database for student $student_id with confidence $certificateConfidence%");
+                    }
+
+                    // Clean up original temp certificate file
+                    unlink($certificateTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy certificate file from $certificateTempFile to $certificateTempPath");
+                }
             }
         } else {
-            error_log("No certificate temp files found in path: " . $tempIndigencyDir . 'certificate_*');
+            error_log("No certificate temp files found in path: " . $tempIndigencyDir);
         }
 
         $semester = $slotInfo['semester'];

@@ -91,11 +91,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             // Move file from temporary to permanent location
                             if (file_exists($tempDocPath) && copy($tempDocPath, $permanentDocPath)) {
                                 // Update database with permanent path
-                                $updateDocPathQuery = "UPDATE documents SET file_path = $1 WHERE document_id = $2";
+                                $updateDocPathQuery = "UPDATE documents SET file_path = $1, is_valid = true WHERE document_id = $2";
                                 pg_query_params($connection, $updateDocPathQuery, [$permanentDocPath, $docId]);
                                 
                                 // Delete temporary file
                                 unlink($tempDocPath);
+                            }
+                        }
+                        
+                        // Clean up any remaining temp files in organized directories (safety net)
+                        $tempDirs = [
+                            __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
+                            __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
+                            __DIR__ . '/../../assets/uploads/temp/indigency/'
+                        ];
+                        
+                        foreach ($tempDirs as $dir) {
+                            if (is_dir($dir)) {
+                                $remainingFiles = glob($dir . $student_id . '_*');
+                                foreach ($remainingFiles as $file) {
+                                    if (is_file($file)) {
+                                        unlink($file); // Clean up any leftover files
+                                    }
+                                }
                             }
                         }
                         
@@ -120,15 +138,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $student = pg_fetch_assoc($studentResult);
                     
                     if ($student) {
-                        // Get and delete temporary enrollment form file before deleting database records
+                        // Get and delete ALL temporary files before deleting database records
+                        
+                        // 1. Delete enrollment form file
                         $enrollmentQuery = "SELECT file_path FROM enrollment_forms WHERE student_id = $1";
                         $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student_id]);
                         
                         if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
                             $tempFilePath = $enrollmentRow['file_path'];
-                            // Delete the temporary file if it exists
                             if (file_exists($tempFilePath)) {
                                 unlink($tempFilePath);
+                            }
+                        }
+                        
+                        // 2. Delete document files (letter to mayor and certificate of indigency)
+                        $documentsQuery = "SELECT file_path FROM documents WHERE student_id = $1";
+                        $documentsResult = pg_query_params($connection, $documentsQuery, [$student_id]);
+                        
+                        while ($docRow = pg_fetch_assoc($documentsResult)) {
+                            $docFilePath = $docRow['file_path'];
+                            if (file_exists($docFilePath)) {
+                                unlink($docFilePath);
+                            }
+                        }
+                        
+                        // 3. Clean up any remaining files in organized temp directories
+                        $tempDirs = [
+                            __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
+                            __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
+                            __DIR__ . '/../../assets/uploads/temp/indigency/'
+                        ];
+                        
+                        foreach ($tempDirs as $dir) {
+                            if (is_dir($dir)) {
+                                $files = glob($dir . $student_id . '_*');
+                                foreach ($files as $file) {
+                                    if (is_file($file)) {
+                                        unlink($file);
+                                    }
+                                }
                             }
                         }
                         
@@ -205,6 +253,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 
+                // Move documents from temporary to permanent locations
+                $documentsQuery = "SELECT document_id, type, file_path FROM documents WHERE student_id = $1";
+                $documentsResult = pg_query_params($connection, $documentsQuery, [$student_id]);
+                
+                while ($docRow = pg_fetch_assoc($documentsResult)) {
+                    $tempDocPath = $docRow['file_path'];
+                    $docType = $docRow['type'];
+                    $docId = $docRow['document_id'];
+                    
+                    // Determine permanent directory based on document type
+                    if ($docType === 'letter_to_mayor') {
+                        $permanentDocDir = __DIR__ . '/../../assets/uploads/student/letter_to_mayor/';
+                    } elseif ($docType === 'certificate_of_indigency') {
+                        $permanentDocDir = __DIR__ . '/../../assets/uploads/student/indigency/';
+                    } elseif ($docType === 'eaf') {
+                        $permanentDocDir = __DIR__ . '/../../assets/uploads/student/enrollment_forms/';
+                    } else {
+                        continue; // Skip unknown document types
+                    }
+                    
+                    // Create permanent directory if it doesn't exist
+                    if (!file_exists($permanentDocDir)) {
+                        mkdir($permanentDocDir, 0777, true);
+                    }
+                    
+                    // Define permanent path
+                    $filename = basename($tempDocPath);
+                    $permanentDocPath = $permanentDocDir . $filename;
+                    
+                    // Move file from temporary to permanent location
+                    if (file_exists($tempDocPath) && copy($tempDocPath, $permanentDocPath)) {
+                        // Update database with permanent path and mark as valid
+                        $updateDocPathQuery = "UPDATE documents SET file_path = $1, is_valid = true WHERE document_id = $2";
+                        pg_query_params($connection, $updateDocPathQuery, [$permanentDocPath, $docId]);
+                        
+                        // Delete temporary file
+                        unlink($tempDocPath);
+                    }
+                }
+                
+                // Clean up any remaining temp files in organized directories (safety net)
+                $tempDirs = [
+                    __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
+                    __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
+                    __DIR__ . '/../../assets/uploads/temp/indigency/'
+                ];
+                
+                foreach ($tempDirs as $dir) {
+                    if (is_dir($dir)) {
+                        $remainingFiles = glob($dir . $student_id . '_*');
+                        foreach ($remainingFiles as $file) {
+                            if (is_file($file)) {
+                                unlink($file); // Clean up any leftover files
+                            }
+                        }
+                    }
+                }
+                
                 // Get student email for notification
                 $emailQuery = "SELECT email, first_name, last_name, extension_name FROM students WHERE student_id = $1";
                 $emailResult = pg_query_params($connection, $emailQuery, [$student_id]);
@@ -227,15 +333,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $student = pg_fetch_assoc($studentResult);
             
             if ($student) {
-                // Get and delete temporary enrollment form file before deleting database records
+                // Get and delete ALL temporary files before deleting database records
+                
+                // 1. Delete enrollment form file
                 $enrollmentQuery = "SELECT file_path FROM enrollment_forms WHERE student_id = $1";
                 $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student_id]);
                 
                 if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
                     $tempFilePath = $enrollmentRow['file_path'];
-                    // Delete the temporary file if it exists
                     if (file_exists($tempFilePath)) {
                         unlink($tempFilePath);
+                    }
+                }
+                
+                // 2. Delete document files (letter to mayor and certificate of indigency)
+                $documentsQuery = "SELECT file_path FROM documents WHERE student_id = $1";
+                $documentsResult = pg_query_params($connection, $documentsQuery, [$student_id]);
+                
+                while ($docRow = pg_fetch_assoc($documentsResult)) {
+                    $docFilePath = $docRow['file_path'];
+                    if (file_exists($docFilePath)) {
+                        unlink($docFilePath);
+                    }
+                }
+                
+                // 3. Clean up any remaining files in organized temp directories
+                $tempDirs = [
+                    __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
+                    __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
+                    __DIR__ . '/../../assets/uploads/temp/indigency/'
+                ];
+                
+                foreach ($tempDirs as $dir) {
+                    if (is_dir($dir)) {
+                        $files = glob($dir . $student_id . '_*');
+                        foreach ($files as $file) {
+                            if (is_file($file)) {
+                                unlink($file);
+                            }
+                        }
                     }
                 }
                 
@@ -553,6 +689,11 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             border-radius: 8px;
             background: #f8f9fa;
             cursor: grab;
+            /* Prevent page from scrolling when interacting with the viewer */
+            touch-action: none;
+            overscroll-behavior: contain;
+            -webkit-user-select: none;
+            user-select: none;
         }
         .document-viewer-container.dragging {
             cursor: grabbing;
@@ -563,6 +704,9 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             transition: transform 0.2s ease;
             user-select: none;
             -webkit-user-drag: none;
+            /* Make math predictable for translate + scale */
+            transform-origin: 0 0;
+            will-change: transform;
         }
         .zoom-controls {
             position: absolute;
@@ -611,6 +755,104 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             border-radius: 4px;
             padding: 8px;
             cursor: pointer;
+        }
+        
+        /* PDF Viewer Styles */
+        .pdf-viewer-wrapper {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #f8f9fa;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .pdf-viewer {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transform-origin: center center;
+            transition: transform 0.2s ease;
+        }
+        
+        .pdf-fallback {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        /* Show fallback if embed fails */
+        .pdf-viewer:invalid + .pdf-fallback {
+            display: block;
+        }
+        
+        /* Improved centering for PDF container */
+        #pdfContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            touch-action: pan-x pan-y;
+            overflow: hidden;
+            user-select: none;
+        }
+        
+        /* Prevent scrolling when interacting with PDF */
+        #pdfContainer:hover {
+            overflow: hidden;
+        }
+        
+        /* Better zoom controls positioning for PDF */
+        #pdfContainer .zoom-controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 1000;
+        }
+        
+        #pdfContainer .fullscreen-btn {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            z-index: 1000;
+        }
+        
+        #pdfContainer .zoom-info {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            z-index: 1000;
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            #pdfContainer .zoom-controls {
+                top: 10px;
+                right: 10px;
+                flex-direction: column;
+                gap: 3px;
+            }
+            
+            #pdfContainer .zoom-btn {
+                width: 40px;
+                height: 40px;
+                font-size: 16px;
+            }
+            
+            #pdfContainer .fullscreen-btn {
+                top: 10px;
+                left: 10px;
+                width: 40px;
+                height: 40px;
+            }
+            
+            .pdf-viewer-wrapper {
+                touch-action: manipulation;
+            }
         }
     </style>
 </head>
@@ -846,21 +1088,13 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                         </td>
                                         <td>
                                             <div class="document-buttons">
-                                                <!-- Enrollment Form -->
-                                                <?php if ($registration['enrollment_form_path']): ?>
+
+                                                <!-- EAF Document (from documents table) -->
+                                                <?php if ($registration['has_eaf'] > 0): ?>
                                                     <button type="button" class="btn btn-outline-primary btn-sm" 
-                                                            onclick="viewDocument('<?php echo htmlspecialchars($registration['enrollment_form_path']); ?>', '<?php echo htmlspecialchars($registration['original_filename']); ?>')"
-                                                            title="View Enrollment Form">
-                                                        <i class="bi bi-file-earmark-text"></i>
-                                                    </button>
-                                                <?php endif; ?>
-                                                
-                                                <!-- Certificate of Indigency -->
-                                                <?php if ($registration['has_certificate'] > 0): ?>
-                                                    <button type="button" class="btn btn-outline-success btn-sm" 
-                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'certificate_of_indigency')"
-                                                            title="View Certificate of Indigency">
-                                                        <i class="bi bi-file-earmark-check"></i>
+                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'eaf')"
+                                                            title="View EAF Document">
+                                                        <i class="bi bi-file-text"></i>
                                                     </button>
                                                 <?php endif; ?>
                                                 
@@ -872,17 +1106,17 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                                         <i class="bi bi-file-earmark-person"></i>
                                                     </button>
                                                 <?php endif; ?>
-                                                
-                                                <!-- EAF Document (from documents table) -->
-                                                <?php if ($registration['has_eaf'] > 0): ?>
-                                                    <button type="button" class="btn btn-outline-primary btn-sm" 
-                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'eaf')"
-                                                            title="View EAF Document">
-                                                        <i class="bi bi-file-text"></i>
+                                                                 
+                                                <!-- Certificate of Indigency -->
+                                                <?php if ($registration['has_certificate'] > 0): ?>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" 
+                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'certificate_of_indigency')"
+                                                            title="View Certificate of Indigency">
+                                                        <i class="bi bi-file-earmark-check"></i>
                                                     </button>
                                                 <?php endif; ?>
-                                                
-                                                <?php if (!$registration['enrollment_form_path'] && $registration['has_certificate'] == 0 && $registration['has_letter'] == 0 && $registration['has_eaf'] == 0): ?>
+
+                                                <?php if ($registration['has_certificate'] == 0 && $registration['has_letter'] == 0 && $registration['has_eaf'] == 0): ?>
                                                     <small class="text-muted">No documents</small>
                                                 <?php endif; ?>
                                             </div>
@@ -1049,11 +1283,18 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
         let currentDocumentPath = '';
         
         // Document viewer variables
-        let zoomLevel = 1;
+    let zoomLevel = 1;
+    let baseFitZoom = 1; // stores zoom from fitToScreen()
         let isDragging = false;
         let startX, startY;
         let translateX = 0;
         let translateY = 0;
+    // Double-tap support
+    let lastTapTime = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
+    const DOUBLE_TAP_DELAY = 300; // ms
+    const DOUBLE_TAP_TOLERANCE = 30; // px
 
         function toggleSelectAll() {
             const selectAll = document.getElementById('selectAll');
@@ -1181,15 +1422,43 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                 document.getElementById('downloadBtn').style.display = 'inline-block';
             } else if (extension === 'pdf') {
                 container.innerHTML = `
-                    <div class="text-center p-5">
-                        <div class="alert alert-info">
-                            <i class="bi bi-file-earmark-pdf fs-1"></i>
-                            <h5 class="mt-3">PDF Document</h5>
-                            <p>Click the button below to open the PDF in a new tab for better viewing experience.</p>
+                    <div class="document-viewer-container" id="pdfContainer">
+                        <div class="zoom-controls">
+                            <button class="zoom-btn" onclick="zoomPdfIn()" title="Zoom In">
+                                <i class="bi bi-zoom-in"></i>
+                            </button>
+                            <button class="zoom-btn" onclick="zoomPdfOut()" title="Zoom Out">
+                                <i class="bi bi-zoom-out"></i>
+                            </button>
+                            <button class="zoom-btn" onclick="resetPdfZoom()" title="Reset Zoom">
+                                <i class="bi bi-arrows-fullscreen"></i>
+                            </button>
+                            <button class="zoom-btn" onclick="fitPdfToScreen()" title="Fit to Screen">
+                                <i class="bi bi-aspect-ratio"></i>
+                            </button>
                         </div>
-                        <a href="${filePath}" target="_blank" class="btn btn-primary btn-lg">
-                            <i class="bi bi-box-arrow-up-right"></i> Open PDF in New Tab
-                        </a>
+                        <button class="fullscreen-btn" onclick="togglePdfFullscreen()" title="Fullscreen">
+                            <i class="bi bi-fullscreen"></i>
+                        </button>
+                        <div class="zoom-info" id="pdfZoomInfo">100%</div>
+                        <div class="pdf-viewer-wrapper">
+                            <iframe src="${filePath}#zoom=100&pagemode=none&toolbar=0" 
+                                   id="pdfViewer"
+                                   class="pdf-viewer"
+                                   frameborder="0"
+                                   onload="initializePdfViewer()">
+                            </iframe>
+                            <div class="pdf-fallback">
+                                <div class="alert alert-info">
+                                    <i class="bi bi-file-earmark-pdf fs-1"></i>
+                                    <h5 class="mt-3">PDF Document</h5>
+                                    <p>Having trouble viewing the PDF? Click below to open in a new tab.</p>
+                                    <a href="${filePath}" target="_blank" class="btn btn-primary btn-lg">
+                                        <i class="bi bi-box-arrow-up-right"></i> Open PDF in New Tab
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 `;
                 document.getElementById('downloadBtn').style.display = 'inline-block';
@@ -1218,6 +1487,10 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             
             // Set initial position to center
             fitToScreen();
+            // Run a second pass after layout to ensure natural sizes and centering
+            setTimeout(() => fitToScreen(), 50);
+            // Re-fit on window resize
+            window.addEventListener('resize', fitToScreen);
             
             // Add event listeners for pan functionality
             container.addEventListener('mousedown', startDrag);
@@ -1226,7 +1499,82 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             container.addEventListener('mouseleave', endDrag);
             
             // Add wheel event for zoom
-            container.addEventListener('wheel', handleWheel);
+            container.addEventListener('wheel', handleWheel, { passive: false });
+
+            // Touch support (pinch to zoom and drag)
+            let pinchStartDistance = 0;
+            let pinchStartZoom = 1;
+            let touchStartX = 0;
+            let touchStartY = 0;
+
+            container.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    pinchStartDistance = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    pinchStartZoom = zoomLevel;
+                } else if (e.touches.length === 1) {
+                    e.preventDefault();
+                    // Double-tap detection
+                    const now = Date.now();
+                    const rect = container.getBoundingClientRect();
+                    const tx = e.touches[0].clientX - rect.left;
+                    const ty = e.touches[0].clientY - rect.top;
+                    if (now - lastTapTime < DOUBLE_TAP_DELAY && Math.hypot(tx - lastTapX, ty - lastTapY) < DOUBLE_TAP_TOLERANCE) {
+                        // Toggle between fit and 2x around tap point
+                        const targetZoom = (zoomLevel <= baseFitZoom * 1.02) ? Math.min(baseFitZoom * 2, 5) : baseFitZoom;
+                        const factor = targetZoom / zoomLevel;
+                        translateX = tx - (tx - translateX) * factor;
+                        translateY = ty - (ty - translateY) * factor;
+                        zoomLevel = targetZoom;
+                        updateImageTransform();
+                        lastTapTime = 0; // reset
+                        return; // don't start drag on double-tap
+                    }
+                    lastTapTime = now;
+                    lastTapX = tx;
+                    lastTapY = ty;
+
+                    isDragging = true;
+                    touchStartX = e.touches[0].clientX - translateX;
+                    touchStartY = e.touches[0].clientY - translateY;
+                    container.classList.add('dragging');
+                }
+            }, { passive: false });
+
+            container.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    const dist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    const factor = dist / pinchStartDistance;
+                    const newZoom = Math.max(0.1, Math.min(5, pinchStartZoom * factor));
+
+                    // Zoom around the midpoint of the two touches
+                    const rect = container.getBoundingClientRect();
+                    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+                    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+                    const zoomFactor = newZoom / zoomLevel;
+                    translateX = midX - (midX - translateX) * zoomFactor;
+                    translateY = midY - (midY - translateY) * zoomFactor;
+                    zoomLevel = newZoom;
+                    updateImageTransform();
+                } else if (e.touches.length === 1 && isDragging) {
+                    e.preventDefault();
+                    translateX = e.touches[0].clientX - touchStartX;
+                    translateY = e.touches[0].clientY - touchStartY;
+                    updateImageTransform();
+                }
+            }, { passive: false });
+
+            container.addEventListener('touchend', () => {
+                isDragging = false;
+                container.classList.remove('dragging');
+            });
             
             // Prevent context menu
             image.addEventListener('contextmenu', e => e.preventDefault());
@@ -1250,18 +1598,36 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
         function updateImageTransform() {
             const image = document.getElementById('documentImage');
             if (image) {
+                // Clamp translation so the image doesn't drift far off-screen
+                clampTranslation();
                 image.style.transform = `translate(${translateX}px, ${translateY}px) scale(${zoomLevel})`;
                 document.getElementById('zoomInfo').textContent = Math.round(zoomLevel * 100) + '%';
             }
         }
 
         function zoomIn() {
-            zoomLevel = Math.min(zoomLevel * 1.25, 5);
+            const container = document.getElementById('imageContainer');
+            const rect = container.getBoundingClientRect();
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            const newZoom = Math.min(zoomLevel * 1.25, 5);
+            const factor = newZoom / zoomLevel;
+            translateX = centerX - (centerX - translateX) * factor;
+            translateY = centerY - (centerY - translateY) * factor;
+            zoomLevel = newZoom;
             updateImageTransform();
         }
 
         function zoomOut() {
-            zoomLevel = Math.max(zoomLevel * 0.8, 0.1);
+            const container = document.getElementById('imageContainer');
+            const rect = container.getBoundingClientRect();
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            const newZoom = Math.max(zoomLevel * 0.8, 0.1);
+            const factor = newZoom / zoomLevel;
+            translateX = centerX - (centerX - translateX) * factor;
+            translateY = centerY - (centerY - translateY) * factor;
+            zoomLevel = newZoom;
             updateImageTransform();
         }
 
@@ -1278,15 +1644,43 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             
             if (image && container) {
                 const containerRect = container.getBoundingClientRect();
-                const imageRect = image.getBoundingClientRect();
                 
                 const scaleX = (containerRect.width - 40) / image.naturalWidth;
                 const scaleY = (containerRect.height - 40) / image.naturalHeight;
-                
-                zoomLevel = Math.min(scaleX, scaleY, 1);
-                translateX = 0;
-                translateY = 0;
+
+                // Always remember true fit-to-screen zoom for touch double-tap
+                baseFitZoom = Math.min(scaleX, scaleY);
+
+                // Desktop: aim for ~100% if it fits; otherwise fill one dimension (max)
+                // Mobile: keep full fit inside container (min)
+                const fitsAt100 = image.naturalWidth <= (containerRect.width - 40) && image.naturalHeight <= (containerRect.height - 40);
+                if (isDesktopViewer()) {
+                    if (fitsAt100) {
+                        zoomLevel = 1;
+                    } else {
+                        // Fit width by default on desktop for readability
+                        zoomLevel = scaleX;
+                    }
+                } else {
+                    zoomLevel = baseFitZoom;
+                }
+
+                const contentWidth = image.naturalWidth * zoomLevel;
+                const contentHeight = image.naturalHeight * zoomLevel;
+                translateX = Math.round((containerRect.width - contentWidth) / 2);
+                translateY = Math.round((containerRect.height - contentHeight) / 2);
                 updateImageTransform();
+            }
+        }
+
+        function isDesktopViewer() {
+            try {
+                const mqDesktop = window.matchMedia('(min-width: 992px)');
+                const mqFine = window.matchMedia('(pointer: fine)');
+                return mqDesktop.matches && mqFine.matches;
+            } catch (e) {
+                // Fallback: assume desktop if viewport width is large
+                return window.innerWidth >= 992;
             }
         }
 
@@ -1329,23 +1723,50 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
         }
 
         function handleWheel(e) {
+            // Make wheel/trackpad zoom consistent and prevent page scroll
             e.preventDefault();
-            
+            e.stopPropagation();
+
             const delta = e.deltaY > 0 ? 0.9 : 1.1;
             const newZoom = Math.max(0.1, Math.min(5, zoomLevel * delta));
-            
-            // Calculate zoom center point
+
             const rect = e.currentTarget.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            
-            // Adjust translation to zoom towards cursor
+
             const factor = newZoom / zoomLevel;
             translateX = x - (x - translateX) * factor;
             translateY = y - (y - translateY) * factor;
-            
+
             zoomLevel = newZoom;
             updateImageTransform();
+        }
+
+        function clampTranslation() {
+            const image = document.getElementById('documentImage');
+            const container = document.getElementById('imageContainer');
+            if (!image || !container) return;
+
+            const containerRect = container.getBoundingClientRect();
+            const contentWidth = image.naturalWidth * zoomLevel;
+            const contentHeight = image.naturalHeight * zoomLevel;
+
+            // If content smaller than container, keep it centered
+            if (contentWidth <= containerRect.width) {
+                translateX = Math.round((containerRect.width - contentWidth) / 2);
+            } else {
+                const minX = containerRect.width - contentWidth;
+                const maxX = 0;
+                translateX = Math.min(maxX, Math.max(minX, translateX));
+            }
+
+            if (contentHeight <= containerRect.height) {
+                translateY = Math.round((containerRect.height - contentHeight) / 2);
+            } else {
+                const minY = containerRect.height - contentHeight;
+                const maxY = 0;
+                translateY = Math.min(maxY, Math.max(minY, translateY));
+            }
         }
 
         function downloadDocument() {
@@ -1458,6 +1879,185 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             });
+        }
+
+        // PDF Viewer Functions
+        let pdfZoomLevel = 3; // Start higher to counteract browser's small default
+        let isPdfDragging = false;
+        let pdfStartX = 0;
+        let pdfStartY = 0;
+        let pdfTranslateX = 0;
+        let pdfTranslateY = 0;
+        
+        function zoomPdfIn() {
+            if (pdfZoomLevel < 8) {
+                pdfZoomLevel += 0.5;
+                applyPdfZoom();
+            }
+        }
+        
+        function zoomPdfOut() {
+            if (pdfZoomLevel > 1) {
+                pdfZoomLevel -= 0.5;
+                applyPdfZoom();
+            }
+        }
+        
+        function resetPdfZoom() {
+            pdfZoomLevel = 3; // Reset to our "normal" viewing size
+            pdfTranslateX = 0;
+            pdfTranslateY = 0;
+            applyPdfZoom();
+        }
+        
+        function fitPdfToScreen() {
+            pdfZoomLevel = 2.5;
+            pdfTranslateX = 0;
+            pdfTranslateY = 0;
+            applyPdfZoom();
+        }
+        
+        function applyPdfZoom() {
+            const pdfViewer = document.getElementById('pdfViewer');
+            const zoomInfo = document.getElementById('pdfZoomInfo');
+            
+            if (pdfViewer) {
+                pdfViewer.style.transform = `translate(${pdfTranslateX}px, ${pdfTranslateY}px) scale(${pdfZoomLevel})`;
+                pdfViewer.style.transformOrigin = 'center center';
+            }
+            
+            if (zoomInfo) {
+                // Display a normalized percentage (treat 3.0 as 100%)
+                const displayZoom = Math.round((pdfZoomLevel / 3) * 100);
+                zoomInfo.textContent = displayZoom + '%';
+            }
+        }
+        
+        function togglePdfFullscreen() {
+            const modal = document.getElementById('documentModal');
+            if (!document.fullscreenElement) {
+                modal.requestFullscreen().catch(err => {
+                    console.log('Error attempting to enable fullscreen:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        
+        function initializePdfViewer() {
+            // Reset PDF zoom when loaded and force initial scale
+            pdfZoomLevel = 3; // Start with 300% to counteract the browser's small default
+            pdfTranslateX = 0;
+            pdfTranslateY = 0;
+            
+            const zoomInfo = document.getElementById('pdfZoomInfo');
+            if (zoomInfo) {
+                zoomInfo.textContent = '100%'; // Display as 100% even though we scale to 300%
+            }
+            
+            // Force initial zoom after a short delay
+            setTimeout(() => {
+                applyPdfZoom();
+                
+                // Try to detect and fix extremely small initial zoom
+                const pdfViewer = document.getElementById('pdfViewer');
+                if (pdfViewer) {
+                    // Check if the content is very small and adjust accordingly
+                    const rect = pdfViewer.getBoundingClientRect();
+                    if (rect.height > 0 && rect.height < 200) {
+                        // Content seems too small, increase zoom more
+                        pdfZoomLevel = 5;
+                        applyPdfZoom();
+                    }
+                }
+            }, 500);
+            
+            // Add event listeners for wheel zoom and drag
+            const pdfContainer = document.getElementById('pdfContainer');
+            const pdfViewer = document.getElementById('pdfViewer');
+            
+            if (pdfContainer && pdfViewer) {
+                // Wheel zoom event
+                pdfContainer.addEventListener('wheel', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    if (e.deltaY < 0) {
+                        zoomPdfIn();
+                    } else {
+                        zoomPdfOut();
+                    }
+                }, { passive: false });
+                
+                // Touch events for mobile
+                let initialDistance = 0;
+                let initialZoom = 1;
+                
+                pdfContainer.addEventListener('touchstart', function(e) {
+                    if (e.touches.length === 2) {
+                        e.preventDefault();
+                        initialDistance = getDistance(e.touches[0], e.touches[1]);
+                        initialZoom = pdfZoomLevel;
+                    } else if (e.touches.length === 1) {
+                        isPdfDragging = true;
+                        pdfStartX = e.touches[0].clientX - pdfTranslateX;
+                        pdfStartY = e.touches[0].clientY - pdfTranslateY;
+                    }
+                }, { passive: false });
+                
+                pdfContainer.addEventListener('touchmove', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    if (e.touches.length === 2) {
+                        const currentDistance = getDistance(e.touches[0], e.touches[1]);
+                        const scale = currentDistance / initialDistance;
+                        pdfZoomLevel = Math.max(1, Math.min(8, initialZoom * scale));
+                        applyPdfZoom();
+                    } else if (e.touches.length === 1 && isPdfDragging && pdfZoomLevel > 2) {
+                        pdfTranslateX = e.touches[0].clientX - pdfStartX;
+                        pdfTranslateY = e.touches[0].clientY - pdfStartY;
+                        applyPdfZoom();
+                    }
+                }, { passive: false });
+                
+                pdfContainer.addEventListener('touchend', function(e) {
+                    isPdfDragging = false;
+                }, { passive: false });
+                
+                // Mouse events for desktop
+                pdfContainer.addEventListener('mousedown', function(e) {
+                    if (pdfZoomLevel > 2) {
+                        isPdfDragging = true;
+                        pdfStartX = e.clientX - pdfTranslateX;
+                        pdfStartY = e.clientY - pdfTranslateY;
+                        pdfContainer.style.cursor = 'grabbing';
+                    }
+                });
+                
+                document.addEventListener('mousemove', function(e) {
+                    if (isPdfDragging && pdfZoomLevel > 2) {
+                        e.preventDefault();
+                        pdfTranslateX = e.clientX - pdfStartX;
+                        pdfTranslateY = e.clientY - pdfStartY;
+                        applyPdfZoom();
+                    }
+                });
+                
+                document.addEventListener('mouseup', function() {
+                    if (isPdfDragging) {
+                        isPdfDragging = false;
+                        pdfContainer.style.cursor = pdfZoomLevel > 2 ? 'grab' : 'default';
+                    }
+                });
+            }
+        }
+        
+        function getDistance(touch1, touch2) {
+            return Math.sqrt(
+                Math.pow(touch2.clientX - touch1.clientX, 2) +
+                Math.pow(touch2.clientY - touch1.clientY, 2)
+            );
         }
     </script>
 

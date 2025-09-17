@@ -63,7 +63,7 @@ try {
                 $originalFilename = $enrollmentRow['original_filename'];
                 
                 if (file_exists($tempPath)) {
-                    $permanentDir = '../../uploads/student/enrollment_forms/';
+                    $permanentDir = '../../assets/uploads/student/enrollment_forms/';
                     if (!is_dir($permanentDir)) {
                         mkdir($permanentDir, 0755, true);
                     }
@@ -92,11 +92,11 @@ try {
                 
                 // Determine permanent directory based on document type
                 if ($docType === 'letter_to_mayor') {
-                    $permanentDocDir = '../../uploads/student/letter_to_mayor/';
+                    $permanentDocDir = '../../assets/uploads/student/letter_to_mayor/';
                 } elseif ($docType === 'certificate_of_indigency') {
-                    $permanentDocDir = '../../uploads/student/indigency/';
+                    $permanentDocDir = '../../assets/uploads/student/indigency/';
                 } elseif ($docType === 'eaf') {
-                    $permanentDocDir = '../../uploads/student/enrollment_forms/';
+                    $permanentDocDir = '../../assets/uploads/student/enrollment_forms/';
                 } else {
                     continue; // Skip unknown document types
                 }
