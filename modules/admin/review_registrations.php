@@ -289,6 +289,7 @@ $search = trim($_GET['search'] ?? '');
 $barangay_filter = $_GET['barangay'] ?? '';
 $university_filter = $_GET['university'] ?? '';
 $year_level_filter = $_GET['year_level'] ?? '';
+$confidence_filter = $_GET['confidence'] ?? '';
 $sort_by = $_GET['sort'] ?? 'application_date';
 $sort_order = $_GET['order'] ?? 'DESC';
 
@@ -321,10 +322,22 @@ if (!empty($year_level_filter)) {
     $paramCount++;
 }
 
+if (!empty($confidence_filter)) {
+    if ($confidence_filter === 'very_high') {
+        $whereConditions[] = "COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) >= 85";
+    } elseif ($confidence_filter === 'high') {
+        $whereConditions[] = "COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) >= 70 AND COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) < 85";
+    } elseif ($confidence_filter === 'medium') {
+        $whereConditions[] = "COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) >= 50 AND COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) < 70";
+    } elseif ($confidence_filter === 'low') {
+        $whereConditions[] = "COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) < 50";
+    }
+}
+
 $whereClause = implode(' AND ', $whereConditions);
 
-// Valid sort columns
-$validSorts = ['application_date', 'first_name', 'last_name'];
+// Valid sort columns - add confidence_score
+$validSorts = ['application_date', 'first_name', 'last_name', 'confidence_score'];
 if (!in_array($sort_by, $validSorts)) $sort_by = 'application_date';
 if (!in_array($sort_order, ['ASC', 'DESC'])) $sort_order = 'DESC';
 
@@ -339,9 +352,14 @@ $countResult = pg_query_params($connection, $countQuery, $params);
 $totalRecords = intval(pg_fetch_result($countResult, 0, 0));
 $totalPages = ceil($totalRecords / $limit);
 
-// Fetch pending registrations with pagination
+// Fetch pending registrations with pagination including confidence scores and documents
 $query = "SELECT s.*, b.name as barangay_name, u.name as university_name, yl.name as year_level_name,
-                 ef.file_path as enrollment_form_path, ef.original_filename
+                 ef.file_path as enrollment_form_path, ef.original_filename,
+                 COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) as confidence_score,
+                 get_confidence_level(COALESCE(s.confidence_score, calculate_confidence_score(s.student_id))) as confidence_level,
+                 (SELECT COUNT(*) FROM documents d WHERE d.student_id = s.student_id AND d.type = 'certificate_of_indigency') as has_certificate,
+                 (SELECT COUNT(*) FROM documents d WHERE d.student_id = s.student_id AND d.type = 'letter_to_mayor') as has_letter,
+                 (SELECT COUNT(*) FROM documents d WHERE d.student_id = s.student_id AND d.type = 'id_picture') as has_id_picture
           FROM students s
           LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
           LEFT JOIN universities u ON s.university_id = u.university_id
@@ -430,6 +448,62 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
         }
         .sort-active {
             color: #ffc107 !important;
+        }
+        .confidence-badge {
+            font-size: 0.8em;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 12px;
+            display: inline-block;
+            min-width: 50px;
+            text-align: center;
+        }
+        .document-buttons {
+            display: flex;
+            gap: 2px;
+            flex-wrap: wrap;
+        }
+        .document-buttons .btn {
+            padding: 4px 6px;
+            font-size: 0.75rem;
+            border-radius: 4px;
+        }
+        .quick-actions {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .quick-actions h5 {
+            color: white;
+            margin-bottom: 5px;
+        }
+        .quick-actions small {
+            color: rgba(255, 255, 255, 0.8);
+        }
+        .auto-approve-btn {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            border: none;
+            color: white;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .auto-approve-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+            color: white;
+        }
+        .refresh-btn {
+            background: linear-gradient(45deg, #17a2b8, #6f42c1);
+            border: none;
+            color: white;
+            font-weight: 600;
+        }
+        .refresh-btn:hover {
+            color: white;
+            transform: translateY(-1px);
         }
         .document-viewer-container {
             position: relative;
@@ -571,6 +645,16 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                             </select>
                         </div>
                         <div class="col-md-2">
+                            <label class="form-label">Confidence Level</label>
+                            <select name="confidence" class="form-select">
+                                <option value="">All Levels</option>
+                                <option value="very_high" <?php echo $confidence_filter == 'very_high' ? 'selected' : ''; ?>>Very High (85%+)</option>
+                                <option value="high" <?php echo $confidence_filter == 'high' ? 'selected' : ''; ?>>High (70-84%)</option>
+                                <option value="medium" <?php echo $confidence_filter == 'medium' ? 'selected' : ''; ?>>Medium (50-69%)</option>
+                                <option value="low" <?php echo $confidence_filter == 'low' ? 'selected' : ''; ?>>Low (<50%)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
                             <label class="form-label">&nbsp;</label>
                             <div class="d-flex gap-2">
                                 <button type="submit" class="btn btn-primary">Filter</button>
@@ -578,6 +662,37 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                             </div>
                         </div>
                     </form>
+                </div>
+
+                <!-- Auto-Approve Section -->
+                <div class="quick-actions">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <h5 class="mb-1"><i class="bi bi-lightning-charge me-2"></i>Quick Actions</h5>
+                            <small>Streamline review process for high-confidence registrations</small>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <?php
+                            // Count high confidence registrations
+                            $highConfidenceQuery = "SELECT COUNT(*) FROM students s WHERE s.status = 'under_registration' AND COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) >= 85";
+                            $highConfidenceResult = pg_query($connection, $highConfidenceQuery);
+                            $highConfidenceCount = pg_fetch_result($highConfidenceResult, 0, 0);
+                            ?>
+                            <?php if ($highConfidenceCount > 0): ?>
+                                <button type="button" class="btn auto-approve-btn" onclick="autoApproveHighConfidence()">
+                                    <i class="bi bi-lightning"></i> Auto-Approve High Confidence 
+                                    <span class="badge bg-white text-success ms-1"><?php echo $highConfidenceCount; ?></span>
+                                </button>
+                            <?php else: ?>
+                                <button type="button" class="btn btn-outline-light" disabled>
+                                    <i class="bi bi-lightning"></i> No High Confidence Registrations
+                                </button>
+                            <?php endif; ?>
+                            <button type="button" class="btn refresh-btn" onclick="refreshConfidenceScores()">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh Scores
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Bulk Actions (hidden by default) -->
@@ -631,6 +746,11 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                             Applied <?php if ($sort_by === 'application_date') echo $sort_order === 'ASC' ? '↑' : '↓'; ?>
                                         </a>
                                     </th>
+                                    <th>
+                                        <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'confidence_score', 'order' => $sort_by === 'confidence_score' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>" class="sort-link <?php echo $sort_by === 'confidence_score' ? 'sort-active' : ''; ?>">
+                                            Confidence <?php if ($sort_by === 'confidence_score') echo $sort_order === 'ASC' ? '↑' : '↓'; ?>
+                                        </a>
+                                    </th>
                                     <th>Documents</th>
                                     <th width="150">Actions</th>
                                 </tr>
@@ -670,14 +790,62 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                             </small>
                                         </td>
                                         <td>
-                                            <?php if ($registration['enrollment_form_path']): ?>
-                                                <button type="button" class="btn btn-outline-primary btn-sm" 
-                                                        onclick="viewDocument('<?php echo htmlspecialchars($registration['enrollment_form_path']); ?>', '<?php echo htmlspecialchars($registration['original_filename']); ?>')">
-                                                    <i class="bi bi-file-earmark"></i>
-                                                </button>
-                                            <?php else: ?>
-                                                <span class="text-muted">-</span>
-                                            <?php endif; ?>
+                                            <?php 
+                                            $score = $registration['confidence_score'];
+                                            $level = $registration['confidence_level'];
+                                            $badgeClass = '';
+                                            if ($score >= 85) $badgeClass = 'bg-success';
+                                            elseif ($score >= 70) $badgeClass = 'bg-primary';
+                                            elseif ($score >= 50) $badgeClass = 'bg-warning';
+                                            else $badgeClass = 'bg-danger';
+                                            ?>
+                                            <div class="d-flex align-items-center">
+                                                <span class="badge <?php echo $badgeClass; ?> text-white me-1"><?php echo number_format($score, 1); ?>%</span>
+                                                <small class="text-muted"><?php echo $level; ?></small>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="document-buttons">
+                                                <!-- Enrollment Form -->
+                                                <?php if ($registration['enrollment_form_path']): ?>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" 
+                                                            onclick="viewDocument('<?php echo htmlspecialchars($registration['enrollment_form_path']); ?>', '<?php echo htmlspecialchars($registration['original_filename']); ?>')"
+                                                            title="View Enrollment Form">
+                                                        <i class="bi bi-file-earmark-text"></i>
+                                                    </button>
+                                                <?php endif; ?>
+                                                
+                                                <!-- Certificate of Indigency -->
+                                                <?php if ($registration['has_certificate'] > 0): ?>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" 
+                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'certificate_of_indigency')"
+                                                            title="View Certificate of Indigency">
+                                                        <i class="bi bi-file-earmark-check"></i>
+                                                    </button>
+                                                <?php endif; ?>
+                                                
+                                                <!-- Letter to Mayor -->
+                                                <?php if ($registration['has_letter'] > 0): ?>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" 
+                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'letter_to_mayor')"
+                                                            title="View Letter to Mayor">
+                                                        <i class="bi bi-file-earmark-person"></i>
+                                                    </button>
+                                                <?php endif; ?>
+                                                
+                                                <!-- ID Picture -->
+                                                <?php if ($registration['has_id_picture'] > 0): ?>
+                                                    <button type="button" class="btn btn-outline-warning btn-sm" 
+                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'id_picture')"
+                                                            title="View ID Picture">
+                                                        <i class="bi bi-person-badge"></i>
+                                                    </button>
+                                                <?php endif; ?>
+                                                
+                                                <?php if (!$registration['enrollment_form_path'] && $registration['has_certificate'] == 0 && $registration['has_letter'] == 0 && $registration['has_id_picture'] == 0): ?>
+                                                    <small class="text-muted">No documents</small>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                         <td>
                                             <div class="action-buttons">
@@ -1165,6 +1333,92 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             currentDocumentPath = '';
             document.getElementById('downloadBtn').style.display = 'none';
         });
+
+        // New functions for enhanced document viewing and auto-approval
+        function viewStudentDocument(studentId, documentType) {
+            fetch(`get_student_document.php?student_id=${studentId}&type=${documentType}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        viewDocument(data.file_path, data.filename);
+                    } else {
+                        alert('Document not found or error loading document.');
+                    }
+                })
+                .catch(error => {
+                    alert('Error loading document. Please try again.');
+                });
+        }
+
+        function autoApproveHighConfidence() {
+            if (!confirm('Are you sure you want to auto-approve all registrations with Very High confidence scores (85%+)?\n\nThis action will approve all students who meet the criteria and cannot be undone.')) {
+                return;
+            }
+
+            // Show loading state
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-spinner bi-spin"></i> Processing...';
+            btn.disabled = true;
+
+            fetch('auto_approve_high_confidence.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'auto_approve_high_confidence',
+                    min_confidence: 85
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Successfully auto-approved ${data.count} high-confidence registrations!`);
+                    location.reload();
+                } else {
+                    alert('Error during auto-approval: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                alert('Error during auto-approval. Please try again.');
+            })
+            .finally(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        }
+
+        function refreshConfidenceScores() {
+            if (!confirm('This will recalculate confidence scores for all pending registrations. Continue?')) {
+                return;
+            }
+
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-spinner bi-spin"></i> Refreshing...';
+            btn.disabled = true;
+
+            fetch('refresh_confidence_scores.php', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Updated confidence scores for ${data.count} registrations!`);
+                    location.reload();
+                } else {
+                    alert('Error refreshing scores: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                alert('Error refreshing scores. Please try again.');
+            })
+            .finally(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        }
     </script>
 
     <!-- Include Blacklist Modal -->

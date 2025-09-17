@@ -1322,8 +1322,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $activeSlot = pg_fetch_assoc($activeSlotQuery);
     $slot_id = $activeSlot ? $activeSlot['slot_id'] : null;
 
-    $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id, slot_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'under_registration', 0, 0, FALSE, NOW(), $10, $11, $12, $13, $14, $15) RETURNING student_id";
+    $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id, slot_id, documents_submitted, documents_validated)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'under_registration', 0, 0, FALSE, NOW(), $10, $11, $12, $13, $14, $15, FALSE, FALSE) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $municipality_id,
@@ -1428,12 +1428,30 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";
         pg_query_params($connection, $applicationQuery, [$student_id, $semester, $academic_year]);
 
+        // Calculate and store confidence score for the new registration
+        $confidenceQuery = "UPDATE students SET confidence_score = calculate_confidence_score(student_id) WHERE student_id = $1";
+        $confidenceResult = pg_query_params($connection, $confidenceQuery, [$student_id]);
+        
+        if ($confidenceResult) {
+            // Get the calculated confidence score for logging
+            $scoreQuery = "SELECT confidence_score FROM students WHERE student_id = $1";
+            $scoreResult = pg_query_params($connection, $scoreQuery, [$student_id]);
+            if ($scoreResult) {
+                $scoreRow = pg_fetch_assoc($scoreResult);
+                $confidence_score = $scoreRow['confidence_score'];
+                error_log("Student ID $student_id registered with confidence score: " . number_format($confidence_score, 2) . "%");
+            }
+        }
+
         unset($_SESSION['otp_verified']);
 
         echo "<script>alert('Registration submitted successfully! Your application is under review. You will receive an email notification once approved.'); window.location.href = '../../unified_login.php';</script>";
         exit;
     } else {
-        echo "<script>alert('Registration failed due to a database error. Please try again.');</script>";
+        // Log the PostgreSQL error for debugging
+        $error = pg_last_error($connection);
+        error_log("Registration Database Error: " . $error);
+        echo "<script>alert('Registration failed due to a database error: " . addslashes($error) . "');</script>";
 
     }
 }
@@ -1873,7 +1891,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 <script src="../../assets/js/bootstrap.bundle.min.js"></script>
 
 <!-- Your registration JavaScript should come AFTER Bootstrap -->
-<script src="../../assets/js/student/user_registration.js"></script>
+<script src="../../assets/js/student/user_registration.js?v=<?php echo time(); ?>"></script>
 
 <script>
     // Letter to Mayor Upload Handling

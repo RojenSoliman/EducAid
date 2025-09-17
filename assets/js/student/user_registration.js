@@ -3,7 +3,7 @@ const CONFIG = {
     STORAGE_KEY: 'educaid_registration_progress',
     AUTO_SAVE_INTERVAL: 5000, // Auto-save every 5 seconds
     STORAGE_EXPIRY: 24 * 60 * 60 * 1000, // 24 hours in milliseconds
-    VERSION: '1.0' // For handling future format changes
+    VERSION: '2.0' // For handling future format changes - Updated for 8-step process
 };
 
 // Enhanced state variables
@@ -428,6 +428,12 @@ function setupDateOfBirthRestriction() {
 }
 
 function nextStep() {
+    console.log('=== NextStep Debug ===');
+    console.log('Current step:', currentStep);
+    console.log('OTP verified:', otpVerified);
+    console.log('Document verified:', documentVerified);
+    console.log('=== End Debug ===');
+    
     if (currentStep === 8) return;
 
     // Clear any existing highlights first
