@@ -260,6 +260,20 @@ function completeBlacklist() {
     formData.append('student_id', currentBlacklistStudent.id);
     formData.append('otp', otp);
     
+    // Debug: Test endpoint first
+    console.log('Testing debug endpoint first...');
+    fetch('blacklist_debug_endpoint.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(debugData => {
+        console.log('Debug endpoint response:', debugData);
+    })
+    .catch(debugError => {
+        console.error('Debug endpoint error:', debugError);
+    });
+    
     // Show loading state
     const confirmBtn = document.getElementById('confirmBlacklistBtn');
     const originalText = confirmBtn.innerHTML;
@@ -270,8 +284,28 @@ function completeBlacklist() {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Response status:', response.status); // Debug log
+        console.log('Response headers:', response.headers); // Debug log
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return response.text().then(text => {
+            console.log('Raw response:', text); // Debug log
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                console.error('JSON parse error:', e);
+                console.error('Response text:', text);
+                throw new Error('Invalid JSON response: ' + text);
+            }
+        });
+    })
     .then(data => {
+        console.log('Parsed data:', data); // Debug log
+        
         if (data.status === 'success') {
             showAlert('success', data.message);
             
@@ -282,13 +316,14 @@ function completeBlacklist() {
             }, 2000);
             
         } else {
-            showAlert('danger', data.message);
+            showAlert('danger', data.message || 'Unknown error occurred');
             confirmBtn.innerHTML = originalText;
             confirmBtn.disabled = false;
         }
     })
     .catch(error => {
-        showAlert('danger', 'Network error occurred. Please try again.');
+        console.error('Fetch error:', error); // Debug log
+        showAlert('danger', 'Network error: ' + error.message);
         confirmBtn.innerHTML = originalText;
         confirmBtn.disabled = false;
     });

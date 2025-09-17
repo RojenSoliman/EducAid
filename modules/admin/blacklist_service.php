@@ -34,6 +34,13 @@ if (!$admin) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
+    // Debug logging
+    error_log("=== BLACKLIST SERVICE DEBUG ===");
+    error_log("Action received: " . $action);
+    error_log("POST data: " . print_r($_POST, true));
+    error_log("Session admin_id: " . ($_SESSION['admin_id'] ?? 'NOT SET'));
+    error_log("============================");
+    
     // Step 1: Initiate blacklist process - verify password and send OTP
     if ($action === 'initiate_blacklist') {
         $student_id = intval($_POST['student_id']);
@@ -74,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Generate OTP
         $otp = sprintf('%06d', rand(0, 999999));
-        $expires_at = date('Y-m-d H:i:s', time() + 300); // 5 minutes
+        $expires_at = date('Y-m-d H:i:s', time() + 600); // 10 minutes (increased from 5)
         
         // Clean old verifications for this admin
         pg_query_params($connection, 
@@ -140,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     {$otp}
                 </div>
                 <p><strong>⚠️ WARNING:</strong> This action is IRREVERSIBLE. The student will be permanently blocked from the system.</p>
-                <p><em>Code expires in 5 minutes.</em></p>
+                <p><em>Code expires in 10 minutes.</em></p>
                 <hr>
                 <small>If you did not initiate this action, please contact system administrator immediately.</small>
             ";
@@ -161,20 +168,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Step 2: Verify OTP and complete blacklist
     if ($action === 'complete_blacklist') {
+        // Debug logging
+        error_log("Complete blacklist action received");
+        error_log("POST data: " . print_r($_POST, true));
+        
         $student_id = intval($_POST['student_id']);
         $otp = $_POST['otp'];
         
-        // Get verification record
+        error_log("Student ID: $student_id, OTP: $otp, Admin ID: $admin_id");
+        
+        // Get verification record with detailed debugging
+        $debug_query = "SELECT *, 
+                              (expires_at > NOW()) as not_expired, 
+                              NOW() as current_time,
+                              expires_at
+                       FROM admin_blacklist_verifications 
+                       WHERE admin_id = $1 AND student_id = $2 AND otp = $3";
+        
+        $debug_result = pg_query_params($connection, $debug_query, [$admin_id, $student_id, $otp]);
+        
+        if ($debug_result) {
+            $debug_record = pg_fetch_assoc($debug_result);
+            error_log("Debug verification record: " . print_r($debug_record, true));
+        }
+        
+        // Get verification record with more lenient time check
+        $current_timestamp = time();
+        
         $verifyQuery = pg_query_params($connection,
-            "SELECT * FROM admin_blacklist_verifications 
-             WHERE admin_id = $1 AND student_id = $2 AND otp = $3 AND expires_at > NOW() AND used = false",
+            "SELECT *, 
+                    EXTRACT(EPOCH FROM expires_at) as expires_timestamp,
+                    EXTRACT(EPOCH FROM NOW()) as current_timestamp
+             FROM admin_blacklist_verifications 
+             WHERE admin_id = $1 AND student_id = $2 AND otp = $3 AND used = false",
             [$admin_id, $student_id, $otp]
         );
         
-        $verification = pg_fetch_assoc($verifyQuery);
+        if (!$verifyQuery) {
+            error_log("Verification query failed: " . pg_last_error($connection));
+            echo json_encode(['status' => 'error', 'message' => 'Database query failed']);
+            exit;
+        }
         
-        if (!$verification) {
-            echo json_encode(['status' => 'error', 'message' => 'Invalid or expired security code']);
+        $verification = pg_fetch_assoc($verifyQuery);
+        error_log("Verification record found: " . ($verification ? 'YES' : 'NO'));
+        
+        if ($verification) {
+            // Manual expiry check with current timestamp
+            $expires_timestamp = floatval($verification['expires_timestamp']);
+            $current_timestamp = floatval($verification['current_timestamp']);
+            $is_expired = $current_timestamp > $expires_timestamp;
+            
+            error_log("Manual expiry check - Current: $current_timestamp, Expires: $expires_timestamp, Expired: " . ($is_expired ? 'YES' : 'NO'));
+            
+            if ($is_expired) {
+                echo json_encode(['status' => 'error', 'message' => 'Security code has expired. Please request a new one.']);
+                exit;
+            }
+            
+            if ($verification['used'] === 't' || $verification['used'] === true) {
+                echo json_encode(['status' => 'error', 'message' => 'Security code has already been used']);
+                exit;
+            }
+        } else {
+            // Check what records exist for debugging
+            $check_query = "SELECT *, 
+                                  EXTRACT(EPOCH FROM expires_at) as expires_timestamp,
+                                  EXTRACT(EPOCH FROM NOW()) as current_timestamp,
+                                  used
+                           FROM admin_blacklist_verifications 
+                           WHERE admin_id = $1 AND student_id = $2 AND otp = $3";
+            
+            $check_result = pg_query_params($connection, $check_query, [$admin_id, $student_id, $otp]);
+            if ($check_result && $check_record = pg_fetch_assoc($check_result)) {
+                error_log("Found record but conditions failed: " . print_r($check_record, true));
+                echo json_encode(['status' => 'error', 'message' => 'Invalid security code']);
+            } else {
+                echo json_encode(['status' => 'error', 'message' => 'Security code not found']);
+            }
             exit;
         }
         
