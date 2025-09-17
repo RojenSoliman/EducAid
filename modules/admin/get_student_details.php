@@ -64,7 +64,7 @@ if (!$student) {
         <table class="table table-sm">
             <tr>
                 <td class="fw-semibold">Student ID:</td>
-                <td><?php echo htmlspecialchars($student['unique_student_id']); ?></td>
+                <td><?php echo htmlspecialchars($student['student_id']); ?></td>
             </tr>
             <tr>
                 <td class="fw-semibold">University:</td>
@@ -271,11 +271,11 @@ function displayConfidenceBreakdown(breakdown) {
 
 <div class="mt-4 d-flex gap-2">
     <button type="button" class="btn btn-success" 
-            onclick="bootstrap.Modal.getInstance(document.getElementById('studentDetailsModal')).hide(); showActionModal(<?php echo $student['student_id']; ?>, 'approve', '<?php echo htmlspecialchars($student['first_name'] . ' ' . $student['last_name']); ?>')">
+            onclick="bootstrap.Modal.getInstance(document.getElementById('studentDetailsModal')).hide(); showActionModal('<?php echo $student['student_id']; ?>', 'approve', '<?php echo htmlspecialchars($student['first_name'] . ' ' . $student['last_name']); ?>')">
         <i class="bi bi-check-circle"></i> Approve Registration
     </button>
     <button type="button" class="btn btn-danger" 
-            onclick="bootstrap.Modal.getInstance(document.getElementById('studentDetailsModal')).hide(); showActionModal(<?php echo $student['student_id']; ?>, 'reject', '<?php echo htmlspecialchars($student['first_name'] . ' ' . $student['last_name']); ?>')">
+            onclick="bootstrap.Modal.getInstance(document.getElementById('studentDetailsModal')).hide(); showActionModal('<?php echo $student['student_id']; ?>', 'reject', '<?php echo htmlspecialchars($student['first_name'] . ' ' . $student['last_name']); ?>')">
         <i class="bi bi-x-circle"></i> Reject Registration
     </button>
 </div>

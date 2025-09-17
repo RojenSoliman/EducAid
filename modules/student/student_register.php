@@ -1319,7 +1319,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             $unique_id = $current_year . '-' . $year_level_num . '-' . $random_digits;
 
             // Check if this ID already exists
-            $check_query = pg_query_params($connection, "SELECT 1 FROM students WHERE unique_student_id = $1", [$unique_id]);
+            $check_query = pg_query_params($connection, "SELECT 1 FROM students WHERE student_id = $1", [$unique_id]);
             $exists = pg_num_rows($check_query) > 0;
 
             $attempts++;
@@ -1334,8 +1334,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     }
 
     // Generate unique student ID
-    $unique_student_id = generateUniqueStudentId($connection, $year_level);
-    if (!$unique_student_id) {
+    $student_id = generateUniqueStudentId($connection, $year_level);
+    if (!$student_id) {
         echo "<script>alert('Failed to generate unique student ID. Please try again.'); history.back();</script>";
         exit;
     }
@@ -1345,10 +1345,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $activeSlot = pg_fetch_assoc($activeSlotQuery);
     $slot_id = $activeSlot ? $activeSlot['slot_id'] : null;
 
-    $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id, slot_id, documents_submitted, documents_validated)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'under_registration', 0, 0, FALSE, NOW(), $10, $11, $12, $13, $14, $15, FALSE, FALSE) RETURNING student_id";
+    $insertQuery = "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id, documents_submitted, documents_validated)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_registration', 0, 0, FALSE, NOW(), $11, $12, $13, $14, $15, FALSE, FALSE) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
+        $student_id,
         $municipality_id,
         $firstname,
         $middlename,
@@ -1362,7 +1363,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $barangay,
         $university,
         $year_level,
-        $unique_student_id,
         $slot_id
     ]);
 

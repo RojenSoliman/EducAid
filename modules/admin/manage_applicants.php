@@ -84,7 +84,7 @@ function render_table($applicants, $connection) {
                         </button>
                         <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
                         <button class="btn btn-danger btn-sm ms-1" 
-                                onclick="showBlacklistModal(<?= $student_id ?>, '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
+                                onclick="showBlacklistModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
                                     barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
                                     status: 'Applicant'
                                 })"
@@ -187,7 +187,7 @@ function render_table($applicants, $connection) {
                                 <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
                                 <div class="ms-auto">
                                     <button class="btn btn-outline-danger btn-sm" 
-                                            onclick="showBlacklistModal(<?= $student_id ?>, '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
+                                            onclick="showBlacklistModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
                                                 barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
                                                 status: 'Applicant'
                                             })"

@@ -623,7 +623,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                             <!-- Certificate of Indigency -->
                             <?php if ($registration['has_certificate'] > 0): ?>
                                 <button type="button" class="btn btn-outline-success btn-sm" 
-                                        onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'certificate_of_indigency')"
+                                        onclick="viewStudentDocument('<?php echo $registration['student_id']; ?>', 'certificate_of_indigency')"
                                         title="View Certificate of Indigency">
                                     <i class="bi bi-file-earmark-check"></i>
                                 </button>
@@ -632,7 +632,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                             <!-- Letter to Mayor -->
                             <?php if ($registration['has_letter'] > 0): ?>
                                 <button type="button" class="btn btn-outline-info btn-sm" 
-                                        onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'letter_to_mayor')"
+                                        onclick="viewStudentDocument('<?php echo $registration['student_id']; ?>', 'letter_to_mayor')"
                                         title="View Letter to Mayor">
                                     <i class="bi bi-file-earmark-person"></i>
                                 </button>
@@ -641,7 +641,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                             <!-- EAF Document (from documents table) -->
                             <?php if ($registration['has_eaf'] > 0): ?>
                                 <button type="button" class="btn btn-outline-primary btn-sm" 
-                                        onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'eaf')"
+                                        onclick="viewStudentDocument('<?php echo $registration['student_id']; ?>', 'eaf')"
                                         title="View EAF Document">
                                     <i class="bi bi-file-text"></i>
                                 </button>
@@ -658,17 +658,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                     <td>
                         <div class="action-buttons">
                             <button class="btn btn-info btn-sm" 
-                                    onclick="viewDetails(<?php echo $registration['student_id']; ?>)"
+                                    onclick="viewDetails('<?php echo $registration['student_id']; ?>')"
                                     title="View Details">
                                 <i class="bi bi-eye"></i>
                             </button>
                             <button class="btn btn-success btn-sm" 
-                                    onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'approve', '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?>')"
+                                    onclick="showActionModal('<?php echo $registration['student_id']; ?>', 'approve', '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?>')"
                                     title="Approve">
                                 <i class="bi bi-check-lg"></i>
                             </button>
                             <button class="btn btn-danger btn-sm" 
-                                    onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'reject', '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?>')"
+                                    onclick="showActionModal('<?php echo $registration['student_id']; ?>', 'reject', '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?>')"
                                     title="Reject">
                                 <i class="bi bi-x-lg"></i>
                             </button>
@@ -1185,7 +1185,7 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                                     <div class="fw-semibold">
                                                         <?php echo htmlspecialchars(trim($registration['first_name'] . ' ' . $registration['last_name'] . ' ' . $registration['extension_name'])); ?>
                                                     </div>
-                                                    <small class="text-muted"><?php echo htmlspecialchars($registration['unique_student_id']); ?></small>
+                                                    <small class="text-muted"><?php echo htmlspecialchars($registration['student_id']); ?></small>
                                                 </div>
                                             </div>
                                         </td>
@@ -1228,7 +1228,7 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                                 <!-- EAF Document (from documents table) -->
                                                 <?php if ($registration['has_eaf'] > 0): ?>
                                                     <button type="button" class="btn btn-outline-primary btn-sm" 
-                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'eaf')"
+                                                            onclick="viewStudentDocument('<?php echo $registration['student_id']; ?>', 'eaf')"
                                                             title="View EAF Document">
                                                         <i class="bi bi-file-text"></i>
                                                     </button>
@@ -1237,7 +1237,7 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                                 <!-- Letter to Mayor -->
                                                 <?php if ($registration['has_letter'] > 0): ?>
                                                     <button type="button" class="btn btn-outline-info btn-sm" 
-                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'letter_to_mayor')"
+                                                            onclick="viewStudentDocument('<?php echo $registration['student_id']; ?>', 'letter_to_mayor')"
                                                             title="View Letter to Mayor">
                                                         <i class="bi bi-file-earmark-person"></i>
                                                     </button>
@@ -1246,7 +1246,7 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                                 <!-- Certificate of Indigency -->
                                                 <?php if ($registration['has_certificate'] > 0): ?>
                                                     <button type="button" class="btn btn-outline-success btn-sm" 
-                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'certificate_of_indigency')"
+                                                            onclick="viewStudentDocument('<?php echo $registration['student_id']; ?>', 'certificate_of_indigency')"
                                                             title="View Certificate of Indigency">
                                                         <i class="bi bi-file-earmark-check"></i>
                                                     </button>
@@ -1260,20 +1260,20 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                         <td>
                                             <div class="action-buttons">
                                                 <button type="button" class="btn btn-success btn-sm" 
-                                                        onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'approve', '<?php echo htmlspecialchars(trim($registration['first_name'] . ' ' . $registration['last_name'] . ' ' . $registration['extension_name'])); ?>')">
+                                                        onclick="showActionModal('<?php echo $registration['student_id']; ?>', 'approve', '<?php echo htmlspecialchars(trim($registration['first_name'] . ' ' . $registration['last_name'] . ' ' . $registration['extension_name'])); ?>')">
                                                     <i class="bi bi-check"></i>
                                                 </button>
                                                 <button type="button" class="btn btn-danger btn-sm" 
-                                                        onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'reject', '<?php echo htmlspecialchars(trim($registration['first_name'] . ' ' . $registration['last_name'] . ' ' . $registration['extension_name'])); ?>')">
+                                                        onclick="showActionModal('<?php echo $registration['student_id']; ?>', 'reject', '<?php echo htmlspecialchars(trim($registration['first_name'] . ' ' . $registration['last_name'] . ' ' . $registration['extension_name'])); ?>')">
                                                     <i class="bi bi-x"></i>
                                                 </button>
                                                 <button type="button" class="btn btn-outline-info btn-sm" 
-                                                        onclick="viewDetails(<?php echo $registration['student_id']; ?>)">
+                                                        onclick="viewDetails('<?php echo $registration['student_id']; ?>')">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
                                                 <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
                                                 <button type="button" class="btn btn-outline-danger btn-sm" 
-                                                        onclick="showBlacklistModal(<?php echo $registration['student_id']; ?>, '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($registration['email'], ENT_QUOTES); ?>', {
+                                                        onclick="showBlacklistModal('<?php echo $registration['student_id']; ?>', '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($registration['email'], ENT_QUOTES); ?>', {
                                                             barangay: '<?php echo htmlspecialchars($registration['barangay'] ?? 'N/A', ENT_QUOTES); ?>',
                                                             university: '<?php echo htmlspecialchars($registration['university'] ?? 'N/A', ENT_QUOTES); ?>',
                                                             status: 'Under Registration'

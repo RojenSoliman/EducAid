@@ -26,7 +26,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     
     $csv_query = "
         SELECT s.payroll_no, s.first_name, s.middle_name, s.last_name, 
-               s.unique_student_id, s.status, d.date_given
+               s.student_id, s.status, d.date_given
         FROM students s
         LEFT JOIN distributions d ON s.student_id = d.student_id
         WHERE s.status IN ('active', 'given') AND s.payroll_no IS NOT NULL
@@ -40,7 +40,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
         fputcsv($output, [
             $row['payroll_no'],
             $full_name,
-            $row['unique_student_id'],
+            $row['student_id'],
             ucfirst($row['status']),
             $distribution_date
         ]);
@@ -84,13 +84,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_qr'])) {
     
     $lookup_query = "
         SELECT s.student_id, s.first_name, s.middle_name, s.last_name, 
-               s.unique_student_id, s.payroll_no, s.status,
+               s.payroll_no, s.status,
                b.name as barangay_name, u.name as university_name, yl.name as year_level_name
         FROM students s
         LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
         LEFT JOIN universities u ON s.university_id = u.university_id
         LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
-        JOIN qr_codes q ON s.unique_student_id = q.student_unique_id AND s.payroll_no = q.payroll_number
+        JOIN qr_codes q ON s.student_id = q.student_id AND s.payroll_no = q.payroll_number
         WHERE q.unique_id = $1 AND s.status = 'active'
     ";
     
@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_qr'])) {
     
     if (pg_num_rows($lookup_result) > 0) {
         $student = pg_fetch_assoc($lookup_result);
-        error_log("Student found: " . $student['unique_student_id']);
+        error_log("Student found: " . $student['student_id']);
         echo json_encode(['success' => true, 'student' => $student]);
     } else {
         error_log("No student found for QR: " . $qr_unique_id);
@@ -116,10 +116,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_qr'])) {
 // Fetch all students with payroll numbers for the table
 $students_query = "
     SELECT s.student_id, s.payroll_no, s.first_name, s.middle_name, s.last_name, 
-           s.unique_student_id, s.status, q.unique_id as qr_unique_id,
+           s.status, q.unique_id as qr_unique_id,
            d.date_given
     FROM students s
-    LEFT JOIN qr_codes q ON s.unique_student_id = q.student_unique_id AND s.payroll_no = q.payroll_number
+    LEFT JOIN qr_codes q ON s.student_id = q.student_id AND s.payroll_no = q.payroll_number
     LEFT JOIN distributions d ON s.student_id = d.student_id
     WHERE s.status IN ('active', 'given') AND s.payroll_no IS NOT NULL
     ORDER BY s.payroll_no ASC
@@ -253,7 +253,7 @@ if ($students_result) {
                     <tr id="student-<?= $student['student_id'] ?>">
                       <td><strong><?= htmlspecialchars($student['payroll_no']) ?></strong></td>
                       <td><?= htmlspecialchars(trim($student['first_name'] . ' ' . $student['middle_name'] . ' ' . $student['last_name'])) ?></td>
-                      <td><code><?= htmlspecialchars($student['unique_student_id']) ?></code></td>
+                      <td><code><?= htmlspecialchars($student['student_id']) ?></code></td>
                       <td>
                         <span class="badge status-<?= $student['status'] ?>">
                           <?= ucfirst($student['status']) ?>
@@ -555,7 +555,7 @@ if ($students_result) {
               <h6 class="text-primary">Student Information</h6>
               <table class="table table-sm">
                 <tr><td><strong>Name:</strong></td><td>${student.first_name} ${student.middle_name || ''} ${student.last_name}</td></tr>
-                <tr><td><strong>Student ID:</strong></td><td><code>${student.unique_student_id}</code></td></tr>
+                <tr><td><strong>Student ID:</strong></td><td><code>${student.student_id}</code></td></tr>
                 <tr><td><strong>Payroll Number:</strong></td><td><span class="badge bg-primary">${student.payroll_no}</span></td></tr>
               </table>
             </div>

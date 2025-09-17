@@ -293,7 +293,7 @@ $reasonCategories = [
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <button class="btn btn-sm btn-outline-info" onclick="viewDetails(<?= $student['student_id'] ?>)">
+                                                    <button class="btn btn-sm btn-outline-info" onclick="viewDetails('<?= $student['student_id'] ?>')">
                                                         <i class="bi bi-eye"></i> Details
                                                     </button>
                                                 </td>
