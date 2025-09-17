@@ -8,7 +8,7 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 
-$student_id = intval($_GET['student_id']);
+$student_id = trim($_GET['student_id']); // Remove intval for TEXT student_id
 $document_type = $_GET['type'];
 
 // Valid document types

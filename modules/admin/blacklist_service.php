@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Step 1: Initiate blacklist process - verify password and send OTP
     if ($action === 'initiate_blacklist') {
-        $student_id = intval($_POST['student_id']);
+        $student_id = trim($_POST['student_id']); // Remove intval for TEXT student_id
         $password = $_POST['admin_password'];
         $reason_category = $_POST['reason_category'];
         $detailed_reason = trim($_POST['detailed_reason'] ?? '');
@@ -172,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         error_log("Complete blacklist action received");
         error_log("POST data: " . print_r($_POST, true));
         
-        $student_id = intval($_POST['student_id']);
+        $student_id = trim($_POST['student_id']); // Remove intval for TEXT student_id
         $otp = $_POST['otp'];
         
         error_log("Student ID: $student_id, OTP: $otp, Admin ID: $admin_id");

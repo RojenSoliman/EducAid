@@ -6,7 +6,7 @@ if (!isset($_SESSION['admin_username']) || !isset($_GET['student_id'])) {
     exit('Unauthorized');
 }
 
-$student_id = intval($_GET['student_id']);
+$student_id = trim($_GET['student_id']); // Remove intval for TEXT student_id
 
 // Fetch detailed blacklist information
 $query = "SELECT s.*, bl.*, 

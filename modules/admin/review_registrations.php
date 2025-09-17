@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['bulk_action']) && isset($_POST['student_ids'])) {
         $action = $_POST['bulk_action'];
         $student_ids = explode(',', $_POST['student_ids']);
-        $student_ids = array_map('intval', $student_ids);
+        $student_ids = array_map('trim', $student_ids); // Remove whitespace instead of intval
         $student_ids = array_filter($student_ids); // Remove empty values
         
         if (!empty($student_ids) && in_array($action, ['approve', 'reject'])) {
@@ -215,7 +215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Handle individual actions
     if (isset($_POST['action']) && isset($_POST['student_id'])) {
-        $student_id = intval($_POST['student_id']);
+        $student_id = trim($_POST['student_id']); // Remove intval for TEXT student_id
         $action = $_POST['action'];
         $remarks = trim($_POST['remarks'] ?? '');
         
@@ -549,6 +549,142 @@ $result = pg_query_params($connection, $query, $params);
 $pendingRegistrations = [];
 while ($row = pg_fetch_assoc($result)) {
     $pendingRegistrations[] = $row;
+}
+
+// Handle AJAX requests for real-time updates
+if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+    // Return only the table body content for AJAX updates
+    ob_start();
+    ?>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="fw-bold mb-1">Review Registrations</h1>
+            <p class="text-muted mb-0">Review and approve/reject pending student registrations.</p>
+        </div>
+        <div class="text-end">
+            <span class="badge bg-warning fs-6"><?php echo $totalRecords; ?> Pending</span>
+        </div>
+    </div>
+    
+    <tbody>
+        <?php if (empty($pendingRegistrations)): ?>
+            <tr>
+                <td colspan="8" class="text-center text-muted py-4">
+                    <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                    No pending registrations found.
+                </td>
+            </tr>
+        <?php else: ?>
+            <?php foreach ($pendingRegistrations as $registration): ?>
+                <tr>
+                    <td class="text-center">
+                        <input type="checkbox" class="form-check-input row-select" value="<?php echo $registration['student_id']; ?>" onchange="updateSelection()">
+                    </td>
+                    <td>
+                        <?php if ($registration['photo_path']): ?>
+                            <img src="<?php echo htmlspecialchars($registration['photo_path']); ?>" 
+                                 alt="Student Photo" class="student-photo">
+                        <?php else: ?>
+                            <div class="student-photo bg-secondary d-flex align-items-center justify-content-center">
+                                <i class="bi bi-person text-white"></i>
+                            </div>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <div class="fw-bold"><?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?></div>
+                        <small class="text-muted"><?php echo htmlspecialchars($registration['email']); ?></small>
+                    </td>
+                    <td>
+                        <div class="fw-bold"><?php echo htmlspecialchars($registration['barangay_name'] ?? 'N/A'); ?></div>
+                        <small class="text-muted"><?php echo htmlspecialchars($registration['university_name'] ?? 'N/A'); ?></small>
+                    </td>
+                    <td>
+                        <?php
+                        $confidence = floatval($registration['confidence_score']);
+                        $level = $registration['confidence_level'];
+                        $badgeClass = '';
+                        switch($level) {
+                            case 'Very High': $badgeClass = 'bg-success'; break;
+                            case 'High': $badgeClass = 'bg-info'; break;
+                            case 'Medium': $badgeClass = 'bg-warning'; break;
+                            case 'Low': $badgeClass = 'bg-danger'; break;
+                            default: $badgeClass = 'bg-secondary';
+                        }
+                        ?>
+                        <div class="confidence-badge <?php echo $badgeClass; ?>" title="<?php echo $level; ?>">
+                            <?php echo round($confidence, 1); ?>%
+                        </div>
+                        <div>
+                            <small class="text-muted"><?php echo $level; ?></small>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="document-buttons">
+                            <!-- Certificate of Indigency -->
+                            <?php if ($registration['has_certificate'] > 0): ?>
+                                <button type="button" class="btn btn-outline-success btn-sm" 
+                                        onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'certificate_of_indigency')"
+                                        title="View Certificate of Indigency">
+                                    <i class="bi bi-file-earmark-check"></i>
+                                </button>
+                            <?php endif; ?>
+                            
+                            <!-- Letter to Mayor -->
+                            <?php if ($registration['has_letter'] > 0): ?>
+                                <button type="button" class="btn btn-outline-info btn-sm" 
+                                        onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'letter_to_mayor')"
+                                        title="View Letter to Mayor">
+                                    <i class="bi bi-file-earmark-person"></i>
+                                </button>
+                            <?php endif; ?>
+                            
+                            <!-- EAF Document (from documents table) -->
+                            <?php if ($registration['has_eaf'] > 0): ?>
+                                <button type="button" class="btn btn-outline-primary btn-sm" 
+                                        onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'eaf')"
+                                        title="View EAF Document">
+                                    <i class="bi bi-file-text"></i>
+                                </button>
+                            <?php endif; ?>
+                            
+                            <?php if ($registration['has_certificate'] == 0 && $registration['has_letter'] == 0 && $registration['has_eaf'] == 0): ?>
+                                <small class="text-muted">No documents</small>
+                            <?php endif; ?>
+                        </div>
+                    </td>
+                    <td>
+                        <small class="text-muted"><?php echo date('M d, Y', strtotime($registration['created_at'])); ?></small>
+                    </td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn btn-info btn-sm" 
+                                    onclick="viewDetails(<?php echo $registration['student_id']; ?>)"
+                                    title="View Details">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button class="btn btn-success btn-sm" 
+                                    onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'approve', '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?>')"
+                                    title="Approve">
+                                <i class="bi bi-check-lg"></i>
+                            </button>
+                            <button class="btn btn-danger btn-sm" 
+                                    onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'reject', '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?>')"
+                                    title="Reject">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </tbody>
+    
+    <div class="pagination-info">
+        Showing <?php echo min(($page - 1) * $limit + 1, $totalRecords); ?> to <?php echo min($page * $limit, $totalRecords); ?> of <?php echo $totalRecords; ?> entries
+    </div>
+    <?php
+    echo ob_get_clean();
+    exit;
 }
 
 // Fetch filter options
@@ -2059,6 +2195,64 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                 Math.pow(touch2.clientY - touch1.clientY, 2)
             );
         }
+
+        // Real-time updates
+        let isUpdating = false;
+        let lastUpdateData = null;
+
+        function updateTableData() {
+            if (isUpdating) return;
+            isUpdating = true;
+
+            const currentUrl = new URL(window.location);
+            const params = new URLSearchParams(currentUrl.search);
+            params.set('ajax', '1');
+
+            fetch(window.location.pathname + '?' + params.toString())
+                .then(response => response.text())
+                .then(data => {
+                    if (data !== lastUpdateData) {
+                        // Parse the response to extract table content and stats
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = data;
+                        
+                        // Update table body
+                        const newTableBody = tempDiv.querySelector('tbody');
+                        const currentTableBody = document.querySelector('tbody');
+                        if (newTableBody && currentTableBody && newTableBody.innerHTML !== currentTableBody.innerHTML) {
+                            currentTableBody.innerHTML = newTableBody.innerHTML;
+                        }
+
+                        // Update pending count badge
+                        const newBadge = tempDiv.querySelector('.badge.bg-warning');
+                        const currentBadge = document.querySelector('.badge.bg-warning');
+                        if (newBadge && currentBadge) {
+                            currentBadge.textContent = newBadge.textContent;
+                        }
+
+                        // Update pagination info if it exists
+                        const newPaginationInfo = tempDiv.querySelector('.pagination-info');
+                        const currentPaginationInfo = document.querySelector('.pagination-info');
+                        if (newPaginationInfo && currentPaginationInfo) {
+                            currentPaginationInfo.textContent = newPaginationInfo.textContent;
+                        }
+
+                        lastUpdateData = data;
+                    }
+                })
+                .catch(error => {
+                    console.log('Update failed:', error);
+                })
+                .finally(() => {
+                    isUpdating = false;
+                    setTimeout(updateTableData, 100); // Update every 100ms
+                });
+        }
+
+        // Start real-time updates when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(updateTableData, 100);
+        });
     </script>
 
     <!-- Include Blacklist Modal -->
