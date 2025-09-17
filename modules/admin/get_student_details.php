@@ -33,7 +33,7 @@ if (!$student) {
         <table class="table table-sm">
             <tr>
                 <td class="fw-semibold">Full Name:</td>
-                <td><?php echo htmlspecialchars($student['first_name'] . ' ' . $student['middle_name'] . ' ' . $student['last_name']); ?></td>
+                <td><?php echo htmlspecialchars(trim($student['first_name'] . ' ' . $student['middle_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name'])); ?></td>
             </tr>
             <tr>
                 <td class="fw-semibold">Email:</td>

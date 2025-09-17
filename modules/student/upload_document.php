@@ -22,8 +22,8 @@ if (isset($_SESSION['upload_fail'])) {
 // Get student ID
 $student_id = $_SESSION['student_id'];
 
-// Check if all required documents are uploaded
-$query = "SELECT COUNT(*) AS total_uploaded FROM documents WHERE student_id = $1 AND type IN ('id_picture', 'certificate_of_indigency', 'letter_to_mayor')";
+// Check if all required documents are uploaded (excluding letter_to_mayor which is now part of registration)
+$query = "SELECT COUNT(*) AS total_uploaded FROM documents WHERE student_id = $1 AND type IN ('id_picture', 'certificate_of_indigency')";
 /** @phpstan-ignore-next-line */
 $result = pg_query_params($connection, $query, [$student_id]);
 $row = pg_fetch_assoc($result);
@@ -38,7 +38,7 @@ $latest_grades_query = "SELECT * FROM grade_uploads WHERE student_id = $1 ORDER 
 $latest_grades_result = pg_query_params($connection, $latest_grades_query, [$student_id]);
 $latest_grades = pg_fetch_assoc($latest_grades_result);
 
-if ($row['total_uploaded'] == 3 && $grades_row['grades_uploaded'] > 0) {
+if ($row['total_uploaded'] == 2 && $grades_row['grades_uploaded'] > 0) {
     $allDocumentsUploaded = true;
 } else {
     $allDocumentsUploaded = false;
@@ -68,8 +68,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
         $fileTmpName = $_FILES['documents']['tmp_name'][$index];
         $fileType = $_POST['document_type'][$index];
 
-        // Validate the document type
-        if (!in_array($fileType, ['id_picture', 'certificate_of_indigency', 'letter_to_mayor'])) {
+        // Validate the document type (letter_to_mayor is now part of registration)
+        if (!in_array($fileType, ['id_picture', 'certificate_of_indigency'])) {
             continue;
         }
 
@@ -321,21 +321,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
               
               <div class="progress-item">
                 <div class="progress-icon <?php echo $row['total_uploaded'] >= 2 ? 'completed' : 'pending'; ?>">
-                  <i class="bi bi-file-text-fill"></i>
-                </div>
-                <div class="progress-label">Letter to Mayor</div>
-                <div class="progress-status">
-                  <?php echo $row['total_uploaded'] >= 2 ? 'Uploaded' : 'Required'; ?>
-                </div>
-              </div>
-              
-              <div class="progress-item">
-                <div class="progress-icon <?php echo $row['total_uploaded'] >= 3 ? 'completed' : 'pending'; ?>">
                   <i class="bi bi-award-fill"></i>
                 </div>
                 <div class="progress-label">Certificate of Indigency</div>
                 <div class="progress-status">
-                  <?php echo $row['total_uploaded'] >= 3 ? 'Uploaded' : 'Required'; ?>
+                  <?php echo $row['total_uploaded'] >= 2 ? 'Uploaded' : 'Required'; ?>
                 </div>
               </div>
               
@@ -354,10 +344,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
             <div class="overall-progress">
               <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="fw-bold">Overall Progress</span>
-                <span class="text-muted"><?php echo ($row['total_uploaded'] + ($grades_row['grades_uploaded'] > 0 ? 1 : 0)); ?> of 4 completed</span>
+                <span class="text-muted"><?php echo ($row['total_uploaded'] + ($grades_row['grades_uploaded'] > 0 ? 1 : 0)); ?> of 3 completed</span>
               </div>
               <div class="progress-bar-container">
-                <div class="progress-bar-fill" style="width: <?php echo (($row['total_uploaded'] + ($grades_row['grades_uploaded'] > 0 ? 1 : 0)) / 4) * 100; ?>%"></div>
+                <div class="progress-bar-fill" style="width: <?php echo (($row['total_uploaded'] + ($grades_row['grades_uploaded'] > 0 ? 1 : 0)) / 3) * 100; ?>%"></div>
               </div>
             </div>
           </div>
@@ -444,30 +434,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
                   </div>
                   
                   <div class="file-preview" id="preview_id_picture"></div>
-                </div>
-
-                <!-- Letter to Mayor -->
-                <div class="upload-form-item" data-document="letter_to_mayor">
-                  <div class="upload-item-header">
-                    <div class="upload-item-icon">
-                      <i class="bi bi-file-text-fill"></i>
-                    </div>
-                    <div class="upload-item-info">
-                      <h4>Letter to Mayor</h4>
-                      <p>Official letter addressed to the mayor</p>
-                    </div>
-                  </div>
-                  
-                  <div class="custom-file-input">
-                    <input type="file" name="documents[]" id="letter_to_mayor_input" accept="image/*,.pdf" required>
-                    <input type="hidden" name="document_type[]" value="letter_to_mayor">
-                    <div class="file-input-label">
-                      <i class="bi bi-cloud-upload"></i>
-                      <span>Choose file or drag and drop</span>
-                    </div>
-                  </div>
-                  
-                  <div class="file-preview" id="preview_letter_to_mayor"></div>
                 </div>
 
                 <!-- Certificate of Indigency -->

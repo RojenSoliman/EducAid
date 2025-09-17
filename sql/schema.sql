@@ -35,6 +35,7 @@ CREATE TABLE students (
     first_name TEXT,
     middle_name TEXT,
     last_name TEXT,
+    extension_name TEXT, -- For suffixes like Jr., Sr., I, II, III, etc.
     email TEXT UNIQUE,
     mobile TEXT,
     password TEXT NOT NULL,

@@ -62,20 +62,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $success_count++;
                         
                         // Get student email for notification
-                        $emailQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1";
+                        $emailQuery = "SELECT email, first_name, last_name, extension_name FROM students WHERE student_id = $1";
                         $emailResult = pg_query_params($connection, $emailQuery, [$student_id]);
                         if ($student = pg_fetch_assoc($emailResult)) {
-                            sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], true, '');
+                            sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], $student['extension_name'], true, '');
                             
                             // Add admin notification
-                            $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                            $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
                             $notification_msg = "Registration approved for student: " . $student_name . " (ID: " . $student_id . ")";
                             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                         }
                     }
                 } elseif ($action === 'reject') {
                     // Get student information before deletion
-                    $studentQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1 AND status = 'under_registration'";
+                    $studentQuery = "SELECT email, first_name, last_name, extension_name FROM students WHERE student_id = $1 AND status = 'under_registration'";
                     $studentResult = pg_query_params($connection, $studentQuery, [$student_id]);
                     $student = pg_fetch_assoc($studentResult);
                     
@@ -106,10 +106,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $success_count++;
                             
                             // Send rejection email
-                            sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], false, '');
+                            sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], $student['extension_name'], false, '');
                             
                             // Add admin notification
-                            $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                            $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
                             $notification_msg = "Registration rejected and removed for student: " . $student_name . " (ID: " . $student_id . ") - Slot freed up and files deleted";
                             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                         }
@@ -166,15 +166,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 // Get student email for notification
-                $emailQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1";
+                $emailQuery = "SELECT email, first_name, last_name, extension_name FROM students WHERE student_id = $1";
                 $emailResult = pg_query_params($connection, $emailQuery, [$student_id]);
                 $student = pg_fetch_assoc($emailResult);
-                
+
                 // Send approval email
-                sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], true, $remarks);
-                
+                sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], $student['extension_name'], true, $remarks);
+
                 // Add admin notification
-                $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
                 $notification_msg = "Registration approved for student: " . $student_name . " (ID: " . $student_id . ")";
                 pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                 
@@ -182,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($action === 'reject') {
             // Get student information before deletion
-            $studentQuery = "SELECT email, first_name, last_name FROM students WHERE student_id = $1";
+            $studentQuery = "SELECT email, first_name, last_name, extension_name FROM students WHERE student_id = $1";
             $studentResult = pg_query_params($connection, $studentQuery, [$student_id]);
             $student = pg_fetch_assoc($studentResult);
             
@@ -211,10 +211,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if ($deleteResult) {
                     // Send rejection email
-                    sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], false, $remarks);
+                    sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], $student['extension_name'], false, $remarks);
                     
                     // Add admin notification
-                    $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                    $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
                     $notification_msg = "Registration rejected and removed for student: " . $student_name . " (ID: " . $student_id . ")" . ($remarks ? " - Reason: " . $remarks : "") . " - Slot freed up and files deleted";
                     pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                     
@@ -232,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-function sendApprovalEmail($email, $firstName, $lastName, $approved, $remarks = '') {
+function sendApprovalEmail($email, $firstName, $lastName, $extensionName, $approved, $remarks = '') {
     $mail = new PHPMailer(true);
     
     try {
@@ -251,9 +251,10 @@ function sendApprovalEmail($email, $firstName, $lastName, $approved, $remarks = 
         
         if ($approved) {
             $mail->Subject = 'EducAid Registration Approved';
+            $fullName = trim($firstName . ' ' . $lastName . ' ' . $extensionName);
             $mail->Body    = "
                 <h3>Registration Approved!</h3>
-                <p>Dear {$firstName} {$lastName},</p>
+                <p>Dear {$fullName},</p>
                 <p>Your EducAid registration has been <strong>approved</strong>. You can now log in to your account and proceed with your application.</p>
                 " . (!empty($remarks) ? "<p><strong>Admin Notes:</strong> {$remarks}</p>" : "") . "
                 <p>You can log in at: <a href='http://localhost/EducAid/unified_login.php'>EducAid Login</a></p>
@@ -261,9 +262,10 @@ function sendApprovalEmail($email, $firstName, $lastName, $approved, $remarks = 
             ";
         } else {
             $mail->Subject = 'EducAid Registration Update';
+            $fullName = trim($firstName . ' ' . $lastName . ' ' . $extensionName);
             $mail->Body    = "
                 <h3>Registration Status Update</h3>
-                <p>Dear {$firstName} {$lastName},</p>
+                <p>Dear {$fullName},</p>
                 <p>Thank you for your interest in EducAid. Unfortunately, your registration could not be approved at this time.</p>
                 " . (!empty($remarks) ? "<p><strong>Reason:</strong> {$remarks}</p>" : "") . "
                 <p>If you believe this is an error or would like to reapply, please contact our office.</p>
@@ -643,7 +645,7 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                             <div class="d-flex align-items-center">
                                                 <div>
                                                     <div class="fw-semibold">
-                                                        <?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?>
+                                                        <?php echo htmlspecialchars(trim($registration['first_name'] . ' ' . $registration['last_name'] . ' ' . $registration['extension_name'])); ?>
                                                     </div>
                                                     <small class="text-muted"><?php echo htmlspecialchars($registration['unique_student_id']); ?></small>
                                                 </div>
@@ -680,11 +682,11 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                         <td>
                                             <div class="action-buttons">
                                                 <button type="button" class="btn btn-success btn-sm" 
-                                                        onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'approve', '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?>')">
+                                                        onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'approve', '<?php echo htmlspecialchars(trim($registration['first_name'] . ' ' . $registration['last_name'] . ' ' . $registration['extension_name'])); ?>')">
                                                     <i class="bi bi-check"></i>
                                                 </button>
                                                 <button type="button" class="btn btn-danger btn-sm" 
-                                                        onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'reject', '<?php echo htmlspecialchars($registration['first_name'] . ' ' . $registration['last_name']); ?>')">
+                                                        onclick="showActionModal(<?php echo $registration['student_id']; ?>, 'reject', '<?php echo htmlspecialchars(trim($registration['first_name'] . ' ' . $registration['last_name'] . ' ' . $registration['extension_name'])); ?>')">
                                                     <i class="bi bi-x"></i>
                                                 </button>
                                                 <button type="button" class="btn btn-outline-info btn-sm" 

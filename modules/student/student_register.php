@@ -231,6 +231,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         'first_name' => trim($_POST['first_name'] ?? ''),
         'middle_name' => trim($_POST['middle_name'] ?? ''),
         'last_name' => trim($_POST['last_name'] ?? ''),
+        'extension_name' => trim($_POST['extension_name'] ?? ''),
         'university_id' => intval($_POST['university_id'] ?? 0),
         'year_level_id' => intval($_POST['year_level_id'] ?? 0)
     ];
@@ -267,31 +268,103 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     }
 
     $ocrText = file_get_contents($outputFile);
+    
+    // Clean up temporary OCR files
+    if (file_exists($outputFile)) {
+        unlink($outputFile);
+    }
+    
+    if (empty(trim($ocrText))) {
+        echo json_encode([
+            'status' => 'error', 
+            'message' => 'No text could be extracted from the document. Please ensure the image is clear and contains readable text.'
+        ]);
+        exit;
+    }
+    
     $ocrTextLower = strtolower($ocrText);
 
-    // Verification results
+    // Enhanced verification results with confidence tracking
     $verification = [
         'first_name' => false,
         'middle_name' => false,
         'last_name' => false,
         'year_level' => false,
         'university' => false,
-        'document_keywords' => false
+        'document_keywords' => false,
+        'confidence_scores' => [],
+        'found_text_snippets' => []
     ];
-
-    // Check first name
-    if (!empty($formData['first_name']) && stripos($ocrText, $formData['first_name']) !== false) {
-        $verification['first_name'] = true;
+    
+    // Function to calculate similarity score (reusable)
+    function calculateEAFSimilarity($needle, $haystack) {
+        $needle = strtolower(trim($needle));
+        $haystack = strtolower(trim($haystack));
+        
+        // Exact match
+        if (stripos($haystack, $needle) !== false) {
+            return 100;
+        }
+        
+        // Check for partial matches with high similarity
+        $words = explode(' ', $haystack);
+        $maxSimilarity = 0;
+        
+        foreach ($words as $word) {
+            if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                $similarity = 0;
+                similar_text($needle, $word, $similarity);
+                $maxSimilarity = max($maxSimilarity, $similarity);
+            }
+        }
+        
+        return $maxSimilarity;
     }
 
-    // Check middle name (optional)
-    if (empty($formData['middle_name']) || stripos($ocrText, $formData['middle_name']) !== false) {
-        $verification['middle_name'] = true;
+    // Enhanced name checking with similarity scoring
+    if (!empty($formData['first_name'])) {
+        $similarity = calculateEAFSimilarity($formData['first_name'], $ocrTextLower);
+        $verification['confidence_scores']['first_name'] = $similarity;
+        
+        if ($similarity >= 80) {
+            $verification['first_name'] = true;
+            // Find and store the matched text snippet
+            $pattern = '/\b\w*' . preg_quote(substr($formData['first_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['first_name'] = $matches[0];
+            }
+        }
     }
 
-    // Check last name
-    if (!empty($formData['last_name']) && stripos($ocrText, $formData['last_name']) !== false) {
-        $verification['last_name'] = true;
+    // Check middle name (optional) with improved matching
+    if (empty($formData['middle_name'])) {
+        $verification['middle_name'] = true; // Skip if no middle name provided
+        $verification['confidence_scores']['middle_name'] = 100;
+    } else {
+        $similarity = calculateEAFSimilarity($formData['middle_name'], $ocrTextLower);
+        $verification['confidence_scores']['middle_name'] = $similarity;
+        
+        if ($similarity >= 70) { // Slightly lower threshold for middle names
+            $verification['middle_name'] = true;
+            $pattern = '/\b\w*' . preg_quote(substr($formData['middle_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['middle_name'] = $matches[0];
+            }
+        }
+    }
+
+    // Check last name with improved matching
+    if (!empty($formData['last_name'])) {
+        $similarity = calculateEAFSimilarity($formData['last_name'], $ocrTextLower);
+        $verification['confidence_scores']['last_name'] = $similarity;
+        
+        if ($similarity >= 80) {
+            $verification['last_name'] = true;
+            $pattern = '/\b\w*' . preg_quote(substr($formData['last_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['last_name'] = $matches[0];
+            }
+        }
     }
 
     // Check year level (must match the specific year level selected by user)
@@ -323,49 +396,354 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         }
     }
 
-    // Check university name (partial matches)
+    // Enhanced university name checking with better matching
     if (!empty($universityName)) {
-        $universityWords = explode(' ', strtolower($universityName));
+        $universityWords = array_filter(explode(' ', strtolower($universityName)));
         $foundWords = 0;
+        $totalWords = count($universityWords);
+        $foundSnippets = [];
+        
         foreach ($universityWords as $word) {
-            if (strlen($word) > 3 && stripos($ocrText, $word) !== false) {
-                $foundWords++;
+            if (strlen($word) > 2) { // Check words longer than 2 characters
+                $similarity = calculateEAFSimilarity($word, $ocrTextLower);
+                if ($similarity >= 70) {
+                    $foundWords++;
+                    // Try to find the actual matched word in the text
+                    $pattern = '/\b\w*' . preg_quote(substr($word, 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $foundSnippets[] = $matches[0];
+                    }
+                }
             }
         }
-        if ($foundWords >= 2 || (count($universityWords) <= 2 && $foundWords >= 1)) {
+        
+        $universityScore = ($foundWords / max($totalWords, 1)) * 100;
+        $verification['confidence_scores']['university'] = round($universityScore, 1);
+        
+        // Accept if at least 60% of university words are found, or if it's a short name and 1+ words found
+        if ($universityScore >= 60 || ($totalWords <= 2 && $foundWords >= 1)) {
             $verification['university'] = true;
+            if (!empty($foundSnippets)) {
+                $verification['found_text_snippets']['university'] = implode(', ', array_unique($foundSnippets));
+            }
         }
     }
 
-    // Check document keywords
+    // Enhanced document keywords checking
     $documentKeywords = [
         'enrollment', 'assessment', 'form', 'official', 'academic', 'student',
         'tuition', 'fees', 'semester', 'registration', 'course', 'subject',
-        'grade', 'transcript', 'record', 'university', 'college', 'school'
+        'grade', 'transcript', 'record', 'university', 'college', 'school',
+        'eaf', 'assessment form', 'billing', 'statement', 'certificate'
     ];
 
     $keywordMatches = 0;
+    $foundKeywords = [];
+    $keywordScore = 0;
+    
     foreach ($documentKeywords as $keyword) {
-        if (stripos($ocrText, $keyword) !== false) {
+        $similarity = calculateEAFSimilarity($keyword, $ocrTextLower);
+        if ($similarity >= 80) {
             $keywordMatches++;
+            $foundKeywords[] = $keyword;
+            $keywordScore += $similarity;
         }
     }
+    
+    $averageKeywordScore = $keywordMatches > 0 ? ($keywordScore / $keywordMatches) : 0;
+    $verification['confidence_scores']['document_keywords'] = round($averageKeywordScore, 1);
 
     if ($keywordMatches >= 3) {
         $verification['document_keywords'] = true;
+        $verification['found_text_snippets']['document_keywords'] = implode(', ', $foundKeywords);
     }
 
-    // Calculate overall success
-    $requiredChecks = ['first_name', 'last_name', 'year_level', 'university', 'document_keywords'];
+    // Enhanced overall success calculation
+    $requiredChecks = ['first_name', 'middle_name', 'last_name', 'year_level', 'university', 'document_keywords'];
     $passedChecks = 0;
+    $totalConfidence = 0;
+    $confidenceCount = 0;
+    
     foreach ($requiredChecks as $check) {
         if ($verification[$check]) {
             $passedChecks++;
         }
+        // Add confidence score to total if available
+        if (isset($verification['confidence_scores'][$check])) {
+            $totalConfidence += $verification['confidence_scores'][$check];
+            $confidenceCount++;
+        }
+    }
+    
+    $averageConfidence = $confidenceCount > 0 ? ($totalConfidence / $confidenceCount) : 0;
+    
+    // More nuanced success criteria:
+    // Option 1: At least 4 out of 6 checks pass
+    // Option 2: At least 3 checks pass with high confidence
+    $verification['overall_success'] = ($passedChecks >= 4) || 
+                                     ($passedChecks >= 3 && $averageConfidence >= 80);
+    
+    $verification['summary'] = [
+        'passed_checks' => $passedChecks,
+        'total_checks' => 6,
+        'average_confidence' => round($averageConfidence, 1),
+        'recommendation' => $verification['overall_success'] ? 
+            'Document validation successful' : 
+            'Please ensure the document clearly shows your name, university, year level, and appears to be an official enrollment form'
+    ];
+    
+    // Include OCR text preview for debugging (truncated for security)
+    $verification['ocr_text_preview'] = substr($ocrText, 0, 500) . (strlen($ocrText) > 500 ? '...' : '');
+
+    echo json_encode(['status' => 'success', 'verification' => $verification]);
+    exit;
+}
+
+// --- Letter to Mayor OCR Processing ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) {
+    if (!isset($_FILES['letter_to_mayor']) || $_FILES['letter_to_mayor']['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['status' => 'error', 'message' => 'No letter file uploaded or upload error.']);
+        exit;
     }
 
-    $verification['overall_success'] = $passedChecks >= 4; // At least 4 out of 5 required checks
-    $verification['ocr_text'] = $ocrText; // For debugging
+    $uploadDir = 'assets/uploads/temp/';
+    if (!file_exists($uploadDir)) {
+        mkdir($uploadDir, 0777, true);
+    }
+
+    // Clear temp folder for letter files
+    $letterFiles = glob($uploadDir . 'letter_*');
+    foreach ($letterFiles as $file) {
+        if (is_file($file)) unlink($file);
+    }
+
+    $uploadedFile = $_FILES['letter_to_mayor'];
+    $fileName = 'letter_' . basename($uploadedFile['name']);
+    $targetPath = $uploadDir . $fileName;
+
+    if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
+        echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded letter file.']);
+        exit;
+    }
+
+    // Get form data for comparison
+    $formData = [
+        'first_name' => trim($_POST['first_name'] ?? ''),
+        'last_name' => trim($_POST['last_name'] ?? ''),
+        'barangay_id' => intval($_POST['barangay_id'] ?? 0)
+    ];
+
+    // Get barangay name for comparison
+    $barangayName = '';
+    if ($formData['barangay_id'] > 0) {
+        $barangayResult = pg_query_params($connection, "SELECT name FROM barangays WHERE barangay_id = $1", [$formData['barangay_id']]);
+        if ($barangayRow = pg_fetch_assoc($barangayResult)) {
+            $barangayName = $barangayRow['name'];
+        }
+    }
+
+    // Perform OCR using Tesseract with optimized settings for letter documents
+    $outputBase = $uploadDir . 'letter_ocr_' . pathinfo($fileName, PATHINFO_FILENAME);
+    
+    // Use optimized Tesseract settings for letter documents:
+    // --oem 1: Use LSTM neural net engine
+    // --psm 6: Uniform block of text (good for letters)
+    // -l eng: English language
+    // Additional preprocessing for better accuracy
+    $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) . 
+               " --oem 1 --psm 6 -l eng 2>&1";
+    
+    $tesseractOutput = shell_exec($command);
+    $outputFile = $outputBase . ".txt";
+    
+    if (!file_exists($outputFile)) {
+        echo json_encode([
+            'status' => 'error', 
+            'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
+            'debug_info' => $tesseractOutput
+        ]);
+        exit;
+    }
+    
+    $ocrText = file_get_contents($outputFile);
+    
+    // Clean up temporary OCR files
+    if (file_exists($outputFile)) {
+        unlink($outputFile);
+    }
+    
+    if (empty(trim($ocrText))) {
+        echo json_encode([
+            'status' => 'error', 
+            'message' => 'No text could be extracted from the document. Please ensure the image is clear and contains readable text.'
+        ]);
+        exit;
+    }
+
+    // Improved verification checks for letter to mayor with fuzzy matching
+    $verification = [
+        'first_name' => false,
+        'last_name' => false,
+        'barangay' => false,
+        'mayor_header' => false,
+        'confidence_scores' => [],
+        'found_text_snippets' => []
+    ];
+    
+    // Normalize OCR text for better matching
+    $ocrTextNormalized = strtolower(preg_replace('/[^\w\s]/', ' ', $ocrText));
+    $ocrWords = array_filter(explode(' ', $ocrTextNormalized));
+    
+    // Function to calculate similarity score
+    function calculateSimilarity($needle, $haystack) {
+        $needle = strtolower(trim($needle));
+        $haystack = strtolower(trim($haystack));
+        
+        // Exact match
+        if (stripos($haystack, $needle) !== false) {
+            return 100;
+        }
+        
+        // Check for partial matches with high similarity
+        $words = explode(' ', $haystack);
+        $maxSimilarity = 0;
+        
+        foreach ($words as $word) {
+            if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                $similarity = 0;
+                similar_text($needle, $word, $similarity);
+                $maxSimilarity = max($maxSimilarity, $similarity);
+            }
+        }
+        
+        return $maxSimilarity;
+    }
+    
+    // Check first name with improved matching
+    if (!empty($formData['first_name'])) {
+        $similarity = calculateSimilarity($formData['first_name'], $ocrTextNormalized);
+        $verification['confidence_scores']['first_name'] = $similarity;
+        
+        if ($similarity >= 80) {
+            $verification['first_name'] = true;
+            // Find and store the matched text snippet
+            $pattern = '/\b\w*' . preg_quote(substr($formData['first_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['first_name'] = $matches[0];
+            }
+        }
+    }
+    
+    // Check last name with improved matching
+    if (!empty($formData['last_name'])) {
+        $similarity = calculateSimilarity($formData['last_name'], $ocrTextNormalized);
+        $verification['confidence_scores']['last_name'] = $similarity;
+        
+        if ($similarity >= 80) {
+            $verification['last_name'] = true;
+            // Find and store the matched text snippet
+            $pattern = '/\b\w*' . preg_quote(substr($formData['last_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['last_name'] = $matches[0];
+            }
+        }
+    }
+    
+    // Check barangay name with improved matching
+    if (!empty($barangayName)) {
+        $similarity = calculateSimilarity($barangayName, $ocrTextNormalized);
+        $verification['confidence_scores']['barangay'] = $similarity;
+        
+        if ($similarity >= 70) { // Slightly lower threshold for barangay names
+            $verification['barangay'] = true;
+            // Find and store the matched text snippet
+            $pattern = '/\b\w*' . preg_quote(substr($barangayName, 0, 4), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['barangay'] = $matches[0];
+            }
+        }
+    }
+
+    // Check for "Office of the Mayor" header with improved pattern matching
+    $mayorHeaders = [
+        'office of the mayor',
+        'mayor\'s office', 
+        'office mayor',
+        'municipal mayor',
+        'city mayor',
+        'mayor office',
+        'office of mayor',
+        'municipal government',
+        'city government',
+        'local government unit',
+        'lgu'
+    ];
+    
+    $mayorHeaderFound = false;
+    $mayorConfidence = 0;
+    $foundMayorText = '';
+    
+    foreach ($mayorHeaders as $header) {
+        $similarity = calculateSimilarity($header, $ocrTextNormalized);
+        if ($similarity > $mayorConfidence) {
+            $mayorConfidence = $similarity;
+        }
+        
+        if ($similarity >= 70) {
+            $mayorHeaderFound = true;
+            // Try to find the actual text snippet
+            $pattern = '/[^\n]*' . preg_quote(explode(' ', $header)[0], '/') . '[^\n]*/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $foundMayorText = trim($matches[0]);
+            }
+            break;
+        }
+    }
+    
+    $verification['mayor_header'] = $mayorHeaderFound;
+    $verification['confidence_scores']['mayor_header'] = $mayorConfidence;
+    if (!empty($foundMayorText)) {
+        $verification['found_text_snippets']['mayor_header'] = $foundMayorText;
+    }
+
+    // Calculate overall success with improved scoring
+    $requiredLetterChecks = ['first_name', 'last_name', 'barangay', 'mayor_header'];
+    $passedLetterChecks = 0;
+    $totalConfidence = 0;
+    
+    foreach ($requiredLetterChecks as $check) {
+        if ($verification[$check]) {
+            $passedLetterChecks++;
+        }
+        // Add confidence score to total (default 0 if not set)
+        $totalConfidence += isset($verification['confidence_scores'][$check]) ? 
+            $verification['confidence_scores'][$check] : 0;
+    }
+    
+    $averageConfidence = $totalConfidence / 4;
+    
+    // More nuanced success criteria:
+    // Option 1: At least 3 out of 4 checks pass with decent confidence
+    // Option 2: High overall confidence even if only 2 checks pass
+    $verification['overall_success'] = ($passedLetterChecks >= 3) || 
+                                     ($passedLetterChecks >= 2 && $averageConfidence >= 75);
+    
+    $verification['summary'] = [
+        'passed_checks' => $passedLetterChecks,
+        'total_checks' => 4,
+        'average_confidence' => round($averageConfidence, 1),
+        'recommendation' => $verification['overall_success'] ? 
+            'Document validation successful' : 
+            'Please ensure the document contains your name, barangay, and mayor office header clearly'
+    ];
+    
+    // Include OCR text for debugging (truncated for security)
+    $verification['ocr_text_preview'] = substr($ocrText, 0, 500) . (strlen($ocrText) > 500 ? '...' : '');
+    
+    // Clean up uploaded file after processing
+    if (file_exists($targetPath)) {
+        unlink($targetPath);
+    }
 
     echo json_encode(['status' => 'success', 'verification' => $verification]);
     exit;
@@ -381,6 +759,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $firstname = htmlspecialchars(trim($_POST['first_name']));
     $middlename = htmlspecialchars(trim($_POST['middle_name']));
     $lastname = htmlspecialchars(trim($_POST['last_name']));
+    $extension_name = htmlspecialchars(trim($_POST['extension_name']));
     $bdate = $_POST['bdate'];
     $sex = htmlspecialchars(trim($_POST['sex']));
     $barangay = filter_var($_POST['barangay_id'], FILTER_VALIDATE_INT);
@@ -495,14 +874,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $activeSlot = pg_fetch_assoc($activeSlotQuery);
     $slot_id = $activeSlot ? $activeSlot['slot_id'] : null;
 
-    $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id, slot_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'under_registration', 0, 0, FALSE, NOW(), $9, $10, $11, $12, $13, $14) RETURNING student_id";
+    $insertQuery = "INSERT INTO students (municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, unique_student_id, slot_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'under_registration', 0, 0, FALSE, NOW(), $10, $11, $12, $13, $14, $15) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $municipality_id,
         $firstname,
         $middlename,
         $lastname,
+        $extension_name,
         $email,
         $mobile,
         $hashed,
@@ -542,6 +922,30 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
                 // Clean up original temp file
                 unlink($tempFile);
+            }
+        }
+
+        // Save letter to mayor to temporary folder (not permanent until approved)
+        $letterTempFiles = glob($tempFormPath . 'letter_*');
+        if (!empty($letterTempFiles)) {
+            // Create temporary documents directory for pending students
+            $tempDocumentsDir = '../../assets/uploads/temp/documents/';
+            if (!file_exists($tempDocumentsDir)) {
+                mkdir($tempDocumentsDir, 0777, true);
+            }
+
+            // Move the letter file to temporary documents location with student ID
+            $letterTempFile = $letterTempFiles[0]; // Get the first (and should be only) letter file
+            $letterFilename = basename($letterTempFile);
+            $letterTempPath = $tempDocumentsDir . $student_id . '_letter_to_mayor_' . str_replace('letter_', '', $letterFilename);
+
+            if (copy($letterTempFile, $letterTempPath)) {
+                // Save letter record to database with temporary path
+                $letterQuery = "INSERT INTO documents (student_id, type, file_path, is_valid) VALUES ($1, $2, $3, $4)";
+                pg_query_params($connection, $letterQuery, [$student_id, 'letter_to_mayor', $letterTempPath, false]);
+
+                // Clean up original temp letter file
+                unlink($letterTempFile);
             }
         }
 
@@ -614,6 +1018,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 <span class="step" id="step-indicator-4">4</span>
                 <span class="step" id="step-indicator-5">5</span>
                 <span class="step" id="step-indicator-6">6</span>
+                <span class="step" id="step-indicator-7">7</span>
             </div>
             <form id="multiStepForm" method="POST" autocomplete="off">
                 <!-- Step 1: Personal Information -->
@@ -629,6 +1034,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     <div class="mb-3">
                         <label class="form-label">Last Name <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="last_name" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Extension Name <span class="text-muted">(Optional)</span></label>
+                        <select class="form-control" name="extension_name">
+                            <option value="">None</option>
+                            <option value="Jr.">Jr.</option>
+                            <option value="Sr.">Sr.</option>
+                            <option value="I">I</option>
+                            <option value="II">II</option>
+                            <option value="III">III</option>
+                            <option value="IV">IV</option>
+                            <option value="V">V</option>
+                        </select>
+                        <small class="form-text text-muted">Select suffix if applicable (Jr., Sr., I, II, etc.)</small>
                     </div>
                     <button type="button" class="btn btn-primary w-100" onclick="nextStep()">Next</button>
                 </div>
@@ -765,8 +1184,74 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
                     <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" disabled onclick="nextStep()">Next</button>
                 </div>
-                <!-- Step 5: OTP Verification -->
+                
+                <!-- Step 5: Letter to Mayor Upload and OCR Verification -->
                 <div class="step-panel d-none" id="step-5">
+                    <div class="mb-3">
+                        <label class="form-label">Upload Letter to Mayor</label>
+                        <small class="form-text text-muted d-block">
+                            Please upload a clear photo or PDF of your Letter to Mayor<br>
+                            <strong>Required content:</strong> Your name, barangay, and "Office of the Mayor" header
+                        </small>
+                        <input type="file" class="form-control" name="letter_to_mayor" id="letterToMayorForm" accept="image/*,.pdf" required />
+                        <div id="letterFilenameError" class="text-danger mt-1" style="display: none;">
+                            <small><i class="bi bi-exclamation-triangle me-1"></i>Please upload a valid letter to mayor document</small>
+                        </div>
+                    </div>
+                    <div id="letterUploadPreview" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label">Preview:</label>
+                            <div id="letterPreviewContainer" class="border rounded p-2" style="max-height: 300px; overflow-y: auto;">
+                                <img id="letterPreviewImage" class="img-fluid" style="max-width: 100%; display: none;" />
+                                <div id="letterPdfPreview" class="text-center p-3" style="display: none;">
+                                    <i class="bi bi-file-earmark-pdf fs-1 text-danger"></i>
+                                    <p>PDF File Selected</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="letterOcrSection" class="d-none">
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-info w-100" id="processLetterOcrBtn" disabled>
+                                <i class="bi bi-search me-2"></i>Verify Letter Content
+                            </button>
+                            <small class="text-muted d-block mt-1">
+                                <i class="bi bi-info-circle me-1"></i>Upload a file to enable verification
+                            </small>
+                        </div>
+                        <div id="letterOcrResults" class="d-none">
+                            <div class="mb-3">
+                                <label class="form-label">Verification Results:</label>
+                                <div class="verification-checklist">
+                                    <div class="form-check" id="check-letter-firstname">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>First Name Found</span>
+                                    </div>
+                                    <div class="form-check" id="check-letter-lastname">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Last Name Found</span>
+                                    </div>
+                                    <div class="form-check" id="check-letter-barangay">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Barangay Match</span>
+                                    </div>
+                                    <div class="form-check" id="check-letter-header">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Office of the Mayor Header</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="letterOcrFeedback" class="alert alert-warning mt-3" style="display: none;">
+                                <strong>Verification Failed:</strong> Please ensure your letter contains your name, barangay, and "Office of the Mayor" header.
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" disabled onclick="nextStep()">Next</button>
+                </div>
+                
+                <!-- Step 6: OTP Verification -->
+                <div class="step-panel d-none" id="step-6">
                       <div class="mb-3">
                         <label class="form-label">Email</label>
                         <input type="email" class="form-control" name="email" id="emailInput" required />
@@ -789,10 +1274,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                         <button type="button" class="btn btn-warning w-100 mt-3" id="resendOtpBtn" style="display:none;" disabled>Resend OTP</button>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" onclick="nextStep()">Next</button>
                 </div>
-                <!-- Step 6: Password and Confirmation -->
-                <div class="step-panel d-none" id="step-6">
+                <!-- Step 7: Password and Confirmation -->
+                <div class="step-panel d-none" id="step-7">
                     <div class="mb-3">
                         <label class="form-label">Password</label>
                         <input type="password" class="form-control" name="password" id="password" minlength="12" required />
@@ -845,6 +1330,182 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
 <!-- Your registration JavaScript should come AFTER Bootstrap -->
 <script src="../../assets/js/student/user_registration.js"></script>
+
+<script>
+    // Letter to Mayor Upload Handling
+    document.getElementById('letterToMayorForm').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        const previewContainer = document.getElementById('letterUploadPreview');
+        const previewImage = document.getElementById('letterPreviewImage');
+        const pdfPreview = document.getElementById('letterPdfPreview');
+        const ocrSection = document.getElementById('letterOcrSection');
+        const processBtn = document.getElementById('processLetterOcrBtn');
+
+        if (file) {
+            // Show preview section
+            previewContainer.classList.remove('d-none');
+            ocrSection.classList.remove('d-none');
+
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    previewImage.style.display = 'block';
+                    pdfPreview.style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            } else if (file.type === 'application/pdf') {
+                previewImage.style.display = 'none';
+                pdfPreview.style.display = 'block';
+            }
+
+            // Enable OCR processing button
+            processBtn.disabled = false;
+            processBtn.textContent = 'Verify Letter Content';
+        } else {
+            previewContainer.classList.add('d-none');
+            ocrSection.classList.add('d-none');
+            processBtn.disabled = true;
+        }
+    });
+
+    // Letter to Mayor OCR Processing
+    document.getElementById('processLetterOcrBtn').addEventListener('click', function() {
+        const formData = new FormData();
+        const fileInput = document.getElementById('letterToMayorForm');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            alert('Please select a letter file first.');
+            return;
+        }
+
+        // Add form data
+        formData.append('letter_to_mayor', file);
+        formData.append('processLetterOcr', '1');
+        formData.append('first_name', document.querySelector('input[name="first_name"]').value);
+        formData.append('last_name', document.querySelector('input[name="last_name"]').value);
+        formData.append('barangay_id', document.querySelector('select[name="barangay_id"]').value);
+
+        // Show processing state
+        this.disabled = true;
+        this.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
+
+        fetch('', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                displayLetterVerificationResults(data.verification);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred during processing.');
+        })
+        .finally(() => {
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-search me-2"></i>Verify Letter Content';
+        });
+    });
+
+    function displayLetterVerificationResults(verification) {
+        const resultsDiv = document.getElementById('letterOcrResults');
+        const feedbackDiv = document.getElementById('letterOcrFeedback');
+        const nextButton = document.getElementById('nextStep5Btn');
+
+        // Update verification checklist with confidence scores
+        updateVerificationCheckWithDetails('check-letter-firstname', verification.first_name, 
+            verification.confidence_scores?.first_name, verification.found_text_snippets?.first_name);
+        updateVerificationCheckWithDetails('check-letter-lastname', verification.last_name, 
+            verification.confidence_scores?.last_name, verification.found_text_snippets?.last_name);
+        updateVerificationCheckWithDetails('check-letter-barangay', verification.barangay, 
+            verification.confidence_scores?.barangay, verification.found_text_snippets?.barangay);
+        updateVerificationCheckWithDetails('check-letter-header', verification.mayor_header, 
+            verification.confidence_scores?.mayor_header, verification.found_text_snippets?.mayor_header);
+
+        // Show results
+        resultsDiv.classList.remove('d-none');
+
+        // Update feedback with detailed information
+        if (verification.overall_success) {
+            feedbackDiv.style.display = 'none';
+            nextButton.disabled = false;
+            nextButton.classList.add('btn-success');
+            nextButton.classList.remove('btn-primary');
+        } else {
+            // Show detailed feedback
+            let feedbackMessage = `<strong>Verification Result:</strong> ${verification.summary?.recommendation || 'Some checks failed'}<br>`;
+            feedbackMessage += `<small>Passed ${verification.summary?.passed_checks || 0} of ${verification.summary?.total_checks || 4} checks`;
+            if (verification.summary?.average_confidence) {
+                feedbackMessage += ` (Average confidence: ${verification.summary.average_confidence}%)`;
+            }
+            feedbackMessage += `</small>`;
+            
+            feedbackDiv.innerHTML = feedbackMessage;
+            feedbackDiv.style.display = 'block';
+            nextButton.disabled = true;
+            nextButton.classList.remove('btn-success');
+            nextButton.classList.add('btn-primary');
+        }
+    }
+
+    function updateVerificationCheck(elementId, passed) {
+        const element = document.getElementById(elementId);
+        const icon = element.querySelector('i');
+        
+        if (passed) {
+            icon.className = 'bi bi-check-circle text-success me-2';
+            element.classList.add('text-success');
+            element.classList.remove('text-danger');
+        } else {
+            icon.className = 'bi bi-x-circle text-danger me-2';
+            element.classList.add('text-danger');
+            element.classList.remove('text-success');
+        }
+    }
+    
+    // Enhanced version with confidence scores and found text
+    function updateVerificationCheckWithDetails(elementId, passed, confidence, foundText) {
+        const element = document.getElementById(elementId);
+        const icon = element.querySelector('i');
+        const textSpan = element.querySelector('span');
+        
+        if (passed) {
+            icon.className = 'bi bi-check-circle text-success me-2';
+            element.classList.add('text-success');
+            element.classList.remove('text-danger');
+            
+            // Add confidence score and found text if available
+            let originalText = textSpan.textContent.split(' (')[0]; // Remove any existing details
+            let details = '';
+            if (confidence !== undefined) {
+                details += ` (${Math.round(confidence)}% match`;
+                if (foundText) {
+                    details += `, found: "${foundText}"`;
+                }
+                details += ')';
+            }
+            textSpan.innerHTML = originalText + '<small class="text-muted">' + details + '</small>';
+        } else {
+            icon.className = 'bi bi-x-circle text-danger me-2';
+            element.classList.add('text-danger');
+            element.classList.remove('text-success');
+            
+            // Show confidence if available for failed checks
+            let originalText = textSpan.textContent.split(' (')[0];
+            let details = '';
+            if (confidence !== undefined && confidence > 0) {
+                details += ` <small class="text-muted">(${Math.round(confidence)}% match - needs 70%+)</small>`;
+            }
+            textSpan.innerHTML = originalText + details;
+        }
+    }
+</script>
 
 <!-- ADD this modal HTML before closing </body> tag -->
 <!-- Terms and Conditions Modal -->

@@ -1102,7 +1102,7 @@ function displayVerificationResults(verification) {
 
     resultsContainer.classList.remove('d-none');
 
-    // Update checklist items
+    // Update checklist items with enhanced details
     const checks = ['firstname', 'middlename', 'lastname', 'yearlevel', 'university', 'document'];
     const checkMap = {
         'firstname': 'first_name',
@@ -1116,12 +1116,40 @@ function displayVerificationResults(verification) {
     checks.forEach(check => {
         const element = document.getElementById(`check-${check}`);
         const icon = element.querySelector('i');
+        const textSpan = element.querySelector('span');
         const isValid = verification[checkMap[check]];
+        const confidence = verification.confidence_scores?.[checkMap[check]];
+        const foundText = verification.found_text_snippets?.[checkMap[check]];
+
+        // Get original text without any previous details
+        let originalText = textSpan.textContent.split(' (')[0];
 
         if (isValid) {
             icon.className = 'bi bi-check-circle text-success me-2';
+            element.classList.add('text-success');
+            element.classList.remove('text-danger');
+            
+            // Add confidence score and found text if available
+            let details = '';
+            if (confidence !== undefined) {
+                details += ` (${Math.round(confidence)}% match`;
+                if (foundText && foundText.length < 50) { // Limit display length
+                    details += `, found: "${foundText}"`;
+                }
+                details += ')';
+            }
+            textSpan.innerHTML = originalText + '<small class="text-muted">' + details + '</small>';
         } else {
             icon.className = 'bi bi-x-circle text-danger me-2';
+            element.classList.add('text-danger');
+            element.classList.remove('text-success');
+            
+            // Show confidence for failed checks if available
+            let details = '';
+            if (confidence !== undefined && confidence > 0) {
+                details += ` <small class="text-muted">(${Math.round(confidence)}% match - needs 70%+)</small>`;
+            }
+            textSpan.innerHTML = originalText + details;
         }
     });
 
@@ -1129,7 +1157,17 @@ function displayVerificationResults(verification) {
         triggerMobileVibration('success');
         feedbackContainer.style.display = 'none';
         feedbackContainer.className = 'alert alert-success mt-3';
-        feedbackContainer.innerHTML = '<strong>Verification Successful!</strong> Your document has been validated.';
+        
+        let successMessage = '<strong>Verification Successful!</strong> Your document has been validated.';
+        if (verification.summary) {
+            successMessage += `<br><small>Passed ${verification.summary.passed_checks} of ${verification.summary.total_checks} checks`;
+            if (verification.summary.average_confidence) {
+                successMessage += ` (Average confidence: ${verification.summary.average_confidence}%)`;
+            }
+            successMessage += '</small>';
+        }
+        
+        feedbackContainer.innerHTML = successMessage;
         feedbackContainer.style.display = 'block';
         documentVerified = true;
         document.getElementById('nextStep4Btn').disabled = false;
@@ -1138,11 +1176,25 @@ function displayVerificationResults(verification) {
         triggerMobileVibration('error');
         feedbackContainer.style.display = 'none';
         feedbackContainer.className = 'alert alert-warning mt-3';
-        feedbackContainer.innerHTML = '<strong>Verification Failed:</strong> Please ensure your document is clear and contains all required information. Upload a clearer image or check that the document matches your registration details.';
+        
+        let errorMessage = '<strong>Verification Result:</strong> ';
+        errorMessage += verification.summary?.recommendation || 'Some verification checks failed';
+        errorMessage += '<br><small>';
+        if (verification.summary) {
+            errorMessage += `Passed ${verification.summary.passed_checks} of ${verification.summary.total_checks} checks`;
+            if (verification.summary.average_confidence) {
+                errorMessage += ` (Average confidence: ${verification.summary.average_confidence}%)`;
+            }
+        } else {
+            errorMessage += 'Please ensure your document is clear and contains all required information';
+        }
+        errorMessage += '</small>';
+        
+        feedbackContainer.innerHTML = errorMessage;
         feedbackContainer.style.display = 'block';
         documentVerified = false;
         document.getElementById('nextStep4Btn').disabled = true;
-        showNotifier('Document verification failed. Please try again with a clearer document.', 'error');
+        showNotifier('Document verification needs improvement. Check the details above.', 'error');
     }
 }
 
