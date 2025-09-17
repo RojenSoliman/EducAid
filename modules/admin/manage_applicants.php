@@ -8,7 +8,7 @@ include '../../config/database.php';
 
 // Function to check if all required documents are uploaded
 function check_documents($connection, $student_id) {
-    $required = ['id_picture', 'letter_to_mayor', 'certificate_of_indigency'];
+    $required = ['eaf', 'letter_to_mayor', 'certificate_of_indigency'];
     $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
     $uploaded = [];
     while ($row = pg_fetch_assoc($query)) $uploaded[] = $row['type'];

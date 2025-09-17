@@ -63,7 +63,7 @@ try {
                 $originalFilename = $enrollmentRow['original_filename'];
                 
                 if (file_exists($tempPath)) {
-                    $permanentDir = '../../uploads/enrollment_forms/';
+                    $permanentDir = '../../uploads/student/enrollment_forms/';
                     if (!is_dir($permanentDir)) {
                         mkdir($permanentDir, 0755, true);
                     }
@@ -78,6 +78,45 @@ try {
                             [$permanentPath, $student['student_id']]
                         );
                     }
+                }
+            }
+            
+            // Move documents from temporary to permanent locations
+            $documentsQuery = "SELECT document_id, type, file_path FROM documents WHERE student_id = $1";
+            $documentsResult = pg_query_params($connection, $documentsQuery, [$student['student_id']]);
+            
+            while ($docRow = pg_fetch_assoc($documentsResult)) {
+                $tempDocPath = $docRow['file_path'];
+                $docType = $docRow['type'];
+                $docId = $docRow['document_id'];
+                
+                // Determine permanent directory based on document type
+                if ($docType === 'letter_to_mayor') {
+                    $permanentDocDir = '../../uploads/student/letter_to_mayor/';
+                } elseif ($docType === 'certificate_of_indigency') {
+                    $permanentDocDir = '../../uploads/student/indigency/';
+                } elseif ($docType === 'eaf') {
+                    $permanentDocDir = '../../uploads/student/enrollment_forms/';
+                } else {
+                    continue; // Skip unknown document types
+                }
+                
+                // Create permanent directory if it doesn't exist
+                if (!is_dir($permanentDocDir)) {
+                    mkdir($permanentDocDir, 0755, true);
+                }
+                
+                // Define permanent path
+                $filename = basename($tempDocPath);
+                $permanentDocPath = $permanentDocDir . $filename;
+                
+                // Move file from temporary to permanent location
+                if (file_exists($tempDocPath) && rename($tempDocPath, $permanentDocPath)) {
+                    // Update database with permanent path
+                    pg_query_params($connection, 
+                        "UPDATE documents SET file_path = $1 WHERE document_id = $2", 
+                        [$permanentDocPath, $docId]
+                    );
                 }
             }
             

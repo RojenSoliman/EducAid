@@ -12,7 +12,7 @@ $student_id = intval($_GET['student_id']);
 $document_type = $_GET['type'];
 
 // Valid document types
-$valid_types = ['certificate_of_indigency', 'letter_to_mayor', 'id_picture'];
+$valid_types = ['certificate_of_indigency', 'letter_to_mayor', 'eaf'];
 
 if (!in_array($document_type, $valid_types)) {
     header('Content-Type: application/json');
@@ -31,7 +31,7 @@ if ($result && pg_num_rows($result) > 0) {
     $type_names = [
         'certificate_of_indigency' => 'Certificate of Indigency',
         'letter_to_mayor' => 'Letter to Mayor', 
-        'id_picture' => 'ID Picture'
+        'eaf' => 'Enrollment Assessment Form'
     ];
     
     $filename = $type_names[$document_type] . ' - Student ' . $student_id;

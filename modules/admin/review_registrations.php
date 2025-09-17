@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $originalFilename = $enrollmentRow['original_filename'];
                             
                             // Create permanent directory if it doesn't exist
-                            $permanentDir = __DIR__ . '/../../assets/uploads/enrollment_forms/';
+                            $permanentDir = __DIR__ . '/../../assets/uploads/student/enrollment_forms/';
                             if (!file_exists($permanentDir)) {
                                 mkdir($permanentDir, 0777, true);
                             }
@@ -56,6 +56,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 
                                 // Delete temporary file
                                 unlink($tempPath);
+                            }
+                        }
+
+                        // Move documents from temporary to permanent locations
+                        $documentsQuery = "SELECT document_id, type, file_path FROM documents WHERE student_id = $1";
+                        $documentsResult = pg_query_params($connection, $documentsQuery, [$student_id]);
+                        
+                        while ($docRow = pg_fetch_assoc($documentsResult)) {
+                            $tempDocPath = $docRow['file_path'];
+                            $docType = $docRow['type'];
+                            $docId = $docRow['document_id'];
+                            
+                            // Determine permanent directory based on document type
+                            if ($docType === 'letter_to_mayor') {
+                                $permanentDocDir = __DIR__ . '/../../assets/uploads/student/letter_to_mayor/';
+                            } elseif ($docType === 'certificate_of_indigency') {
+                                $permanentDocDir = __DIR__ . '/../../assets/uploads/student/indigency/';
+                            } elseif ($docType === 'eaf') {
+                                $permanentDocDir = __DIR__ . '/../../assets/uploads/student/enrollment_forms/';
+                            } else {
+                                continue; // Skip unknown document types
+                            }
+                            
+                            // Create permanent directory if it doesn't exist
+                            if (!file_exists($permanentDocDir)) {
+                                mkdir($permanentDocDir, 0777, true);
+                            }
+                            
+                            // Define permanent path
+                            $filename = basename($tempDocPath);
+                            $permanentDocPath = $permanentDocDir . $filename;
+                            
+                            // Move file from temporary to permanent location
+                            if (file_exists($tempDocPath) && copy($tempDocPath, $permanentDocPath)) {
+                                // Update database with permanent path
+                                $updateDocPathQuery = "UPDATE documents SET file_path = $1 WHERE document_id = $2";
+                                pg_query_params($connection, $updateDocPathQuery, [$permanentDocPath, $docId]);
+                                
+                                // Delete temporary file
+                                unlink($tempDocPath);
                             }
                         }
                         
@@ -146,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $originalFilename = $enrollmentRow['original_filename'];
                     
                     // Create permanent directory if it doesn't exist
-                    $permanentDir = __DIR__ . '/../../assets/uploads/enrollment_forms/';
+                    $permanentDir = __DIR__ . '/../../assets/uploads/student/enrollment_forms/';
                     if (!file_exists($permanentDir)) {
                         mkdir($permanentDir, 0777, true);
                     }
@@ -359,7 +399,7 @@ $query = "SELECT s.*, b.name as barangay_name, u.name as university_name, yl.nam
                  get_confidence_level(COALESCE(s.confidence_score, calculate_confidence_score(s.student_id))) as confidence_level,
                  (SELECT COUNT(*) FROM documents d WHERE d.student_id = s.student_id AND d.type = 'certificate_of_indigency') as has_certificate,
                  (SELECT COUNT(*) FROM documents d WHERE d.student_id = s.student_id AND d.type = 'letter_to_mayor') as has_letter,
-                 (SELECT COUNT(*) FROM documents d WHERE d.student_id = s.student_id AND d.type = 'id_picture') as has_id_picture
+                 (SELECT COUNT(*) FROM documents d WHERE d.student_id = s.student_id AND d.type = 'eaf') as has_eaf
           FROM students s
           LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
           LEFT JOIN universities u ON s.university_id = u.university_id
@@ -833,16 +873,16 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                                     </button>
                                                 <?php endif; ?>
                                                 
-                                                <!-- ID Picture -->
-                                                <?php if ($registration['has_id_picture'] > 0): ?>
-                                                    <button type="button" class="btn btn-outline-warning btn-sm" 
-                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'id_picture')"
-                                                            title="View ID Picture">
-                                                        <i class="bi bi-person-badge"></i>
+                                                <!-- EAF Document (from documents table) -->
+                                                <?php if ($registration['has_eaf'] > 0): ?>
+                                                    <button type="button" class="btn btn-outline-primary btn-sm" 
+                                                            onclick="viewStudentDocument(<?php echo $registration['student_id']; ?>, 'eaf')"
+                                                            title="View EAF Document">
+                                                        <i class="bi bi-file-text"></i>
                                                     </button>
                                                 <?php endif; ?>
                                                 
-                                                <?php if (!$registration['enrollment_form_path'] && $registration['has_certificate'] == 0 && $registration['has_letter'] == 0 && $registration['has_id_picture'] == 0): ?>
+                                                <?php if (!$registration['enrollment_form_path'] && $registration['has_certificate'] == 0 && $registration['has_letter'] == 0 && $registration['has_eaf'] == 0): ?>
                                                     <small class="text-muted">No documents</small>
                                                 <?php endif; ?>
                                             </div>

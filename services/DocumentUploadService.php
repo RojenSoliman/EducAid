@@ -5,7 +5,7 @@ class DocumentUploadService {
     private $uploadBaseDir;
     
     const REQUIRED_DOCUMENTS = [
-        'id_picture' => 'ID Picture',
+        'eaf' => 'Enrollment Assessment Form',
         'letter_to_mayor' => 'Letter to Mayor', 
         'certificate_of_indigency' => 'Certificate of Indigency'
     ];
