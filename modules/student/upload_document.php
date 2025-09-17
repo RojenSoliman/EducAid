@@ -22,8 +22,8 @@ if (isset($_SESSION['upload_fail'])) {
 // Get student ID
 $student_id = $_SESSION['student_id'];
 
-// Check if all required documents are uploaded (excluding letter_to_mayor which is now part of registration)
-$query = "SELECT COUNT(*) AS total_uploaded FROM documents WHERE student_id = $1 AND type IN ('id_picture', 'certificate_of_indigency')";
+// Check if all required documents are uploaded (certificate_of_indigency and letter_to_mayor are now part of registration)
+$query = "SELECT COUNT(*) AS total_uploaded FROM documents WHERE student_id = $1 AND type IN ('id_picture')";
 /** @phpstan-ignore-next-line */
 $result = pg_query_params($connection, $query, [$student_id]);
 $row = pg_fetch_assoc($result);
@@ -38,7 +38,7 @@ $latest_grades_query = "SELECT * FROM grade_uploads WHERE student_id = $1 ORDER 
 $latest_grades_result = pg_query_params($connection, $latest_grades_query, [$student_id]);
 $latest_grades = pg_fetch_assoc($latest_grades_result);
 
-if ($row['total_uploaded'] == 2 && $grades_row['grades_uploaded'] > 0) {
+if ($row['total_uploaded'] == 1 && $grades_row['grades_uploaded'] > 0) {
     $allDocumentsUploaded = true;
 } else {
     $allDocumentsUploaded = false;
@@ -69,7 +69,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
         $fileType = $_POST['document_type'][$index];
 
         // Validate the document type (letter_to_mayor is now part of registration)
-        if (!in_array($fileType, ['id_picture', 'certificate_of_indigency'])) {
+        if (!in_array($fileType, ['id_picture'])) {
             continue;
         }
 
@@ -320,16 +320,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
               </div>
               
               <div class="progress-item">
-                <div class="progress-icon <?php echo $row['total_uploaded'] >= 2 ? 'completed' : 'pending'; ?>">
-                  <i class="bi bi-award-fill"></i>
-                </div>
-                <div class="progress-label">Certificate of Indigency</div>
-                <div class="progress-status">
-                  <?php echo $row['total_uploaded'] >= 2 ? 'Uploaded' : 'Required'; ?>
-                </div>
-              </div>
-              
-              <div class="progress-item">
                 <div class="progress-icon <?php echo $grades_row['grades_uploaded'] > 0 ? 'completed' : 'pending'; ?>">
                   <i class="bi bi-file-earmark-text-fill"></i>
                 </div>
@@ -347,7 +337,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
                 <span class="text-muted"><?php echo ($row['total_uploaded'] + ($grades_row['grades_uploaded'] > 0 ? 1 : 0)); ?> of 3 completed</span>
               </div>
               <div class="progress-bar-container">
-                <div class="progress-bar-fill" style="width: <?php echo (($row['total_uploaded'] + ($grades_row['grades_uploaded'] > 0 ? 1 : 0)) / 3) * 100; ?>%"></div>
+                <div class="progress-bar-fill" style="width: <?php echo (($row['total_uploaded'] + ($grades_row['grades_uploaded'] > 0 ? 1 : 0)) / 2) * 100; ?>%"></div>
               </div>
             </div>
           </div>
@@ -434,30 +424,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
                   </div>
                   
                   <div class="file-preview" id="preview_id_picture"></div>
-                </div>
-
-                <!-- Certificate of Indigency -->
-                <div class="upload-form-item" data-document="certificate_of_indigency">
-                  <div class="upload-item-header">
-                    <div class="upload-item-icon">
-                      <i class="bi bi-award-fill"></i>
-                    </div>
-                    <div class="upload-item-info">
-                      <h4>Certificate of Indigency</h4>
-                      <p>Official certificate from your barangay</p>
-                    </div>
-                  </div>
-                  
-                  <div class="custom-file-input">
-                    <input type="file" name="documents[]" id="certificate_of_indigency_input_unique" accept=".pdf,.jpg,.jpeg,.png" required>
-                    <input type="hidden" name="document_type[]" value="certificate_of_indigency">
-                    <div class="file-input-label">
-                      <i class="bi bi-cloud-upload"></i>
-                      <span>Choose file or drag and drop</span>
-                    </div>
-                  </div>
-                  
-                  <div class="file-preview" id="preview_certificate_of_indigency_unique"></div>
                 </div>
 
                 <!-- Academic Grades Upload Section -->
@@ -579,7 +545,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
             
             if (uploadResult.success) {
                 // Send to OCR processing
-                const ocrResponse = await fetch('process_ocr_grades.php', {
+                const ocrResponse = await                       fetch('process_manual_grades_review.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

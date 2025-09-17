@@ -7,6 +7,48 @@ use PHPMailer\PHPMailer\Exception;
 
 require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 
+/**
+ * Convert different grading systems to 4.0 GPA scale for calculation
+ */
+function convertGradeToGPA($grade, $system) {
+    switch ($system) {
+        case 'gpa':
+            // Traditional 1.0-5.0 scale (1.0 = highest), convert to 4.0 scale
+            $gpa_5_scale = min(max(floatval($grade), 1.0), 5.0);
+            return max(0, 5.0 - $gpa_5_scale); // Convert to 4.0 scale
+            
+        case 'dlsu_gpa':
+            // DLSU 4.0 scale (4.0 = 100%, 0.0 = failed)
+            return min(max(floatval($grade), 0), 4.0);
+            
+        case 'letter':
+            $letterToGPA = [
+                'A+' => 4.0, 'A' => 4.0, 'A-' => 3.7,
+                'B+' => 3.3, 'B' => 3.0, 'B-' => 2.7,
+                'C+' => 2.3, 'C' => 2.0, 'C-' => 1.7,
+                'D+' => 1.3, 'D' => 1.0, 'D-' => 0.7,
+                'F' => 0.0
+            ];
+            return $letterToGPA[strtoupper($grade)] ?? 0.0;
+            
+        case 'percentage':
+        default:
+            $percentage = floatval($grade);
+            if ($percentage >= 97) return 4.0;
+            else if ($percentage >= 93) return 3.7;
+            else if ($percentage >= 90) return 3.3;
+            else if ($percentage >= 87) return 3.0;
+            else if ($percentage >= 83) return 2.7;
+            else if ($percentage >= 80) return 2.3;
+            else if ($percentage >= 77) return 2.0;
+            else if ($percentage >= 73) return 1.7;
+            else if ($percentage >= 70) return 1.3;
+            else if ($percentage >= 65) return 1.0;
+            else if ($percentage >= 60) return 0.7;
+            else return 0.0;
+    }
+}
+
 $municipality_id = 1;
 
 // --- Slot check ---
@@ -254,20 +296,86 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         }
     }
 
-    // Process with Tesseract OCR
+    // Enhanced OCR processing with PDF support
     $outputBase = $uploadDir . 'ocr_' . pathinfo($fileName, PATHINFO_FILENAME);
-    $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) .
-               " --oem 1 --psm 6 -l eng 2>&1";
+    
+    // Check if the file is a PDF and handle accordingly
+    $fileExtension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
+    
+    if ($fileExtension === 'pdf') {
+        // Try basic PDF text extraction using a simple approach
+        $pdfText = '';
+        
+        // Method 1: Try using pdftotext if available
+        $pdfTextCommand = "pdftotext " . escapeshellarg($targetPath) . " - 2>nul";
+        $pdfText = @shell_exec($pdfTextCommand);
+        
+        if (!empty(trim($pdfText))) {
+            // Successfully extracted text from PDF
+            $ocrText = $pdfText;
+        } else {
+            // Method 2: Try basic PHP PDF text extraction
+            $pdfContent = file_get_contents($targetPath);
+            if ($pdfContent !== false) {
+                // Very basic PDF text extraction - look for text streams
+                preg_match_all('/\(([^)]+)\)/', $pdfContent, $matches);
+                if (!empty($matches[1])) {
+                    $extractedText = implode(' ', $matches[1]);
+                    // Clean up the extracted text
+                    $extractedText = preg_replace('/[^\x20-\x7E]/', ' ', $extractedText);
+                    $extractedText = preg_replace('/\s+/', ' ', trim($extractedText));
+                    
+                    if (strlen($extractedText) > 50) { // Only use if we got substantial text
+                        $ocrText = $extractedText;
+                    }
+                }
+            }
+            
+            // If no text could be extracted
+            if (empty($ocrText) || strlen(trim($ocrText)) < 10) {
+                echo json_encode([
+                    'status' => 'error', 
+                    'message' => 'Unable to extract text from PDF. Please try one of these alternatives:',
+                    'suggestions' => [
+                        '1. Convert the PDF to a JPG or PNG image',
+                        '2. Take a photo of the document with your phone camera',
+                        '3. Scan the document as an image file',
+                        '4. Ensure the PDF contains selectable text (not a scanned image)'
+                    ]
+                ]);
+                exit;
+            }
+        }
+    } else {
+        // For image files, use standard Tesseract processing
+        $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) .
+                   " --oem 1 --psm 6 -l eng 2>&1";
 
-    $tesseractOutput = shell_exec($command);
-    $outputFile = $outputBase . ".txt";
+        $tesseractOutput = shell_exec($command);
+        $outputFile = $outputBase . ".txt";
 
-    if (!file_exists($outputFile)) {
-        echo json_encode(['status' => 'error', 'message' => 'OCR processing failed. Please ensure the document is clear and readable.']);
-        exit;
+        if (!file_exists($outputFile)) {
+            echo json_encode([
+                'status' => 'error', 
+                'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
+                'debug_info' => $tesseractOutput,
+                'suggestions' => [
+                    '1. Make sure the image is clear and high resolution',
+                    '2. Ensure good lighting when taking photos',
+                    '3. Try straightening the document in the image',
+                    '4. Use JPG or PNG format for best results'
+                ]
+            ]);
+            exit;
+        }
+
+        $ocrText = file_get_contents($outputFile);
+        
+        // Clean up temporary OCR files
+        if (file_exists($outputFile)) {
+            unlink($outputFile);
+        }
     }
-
-    $ocrText = file_get_contents($outputFile);
     
     // Clean up temporary OCR files
     if (file_exists($outputFile)) {
@@ -545,31 +653,82 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
     // Perform OCR using Tesseract with optimized settings for letter documents
     $outputBase = $uploadDir . 'letter_ocr_' . pathinfo($fileName, PATHINFO_FILENAME);
     
-    // Use optimized Tesseract settings for letter documents:
-    // --oem 1: Use LSTM neural net engine
-    // --psm 6: Uniform block of text (good for letters)
-    // -l eng: English language
-    // Additional preprocessing for better accuracy
-    $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) . 
-               " --oem 1 --psm 6 -l eng 2>&1";
+    // Check if the file is a PDF and handle accordingly
+    $fileExtension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
     
-    $tesseractOutput = shell_exec($command);
-    $outputFile = $outputBase . ".txt";
-    
-    if (!file_exists($outputFile)) {
-        echo json_encode([
-            'status' => 'error', 
-            'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
-            'debug_info' => $tesseractOutput
-        ]);
-        exit;
-    }
-    
-    $ocrText = file_get_contents($outputFile);
-    
-    // Clean up temporary OCR files
-    if (file_exists($outputFile)) {
-        unlink($outputFile);
+    if ($fileExtension === 'pdf') {
+        // Try basic PDF text extraction
+        $pdfText = '';
+        
+        // Method 1: Try using pdftotext if available
+        $pdfTextCommand = "pdftotext " . escapeshellarg($targetPath) . " - 2>nul";
+        $pdfText = @shell_exec($pdfTextCommand);
+        
+        if (!empty(trim($pdfText))) {
+            // Successfully extracted text from PDF
+            $ocrText = $pdfText;
+        } else {
+            // Method 2: Try basic PHP PDF text extraction
+            $pdfContent = file_get_contents($targetPath);
+            if ($pdfContent !== false) {
+                // Very basic PDF text extraction - look for text streams
+                preg_match_all('/\(([^)]+)\)/', $pdfContent, $matches);
+                if (!empty($matches[1])) {
+                    $extractedText = implode(' ', $matches[1]);
+                    // Clean up the extracted text
+                    $extractedText = preg_replace('/[^\x20-\x7E]/', ' ', $extractedText);
+                    $extractedText = preg_replace('/\s+/', ' ', trim($extractedText));
+                    
+                    if (strlen($extractedText) > 50) { // Only use if we got substantial text
+                        $ocrText = $extractedText;
+                    }
+                }
+            }
+            
+            // If no text could be extracted
+            if (empty($ocrText) || strlen(trim($ocrText)) < 10) {
+                echo json_encode([
+                    'status' => 'error', 
+                    'message' => 'Unable to extract text from PDF. Please try one of these alternatives:',
+                    'suggestions' => [
+                        '1. Convert the PDF to a JPG or PNG image',
+                        '2. Take a photo of the document with your phone camera',  
+                        '3. Scan the document as an image file',
+                        '4. Ensure the PDF contains selectable text (not a scanned image)'
+                    ]
+                ]);
+                exit;
+            }
+        }
+    } else {
+        // For image files, use standard Tesseract processing
+        $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) . 
+                   " --oem 1 --psm 6 -l eng 2>&1";
+        
+        $tesseractOutput = shell_exec($command);
+        $outputFile = $outputBase . ".txt";
+        
+        if (!file_exists($outputFile)) {
+            echo json_encode([
+                'status' => 'error', 
+                'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
+                'debug_info' => $tesseractOutput,
+                'suggestions' => [
+                    '1. Make sure the image is clear and high resolution',
+                    '2. Ensure good lighting when taking photos',
+                    '3. Try straightening the document in the image',
+                    '4. Use JPG or PNG format for best results'
+                ]
+            ]);
+            exit;
+        }
+        
+        $ocrText = file_get_contents($outputFile);
+        
+        // Clean up temporary OCR files
+        if (file_exists($outputFile)) {
+            unlink($outputFile);
+        }
     }
     
     if (empty(trim($ocrText))) {
@@ -735,6 +894,337 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
         'recommendation' => $verification['overall_success'] ? 
             'Document validation successful' : 
             'Please ensure the document contains your name, barangay, and mayor office header clearly'
+    ];
+    
+    // Include OCR text for debugging (truncated for security)
+    $verification['ocr_text_preview'] = substr($ocrText, 0, 500) . (strlen($ocrText) > 500 ? '...' : '');
+    
+    // Clean up uploaded file after processing
+    if (file_exists($targetPath)) {
+        unlink($targetPath);
+    }
+
+    echo json_encode(['status' => 'success', 'verification' => $verification]);
+    exit;
+}
+
+// --- Certificate of Indigency OCR Processing ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr'])) {
+    if (!isset($_FILES['certificate_of_indigency']) || $_FILES['certificate_of_indigency']['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['status' => 'error', 'message' => 'No certificate file uploaded or upload error.']);
+        exit;
+    }
+
+    $uploadDir = 'assets/uploads/temp/';
+    if (!file_exists($uploadDir)) {
+        mkdir($uploadDir, 0777, true);
+    }
+
+    // Clear temp folder for certificate files
+    $certificateFiles = glob($uploadDir . 'certificate_*');
+    foreach ($certificateFiles as $file) {
+        if (is_file($file)) unlink($file);
+    }
+
+    $uploadedFile = $_FILES['certificate_of_indigency'];
+    $fileName = 'certificate_' . basename($uploadedFile['name']);
+    $targetPath = $uploadDir . $fileName;
+
+    if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
+        echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded certificate file.']);
+        exit;
+    }
+
+    // Get form data for comparison
+    $formData = [
+        'first_name' => trim($_POST['first_name'] ?? ''),
+        'last_name' => trim($_POST['last_name'] ?? ''),
+        'barangay_id' => intval($_POST['barangay_id'] ?? 0)
+    ];
+
+    // Get barangay name for comparison
+    $barangayName = '';
+    if ($formData['barangay_id'] > 0) {
+        $barangayResult = pg_query_params($connection, "SELECT name FROM barangays WHERE barangay_id = $1", [$formData['barangay_id']]);
+        if ($barangayRow = pg_fetch_assoc($barangayResult)) {
+            $barangayName = $barangayRow['name'];
+        }
+    }
+
+    // Perform OCR using Tesseract with optimized settings for certificate documents
+    $outputBase = $uploadDir . 'certificate_ocr_' . pathinfo($fileName, PATHINFO_FILENAME);
+    
+    // Check if the file is a PDF and handle accordingly
+    $fileExtension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
+    
+    if ($fileExtension === 'pdf') {
+        // Try basic PDF text extraction
+        $pdfText = '';
+        
+        // Method 1: Try using pdftotext if available
+        $pdfTextCommand = "pdftotext " . escapeshellarg($targetPath) . " - 2>nul";
+        $pdfText = @shell_exec($pdfTextCommand);
+        
+        if (!empty(trim($pdfText))) {
+            // Successfully extracted text from PDF
+            $ocrText = $pdfText;
+        } else {
+            // Method 2: Try basic PHP PDF text extraction
+            $pdfContent = file_get_contents($targetPath);
+            if ($pdfContent !== false) {
+                // Very basic PDF text extraction - look for text streams
+                preg_match_all('/\(([^)]+)\)/', $pdfContent, $matches);
+                if (!empty($matches[1])) {
+                    $extractedText = implode(' ', $matches[1]);
+                    // Clean up the extracted text
+                    $extractedText = preg_replace('/[^\x20-\x7E]/', ' ', $extractedText);
+                    $extractedText = preg_replace('/\s+/', ' ', trim($extractedText));
+                    
+                    if (strlen($extractedText) > 50) { // Only use if we got substantial text
+                        $ocrText = $extractedText;
+                    }
+                }
+            }
+            
+            // If no text could be extracted
+            if (empty($ocrText) || strlen(trim($ocrText)) < 10) {
+                echo json_encode([
+                    'status' => 'error', 
+                    'message' => 'Unable to extract text from PDF. Please try one of these alternatives:',
+                    'suggestions' => [
+                        '1. Convert the PDF to a JPG or PNG image',
+                        '2. Take a photo of the document with your phone camera',  
+                        '3. Scan the document as an image file',
+                        '4. Ensure the PDF contains selectable text (not a scanned image)'
+                    ]
+                ]);
+                exit;
+            }
+        }
+    } else {
+        // For image files, use standard Tesseract processing
+        $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) . 
+                   " --oem 1 --psm 6 -l eng 2>&1";
+        
+        $tesseractOutput = shell_exec($command);
+        $outputFile = $outputBase . ".txt";
+        
+        if (!file_exists($outputFile)) {
+            echo json_encode([
+                'status' => 'error', 
+                'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
+                'debug_info' => $tesseractOutput,
+                'suggestions' => [
+                    '1. Make sure the image is clear and high resolution',
+                    '2. Ensure good lighting when taking photos',
+                    '3. Try straightening the document in the image',
+                    '4. Use JPG or PNG format for best results'
+                ]
+            ]);
+            exit;
+        }
+        
+        $ocrText = file_get_contents($outputFile);
+        
+        // Clean up temporary OCR files
+        if (file_exists($outputFile)) {
+            unlink($outputFile);
+        }
+    }
+    
+    if (empty(trim($ocrText))) {
+        echo json_encode([
+            'status' => 'error', 
+            'message' => 'No text could be extracted from the document. Please ensure the image is clear and contains readable text.'
+        ]);
+        exit;
+    }
+
+    // Improved verification checks for certificate of indigency with fuzzy matching
+    $verification = [
+        'certificate_title' => false,
+        'first_name' => false,
+        'last_name' => false,
+        'barangay' => false,
+        'general_trias' => false,
+        'confidence_scores' => [],
+        'found_text_snippets' => []
+    ];
+    
+    // Normalize OCR text for better matching
+    $ocrTextNormalized = strtolower(preg_replace('/[^\w\s]/', ' ', $ocrText));
+    
+    // Function to calculate similarity score for certificate
+    function calculateCertificateSimilarity($needle, $haystack) {
+        $needle = strtolower(trim($needle));
+        $haystack = strtolower(trim($haystack));
+        
+        // Exact match
+        if (stripos($haystack, $needle) !== false) {
+            return 100;
+        }
+        
+        // Check for partial matches with high similarity
+        $words = explode(' ', $haystack);
+        $maxSimilarity = 0;
+        
+        foreach ($words as $word) {
+            if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                $similarity = 0;
+                similar_text($needle, $word, $similarity);
+                $maxSimilarity = max($maxSimilarity, $similarity);
+            }
+        }
+        
+        return $maxSimilarity;
+    }
+    
+    // Check for "Certificate of Indigency" title variations
+    $certificateTitles = [
+        'certificate of indigency',
+        'indigency certificate',
+        'certificate indigency',
+        'katunayan ng kahirapan',
+        'indigent certificate',
+        'poverty certificate'
+    ];
+    
+    $titleFound = false;
+    $titleConfidence = 0;
+    $foundTitleText = '';
+    
+    foreach ($certificateTitles as $title) {
+        $similarity = calculateCertificateSimilarity($title, $ocrTextNormalized);
+        if ($similarity > $titleConfidence) {
+            $titleConfidence = $similarity;
+        }
+        
+        if ($similarity >= 70) {
+            $titleFound = true;
+            // Try to find the actual text snippet
+            $pattern = '/[^\n]*' . preg_quote(explode(' ', $title)[0], '/') . '[^\n]*/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $foundTitleText = trim($matches[0]);
+            }
+            break;
+        }
+    }
+    
+    $verification['certificate_title'] = $titleFound;
+    $verification['confidence_scores']['certificate_title'] = $titleConfidence;
+    if (!empty($foundTitleText)) {
+        $verification['found_text_snippets']['certificate_title'] = $foundTitleText;
+    }
+    
+    // Check first name with improved matching
+    if (!empty($formData['first_name'])) {
+        $similarity = calculateCertificateSimilarity($formData['first_name'], $ocrTextNormalized);
+        $verification['confidence_scores']['first_name'] = $similarity;
+        
+        if ($similarity >= 80) {
+            $verification['first_name'] = true;
+            // Find and store the matched text snippet
+            $pattern = '/\b\w*' . preg_quote(substr($formData['first_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['first_name'] = $matches[0];
+            }
+        }
+    }
+    
+    // Check last name with improved matching
+    if (!empty($formData['last_name'])) {
+        $similarity = calculateCertificateSimilarity($formData['last_name'], $ocrTextNormalized);
+        $verification['confidence_scores']['last_name'] = $similarity;
+        
+        if ($similarity >= 80) {
+            $verification['last_name'] = true;
+            // Find and store the matched text snippet
+            $pattern = '/\b\w*' . preg_quote(substr($formData['last_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['last_name'] = $matches[0];
+            }
+        }
+    }
+    
+    // Check barangay name with improved matching
+    if (!empty($barangayName)) {
+        $similarity = calculateCertificateSimilarity($barangayName, $ocrTextNormalized);
+        $verification['confidence_scores']['barangay'] = $similarity;
+        
+        if ($similarity >= 70) { // Slightly lower threshold for barangay names
+            $verification['barangay'] = true;
+            // Find and store the matched text snippet
+            $pattern = '/\b\w*' . preg_quote(substr($barangayName, 0, 4), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['barangay'] = $matches[0];
+            }
+        }
+    }
+    
+    // Check for "General Trias" with variations
+    $generalTriasVariations = [
+        'general trias',
+        'gen trias',
+        'general trias city',
+        'municipality of general trias',
+        'city of general trias'
+    ];
+    
+    $generalTriasFound = false;
+    $generalTriasConfidence = 0;
+    $foundGeneralTriasText = '';
+    
+    foreach ($generalTriasVariations as $variation) {
+        $similarity = calculateCertificateSimilarity($variation, $ocrTextNormalized);
+        if ($similarity > $generalTriasConfidence) {
+            $generalTriasConfidence = $similarity;
+        }
+        
+        if ($similarity >= 70) {
+            $generalTriasFound = true;
+            // Try to find the actual text snippet
+            $pattern = '/[^\n]*' . preg_quote(explode(' ', $variation)[0], '/') . '[^\n]*/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $foundGeneralTriasText = trim($matches[0]);
+            }
+            break;
+        }
+    }
+    
+    $verification['general_trias'] = $generalTriasFound;
+    $verification['confidence_scores']['general_trias'] = $generalTriasConfidence;
+    if (!empty($foundGeneralTriasText)) {
+        $verification['found_text_snippets']['general_trias'] = $foundGeneralTriasText;
+    }
+    
+    // Calculate overall success with improved scoring
+    $requiredCertificateChecks = ['certificate_title', 'first_name', 'last_name', 'barangay', 'general_trias'];
+    $passedCertificateChecks = 0;
+    $totalConfidence = 0;
+    
+    foreach ($requiredCertificateChecks as $check) {
+        if ($verification[$check]) {
+            $passedCertificateChecks++;
+        }
+        // Add confidence score to total (default 0 if not set)
+        $totalConfidence += isset($verification['confidence_scores'][$check]) ? 
+            $verification['confidence_scores'][$check] : 0;
+    }
+    
+    $averageConfidence = $totalConfidence / 5;
+    
+    // Success criteria: At least 4 out of 5 checks pass with decent confidence
+    // OR high overall confidence even if only 3 checks pass
+    $verification['overall_success'] = ($passedCertificateChecks >= 4) || 
+                                     ($passedCertificateChecks >= 3 && $averageConfidence >= 75);
+    
+    $verification['summary'] = [
+        'passed_checks' => $passedCertificateChecks,
+        'total_checks' => 5,
+        'average_confidence' => round($averageConfidence, 1),
+        'recommendation' => $verification['overall_success'] ? 
+            'Certificate validation successful' : 
+            'Please ensure the certificate contains your name, barangay, "Certificate of Indigency" title, and "General Trias" clearly'
     ];
     
     // Include OCR text for debugging (truncated for security)
@@ -949,10 +1439,148 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             }
         }
 
+        // Save certificate of indigency to temporary folder (not permanent until approved)
+        $certificateTempFiles = glob($tempFormPath . 'certificate_*');
+        if (!empty($certificateTempFiles)) {
+            // Create temporary documents directory for pending students (reuse from above)
+            if (!isset($tempDocumentsDir)) {
+                $tempDocumentsDir = '../../assets/uploads/temp/documents/';
+                if (!file_exists($tempDocumentsDir)) {
+                    mkdir($tempDocumentsDir, 0777, true);
+                }
+            }
+
+            // Move the certificate file to temporary documents location with student ID
+            $certificateTempFile = $certificateTempFiles[0]; // Get the first (and should be only) certificate file
+            $certificateFilename = basename($certificateTempFile);
+            $certificateTempPath = $tempDocumentsDir . $student_id . '_certificate_of_indigency_' . str_replace('certificate_', '', $certificateFilename);
+
+            if (copy($certificateTempFile, $certificateTempPath)) {
+                // Save certificate record to database with temporary path
+                $certificateQuery = "INSERT INTO documents (student_id, type, file_path, is_valid) VALUES ($1, $2, $3, $4)";
+                pg_query_params($connection, $certificateQuery, [$student_id, 'certificate_of_indigency', $certificateTempPath, false]);
+
+                // Clean up original temp certificate file
+                unlink($certificateTempFile);
+            }
+        }
+
         $semester = $slotInfo['semester'];
         $academic_year = $slotInfo['academic_year'];
         $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";
         pg_query_params($connection, $applicationQuery, [$student_id, $semester, $academic_year]);
+
+        // Process grades data if provided
+        if (isset($_POST['grading_system']) && !empty($_POST['grading_system'])) {
+            $grading_system = filter_var($_POST['grading_system'], FILTER_SANITIZE_STRING);
+            
+            // Collect all grades data
+            $grades_data = [];
+            $i = 1;
+            while (isset($_POST["subject_$i"]) && isset($_POST["grade_$i"]) && isset($_POST["units_$i"])) {
+                $subject = trim($_POST["subject_$i"]);
+                $grade = trim($_POST["grade_$i"]);
+                $units = filter_var($_POST["units_$i"], FILTER_VALIDATE_INT);
+                
+                if (!empty($subject) && !empty($grade) && $units > 0) {
+                    $grades_data[] = [
+                        'subject' => $subject,
+                        'grade' => $grade,
+                        'units' => $units
+                    ];
+                }
+                $i++;
+            }
+            
+            // Save grades if any were provided
+            if (!empty($grades_data)) {
+                try {
+                    // Insert individual grades
+                    $grade_insert_sql = "INSERT INTO student_grades (
+                        student_id, subject_name, grade_value, grade_system, units, 
+                        semester, academic_year, source, verification_status, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'registration', 'pending', NOW())";
+                    
+                    $total_units = 0;
+                    $total_grade_points = 0;
+                    
+                    foreach ($grades_data as $grade_data) {
+                        // Convert grade to GPA for calculation
+                        $grade_point = convertGradeToGPA($grade_data['grade'], $grading_system);
+                        
+                        // Insert grade record
+                        pg_query_params($connection, $grade_insert_sql, [
+                            $student_id,
+                            $grade_data['subject'],
+                            $grade_data['grade'],
+                            $grading_system,
+                            $grade_data['units'],
+                            $semester,
+                            $academic_year
+                        ]);
+                        
+                        // Calculate totals
+                        $total_units += $grade_data['units'];
+                        $total_grade_points += ($grade_point * $grade_data['units']);
+                    }
+                    
+                    // Calculate and save GPA summary
+                    $gpa = $total_units > 0 ? $total_grade_points / $total_units : 0;
+                    
+                    $gpa_insert_sql = "INSERT INTO student_gpa_summary (
+                        student_id, semester, academic_year, total_units, gpa, 
+                        grading_system, source, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, 'registration', NOW())";
+                    
+                    pg_query_params($connection, $gpa_insert_sql, [
+                        $student_id,
+                        $semester,
+                        $academic_year,
+                        $total_units,
+                        round($gpa, 2),
+                        $grading_system
+                    ]);
+                    
+                } catch (Exception $e) {
+                    error_log("Grade processing error during registration: " . $e->getMessage());
+                    // Continue with registration even if grades fail - they can be added later
+                }
+            }
+        }
+        
+        // Process grade document if uploaded
+        $gradeTempFiles = glob($tempFormPath . 'grade_*');
+        if (!empty($gradeTempFiles)) {
+            // Create temporary grade documents directory
+            $tempGradeDir = '../../assets/uploads/temp/grade_documents/';
+            if (!file_exists($tempGradeDir)) {
+                mkdir($tempGradeDir, 0777, true);
+            }
+
+            // Move the grade document to temporary location with student ID
+            $gradeTempFile = $gradeTempFiles[0];
+            $gradeFilename = basename($gradeTempFile);
+            $gradeTempPath = $tempGradeDir . $student_id . '_grade_document_' . str_replace('grade_', '', $gradeFilename);
+
+            if (copy($gradeTempFile, $gradeTempPath)) {
+                // Save grade document record to database
+                $gradeDocQuery = "INSERT INTO grade_documents (
+                    student_id, file_name, file_path, file_type, upload_source, 
+                    processing_status, verification_status, created_at
+                ) VALUES ($1, $2, $3, $4, 'registration', 'pending', 'pending', NOW())";
+                
+                $file_type = mime_content_type($gradeTempPath);
+                pg_query_params($connection, $gradeDocQuery, [
+                    $student_id, 
+                    $gradeFilename, 
+                    $gradeTempPath, 
+                    $file_type
+                ]);
+
+                // Clean up original temp grade file
+                unlink($gradeTempFile);
+            }
+        }
 
         unset($_SESSION['otp_verified']);
 
@@ -990,6 +1618,23 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             border-radius: 5px; display: none; box-shadow: 0 0 10px rgba(0,0,0,0.1);
             z-index: 1000;
         }
+        /* Spinning animation for loading icons */
+        .spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        /* Grade entry styles */
+        .grade-row {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 10px !important;
+        }
+        .grade-row:last-child {
+            border-bottom: none;
+        }
         .notifier.success { background-color: #d4edda; color: #155724; }
         .verified-email { background-color: #e9f7e9; color: #28a745; }
         
@@ -1019,6 +1664,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 <span class="step" id="step-indicator-5">5</span>
                 <span class="step" id="step-indicator-6">6</span>
                 <span class="step" id="step-indicator-7">7</span>
+                <span class="step" id="step-indicator-8">8</span>
+                <span class="step" id="step-indicator-9">9</span>
             </div>
             <form id="multiStepForm" method="POST" autocomplete="off">
                 <!-- Step 1: Personal Information -->
@@ -1185,8 +1832,183 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" disabled onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 5: Letter to Mayor Upload and OCR Verification -->
+                <!-- Step 5: Academic Grades Entry and Document Upload -->
                 <div class="step-panel d-none" id="step-5">
+                    <div class="mb-4">
+                        <h5 class="text-primary">
+                            <i class="bi bi-file-earmark-spreadsheet me-2"></i>
+                            Academic Grades Information
+                        </h5>
+                        <p class="text-muted mb-3">
+                            Please enter your academic grades manually and upload supporting documents for verification.
+                            <br><strong>Minimum Requirements:</strong> 75% average or 3.00 GPA (1.0-5.0 scale)
+                        </p>
+                    </div>
+
+                    <!-- Grading System Selection -->
+                    <div class="mb-4">
+                        <label class="form-label">Grading System Used by Your School</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="grading_system" id="percentage" value="percentage" checked>
+                                    <label class="form-check-label" for="percentage">
+                                        Percentage Scale (0% - 100%)
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="grading_system" id="gpa" value="gpa">
+                                    <label class="form-check-label" for="gpa">
+                                        1.0 - 5.0 GPA Scale (1.0 = Highest)
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="grading_system" id="dlsu_gpa" value="dlsu_gpa">
+                                    <label class="form-check-label" for="dlsu_gpa">
+                                        4.0 GPA Scale (4.0 = 100%, 0.0 = Failed)
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="grading_system" id="letter" value="letter">
+                                    <label class="form-check-label" for="letter">
+                                        Letter Grades (A, B, C, D, F)
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Manual Grade Entry Section -->
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6>Enter Your Grades</h6>
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="addGradeRow()">
+                                <i class="bi bi-plus-circle me-1"></i>Add Subject
+                            </button>
+                        </div>
+                        <div id="gradesContainer">
+                            <div class="grade-rows">
+                                <!-- Initial grade row -->
+                                <div class="row mb-2 grade-row">
+                                    <div class="col-md-5">
+                                        <input type="text" class="form-control" name="subject_1" placeholder="Subject Name" required>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <input type="text" class="form-control grade-input" name="grade_1" placeholder="Grade" required>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <input type="number" class="form-control units-input" name="units_1" placeholder="Units" min="1" max="6" required>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <button type="button" class="btn btn-danger btn-sm" onclick="removeGradeRow(this)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <small class="text-muted">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Add all subjects from your most recent semester/year. Minimum 3 subjects required.
+                            </small>
+                        </div>
+                    </div>
+
+                    <!-- Grade Summary -->
+                    <div class="mb-4" id="gradeSummary" style="display: none;">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h6 class="card-title">Grade Summary</h6>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <small class="text-muted">Total Subjects:</small><br>
+                                        <strong id="totalSubjects">0</strong>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">Average:</small><br>
+                                        <strong id="averageGrade">0.00</strong>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <span id="statusBadge" class="badge"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Document Upload Section -->
+                    <div class="mb-4">
+                        <h6>Upload Supporting Document</h6>
+                        <p class="text-muted small">
+                            Upload your official transcript, report card, or grade sheet as proof of the grades entered above.
+                        </p>
+                        <div class="upload-area border rounded p-3" style="border-style: dashed !important;">
+                            <input type="file" class="form-control" id="gradeDocument" name="gradeDocument" accept=".pdf,.jpg,.jpeg,.png" 
+                                   onchange="handleGradeDocumentUpload(this)">
+                            <div class="text-center mt-2">
+                                <i class="bi bi-cloud-upload text-muted fs-3"></i>
+                                <div class="text-muted">Choose file or drag and drop</div>
+                                <small class="text-muted">PDF, JPG, PNG up to 10MB</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Document Preview -->
+                        <div id="gradeDocumentPreview" class="mt-3" style="display: none;">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="bi bi-file-check me-2"></i>
+                                        Document Uploaded
+                                    </h6>
+                                    <p class="card-text mb-2" id="documentFileName"></p>
+                                    <div class="d-flex gap-2">
+                                        <button type="button" class="btn btn-outline-info btn-sm" onclick="previewDocument()">
+                                            <i class="bi bi-eye me-1"></i>Preview
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="extractTextForReference()">
+                                            <i class="bi bi-file-text me-1"></i>Extract Text
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Extracted Text Preview -->
+                        <div id="extractedTextPreview" class="mt-3" style="display: none;">
+                            <div class="card border-info">
+                                <div class="card-header bg-info bg-opacity-10">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-file-earmark-text me-2"></i>
+                                        Extracted Text (For Reference)
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="alert alert-info py-2">
+                                        <small>
+                                            <i class="bi bi-info-circle me-1"></i>
+                                            This text is extracted for your reference. Please ensure your manual entries above match your document.
+                                        </small>
+                                    </div>
+                                    <div id="extractedTextContent" style="max-height: 200px; overflow-y: auto; font-size: 0.9em; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 4px;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" disabled onclick="nextStep()">Next</button>
+                </div>
+                
+                <!-- Step 6: Letter to Mayor Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-6">
                     <div class="mb-3">
                         <label class="form-label">Upload Letter to Mayor</label>
                         <small class="form-text text-muted d-block">
@@ -1250,8 +2072,77 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" disabled onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 6: OTP Verification -->
-                <div class="step-panel d-none" id="step-6">
+                <!-- Step 7: Certificate of Indigency Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-7">
+                    <div class="mb-3">
+                        <label class="form-label">Upload Certificate of Indigency</label>
+                        <small class="form-text text-muted d-block mb-2">
+                            Please upload a clear photo or PDF of your Certificate of Indigency<br>
+                            <strong>Required elements:</strong> Certificate title, your name, barangay, and "General Trias"
+                        </small>
+                        <input type="file" class="form-control" name="certificate_of_indigency" id="certificateForm" accept="image/*,.pdf" required />
+                        <div class="invalid-feedback" id="certificateError">
+                            <small><i class="bi bi-exclamation-triangle me-1"></i>Please upload a valid certificate of indigency document</small>
+                        </div>
+                    </div>
+                    <div id="certificateUploadPreview" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label">Preview:</label>
+                            <div id="certificatePreviewContainer" class="border rounded p-2" style="max-height: 300px; overflow-y: auto;">
+                                <img id="certificatePreviewImage" class="img-fluid" style="max-width: 100%; display: none;" />
+                                <div id="certificatePdfPreview" class="text-center p-3" style="display: none;">
+                                    <i class="bi bi-file-earmark-pdf fs-1 text-danger"></i>
+                                    <p>PDF File Selected</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="certificateOcrSection" class="d-none">
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-info w-100" id="processCertificateOcrBtn" disabled>
+                                <i class="bi bi-search me-2"></i>Verify Certificate Content
+                            </button>
+                            <small class="text-muted d-block mt-1">
+                                <i class="bi bi-info-circle me-1"></i>Upload a file to enable verification
+                            </small>
+                        </div>
+                        <div id="certificateOcrResults" class="d-none">
+                            <div class="mb-3">
+                                <label class="form-label">Verification Results:</label>
+                                <div class="verification-checklist">
+                                    <div class="form-check" id="check-certificate-title">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Certificate of Indigency Title</span>
+                                    </div>
+                                    <div class="form-check" id="check-certificate-firstname">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>First Name Found</span>
+                                    </div>
+                                    <div class="form-check" id="check-certificate-lastname">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Last Name Found</span>
+                                    </div>
+                                    <div class="form-check" id="check-certificate-barangay">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Barangay Match</span>
+                                    </div>
+                                    <div class="form-check" id="check-certificate-city">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>General Trias Found</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="certificateOcrFeedback" class="alert alert-warning mt-3" style="display: none;">
+                                <strong>Verification Failed:</strong> Please ensure your certificate contains your name, barangay, "Certificate of Indigency" title, and "General Trias".
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" disabled onclick="nextStep()">Next</button>
+                </div>
+                
+                <!-- Step 8: OTP Verification -->
+                <div class="step-panel d-none" id="step-8">
                       <div class="mb-3">
                         <label class="form-label">Email</label>
                         <input type="email" class="form-control" name="email" id="emailInput" required />
@@ -1274,10 +2165,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                         <button type="button" class="btn btn-warning w-100 mt-3" id="resendOtpBtn" style="display:none;" disabled>Resend OTP</button>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep8Btn" onclick="nextStep()">Next</button>
                 </div>
-                <!-- Step 7: Password and Confirmation -->
-                <div class="step-panel d-none" id="step-7">
+                <!-- Step 9: Password and Confirmation -->
+                <div class="step-panel d-none" id="step-9">
                     <div class="mb-3">
                         <label class="form-label">Password</label>
                         <input type="password" class="form-control" name="password" id="password" minlength="12" required />
@@ -1400,7 +2291,31 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             if (data.status === 'success') {
                 displayLetterVerificationResults(data.verification);
             } else {
-                alert('Error: ' + data.message);
+                // Enhanced error display for PDFs and suggestions
+                let errorMessage = data.message;
+                if (data.suggestions && data.suggestions.length > 0) {
+                    errorMessage += '\n\nSuggestions:\n' + data.suggestions.join('\n');
+                }
+                alert(errorMessage);
+                
+                // Also show suggestions in the feedback area
+                if (data.suggestions) {
+                    const resultsDiv = document.getElementById('letterOcrResults');
+                    const feedbackDiv = document.getElementById('letterOcrFeedback');
+                    
+                    resultsDiv.classList.remove('d-none');
+                    feedbackDiv.style.display = 'block';
+                    feedbackDiv.className = 'alert alert-warning mt-3';
+                    
+                    let suggestionHTML = '<strong>' + data.message + '</strong><br><br>';
+                    suggestionHTML += '<strong>Please try:</strong><ul>';
+                    data.suggestions.forEach(suggestion => {
+                        suggestionHTML += '<li>' + suggestion + '</li>';
+                    });
+                    suggestionHTML += '</ul>';
+                    
+                    feedbackDiv.innerHTML = suggestionHTML;
+                }
             }
         })
         .catch(error => {
@@ -1505,6 +2420,452 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             textSpan.innerHTML = originalText + details;
         }
     }
+
+    // Certificate of Indigency Upload Handling
+    document.getElementById('certificateForm').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        const previewContainer = document.getElementById('certificateUploadPreview');
+        const previewImage = document.getElementById('certificatePreviewImage');
+        const pdfPreview = document.getElementById('certificatePdfPreview');
+        const ocrSection = document.getElementById('certificateOcrSection');
+        const processBtn = document.getElementById('processCertificateOcrBtn');
+
+        if (file) {
+            // Show preview section
+            previewContainer.classList.remove('d-none');
+            ocrSection.classList.remove('d-none');
+
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    previewImage.style.display = 'block';
+                    pdfPreview.style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            } else if (file.type === 'application/pdf') {
+                previewImage.style.display = 'none';
+                pdfPreview.style.display = 'block';
+            }
+
+            // Enable OCR processing button
+            processBtn.disabled = false;
+            processBtn.textContent = 'Verify Certificate Content';
+        } else {
+            previewContainer.classList.add('d-none');
+            ocrSection.classList.add('d-none');
+            processBtn.disabled = true;
+        }
+    });
+
+    // Certificate OCR Processing
+    document.getElementById('processCertificateOcrBtn').addEventListener('click', function() {
+        const formData = new FormData();
+        const fileInput = document.getElementById('certificateForm');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            alert('Please select a certificate file first.');
+            return;
+        }
+
+        // Add form data
+        formData.append('certificate_of_indigency', file);
+        formData.append('processCertificateOcr', '1');
+        formData.append('first_name', document.querySelector('input[name="first_name"]').value);
+        formData.append('last_name', document.querySelector('input[name="last_name"]').value);
+        formData.append('barangay_id', document.querySelector('select[name="barangay_id"]').value);
+
+        // Show processing state
+        this.disabled = true;
+        this.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
+
+        fetch('', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                displayCertificateVerificationResults(data.verification);
+            } else {
+                // Enhanced error display for PDFs and suggestions
+                let errorMessage = data.message;
+                if (data.suggestions && data.suggestions.length > 0) {
+                    errorMessage += '\n\nSuggestions:\n' + data.suggestions.join('\n');
+                }
+                alert(errorMessage);
+                
+                // Also show suggestions in the feedback area
+                if (data.suggestions) {
+                    const resultsDiv = document.getElementById('certificateOcrResults');
+                    const feedbackDiv = document.getElementById('certificateOcrFeedback');
+                    
+                    resultsDiv.classList.remove('d-none');
+                    feedbackDiv.style.display = 'block';
+                    feedbackDiv.className = 'alert alert-warning mt-3';
+                    
+                    let suggestionHTML = '<strong>' + data.message + '</strong><br><br>';
+                    suggestionHTML += '<strong>Please try:</strong><ul>';
+                    data.suggestions.forEach(suggestion => {
+                        suggestionHTML += '<li>' + suggestion + '</li>';
+                    });
+                    suggestionHTML += '</ul>';
+                    
+                    feedbackDiv.innerHTML = suggestionHTML;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred during processing.');
+        })
+        .finally(() => {
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-search me-2"></i>Verify Certificate Content';
+        });
+    });
+
+    function displayCertificateVerificationResults(verification) {
+        const resultsDiv = document.getElementById('certificateOcrResults');
+        const feedbackDiv = document.getElementById('certificateOcrFeedback');
+        const nextButton = document.getElementById('nextStep6Btn');
+
+        // Update verification checklist with confidence scores
+        updateVerificationCheckWithDetails('check-certificate-title', verification.certificate_title, 
+            verification.confidence_scores?.certificate_title, verification.found_text_snippets?.certificate_title);
+        updateVerificationCheckWithDetails('check-certificate-firstname', verification.first_name, 
+            verification.confidence_scores?.first_name, verification.found_text_snippets?.first_name);
+        updateVerificationCheckWithDetails('check-certificate-lastname', verification.last_name, 
+            verification.confidence_scores?.last_name, verification.found_text_snippets?.last_name);
+        updateVerificationCheckWithDetails('check-certificate-barangay', verification.barangay, 
+            verification.confidence_scores?.barangay, verification.found_text_snippets?.barangay);
+        updateVerificationCheckWithDetails('check-certificate-city', verification.general_trias, 
+            verification.confidence_scores?.general_trias, verification.found_text_snippets?.general_trias);
+
+        // Show results
+        resultsDiv.classList.remove('d-none');
+
+        // Update feedback with detailed information
+        if (verification.overall_success) {
+            feedbackDiv.style.display = 'none';
+            nextButton.disabled = false;
+            nextButton.classList.add('btn-success');
+            nextButton.classList.remove('btn-primary');
+        } else {
+            // Show detailed feedback
+            let feedbackMessage = `<strong>Verification Result:</strong> ${verification.summary?.recommendation || 'Some checks failed'}<br>`;
+            feedbackMessage += `<small>Passed ${verification.summary?.passed_checks || 0} of ${verification.summary?.total_checks || 5} checks`;
+            if (verification.summary?.average_confidence) {
+                feedbackMessage += ` (Average confidence: ${verification.summary.average_confidence}%)`;
+            }
+            feedbackMessage += `</small>`;
+            
+            feedbackDiv.innerHTML = feedbackMessage;
+            feedbackDiv.style.display = 'block';
+            nextButton.disabled = true;
+            nextButton.classList.remove('btn-success');
+            nextButton.classList.add('btn-primary');
+        }
+    }
+    
+    // Grades Management JavaScript Functions
+    function addGradeRow() {
+        const container = document.getElementById('gradesContainer');
+        const gradeRowsContainer = container.querySelector('.grade-rows');
+        const rowCount = gradeRowsContainer.children.length + 1;
+        
+        const newRow = document.createElement('div');
+        newRow.className = 'row mb-2 grade-row';
+        newRow.innerHTML = `
+            <div class="col-md-5">
+                <input type="text" class="form-control" name="subject_${rowCount}" placeholder="Subject Name" required>
+            </div>
+            <div class="col-md-3">
+                <input type="text" class="form-control grade-input" name="grade_${rowCount}" placeholder="Grade" required>
+            </div>
+            <div class="col-md-2">
+                <input type="number" class="form-control units-input" name="units_${rowCount}" placeholder="Units" min="1" max="6" required>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-danger btn-sm" onclick="removeGradeRow(this)">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        `;
+        
+        gradeRowsContainer.appendChild(newRow);
+        updateGradeInputs();
+        calculateGradeSummary();
+    }
+    
+    function removeGradeRow(button) {
+        const row = button.closest('.grade-row');
+        row.remove();
+        calculateGradeSummary();
+    }
+    
+    function updateGradeInputs() {
+        const gradingSystem = document.querySelector('input[name="grading_system"]:checked')?.value || 'percentage';
+        const gradeInputs = document.querySelectorAll('.grade-input');
+        
+        gradeInputs.forEach(input => {
+            switch(gradingSystem) {
+                case 'gpa':
+                    input.placeholder = 'e.g., 1.50';
+                    input.type = 'number';
+                    input.step = '0.01';
+                    input.min = '1.0';
+                    input.max = '5.0';
+                    break;
+                case 'dlsu_gpa':
+                    input.placeholder = 'e.g., 3.75';
+                    input.type = 'number';
+                    input.step = '0.01';
+                    input.min = '0.0';
+                    input.max = '4.0';
+                    break;
+                case 'letter':
+                    input.placeholder = 'e.g., A+';
+                    input.type = 'text';
+                    input.removeAttribute('step');
+                    input.removeAttribute('min');
+                    input.removeAttribute('max');
+                    break;
+                default: // percentage
+                    input.placeholder = 'e.g., 95';
+                    input.type = 'number';
+                    input.step = '0.1';
+                    input.min = '0';
+                    input.max = '100';
+                    break;
+            }
+        });
+        
+        calculateGradeSummary();
+    }
+    
+    function calculateGradeSummary() {
+        const gradingSystem = document.querySelector('input[name="grading_system"]:checked')?.value || 'percentage';
+        const gradeInputs = document.querySelectorAll('.grade-input');
+        const unitsInputs = document.querySelectorAll('.units-input');
+        const summaryDiv = document.getElementById('gradeSummary');
+        
+        let totalGradePoints = 0;
+        let totalUnits = 0;
+        let validGrades = 0;
+        
+        gradeInputs.forEach((gradeInput, index) => {
+            const grade = gradeInput.value.trim();
+            const units = parseFloat(unitsInputs[index]?.value) || 0;
+            
+            if (grade && units > 0) {
+                let gradePoint = 0;
+                
+                switch(gradingSystem) {
+                    case 'gpa':
+                        // Traditional 1.0-5.0 scale (1.0 = highest)
+                        gradePoint = parseFloat(grade) || 0;
+                        // Convert to 4.0 scale for standardized calculation
+                        gradePoint = Math.max(0, 5.0 - gradePoint);
+                        break;
+                    case 'dlsu_gpa':
+                        // DLSU 4.0 scale (4.0 = 100%, 0.0 = failed)
+                        gradePoint = parseFloat(grade) || 0;
+                        break;
+                    case 'letter':
+                        // Convert letter grades to 4.0 GPA equivalent
+                        const letterToGPA = {
+                            'A+': 4.0, 'A': 4.0, 'A-': 3.7,
+                            'B+': 3.3, 'B': 3.0, 'B-': 2.7,
+                            'C+': 2.3, 'C': 2.0, 'C-': 1.7,
+                            'D+': 1.3, 'D': 1.0, 'F': 0.0
+                        };
+                        gradePoint = letterToGPA[grade.toUpperCase()] || 0;
+                        break;
+                    default: // percentage
+                        const percentage = parseFloat(grade) || 0;
+                        // Convert percentage to 4.0 GPA scale
+                        if (percentage >= 97) gradePoint = 4.0;
+                        else if (percentage >= 93) gradePoint = 3.7;
+                        else if (percentage >= 90) gradePoint = 3.3;
+                        else if (percentage >= 87) gradePoint = 3.0;
+                        else if (percentage >= 83) gradePoint = 2.7;
+                        else if (percentage >= 80) gradePoint = 2.3;
+                        else if (percentage >= 77) gradePoint = 2.0;
+                        else if (percentage >= 73) gradePoint = 1.7;
+                        else if (percentage >= 70) gradePoint = 1.3;
+                        else if (percentage >= 65) gradePoint = 1.0;
+                        else gradePoint = 0.0;
+                        break;
+                }
+                
+                totalGradePoints += gradePoint * units;
+                totalUnits += units;
+                validGrades++;
+            }
+        });
+        
+        if (validGrades > 0 && totalUnits > 0) {
+            const gpa = totalGradePoints / totalUnits;
+            
+            // Determine status based on grading system
+            let status = '';
+            let statusClass = '';
+            
+            switch(gradingSystem) {
+                case 'gpa':
+                    status = gpa >= 2.0 ? 'Good Standing' : 'Below Requirements';
+                    statusClass = gpa >= 2.0 ? 'bg-success' : 'bg-danger';
+                    break;
+                case 'dlsu_gpa':
+                    status = gpa >= 2.0 ? 'Good Standing' : 'Below Requirements';
+                    statusClass = gpa >= 2.0 ? 'bg-success' : 'bg-danger';
+                    break;
+                case 'letter':
+                    status = gpa >= 2.0 ? 'Good Standing' : 'Below Requirements';
+                    statusClass = gpa >= 2.0 ? 'bg-success' : 'bg-danger';
+                    break;
+                default: // percentage
+                    status = gpa >= 2.0 ? 'Good Standing (75%+)' : 'Below Requirements';
+                    statusClass = gpa >= 2.0 ? 'bg-success' : 'bg-danger';
+                    break;
+            }
+            
+            summaryDiv.innerHTML = `
+                <div class="alert alert-info">
+                    <strong>Grade Summary:</strong><br>
+                    Subjects Entered: ${validGrades}<br>
+                    Total Units: ${totalUnits}<br>
+                    Calculated GPA: ${gpa.toFixed(2)}<br>
+                    <span class="badge ${statusClass} mt-1">${status}</span>
+                </div>
+            `;
+            summaryDiv.style.display = 'block';
+        } else {
+            summaryDiv.style.display = 'none';
+        }
+    }
+    
+    function handleGradeDocumentUpload(event) {
+        const file = event.target.files[0];
+        const previewContainer = document.getElementById('gradeUploadPreview');
+        const previewImage = document.getElementById('gradePreviewImage');
+        const pdfPreview = document.getElementById('gradePdfPreview');
+        const ocrSection = document.getElementById('gradeOcrSection');
+        const processBtn = document.getElementById('processGradeOcrBtn');
+        
+        if (file) {
+            // Show preview section
+            previewContainer.classList.remove('d-none');
+            ocrSection.classList.remove('d-none');
+            
+            // Handle different file types
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    previewImage.classList.remove('d-none');
+                    pdfPreview.classList.add('d-none');
+                };
+                reader.readAsDataURL(file);
+            } else if (file.type === 'application/pdf') {
+                previewImage.classList.add('d-none');
+                pdfPreview.classList.remove('d-none');
+                pdfPreview.innerHTML = `<p class="text-muted">PDF: ${file.name}</p>`;
+            }
+            
+            // Enable process button
+            processBtn.disabled = false;
+        } else {
+            previewContainer.classList.add('d-none');
+            ocrSection.classList.add('d-none');
+        }
+    }
+    
+    function processGradeOCR() {
+        const fileInput = document.getElementById('gradeDocument');
+        const file = fileInput.files[0];
+        const ocrResults = document.getElementById('gradeOcrResults');
+        const processBtn = document.getElementById('processGradeOcrBtn');
+        
+        if (!file) {
+            alert('Please select a file first');
+            return;
+        }
+        
+        // Show processing state
+        processBtn.disabled = true;
+        processBtn.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> Processing...';
+        ocrResults.innerHTML = '<div class="text-muted">Processing document...</div>';
+        
+        // Create form data
+        const formData = new FormData();
+        formData.append('gradeDocument', file);
+        
+        // Send to OCR processing endpoint
+        fetch('../../services/process_real_grades_ocr.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Display OCR results
+                ocrResults.innerHTML = `
+                    <div class="alert alert-success">
+                        <h6>OCR Text Extracted:</h6>
+                        <pre class="small">${data.text}</pre>
+                        ${data.grades && data.grades.length > 0 ? `
+                            <h6 class="mt-3">Detected Grades:</h6>
+                            <ul class="small">
+                                ${data.grades.map(grade => `<li>${grade.subject}: ${grade.grade} (${grade.units} units)</li>`).join('')}
+                            </ul>
+                        ` : ''}
+                        <small class="text-muted">Please verify this information matches your uploaded document.</small>
+                    </div>
+                `;
+            } else {
+                ocrResults.innerHTML = `
+                    <div class="alert alert-warning">
+                        <strong>OCR Processing Note:</strong> ${data.message}<br>
+                        <small>Please ensure your document is clear and readable, or enter grades manually.</small>
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('OCR Error:', error);
+            ocrResults.innerHTML = `
+                <div class="alert alert-danger">
+                    <strong>Error:</strong> Could not process document. Please try again or enter grades manually.
+                </div>
+            `;
+        })
+        .finally(() => {
+            // Reset button state
+            processBtn.disabled = false;
+            processBtn.innerHTML = '<i class="bi bi-magic"></i> Process with OCR';
+        });
+    }
+    
+    // Add event listeners for grade system change
+    document.addEventListener('DOMContentLoaded', function() {
+        const gradingSystemInputs = document.querySelectorAll('input[name="grading_system"]');
+        gradingSystemInputs.forEach(input => {
+            input.addEventListener('change', updateGradeInputs);
+        });
+        
+        // Add event listeners for grade inputs to calculate summary on change
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('grade-input') || e.target.classList.contains('units-input')) {
+                calculateGradeSummary();
+            }
+        });
+        
+        // Initialize with default values
+        updateGradeInputs();
+    });
 </script>
 
 <!-- ADD this modal HTML before closing </body> tag -->

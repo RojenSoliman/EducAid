@@ -428,7 +428,7 @@ function setupDateOfBirthRestriction() {
 }
 
 function nextStep() {
-    if (currentStep === 6) return;
+    if (currentStep === 8) return;
 
     // Clear any existing highlights first
     clearFieldHighlights();
@@ -461,8 +461,8 @@ function nextStep() {
     }
 
     // Step-specific validations
-    if (currentStep === 5) {
-        console.log('Step 5 validation - otpVerified:', otpVerified); // Debug log
+    if (currentStep === 7) {
+        console.log('Step 7 validation - otpVerified:', otpVerified); // Debug log
         if (!otpVerified) {
             const otpField = document.getElementById('otp');
             highlightMissingFields([otpField]);
@@ -471,7 +471,7 @@ function nextStep() {
         }
         // Success vibration when moving to final step
         triggerMobileVibration('success');
-        console.log('Moving from step 5 to step 6'); // Debug log
+        console.log('Moving from step 7 to step 8'); // Debug log
         showStep(currentStep + 1);
     } else if (currentStep === 4) {
         if (!documentVerified) {
@@ -483,7 +483,7 @@ function nextStep() {
         // Success vibration for document verification
         triggerMobileVibration('success');
         showStep(currentStep + 1);
-    } else if (currentStep < 6) {
+    } else if (currentStep < 8) {
         // Success vibration for normal step progression
         triggerMobileVibration('success');
         showStep(currentStep + 1);
@@ -533,13 +533,13 @@ document.addEventListener('DOMContentLoaded', () => {
         showStep(1);
         updateRequiredFields();
         
-        // Setup nextStep5Btn with error handling
-        const nextStep5Btn = document.getElementById('nextStep5Btn');
-        if (nextStep5Btn) {
-            nextStep5Btn.disabled = true;
-            nextStep5Btn.addEventListener('click', nextStep);
+        // Setup nextStep7Btn with error handling
+        const nextStep7Btn = document.getElementById('nextStep7Btn');
+        if (nextStep7Btn) {
+            nextStep7Btn.disabled = true;
+            nextStep7Btn.addEventListener('click', nextStep);
         } else {
-            console.warn('nextStep5Btn not found during initialization');
+            console.warn('nextStep7Btn not found during initialization');
         }
         
         // Setup auto-save functionality
@@ -706,7 +706,7 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
             document.getElementById('resendOtpBtn').style.display = 'none';
             
             // Enable and highlight the next step button
-            const nextBtn = document.getElementById('nextStep5Btn');
+            const nextBtn = document.getElementById('nextStep7Btn');
             if (nextBtn) {
                 nextBtn.disabled = false;
                 nextBtn.classList.add('btn-success');
@@ -716,12 +716,12 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
                 if (!nextBtn.onclick && !nextBtn._hasEventListener) {
                     nextBtn.addEventListener('click', nextStep);
                     nextBtn._hasEventListener = true;
-                    console.log('Added event listener to nextStep5Btn during OTP verification');
+                    console.log('Added event listener to nextStep7Btn during OTP verification');
                 }
                 
                 console.log('Next step button enabled successfully'); // Debug log
             } else {
-                console.error('nextStep5Btn not found'); // Debug log
+                console.error('nextStep7Btn not found'); // Debug log
             }
             
             document.getElementById('emailInput').disabled = true;
@@ -765,7 +765,7 @@ function startOtpTimer() {
             document.getElementById('resendOtpBtn').style.display = 'block';
             document.getElementById('sendOtpBtn').classList.add('d-none');
             otpVerified = false;
-            document.getElementById('nextStep5Btn').disabled = true;
+            document.getElementById('nextStep7Btn').disabled = true;
         }
     }, 1000);
 }
@@ -928,7 +928,7 @@ confirmPasswordInput.addEventListener('input', function() {
 
 // ----- FIX FOR REQUIRED FIELD ERROR -----
 document.getElementById('multiStepForm').addEventListener('submit', function(e) {
-    if (currentStep !== 6) {
+    if (currentStep !== 8) {
         e.preventDefault();
         triggerMobileVibration('error');
         showNotifier('Please complete all steps first.', 'error');
@@ -1084,7 +1084,33 @@ document.getElementById('processOcrBtn').addEventListener('click', function() {
             displayVerificationResults(data.verification);
         } else {
             triggerMobileVibration('error');
-            showNotifier(data.message, 'error');
+            
+            // Enhanced error display for PDFs and suggestions
+            let errorMessage = data.message;
+            if (data.suggestions && data.suggestions.length > 0) {
+                errorMessage += '\n\nSuggestions:\n' + data.suggestions.join('\n');
+            }
+            
+            showNotifier(errorMessage, 'error');
+            
+            // Also show suggestions in a more user-friendly way
+            if (data.suggestions) {
+                const ocrResults = document.getElementById('ocrResults');
+                const feedbackContainer = document.getElementById('ocrFeedback');
+                
+                ocrResults.classList.remove('d-none');
+                feedbackContainer.style.display = 'block';
+                feedbackContainer.className = 'alert alert-warning mt-3';
+                
+                let suggestionHTML = '<strong>' + data.message + '</strong><br><br>';
+                suggestionHTML += '<strong>Please try:</strong><ul>';
+                data.suggestions.forEach(suggestion => {
+                    suggestionHTML += '<li>' + suggestion + '</li>';
+                });
+                suggestionHTML += '</ul>';
+                
+                feedbackContainer.innerHTML = suggestionHTML;
+            }
         }
     })
     .catch(error => {
@@ -1289,7 +1315,7 @@ function saveProgress() {
             emailDisabled: document.getElementById('emailInput').disabled,
             sendOtpBtnHidden: document.getElementById("sendOtpBtn").classList.contains("d-none"),
             verifyBtnSuccess: document.getElementById("verifyOtpBtn").classList.contains("btn-success"),
-            nextStep5BtnEnabled: !document.getElementById('nextStep5Btn').disabled,
+            nextStep7BtnEnabled: !document.getElementById('nextStep7Btn').disabled,
             uploadPreviewVisible: !document.getElementById('uploadPreview').classList.contains('d-none'),
             ocrSectionVisible: !document.getElementById('ocrSection').classList.contains('d-none'),
             ocrResultsVisible: !document.getElementById('ocrResults').classList.contains('d-none')
@@ -1376,8 +1402,8 @@ function loadProgress() {
                 document.getElementById('otp').disabled = true;
             }
             
-            if (states.nextStep5BtnEnabled) {
-                document.getElementById('nextStep5Btn').disabled = false;
+            if (states.nextStep7BtnEnabled) {
+                document.getElementById('nextStep7Btn').disabled = false;
             }
             
             if (states.uploadPreviewVisible && progress.fileInfo) {
@@ -1510,7 +1536,7 @@ function setupAutoSave() {
     
     // Save before page unload
     window.addEventListener('beforeunload', (e) => {
-        if (hasUnsavedChanges && currentStep > 1 && currentStep < 6) {
+        if (hasUnsavedChanges && currentStep > 1 && currentStep < 8) {
             saveProgress();
             e.preventDefault();
             e.returnValue = 'You have unsaved registration progress. Are you sure you want to leave?';
@@ -1730,14 +1756,14 @@ function showTermsModal() {
     }
 }
 
-// Backup event listener setup for nextStep5Btn
+// Backup event listener setup for nextStep7Btn
 document.addEventListener('DOMContentLoaded', () => {
     // Wait a bit for all DOM elements to be ready
     setTimeout(() => {
-        const nextStep5Btn = document.getElementById('nextStep5Btn');
-        if (nextStep5Btn && !nextStep5Btn.onclick) {
-            console.log('Setting up backup event listener for nextStep5Btn');
-            nextStep5Btn.addEventListener('click', nextStep);
+        const nextStep7Btn = document.getElementById('nextStep7Btn');
+        if (nextStep7Btn && !nextStep7Btn.onclick) {
+            console.log('Setting up backup event listener for nextStep7Btn');
+            nextStep7Btn.addEventListener('click', nextStep);
         }
     }, 100);
 });

@@ -62,19 +62,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Fetch all grade uploads needing review
+// Fetch all grade uploads needing review (including manual review cases)
 $query = "
-    SELECT gu.*, s.first_name, s.last_name, s.unique_student_id,
+    SELECT gu.*, s.first_name, s.last_name, s.unique_student_id, s.email,
            COUNT(eg.grade_id) as total_grades,
            COUNT(CASE WHEN eg.is_passing = TRUE THEN 1 END) as passing_grades,
            AVG(eg.grade_numeric) as average_gpa,
-           AVG(eg.grade_percentage) as average_percentage
+           AVG(eg.grade_percentage) as average_percentage,
+           CASE 
+               WHEN gu.validation_status = 'manual_review' THEN 'Requires Manual Review'
+               WHEN gu.validation_status = 'passed' THEN 'Auto-Approved'
+               WHEN gu.validation_status = 'failed' THEN 'Auto-Rejected'
+               ELSE 'Pending'
+           END as review_status
     FROM grade_uploads gu
     JOIN students s ON gu.student_id = s.student_id
     LEFT JOIN extracted_grades eg ON gu.upload_id = eg.upload_id
-    WHERE gu.admin_reviewed = FALSE
-    GROUP BY gu.upload_id, s.student_id, s.first_name, s.last_name, s.unique_student_id
-    ORDER BY gu.upload_date DESC
+    WHERE gu.admin_reviewed = FALSE OR gu.validation_status = 'manual_review'
+    GROUP BY gu.upload_id, s.student_id, s.first_name, s.last_name, s.unique_student_id, s.email, gu.validation_status
+    ORDER BY 
+        CASE WHEN gu.validation_status = 'manual_review' THEN 1 ELSE 2 END,
+        gu.upload_date DESC
 ";
 
 $uploads = pg_query($connection, $query);
@@ -163,16 +171,20 @@ $uploads = pg_query($connection, $query);
                 <?php else: ?>
                     <?php while ($upload = pg_fetch_assoc($uploads)): ?>
                         <div class="col-lg-6 mb-4">
-                            <div class="card h-100">
+                            <div class="card h-100 <?= $upload['validation_status'] === 'manual_review' ? 'border-warning' : '' ?>">
                                 <div class="card-header d-flex justify-content-between align-items-center">
                                     <h5 class="mb-0">
                                         <?= htmlspecialchars($upload['first_name'] . ' ' . $upload['last_name']) ?>
+                                        <?php if ($upload['validation_status'] === 'manual_review'): ?>
+                                            <i class="bi bi-exclamation-triangle text-warning ms-2" title="Requires Manual Review"></i>
+                                        <?php endif; ?>
                                     </h5>
                                     <span class="badge <?= 
                                         $upload['validation_status'] === 'passed' ? 'bg-success' : 
-                                        ($upload['validation_status'] === 'failed' ? 'bg-danger' : 'bg-warning') 
+                                        ($upload['validation_status'] === 'failed' ? 'bg-danger' : 
+                                        ($upload['validation_status'] === 'manual_review' ? 'bg-warning text-dark' : 'bg-secondary'))
                                     ?>">
-                                        <?= ucfirst($upload['validation_status']) ?>
+                                        <?= $upload['review_status'] ?>
                                     </span>
                                 </div>
                                 
@@ -184,20 +196,41 @@ $uploads = pg_query($connection, $query);
                                         </div>
                                         <div class="col-sm-6">
                                             <small class="text-muted">OCR Confidence:</small><br>
-                                            <strong class="<?= 
-                                                $upload['ocr_confidence'] >= 80 ? 'confidence-high' : 
-                                                ($upload['ocr_confidence'] >= 60 ? 'confidence-medium' : 'confidence-low') 
-                                            ?>">
-                                                <?= round($upload['ocr_confidence'], 1) ?>%
-                                            </strong>
+                                            <?php if ($upload['validation_status'] === 'manual_review'): ?>
+                                                <span class="text-warning">
+                                                    <i class="bi bi-eye me-1"></i>Manual Review Required
+                                                </span>
+                                            <?php else: ?>
+                                                <strong class="<?= 
+                                                    $upload['ocr_confidence'] >= 80 ? 'confidence-high' : 
+                                                    ($upload['ocr_confidence'] >= 60 ? 'confidence-medium' : 'confidence-low') 
+                                                ?>">
+                                                    <?= round($upload['ocr_confidence'], 1) ?>%
+                                                </strong>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                     
-                                    <div class="row mb-3">
-                                        <div class="col-sm-6">
-                                            <small class="text-muted">Total Subjects:</small><br>
-                                            <strong><?= $upload['total_grades'] ?></strong>
+                                    <?php if ($upload['total_grades'] > 0): ?>
+                                        <div class="row mb-3">
+                                            <div class="col-sm-6">
+                                                <small class="text-muted">Total Subjects:</small><br>
+                                                <strong><?= $upload['total_grades'] ?></strong>
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <small class="text-muted">Passing Grades:</small><br>
+                                                <strong class="<?= $upload['passing_grades'] >= $upload['total_grades'] * 0.7 ? 'text-success' : 'text-danger' ?>">
+                                                    <?= $upload['passing_grades'] ?>/<?= $upload['total_grades'] ?>
+                                                </strong>
+                                            </div>
                                         </div>
+                                    <?php else: ?>
+                                        <div class="alert alert-info py-2 mb-3">
+                                            <i class="bi bi-info-circle me-2"></i>
+                                            <strong>No grades automatically extracted.</strong><br>
+                                            <small>Please review the uploaded document manually and enter grades if valid.</small>
+                                        </div>
+                                    <?php endif; ?>
                                         <div class="col-sm-6">
                                             <small class="text-muted">Passing Grades:</small><br>
                                             <strong class="<?= $upload['passing_grades'] >= $upload['total_grades'] * 0.7 ? 'text-success' : 'text-danger' ?>">
@@ -245,6 +278,16 @@ $uploads = pg_query($connection, $query);
                                                 onclick="viewOriginalDocument('<?= htmlspecialchars($upload['file_path']) ?>')">
                                             <i class="bi bi-file-text me-1"></i>Original Document
                                         </button>
+                                        <?php if ($upload['validation_status'] === 'manual_review'): ?>
+                                            <button class="btn btn-outline-info btn-sm" 
+                                                    onclick="viewExtractedText(<?= $upload['upload_id'] ?>)">
+                                                <i class="bi bi-file-earmark-text me-1"></i>OCR Text
+                                            </button>
+                                            <button class="btn btn-outline-success btn-sm" 
+                                                    onclick="manualGradeEntry(<?= $upload['upload_id'] ?>)">
+                                                <i class="bi bi-plus-circle me-1"></i>Enter Grades
+                                            </button>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                                 
@@ -335,6 +378,80 @@ $uploads = pg_query($connection, $query);
     </div>
 </div>
 
+<!-- OCR Text Modal -->
+<div class="modal fade" id="ocrTextModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Extracted OCR Text</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="ocrTextContent">
+                <div class="text-center">
+                    <div class="spinner-border" role="status"></div>
+                    <p>Loading extracted text...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manual Grade Entry Modal -->
+<div class="modal fade" id="manualGradeModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Manual Grade Entry</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="manualGradeForm" method="POST" action="save_manual_grades.php">
+                <div class="modal-body">
+                    <input type="hidden" name="upload_id" id="manual_upload_id">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Grading System Used:</label>
+                            <select name="grading_system" id="gradingSystem" class="form-select" onchange="updateGradeInputs()">
+                                <option value="gpa">1.0 - 5.0 GPA Scale</option>
+                                <option value="percentage">Percentage (0-100%)</option>
+                                <option value="letter">Letter Grades (A-F)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Overall Assessment:</label>
+                            <select name="overall_status" class="form-select" required>
+                                <option value="">Select...</option>
+                                <option value="passed">Meets Requirements (≥75% average)</option>
+                                <option value="failed">Does Not Meet Requirements (&lt;75%)</option>
+                                <option value="conditional">Conditional (Requires Further Review)</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div id="gradeEntrySection">
+                        <h6>Enter Grades:</h6>
+                        <div id="gradeRows">
+                            <!-- Grade entry rows will be dynamically added here -->
+                        </div>
+                        <button type="button" class="btn btn-outline-primary btn-sm mt-2" onclick="addGradeRow()">
+                            <i class="bi bi-plus"></i> Add Subject
+                        </button>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <label class="form-label">Admin Notes:</label>
+                        <textarea name="admin_notes" class="form-control" rows="3" 
+                                placeholder="Enter any observations about the grades, document quality, or special considerations..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Grades & Review</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
 <script>
@@ -345,6 +462,109 @@ function showNotesModal(uploadId) {
 
 function viewOriginalDocument(filePath) {
     window.open(filePath, '_blank');
+}
+
+async function viewExtractedText(uploadId) {
+    const modal = new bootstrap.Modal(document.getElementById('ocrTextModal'));
+    const content = document.getElementById('ocrTextContent');
+    
+    modal.show();
+    
+    try {
+        const response = await fetch(`get_grade_details.php?upload_id=${uploadId}&text_only=1`);
+        const data = await response.json();
+        
+        if (data.success) {
+            content.innerHTML = `
+                <div class="alert alert-info">
+                    <strong>OCR Confidence:</strong> ${data.confidence}%
+                </div>
+                <div class="border rounded p-3 bg-light" style="max-height: 400px; overflow-y: auto;">
+                    <pre style="white-space: pre-wrap; margin: 0; font-family: monospace; font-size: 0.9em;">${data.extracted_text || 'No text extracted from document.'}</pre>
+                </div>
+                <div class="mt-3">
+                    <h6>Instructions for Manual Review:</h6>
+                    <ul class="small">
+                        <li>Look for subject names and corresponding grades</li>
+                        <li>Check for GPA scales (1.0-5.0) or percentage grades (0-100%)</li>
+                        <li>Verify this appears to be an official academic transcript or grade report</li>
+                        <li>Note any inconsistencies or unclear information</li>
+                    </ul>
+                </div>
+            `;
+        } else {
+            content.innerHTML = `<div class="alert alert-danger">Error loading extracted text: ${data.message}</div>`;
+        }
+    } catch (error) {
+        content.innerHTML = `<div class="alert alert-danger">Error loading extracted text: ${error.message}</div>`;
+    }
+}
+
+function manualGradeEntry(uploadId) {
+    document.getElementById('manual_upload_id').value = uploadId;
+    document.getElementById('gradeRows').innerHTML = '';
+    addGradeRow(); // Start with one row
+    new bootstrap.Modal(document.getElementById('manualGradeModal')).show();
+}
+
+let gradeRowCount = 0;
+
+function addGradeRow() {
+    gradeRowCount++;
+    const gradeRows = document.getElementById('gradeRows');
+    const gradingSystem = document.getElementById('gradingSystem').value;
+    
+    let gradeInput = '';
+    switch(gradingSystem) {
+        case 'gpa':
+            gradeInput = `<input type="number" name="grades[${gradeRowCount}][value]" class="form-control" 
+                         min="1.0" max="5.0" step="0.01" placeholder="1.25" required>`;
+            break;
+        case 'percentage':
+            gradeInput = `<input type="number" name="grades[${gradeRowCount}][value]" class="form-control" 
+                         min="0" max="100" step="0.1" placeholder="85.5" required>`;
+            break;
+        case 'letter':
+            gradeInput = `<select name="grades[${gradeRowCount}][value]" class="form-select" required>
+                         <option value="">Select...</option>
+                         <option value="A">A (Excellent)</option>
+                         <option value="B">B (Good)</option>
+                         <option value="C">C (Fair)</option>
+                         <option value="D">D (Poor)</option>
+                         <option value="F">F (Fail)</option>
+                         </select>`;
+            break;
+    }
+    
+    const row = document.createElement('div');
+    row.className = 'row mb-2 grade-row';
+    row.innerHTML = `
+        <div class="col-md-6">
+            <input type="text" name="grades[${gradeRowCount}][subject]" class="form-control" 
+                   placeholder="Subject name (e.g., Mathematics 101)" required>
+        </div>
+        <div class="col-md-4">
+            ${gradeInput}
+        </div>
+        <div class="col-md-2">
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeGradeRow(this)">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    `;
+    
+    gradeRows.appendChild(row);
+}
+
+function removeGradeRow(button) {
+    button.closest('.grade-row').remove();
+}
+
+function updateGradeInputs() {
+    const existingRows = document.querySelectorAll('.grade-row');
+    existingRows.forEach(row => row.remove());
+    gradeRowCount = 0;
+    addGradeRow();
 }
 
 async function viewGradeDetails(uploadId) {

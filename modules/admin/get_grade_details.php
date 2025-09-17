@@ -9,6 +9,7 @@ include '../../config/database.php';
 header('Content-Type: application/json');
 
 $uploadId = intval($_GET['upload_id'] ?? 0);
+$textOnly = isset($_GET['text_only']) && $_GET['text_only'] == '1';
 
 if (!$uploadId) {
     echo json_encode(['success' => false, 'message' => 'Invalid upload ID']);
@@ -22,6 +23,16 @@ try {
     
     if (!$upload = pg_fetch_assoc($uploadResult)) {
         throw new Exception('Grade upload not found');
+    }
+    
+    // If only text is requested, return just the extracted text
+    if ($textOnly) {
+        echo json_encode([
+            'success' => true,
+            'confidence' => floatval($upload['ocr_confidence']),
+            'extracted_text' => $upload['extracted_text'] ?? 'No text was extracted from this document.'
+        ]);
+        exit;
     }
     
     // Get extracted grades
