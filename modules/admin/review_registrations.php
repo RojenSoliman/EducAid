@@ -675,6 +675,17 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             padding: 20px;
             margin-bottom: 20px;
         }
+        /* Image Viewer Enhancements */
+        .doc-viewer-wrapper { position: relative; background:#111; border-radius:8px; overflow:hidden; touch-action:none; user-select:none; }
+        .doc-viewer-stage { position:relative; width:100%; height:70vh; max-height:800px; display:flex; align-items:center; justify-content:center; background:#111; }
+        .doc-viewer-stage img { max-width:100%; max-height:100%; will-change: transform; cursor:grab; transition: filter .2s; z-index:1; }
+        .doc-viewer-stage img:active { cursor:grabbing; }
+        .doc-controls { position:absolute; top:10px; right:10px; display:flex; gap:6px; z-index:50; pointer-events:auto; }
+        .doc-controls button { background:rgba(0,0,0,.55); color:#fff; border:1px solid rgba(255,255,255,.2); padding:6px 10px; border-radius:6px; font-size:14px; backdrop-filter: blur(4px); pointer-events:auto; }
+        .doc-controls button:hover { background:rgba(255,255,255,.15); }
+        .doc-zoom-indicator { position:absolute; left:12px; top:12px; background:rgba(0,0,0,.55); color:#fff; padding:4px 10px; border-radius:20px; font-size:12px; font-weight:600; letter-spacing:.5px; z-index:50; pointer-events:none; }
+        .doc-hint { position:absolute; bottom:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.55); color:#fff; padding:4px 12px; border-radius:20px; font-size:12px; opacity:.85; z-index:50; pointer-events:none; }
+        @media (max-width: 768px){ .doc-viewer-stage{ height:60vh; } }
         .table-responsive {
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
             border-radius: 8px;
@@ -1406,8 +1417,20 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                     path = path.replace(/(\.\.\/){3,}/g, '../../');
                     const ext = (path.split('.').pop() || '').toLowerCase();
                     let html = '';
-                    if (['jpg','jpeg','png','gif','webp'].includes(ext)) {
-                        html = '<div class="text-center"><img data-doc-preview="1" src="' + path + '" alt="Document" class="img-fluid border rounded" /></div>';
+                                        if (['jpg','jpeg','png','gif','webp'].includes(ext)) {
+                                                html = `
+                                                <div class="doc-viewer-wrapper">
+                                                    <div class="doc-controls">
+                                                        <button type="button" data-action="zoom-in" title="Zoom In">+</button>
+                                                        <button type="button" data-action="zoom-out" title="Zoom Out">−</button>
+                                                        <button type="button" data-action="reset" title="Reset">Reset</button>
+                                                    </div>
+                                                    <div class="doc-zoom-indicator" data-zoom-indicator>100%</div>
+                                                    <div class="doc-viewer-stage" data-stage>
+                                                        <img data-doc-preview="1" src="${path}" alt="Document" draggable="false" />
+                                                    </div>
+                                                    <div class="doc-hint">Scroll / pinch to zoom • Drag to pan</div>
+                                                </div>`;
                     } else if (ext === 'pdf') {
                         html = '<div class="ratio ratio-16x9"><iframe src="' + path + '#toolbar=0" class="w-100 h-100 border rounded" frameborder="0"></iframe></div>';
                     } else {
@@ -1420,6 +1443,8 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                         previewImg.addEventListener('error', function() {
                             body.innerHTML = '<div class="alert alert-danger mb-0">Failed to load image. Path attempted: <code>' + path + '</code></div>';
                         }, { once: true });
+                        // Initialize interactive viewer
+                        initImageViewer(body.querySelector('.doc-viewer-wrapper'));
                     }
                     dlBtn.onclick = () => { const a=document.createElement('a'); a.href=path; a.download=''; a.click(); };
                     dlBtn.style.display = 'inline-block';
@@ -1428,6 +1453,109 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                     body.innerHTML = '<div class="alert alert-danger mb-0">Error loading document.</div>';
                 });
             new bootstrap.Modal(modalEl).show();
+        }
+
+        function initImageViewer(wrapper){
+            if(!wrapper) return;
+            const stage = wrapper.querySelector('[data-stage]');
+            const img = stage.querySelector('img');
+            const zoomIndicator = wrapper.querySelector('[data-zoom-indicator]');
+            const controls = wrapper.querySelector('.doc-controls');
+            let scale = 1;
+            let minScale = 0.2;
+            let maxScale = 8;
+            let originX = 0; // translation
+            let originY = 0;
+            let isDragging = false;
+            let startX=0, startY=0;
+            let lastX=0, lastY=0;
+            let pinchStartDist = 0;
+            let pinchStartScale = 1;
+
+            function applyTransform(){
+                img.style.transform = `translate(${originX}px, ${originY}px) scale(${scale})`;
+                if(zoomIndicator) zoomIndicator.textContent = Math.round(scale*100)+ '%';
+            }
+            function clamp(val,min,max){ return Math.min(Math.max(val,min),max); }
+            function zoom(delta, centerX, centerY){
+                const prevScale = scale;
+                scale = clamp(scale * (delta>0?1.1:0.9), minScale, maxScale);
+                // Adjust translation so zoom centers on pointer (if coordinates provided)
+                if(centerX!=null && centerY!=null){
+                    const rect = img.getBoundingClientRect();
+                    const offsetX = centerX - (rect.left + rect.width/2);
+                    const offsetY = centerY - (rect.top + rect.height/2);
+                    originX -= offsetX * (scale/prevScale -1);
+                    originY -= offsetY * (scale/prevScale -1);
+                }
+                applyTransform();
+            }
+            // Wheel zoom
+            wrapper.addEventListener('wheel', e=>{
+                e.preventDefault();
+                zoom(e.deltaY, e.clientX, e.clientY);
+            }, { passive:false });
+            // Drag
+            function startDrag(e){
+                isDragging = true;
+                startX = (e.touches? e.touches[0].clientX : e.clientX);
+                startY = (e.touches? e.touches[0].clientY : e.clientY);
+                lastX = originX; lastY = originY;
+            }
+            function moveDrag(e){
+                if(!isDragging) return;
+                const x = (e.touches? e.touches[0].clientX : e.clientX);
+                const y = (e.touches? e.touches[0].clientY : e.clientY);
+                originX = lastX + (x - startX);
+                originY = lastY + (y - startY);
+                applyTransform();
+                e.preventDefault();
+            }
+            function endDrag(){ isDragging=false; }
+            img.addEventListener('mousedown', startDrag);
+            window.addEventListener('mousemove', moveDrag);
+            window.addEventListener('mouseup', endDrag);
+
+            img.addEventListener('touchstart', e=>{
+                if(e.touches.length===1){ startDrag(e); }
+                else if(e.touches.length===2){ // pinch start
+                    pinchStartDist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    pinchStartScale = scale;
+                }
+            }, { passive:false });
+            img.addEventListener('touchmove', e=>{
+                if(e.touches.length===1 && isDragging){ moveDrag(e); }
+                else if(e.touches.length===2){
+                    e.preventDefault();
+                    const newDist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    const factor = newDist / pinchStartDist;
+                    scale = clamp(pinchStartScale * factor, minScale, maxScale);
+                    applyTransform();
+                }
+            }, { passive:false });
+            window.addEventListener('touchend', e=>{ if(e.touches.length===0) endDrag(); }, { passive:true });
+
+            // Buttons
+            if(controls){
+                controls.addEventListener('click', e=>{
+                    const action = e.target.getAttribute('data-action');
+                    if(!action) return;
+                    if(action==='zoom-in') zoom(-1); // negative delta => zoom in by our logic
+                    else if(action==='zoom-out') zoom(1);
+                    else if(action==='reset'){ scale=1; originX=originY=0; applyTransform(); }
+                });
+            }
+            // Prevent background scroll while interacting
+            ['wheel','touchmove'].forEach(ev=>{
+                wrapper.addEventListener(ev, e=>{ e.preventDefault(); }, { passive:false });
+            });
+            applyTransform();
         }
     </script>
 
