@@ -332,11 +332,100 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
     <link href="assets/css/universal.css" rel="stylesheet">
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/website/landing_page.css" rel="stylesheet">
+    
+    <style>
+        /* Login page specific adjustments for navbar */
+        body.login-page {
+            padding-top: 0;
+        }
+        
+        /* Adjust brand section height */
+        .brand-section {
+            min-height: calc(100vh - 140px);
+        }
+        
+        /* Ensure login form section adjusts properly */
+        .col-lg-6:not(.brand-section) {
+            min-height: calc(100vh - 140px);
+            display: flex;
+            align-items: center;
+        }
+        
+        /* Mobile adjustments */
+        @media (max-width: 991.98px) {
+            .container-fluid {
+                min-height: calc(100vh - 100px) !important;
+            }
+            
+            .topbar {
+                display: none !important;
+            }
+            
+            .col-lg-6:not(.brand-section) {
+                min-height: calc(100vh - 80px);
+            }
+        }
+        
+        /* Navbar styling for login page */
+        .navbar .btn-outline-primary {
+            border-color: var(--thm-primary);
+            color: var(--thm-primary);
+        }
+        
+        .navbar .btn-outline-primary:hover {
+            background: var(--thm-primary);
+            color: white;
+        }
+    </style>
 
 </head>
 <body class = "login-page"> 
-    <div class="container-fluid p-0">
-        <div class="row g-0 min-vh-100">
+    <!-- Top Info Bar -->
+    <div class="topbar py-2 d-none d-md-block">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-telephone"></i>
+                            <span>(046) 509-5555</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-envelope"></i>
+                            <span>educaid@generaltrias.gov.ph</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 text-end">
+                    <div class="d-flex align-items-center justify-content-end gap-3">
+                        <span>🏛️ Official City Portal</span>
+                        <div class="d-flex gap-2">
+                            <a href="#" class="text-white"><i class="bi bi-facebook"></i></a>
+                            <a href="#" class="text-white"><i class="bi bi-twitter"></i></a>
+                            <a href="#" class="text-white"><i class="bi bi-instagram"></i></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <?php 
+    // Configure navbar for login page
+    $custom_brand_config = [
+        'href' => 'landingpage.php'
+    ];
+    $custom_nav_links = [
+        ['href' => 'landingpage.php', 'label' => '<i class="bi bi-house me-1"></i>Back to Home', 'active' => false]
+    ];
+    $simple_nav_style = true;
+    include 'includes/website/navbar.php'; 
+    ?>
+    
+    <!-- Main Login Container -->
+    <div class="container-fluid p-0" style="min-height: calc(100vh - 140px);">
+        <div class="row g-0 h-100">
             <!-- Brand Section - Hidden on mobile, visible on tablet+ -->
             <div class="col-lg-6 d-none d-lg-flex brand-section">
                 <div class="brand-content">
@@ -387,9 +476,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
 
             <!-- Form Section -->
             <div class="col-12 col-lg-6 form-section">
-                <div class="container h-100">
+                <div class="container h-100 py-4 py-lg-0">
                     <div class="row justify-content-center align-items-center h-100">
-                        <div class="col-12 col-sm-10 col-md-8 col-lg-12 col-xl-10 col-xxl-8">
+                        <div class="col-12 col-sm-11 col-md-9 col-lg-11 col-xl-9 col-xxl-8">
                             <div class="login-card">
                                 <div class="login-header">
                                     <h2 class="login-title">Welcome Back</h2>

@@ -41,17 +41,6 @@
             indicator.classList.remove('active');
         });
         
-        // Map steps to indicator numbers
-        const stepMap = {
-            'step1': null,        // No indicator for main login
-            'step2': 1,          // First indicator for OTP verification
-            'forgotStep1': 1,    // First indicator for forgot password email
-            'forgotStep2': 2,    // Second indicator for forgot password OTP
-            'forgotStep3': 3     // Third indicator for new password
-        };
-        
-        const indicatorNumber = stepMap[activeStep];
-        
         // Hide indicators for main login step
         if (activeStep === 'step1') {
             stepIndicatorContainer.style.display = 'none';
@@ -61,11 +50,66 @@
         // Show indicators for multi-step processes
         stepIndicatorContainer.style.display = 'flex';
         
-        if (indicatorNumber) {
-            const indicator = document.getElementById(`indicator${indicatorNumber}`);
-            if (indicator) {
-                indicator.classList.add('active');
-            }
+        // Handle different flows
+        if (activeStep === 'step2') {
+            // Login OTP verification - Show 2 steps: Email → Verify
+            document.getElementById('label1').textContent = 'Email';
+            document.getElementById('label2').textContent = 'Verify';
+            document.getElementById('label3').textContent = '';
+            
+            // Hide third indicator for login flow
+            document.querySelector('.step-indicator-item:nth-child(3)').style.display = 'none';
+            document.querySelector('.step-indicator-item:nth-child(1)').style.display = 'flex';
+            document.querySelector('.step-indicator-item:nth-child(2)').style.display = 'flex';
+            
+            // Mark first two as active
+            document.getElementById('indicator1').classList.add('active');
+            document.getElementById('indicator2').classList.add('active');
+            
+        } else if (activeStep === 'forgotStep1') {
+            // Forgot password email - Show 3 steps: Email → Verify → Password
+            document.getElementById('label1').textContent = 'Email';
+            document.getElementById('label2').textContent = 'Verify';
+            document.getElementById('label3').textContent = 'Password';
+            
+            // Show all three indicators for forgot password flow
+            document.querySelector('.step-indicator-item:nth-child(1)').style.display = 'flex';
+            document.querySelector('.step-indicator-item:nth-child(2)').style.display = 'flex';
+            document.querySelector('.step-indicator-item:nth-child(3)').style.display = 'flex';
+            
+            // Mark first as active
+            document.getElementById('indicator1').classList.add('active');
+            
+        } else if (activeStep === 'forgotStep2') {
+            // Forgot password OTP verification
+            document.getElementById('label1').textContent = 'Email';
+            document.getElementById('label2').textContent = 'Verify';
+            document.getElementById('label3').textContent = 'Password';
+            
+            // Show all three indicators
+            document.querySelector('.step-indicator-item:nth-child(1)').style.display = 'flex';
+            document.querySelector('.step-indicator-item:nth-child(2)').style.display = 'flex';
+            document.querySelector('.step-indicator-item:nth-child(3)').style.display = 'flex';
+            
+            // Mark first two as active
+            document.getElementById('indicator1').classList.add('active');
+            document.getElementById('indicator2').classList.add('active');
+            
+        } else if (activeStep === 'forgotStep3') {
+            // Forgot password new password
+            document.getElementById('label1').textContent = 'Email';
+            document.getElementById('label2').textContent = 'Verify';
+            document.getElementById('label3').textContent = 'Password';
+            
+            // Show all three indicators
+            document.querySelector('.step-indicator-item:nth-child(1)').style.display = 'flex';
+            document.querySelector('.step-indicator-item:nth-child(2)').style.display = 'flex';
+            document.querySelector('.step-indicator-item:nth-child(3)').style.display = 'flex';
+            
+            // Mark all as active
+            document.getElementById('indicator1').classList.add('active');
+            document.getElementById('indicator2').classList.add('active');
+            document.getElementById('indicator3').classList.add('active');
         }
     }
 
@@ -73,8 +117,8 @@
         if (loading) {
             button.disabled = true;
             button.innerHTML = `
-                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                Processing...
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                <span>Processing...</span>
             `;
         } else {
             button.disabled = false;
@@ -116,6 +160,7 @@
         hideAllSteps(); 
         document.getElementById('step2')?.classList.add('active');
         updateStepIndicators('step2');
+        clearMessages();
     };
 
     window.showForgotPassword = function() { 

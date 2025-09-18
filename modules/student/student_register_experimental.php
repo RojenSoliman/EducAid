@@ -53,7 +53,7 @@ $municipality_id = 1;
         }
     </style>
 </head>
-<body class="registration-page">
+<body class="registration-page" style="padding-top: 1rem;">
     <!-- Top Info Bar -->
     <div class="topbar py-2 d-none d-md-block">
         <div class="container">
@@ -98,6 +98,10 @@ $municipality_id = 1;
 
 <?php
 // --- Slot check ---
+$slotCheckPassed = false;
+$slotMessage = '';
+$slotMessageType = '';
+
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
     $slotInfo = pg_fetch_assoc($slotRes);
@@ -116,73 +120,23 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
         
         if ($slotsLeft <= 0) {
             $slotsFull = true;
+        } else {
+            $slotCheckPassed = true;
         }
     } else {
         // No active slot available
         $noSlotsAvailable = true;
     }
     
-    if ($noSlotsAvailable || $slotsFull) {
-        // Determine the appropriate message and styling
-        if ($noSlotsAvailable) {
-            $title = "EducAid – Registration Not Available";
-            $headerText = "Registration is currently closed.";
-            $messageText = "Please wait for the next opening of slots.";
-            $iconColor = "text-warning";
-        } else {
-            $title = "EducAid – Registration Closed";
-            $headerText = "Slots are full.";
-            $messageText = "Please wait for the next announcement before registering again.";
-            $iconColor = "text-danger";
-        }
-        
-        echo <<<HTML
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <title>$title</title>
-            <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
-            <link href="../../assets/css/homepage.css" rel="stylesheet" /> 
-            <style>
-                .alert-container {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100vh;
-                }
-                .spinner {
-                    width: 3rem;
-                    height: 3rem;
-                    margin-bottom: 1rem;
-                    animation: spin 1s linear infinite;
-                }
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-            </style>
-        </head>
-        <body class="bg-light">
-            <div class="container alert-container">
-                <div class="text-center">
-                    <svg class="spinner $iconColor" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid">
-                        <circle cx="50" cy="50" fill="none" stroke="currentColor" stroke-width="10" r="35" stroke-dasharray="164.93361431346415 56.97787143782138">
-                            <animateTransform attributeName="transform" type="rotate" repeatCount="indefinite" dur="1s" values="0 50 50;360 50 50" keyTimes="0;1"/>
-                        </circle>
-                    </svg>
-                    <h4 class="$iconColor">$headerText</h4>
-                    <p>$messageText</p>
-                    <a href="../../unified_login.php" class="btn btn-outline-primary mt-3">Back to Login</a>
-                </div>
-            </div>
-        </body>
-        </html>
-        HTML;
-        exit;
+    if ($noSlotsAvailable) {
+        $slotMessage = "Registration is currently closed. Please wait for the next opening of slots.";
+        $slotMessageType = "warning";
+    } elseif ($slotsFull) {
+        $slotMessage = "Slots are full. Please wait for the next announcement before registering again.";
+        $slotMessageType = "danger";
     }
+} else {
+    $slotCheckPassed = true; // Allow POST requests to proceed
 }
 
 // --- OTP send ---
@@ -650,19 +604,46 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 ?>
 
 <!-- Main Registration Content -->
-<div class="container py-5">
-        <div class="register-card mx-auto p-4 rounded shadow-sm bg-white" style="max-width: 600px;">
-            <h4 class="mb-4 text-center text-primary">
-                <i class="bi bi-person-plus-fill me-2"></i>Register for EducAid
-            </h4>
-            <div class="step-indicator mb-4 text-center">
-                <span class="step active" id="step-indicator-1">1</span>
-                <span class="step" id="step-indicator-2">2</span>
-                <span class="step" id="step-indicator-3">3</span>
-                <span class="step" id="step-indicator-4">4</span>
-                <span class="step" id="step-indicator-5">5</span>
-                <span class="step" id="step-indicator-6">6</span>
+<div class="registration-main container py-5">
+    <?php if (!$slotCheckPassed): ?>
+    <!-- Slot Unavailable Message -->
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="alert alert-<?php echo $slotMessageType; ?> text-center" role="alert">
+                <div class="mb-3">
+                    <i class="bi bi-exclamation-triangle-fill" style="font-size: 3rem;"></i>
+                </div>
+                <h4 class="alert-heading">
+                    <?php echo $slotMessageType === 'warning' ? 'Registration Closed' : 'Slots Full'; ?>
+                </h4>
+                <p class="mb-4"><?php echo $slotMessage; ?></p>
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                    <a href="../../unified_login.php" class="btn btn-outline-primary">
+                        <i class="bi bi-box-arrow-in-left me-1"></i>Back to Login
+                    </a>
+                    <a href="../../landingpage.html" class="btn btn-primary">
+                        <i class="bi bi-house me-1"></i>Go to Home
+                    </a>
+                </div>
             </div>
+        </div>
+    </div>
+    <?php else: ?>
+    <!-- Registration Form -->
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="register-card mx-auto p-4 rounded shadow-sm bg-white">
+                <h4 class="mb-4 text-center text-primary">
+                    <i class="bi bi-person-plus-fill me-2"></i>Register for EducAid
+                </h4>
+                <div class="step-indicator mb-4 text-center">
+                    <span class="step active" id="step-indicator-1">1</span>
+                    <span class="step" id="step-indicator-2">2</span>
+                    <span class="step" id="step-indicator-3">3</span>
+                    <span class="step" id="step-indicator-4">4</span>
+                    <span class="step" id="step-indicator-5">5</span>
+                    <span class="step" id="step-indicator-6">6</span>
+                </div>
             <form id="multiStepForm" method="POST" autocomplete="off">
                 <!-- Step 1: Personal Information -->
                 <div class="step-panel" id="step-1">
@@ -875,6 +856,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             </form>
         </div>
     </div>
+    <?php endif; ?>
+</div>
     
     <div id="notifier" class="notifier"></div>
     <!-- Make sure this is included BEFORE your custom JavaScript -->
@@ -960,5 +943,99 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         </div>
     </div>
 </div>
+        
+    <div id="notifier" class="notifier"></div>
+    <!-- Make sure this is included BEFORE your custom JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- OR if you have local Bootstrap files -->
+<script src="../../assets/js/bootstrap.bundle.min.js"></script>
+
+<!-- Your registration JavaScript should come AFTER Bootstrap -->
+<script src="../../assets/js/student/user_registration.js"></script>
+
+<!-- ADD this modal HTML before closing </body> tag -->
+<!-- Terms and Conditions Modal -->
+<div class="modal fade" id="termsModal" tabindex="-1" aria-labelledby="termsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="termsModalLabel">
+                    <i class="bi bi-file-earmark-text me-2"></i>Terms and Conditions
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="container-fluid">
+                    <h6>1. Eligibility Requirements</h6>
+                    <p>To be eligible for the EducAid scholarship program, applicants must:</p>
+                    <ul>
+                        <li>Be a resident of General Trias, Cavite</li>
+                        <li>Be enrolled or planning to enroll in an accredited educational institution</li>
+                        <li>Demonstrate financial need through required documentation</li>
+                        <li>Maintain satisfactory academic standing</li>
+                        <li>Complete all required application forms accurately</li>
+                    </ul>
+
+                    <h6>2. Application Process</h6>
+                    <p>By submitting this application, you agree to:</p>
+                    <ul>
+                        <li>Provide accurate and truthful information</li>
+                        <li>Submit all required supporting documents</li>
+                        <li>Allow verification of submitted information</li>
+                        <li>Comply with all program deadlines and requirements</li>
+                    </ul>
+
+                    <h6>3. Data Privacy and Security</h6>
+                    <p>By registering, you consent to the collection and processing of your personal data for:</p>
+                    <ul>
+                        <li>Scholarship application evaluation</li>
+                        <li>Communication regarding application status</li>
+                        <li>Academic monitoring and reporting</li>
+                        <li>Statistical analysis for program improvement</li>
+                    </ul>
+
+                    <h6>4. Obligations and Responsibilities</h6>
+                    <p>If selected for the scholarship, recipients must:</p>
+                    <ul>
+                        <li>Maintain satisfactory academic performance</li>
+                        <li>Provide regular updates on academic progress</li>
+                        <li>Attend mandatory orientation and meetings</li>
+                        <li>Use scholarship funds exclusively for educational purposes</li>
+                    </ul>
+
+                    <h6>5. Program Rules and Regulations</h6>
+                    <ul>
+                        <li>Scholarship awards are subject to available funding</li>
+                        <li>Recipients must complete their program within the standard timeframe</li>
+                        <li>Failure to meet requirements may result in scholarship termination</li>
+                        <li>False information in the application may lead to immediate disqualification</li>
+                    </ul>
+
+                    <h6>6. Contact and Support</h6>
+                    <p>For questions or concerns about the EducAid program, please contact:</p>
+                    <ul>
+                        <li>Email: support@educaid.gov.ph</li>
+                        <li>Phone: (123) 456-7890</li>
+                        <li>Office Hours: Monday to Friday, 8:00 AM - 5:00 PM</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="acceptTermsBtn" data-bs-dismiss="modal">
+                    <i class="bi bi-check-circle me-2"></i>I Accept
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <?php 
+      // Include global footer (relative to this file)
+      $logo_path = '../../assets/images/educaid-logo.png';
+      include '../../includes/footer.php';
+    ?>
+
 </body>
 </html>

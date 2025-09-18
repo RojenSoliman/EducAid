@@ -29,7 +29,7 @@ if (isset($custom_brand_config)) {
 ?>
 
 <!-- Navbar -->
-<nav class="navbar navbar-expand-lg bg-white sticky-top">
+<nav class="navbar navbar-expand-lg bg-white sticky-top" style="z-index: 1030;">
   <div class="container">
     <a class="navbar-brand" href="<?php echo $brand_config['href']; ?>">
       <span class="brand-badge"><?php echo $brand_config['badge']; ?></span>
@@ -39,6 +39,17 @@ if (isset($custom_brand_config)) {
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="nav">
+      <?php if (isset($simple_nav_style) && $simple_nav_style): ?>
+      <!-- Simple navigation style for login/register pages -->
+      <div class="navbar-nav ms-auto">
+        <?php foreach ($nav_links as $link): ?>
+          <a href="<?php echo $link['href']; ?>" class="btn btn-outline-primary btn-sm <?php echo $link['active'] ? 'active' : ''; ?>">
+            <?php echo $link['label']; ?>
+          </a>
+        <?php endforeach; ?>
+      </div>
+      <?php else: ?>
+      <!-- Default navigation style for main site -->
       <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
         <?php foreach ($nav_links as $link): ?>
         <li class="nav-item">
@@ -48,6 +59,7 @@ if (isset($custom_brand_config)) {
         </li>
         <?php endforeach; ?>
       </ul>
+      <?php if (!isset($hide_auth_buttons) || !$hide_auth_buttons): ?>
       <div class="navbar-nav ms-lg-3 mt-2 mt-lg-0">
         <a href="unified_login.php" class="btn btn-outline-primary btn-sm me-2 mb-2 mb-lg-0">
           <i class="bi bi-box-arrow-in-right"></i><span class="d-none d-sm-inline ms-1">Sign In</span>
@@ -56,6 +68,8 @@ if (isset($custom_brand_config)) {
           <i class="bi bi-journal-text"></i><span class="d-none d-sm-inline ms-1">Apply</span>
         </a>
       </div>
+      <?php endif; ?>
+      <?php endif; ?>
     </div>
   </div>
 </nav>

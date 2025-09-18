@@ -136,13 +136,16 @@ body::after {
 
 /* ========================================
    MAIN CONTAINER - CENTERED LIKE LOGIN
+   Scoped to registration main only to avoid
+   affecting header/topbar containers
    ======================================== */
 
-.container {
+.registration-main {
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 100vh;
+    /* subtract approximate header (topbar+navbar) height */
+    min-height: calc(100vh - 120px);
     padding: var(--space-8) var(--space-4);
 }
 
