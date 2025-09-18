@@ -8,7 +8,7 @@ include '../../config/database.php';
 
 // Function to check if all required documents are uploaded
 function check_documents($connection, $student_id) {
-    $required = ['id_picture', 'letter_to_mayor', 'certificate_of_indigency'];
+    $required = ['eaf', 'letter_to_mayor', 'certificate_of_indigency'];
     $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
     $uploaded = [];
     while ($row = pg_fetch_assoc($query)) $uploaded[] = $row['type'];
@@ -84,7 +84,7 @@ function render_table($applicants, $connection) {
                         </button>
                         <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
                         <button class="btn btn-danger btn-sm ms-1" 
-                                onclick="showBlacklistModal(<?= $student_id ?>, '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
+                                onclick="showBlacklistModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
                                     barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
                                     status: 'Applicant'
                                 })"
@@ -187,7 +187,7 @@ function render_table($applicants, $connection) {
                                 <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
                                 <div class="ms-auto">
                                     <button class="btn btn-outline-danger btn-sm" 
-                                            onclick="showBlacklistModal(<?= $student_id ?>, '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
+                                            onclick="showBlacklistModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
                                                 barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
                                                 status: 'Applicant'
                                             })"
@@ -234,7 +234,7 @@ function render_pagination($page, $totalPages) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Verify student
     if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
-        $sid = intval($_POST['student_id']);
+        $sid = trim($_POST['student_id']); // Remove intval for TEXT student_id
         
         // Get student name for notification
         $studentQuery = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$sid]);
@@ -256,7 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     // Reject applicant and reset documents
     if (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
-        $sid = intval($_POST['student_id']);
+        $sid = trim($_POST['student_id']); // Remove intval for TEXT student_id
         
         // Get student name for notification
         $studentQuery = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$sid]);
@@ -292,9 +292,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 // --------- AJAX handler ---------
-if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest') {
+if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET['ajax']) && $_GET['ajax'] === '1')) {
+    // Return table content and stats for real-time updates
+    ob_start();
+    ?>
+    <div class="section-header mb-3">
+        <h2 class="fw-bold text-primary">
+            <i class="bi bi-person-vcard"></i>
+            Manage Applicants
+        </h2>
+        <div class="text-end">
+            <span class="badge bg-info fs-6"><?php echo $totalApplicants; ?> Total Applicants</span>
+        </div>
+    </div>
+    <?php
     echo render_table($applicants, $connection);
     render_pagination($page, $totalPages);
+    echo ob_get_clean();
     exit;
 }
 
@@ -324,11 +338,14 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest') {
       </div>
     </nav>
     <div class="container-fluid py-4 px-4">
-      <div class="section-header mb-3">
-        <h2 class="fw-bold text-primary">
+      <div class="section-header mb-3 d-flex justify-content-between align-items-center">
+        <h2 class="fw-bold text-primary mb-0">
           <i class="bi bi-person-vcard" ></i>
           Manage Applicants
         </h2>
+        <div class="text-end">
+          <span class="badge bg-info fs-6"><?php echo $totalApplicants; ?> Total Applicants</span>
+        </div>
       </div>
       <!-- Filter Container -->
       <div class="filter-container card shadow-sm mb-4 p-3">
@@ -431,6 +448,68 @@ document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape') {
         closeImageZoom();
     }
+});
+
+// Real-time updates
+let isUpdating = false;
+let lastUpdateData = null;
+
+function updateTableData() {
+    if (isUpdating) return;
+    isUpdating = true;
+
+    const currentUrl = new URL(window.location);
+    const params = new URLSearchParams(currentUrl.search);
+    params.set('ajax', '1');
+
+    fetch(window.location.pathname + '?' + params.toString())
+        .then(response => response.text())
+        .then(data => {
+            if (data !== lastUpdateData) {
+                // Parse the response to extract content
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = data;
+                
+                // Update section header with total count
+                const newHeader = tempDiv.querySelector('.section-header');
+                const currentHeader = document.querySelector('.section-header');
+                if (newHeader && currentHeader) {
+                    currentHeader.innerHTML = newHeader.innerHTML;
+                }
+
+                // Update table content
+                const newTable = tempDiv.querySelector('table');
+                const currentTable = document.querySelector('#tableWrapper table');
+                if (newTable && currentTable && newTable.innerHTML !== currentTable.innerHTML) {
+                    currentTable.innerHTML = newTable.innerHTML;
+                }
+
+                // Update pagination
+                const newPagination = tempDiv.querySelector('nav[aria-label="Table pagination"]');
+                const currentPagination = document.querySelector('#pagination nav[aria-label="Table pagination"]');
+                if (newPagination && currentPagination) {
+                    currentPagination.innerHTML = newPagination.innerHTML;
+                } else if (newPagination && !currentPagination) {
+                    document.getElementById('pagination').innerHTML = newPagination.outerHTML;
+                } else if (!newPagination && currentPagination) {
+                    document.getElementById('pagination').innerHTML = '';
+                }
+
+                lastUpdateData = data;
+            }
+        })
+        .catch(error => {
+            console.log('Update failed:', error);
+        })
+        .finally(() => {
+            isUpdating = false;
+            setTimeout(updateTableData, 100); // Update every 100ms
+        });
+}
+
+// Start real-time updates when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(updateTableData, 100);
 });
 </script>
 </body>

@@ -26,10 +26,10 @@ $student_counts = getStudentCounts($connection);
 function fetch_students($connection, $status, $sort, $barangayFilter) {
     $query = "
         SELECT s.student_id, s.first_name, s.middle_name, s.last_name, s.mobile, s.email,
-               b.name AS barangay, s.payroll_no, s.unique_student_id,
+               b.name AS barangay, s.payroll_no, s.student_id as display_student_id,
                (
                  SELECT unique_id FROM qr_codes q2
-                 WHERE q2.student_unique_id = s.unique_student_id AND q2.payroll_number = s.payroll_no
+                 WHERE q2.student_id = s.student_id AND q2.payroll_number = s.payroll_no
                  ORDER BY q2.qr_id DESC LIMIT 1
                ) AS unique_id
         FROM students s
@@ -53,20 +53,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['deactivate']) && !empty($_POST['selected_actives'])) {
         $count = count($_POST['selected_actives']);
         foreach ($_POST['selected_actives'] as $student_id) {
-            // Get unique_student_id for this student
-            $res = pg_query_params($connection, "SELECT unique_student_id FROM students WHERE student_id = $1", [$student_id]);
-            $row = pg_fetch_assoc($res);
-            if ($row && !empty($row['unique_student_id'])) {
-                // Delete QR code PNGs and DB records for this student
-                $qr_res = pg_query_params($connection, "SELECT unique_id FROM qr_codes WHERE student_unique_id = $1", [$row['unique_student_id']]);
-                while ($qr_row = pg_fetch_assoc($qr_res)) {
-                    $png_path = __DIR__ . '/../../assets/js/qrcode/phpqrcode-master/temp/' . $qr_row['unique_id'] . '.png';
-                    if (file_exists($png_path)) {
-                        @unlink($png_path);
-                    }
+            // Delete QR code PNGs and DB records for this student
+            $qr_res = pg_query_params($connection, "SELECT unique_id FROM qr_codes WHERE student_id = $1", [$student_id]);
+            while ($qr_row = pg_fetch_assoc($qr_res)) {
+                $png_path = __DIR__ . '/../../assets/js/qrcode/phpqrcode-master/temp/' . $qr_row['unique_id'] . '.png';
+                if (file_exists($png_path)) {
+                    @unlink($png_path);
                 }
-                pg_query_params($connection, "DELETE FROM qr_codes WHERE student_unique_id = $1", [$row['unique_student_id']]);
             }
+            pg_query_params($connection, "DELETE FROM qr_codes WHERE student_id = $1", [$student_id]);
             pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
         }
         // Reset finalized flag
@@ -126,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['generate_payroll'])) {
         // 1. Assign payroll numbers
         $result = pg_query($connection, "
-            SELECT student_id, unique_student_id
+            SELECT student_id
             FROM students
             WHERE status = 'active'
             ORDER BY last_name ASC, first_name ASC, middle_name ASC
@@ -136,7 +131,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($result) {
             while ($row = pg_fetch_assoc($result)) {
                 $student_id = $row['student_id'];
-                $unique_student_id = $row['unique_student_id'];
                 // Assign payroll number
                 pg_query_params(
                     $connection,
@@ -144,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     [$payroll_no, $student_id]
                 );
                 $student_payrolls[] = [
-                    'unique_student_id' => $unique_student_id,
+                    'student_id' => $student_id,
                     'payroll_no' => $payroll_no
                 ];
                 $payroll_no++;
@@ -159,15 +153,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($student_payrolls as $sp) {
             $qr_exists = pg_query_params(
                 $connection,
-                "SELECT qr_id FROM qr_codes WHERE student_unique_id = $1 AND payroll_number = $2",
-                [$sp['unique_student_id'], $sp['payroll_no']]
+                "SELECT qr_id FROM qr_codes WHERE student_id = $1 AND payroll_number = $2",
+                [$sp['student_id'], $sp['payroll_no']]
             );
             if (!pg_fetch_assoc($qr_exists)) {
                 $unique_id = 'qr_' . uniqid();
                 pg_query_params(
                     $connection,
-                    "INSERT INTO qr_codes (payroll_number, student_unique_id, unique_id, status, created_at) VALUES ($1, $2, $3, 'Pending', NOW())",
-                    [$sp['payroll_no'], $sp['unique_student_id'], $unique_id]
+                    "INSERT INTO qr_codes (payroll_number, student_id, unique_id, status, created_at) VALUES ($1, $2, $3, 'Pending', NOW())",
+                    [$sp['payroll_no'], $sp['student_id'], $unique_id]
                 );
             }
         }

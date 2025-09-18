@@ -3,7 +3,7 @@ const CONFIG = {
     STORAGE_KEY: 'educaid_registration_progress',
     AUTO_SAVE_INTERVAL: 5000, // Auto-save every 5 seconds
     STORAGE_EXPIRY: 24 * 60 * 60 * 1000, // 24 hours in milliseconds
-    VERSION: '1.0' // For handling future format changes
+    VERSION: '2.0' // For handling future format changes - Updated for 8-step process
 };
 
 // Enhanced state variables
@@ -428,7 +428,13 @@ function setupDateOfBirthRestriction() {
 }
 
 function nextStep() {
-    if (currentStep === 6) return;
+    console.log('=== NextStep Debug ===');
+    console.log('Current step:', currentStep);
+    console.log('OTP verified:', otpVerified);
+    console.log('Document verified:', documentVerified);
+    console.log('=== End Debug ===');
+    
+    if (currentStep === 8) return;
 
     // Clear any existing highlights first
     clearFieldHighlights();
@@ -461,8 +467,8 @@ function nextStep() {
     }
 
     // Step-specific validations
-    if (currentStep === 5) {
-        console.log('Step 5 validation - otpVerified:', otpVerified); // Debug log
+    if (currentStep === 7) {
+        console.log('Step 7 validation - otpVerified:', otpVerified); // Debug log
         if (!otpVerified) {
             const otpField = document.getElementById('otp');
             highlightMissingFields([otpField]);
@@ -471,7 +477,7 @@ function nextStep() {
         }
         // Success vibration when moving to final step
         triggerMobileVibration('success');
-        console.log('Moving from step 5 to step 6'); // Debug log
+        console.log('Moving from step 7 to step 8'); // Debug log
         showStep(currentStep + 1);
     } else if (currentStep === 4) {
         if (!documentVerified) {
@@ -483,7 +489,7 @@ function nextStep() {
         // Success vibration for document verification
         triggerMobileVibration('success');
         showStep(currentStep + 1);
-    } else if (currentStep < 6) {
+    } else if (currentStep < 8) {
         // Success vibration for normal step progression
         triggerMobileVibration('success');
         showStep(currentStep + 1);
@@ -533,13 +539,13 @@ document.addEventListener('DOMContentLoaded', () => {
         showStep(1);
         updateRequiredFields();
         
-        // Setup nextStep5Btn with error handling
-        const nextStep5Btn = document.getElementById('nextStep5Btn');
-        if (nextStep5Btn) {
-            nextStep5Btn.disabled = true;
-            nextStep5Btn.addEventListener('click', nextStep);
+        // Setup nextStep7Btn with error handling
+        const nextStep7Btn = document.getElementById('nextStep7Btn');
+        if (nextStep7Btn) {
+            nextStep7Btn.disabled = true;
+            nextStep7Btn.addEventListener('click', nextStep);
         } else {
-            console.warn('nextStep5Btn not found during initialization');
+            console.warn('nextStep7Btn not found during initialization');
         }
         
         // Setup auto-save functionality
@@ -706,7 +712,7 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
             document.getElementById('resendOtpBtn').style.display = 'none';
             
             // Enable and highlight the next step button
-            const nextBtn = document.getElementById('nextStep5Btn');
+            const nextBtn = document.getElementById('nextStep7Btn');
             if (nextBtn) {
                 nextBtn.disabled = false;
                 nextBtn.classList.add('btn-success');
@@ -716,12 +722,12 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
                 if (!nextBtn.onclick && !nextBtn._hasEventListener) {
                     nextBtn.addEventListener('click', nextStep);
                     nextBtn._hasEventListener = true;
-                    console.log('Added event listener to nextStep5Btn during OTP verification');
+                    console.log('Added event listener to nextStep7Btn during OTP verification');
                 }
                 
                 console.log('Next step button enabled successfully'); // Debug log
             } else {
-                console.error('nextStep5Btn not found'); // Debug log
+                console.error('nextStep7Btn not found'); // Debug log
             }
             
             document.getElementById('emailInput').disabled = true;
@@ -765,7 +771,7 @@ function startOtpTimer() {
             document.getElementById('resendOtpBtn').style.display = 'block';
             document.getElementById('sendOtpBtn').classList.add('d-none');
             otpVerified = false;
-            document.getElementById('nextStep5Btn').disabled = true;
+            document.getElementById('nextStep7Btn').disabled = true;
         }
     }, 1000);
 }
@@ -928,7 +934,7 @@ confirmPasswordInput.addEventListener('input', function() {
 
 // ----- FIX FOR REQUIRED FIELD ERROR -----
 document.getElementById('multiStepForm').addEventListener('submit', function(e) {
-    if (currentStep !== 6) {
+    if (currentStep !== 8) {
         e.preventDefault();
         triggerMobileVibration('error');
         showNotifier('Please complete all steps first.', 'error');
@@ -1084,7 +1090,33 @@ document.getElementById('processOcrBtn').addEventListener('click', function() {
             displayVerificationResults(data.verification);
         } else {
             triggerMobileVibration('error');
-            showNotifier(data.message, 'error');
+            
+            // Enhanced error display for PDFs and suggestions
+            let errorMessage = data.message;
+            if (data.suggestions && data.suggestions.length > 0) {
+                errorMessage += '\n\nSuggestions:\n' + data.suggestions.join('\n');
+            }
+            
+            showNotifier(errorMessage, 'error');
+            
+            // Also show suggestions in a more user-friendly way
+            if (data.suggestions) {
+                const ocrResults = document.getElementById('ocrResults');
+                const feedbackContainer = document.getElementById('ocrFeedback');
+                
+                ocrResults.classList.remove('d-none');
+                feedbackContainer.style.display = 'block';
+                feedbackContainer.className = 'alert alert-warning mt-3';
+                
+                let suggestionHTML = '<strong>' + data.message + '</strong><br><br>';
+                suggestionHTML += '<strong>Please try:</strong><ul>';
+                data.suggestions.forEach(suggestion => {
+                    suggestionHTML += '<li>' + suggestion + '</li>';
+                });
+                suggestionHTML += '</ul>';
+                
+                feedbackContainer.innerHTML = suggestionHTML;
+            }
         }
     })
     .catch(error => {
@@ -1102,7 +1134,7 @@ function displayVerificationResults(verification) {
 
     resultsContainer.classList.remove('d-none');
 
-    // Update checklist items
+    // Update checklist items with enhanced details
     const checks = ['firstname', 'middlename', 'lastname', 'yearlevel', 'university', 'document'];
     const checkMap = {
         'firstname': 'first_name',
@@ -1116,12 +1148,40 @@ function displayVerificationResults(verification) {
     checks.forEach(check => {
         const element = document.getElementById(`check-${check}`);
         const icon = element.querySelector('i');
+        const textSpan = element.querySelector('span');
         const isValid = verification[checkMap[check]];
+        const confidence = verification.confidence_scores?.[checkMap[check]];
+        const foundText = verification.found_text_snippets?.[checkMap[check]];
+
+        // Get original text without any previous details
+        let originalText = textSpan.textContent.split(' (')[0];
 
         if (isValid) {
             icon.className = 'bi bi-check-circle text-success me-2';
+            element.classList.add('text-success');
+            element.classList.remove('text-danger');
+            
+            // Add confidence score and found text if available
+            let details = '';
+            if (confidence !== undefined) {
+                details += ` (${Math.round(confidence)}% match`;
+                if (foundText && foundText.length < 50) { // Limit display length
+                    details += `, found: "${foundText}"`;
+                }
+                details += ')';
+            }
+            textSpan.innerHTML = originalText + '<small class="text-muted">' + details + '</small>';
         } else {
             icon.className = 'bi bi-x-circle text-danger me-2';
+            element.classList.add('text-danger');
+            element.classList.remove('text-success');
+            
+            // Show confidence for failed checks if available
+            let details = '';
+            if (confidence !== undefined && confidence > 0) {
+                details += ` <small class="text-muted">(${Math.round(confidence)}% match - needs 70%+)</small>`;
+            }
+            textSpan.innerHTML = originalText + details;
         }
     });
 
@@ -1129,7 +1189,17 @@ function displayVerificationResults(verification) {
         triggerMobileVibration('success');
         feedbackContainer.style.display = 'none';
         feedbackContainer.className = 'alert alert-success mt-3';
-        feedbackContainer.innerHTML = '<strong>Verification Successful!</strong> Your document has been validated.';
+        
+        let successMessage = '<strong>Verification Successful!</strong> Your document has been validated.';
+        if (verification.summary) {
+            successMessage += `<br><small>Passed ${verification.summary.passed_checks} of ${verification.summary.total_checks} checks`;
+            if (verification.summary.average_confidence) {
+                successMessage += ` (Average confidence: ${verification.summary.average_confidence}%)`;
+            }
+            successMessage += '</small>';
+        }
+        
+        feedbackContainer.innerHTML = successMessage;
         feedbackContainer.style.display = 'block';
         documentVerified = true;
         document.getElementById('nextStep4Btn').disabled = false;
@@ -1138,11 +1208,25 @@ function displayVerificationResults(verification) {
         triggerMobileVibration('error');
         feedbackContainer.style.display = 'none';
         feedbackContainer.className = 'alert alert-warning mt-3';
-        feedbackContainer.innerHTML = '<strong>Verification Failed:</strong> Please ensure your document is clear and contains all required information. Upload a clearer image or check that the document matches your registration details.';
+        
+        let errorMessage = '<strong>Verification Result:</strong> ';
+        errorMessage += verification.summary?.recommendation || 'Some verification checks failed';
+        errorMessage += '<br><small>';
+        if (verification.summary) {
+            errorMessage += `Passed ${verification.summary.passed_checks} of ${verification.summary.total_checks} checks`;
+            if (verification.summary.average_confidence) {
+                errorMessage += ` (Average confidence: ${verification.summary.average_confidence}%)`;
+            }
+        } else {
+            errorMessage += 'Please ensure your document is clear and contains all required information';
+        }
+        errorMessage += '</small>';
+        
+        feedbackContainer.innerHTML = errorMessage;
         feedbackContainer.style.display = 'block';
         documentVerified = false;
         document.getElementById('nextStep4Btn').disabled = true;
-        showNotifier('Document verification failed. Please try again with a clearer document.', 'error');
+        showNotifier('Document verification needs improvement. Check the details above.', 'error');
     }
 }
 
@@ -1237,7 +1321,7 @@ function saveProgress() {
             emailDisabled: document.getElementById('emailInput').disabled,
             sendOtpBtnHidden: document.getElementById("sendOtpBtn").classList.contains("d-none"),
             verifyBtnSuccess: document.getElementById("verifyOtpBtn").classList.contains("btn-success"),
-            nextStep5BtnEnabled: !document.getElementById('nextStep5Btn').disabled,
+            nextStep7BtnEnabled: !document.getElementById('nextStep7Btn').disabled,
             uploadPreviewVisible: !document.getElementById('uploadPreview').classList.contains('d-none'),
             ocrSectionVisible: !document.getElementById('ocrSection').classList.contains('d-none'),
             ocrResultsVisible: !document.getElementById('ocrResults').classList.contains('d-none')
@@ -1324,8 +1408,8 @@ function loadProgress() {
                 document.getElementById('otp').disabled = true;
             }
             
-            if (states.nextStep5BtnEnabled) {
-                document.getElementById('nextStep5Btn').disabled = false;
+            if (states.nextStep7BtnEnabled) {
+                document.getElementById('nextStep7Btn').disabled = false;
             }
             
             if (states.uploadPreviewVisible && progress.fileInfo) {
@@ -1458,7 +1542,7 @@ function setupAutoSave() {
     
     // Save before page unload
     window.addEventListener('beforeunload', (e) => {
-        if (hasUnsavedChanges && currentStep > 1 && currentStep < 6) {
+        if (hasUnsavedChanges && currentStep > 1 && currentStep < 8) {
             saveProgress();
             e.preventDefault();
             e.returnValue = 'You have unsaved registration progress. Are you sure you want to leave?';
@@ -1678,14 +1762,14 @@ function showTermsModal() {
     }
 }
 
-// Backup event listener setup for nextStep5Btn
+// Backup event listener setup for nextStep7Btn
 document.addEventListener('DOMContentLoaded', () => {
     // Wait a bit for all DOM elements to be ready
     setTimeout(() => {
-        const nextStep5Btn = document.getElementById('nextStep5Btn');
-        if (nextStep5Btn && !nextStep5Btn.onclick) {
-            console.log('Setting up backup event listener for nextStep5Btn');
-            nextStep5Btn.addEventListener('click', nextStep);
+        const nextStep7Btn = document.getElementById('nextStep7Btn');
+        if (nextStep7Btn && !nextStep7Btn.onclick) {
+            console.log('Setting up backup event listener for nextStep7Btn');
+            nextStep7Btn.addEventListener('click', nextStep);
         }
     }, 100);
 });
@@ -1693,13 +1777,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // Debug functions for testing (can be called from browser console)
 window.debugRegistration = {
     forceEnableNextStep: function() {
-        const btn = document.getElementById('nextStep5Btn');
+        const btn = document.getElementById('nextStep7Btn');
         if (btn) {
             btn.disabled = false;
             btn.classList.add('btn-success');
             btn.textContent = 'Continue to Next Step';
             otpVerified = true;
-            console.log('Forced nextStep5Btn enabled');
+            console.log('Forced nextStep7Btn enabled');
         }
     },
     testNextStep: function() {
@@ -1709,7 +1793,7 @@ window.debugRegistration = {
         nextStep();
     },
     checkButton: function() {
-        const btn = document.getElementById('nextStep5Btn');
+        const btn = document.getElementById('nextStep7Btn');
         console.log('Button element:', btn);
         console.log('Button disabled:', btn ? btn.disabled : 'N/A');
         console.log('Button onclick:', btn ? btn.onclick : 'N/A');

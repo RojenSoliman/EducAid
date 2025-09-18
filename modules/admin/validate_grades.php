@@ -64,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 // Fetch all grade uploads needing review
 $query = "
-    SELECT gu.*, s.first_name, s.last_name, s.unique_student_id,
+    SELECT gu.*, s.first_name, s.last_name, s.student_id,
            COUNT(eg.grade_id) as total_grades,
            COUNT(CASE WHEN eg.is_passing = TRUE THEN 1 END) as passing_grades,
            AVG(eg.grade_numeric) as average_gpa,
@@ -73,7 +73,7 @@ $query = "
     JOIN students s ON gu.student_id = s.student_id
     LEFT JOIN extracted_grades eg ON gu.upload_id = eg.upload_id
     WHERE gu.admin_reviewed = FALSE
-    GROUP BY gu.upload_id, s.student_id, s.first_name, s.last_name, s.unique_student_id
+    GROUP BY gu.upload_id, s.student_id, s.first_name, s.last_name, s.student_id
     ORDER BY gu.upload_date DESC
 ";
 
@@ -180,7 +180,7 @@ $uploads = pg_query($connection, $query);
                                     <div class="row mb-3">
                                         <div class="col-sm-6">
                                             <small class="text-muted">Student ID:</small><br>
-                                            <strong><?= htmlspecialchars($upload['unique_student_id']) ?></strong>
+                                            <strong><?= htmlspecialchars($upload['student_id']) ?></strong>
                                         </div>
                                         <div class="col-sm-6">
                                             <small class="text-muted">OCR Confidence:</small><br>
