@@ -61,21 +61,65 @@ if ($result && pg_num_rows($result) > 0) {
     // Check if the file exists at the stored path
     if (!file_exists($file_path)) {
         error_log("File does not exist at stored path: " . $file_path);
-        // Try alternative paths if the stored path doesn't work
-        $alternative_paths = [
-            // If path is relative, try absolute
-            __DIR__ . '/../../' . ltrim($file_path, './'),
-            // If it's in the temp folder, try with correct prefix
-            str_replace('../../assets/uploads/temp/', __DIR__ . '/../../assets/uploads/temp/', $file_path),
-            // Try the direct path from root
-            str_replace('../../', __DIR__ . '/../../', $file_path)
+        
+        // Try to find the file with the new naming convention
+        $temp_dirs = [
+            __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
+            __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
+            __DIR__ . '/../../assets/uploads/temp/indigency/',
+            __DIR__ . '/../../assets/uploads/student/enrollment_forms/',
+            __DIR__ . '/../../assets/uploads/student/letter_to_mayor/',
+            __DIR__ . '/../../assets/uploads/student/indigency/'
         ];
         
-        foreach ($alternative_paths as $alt_path) {
-            if (file_exists($alt_path)) {
-                $file_path = $alt_path;
-                error_log("Found file at alternative path: " . $alt_path);
-                break;
+        $found_file = null;
+        foreach ($temp_dirs as $dir) {
+            if (is_dir($dir)) {
+                // Look for files with student_id prefix and document type
+                $pattern_mappings = [
+                    'eaf' => ['*eaf*', '*EAF*', '*enrollment*'],
+                    'letter_to_mayor' => ['*lettertomayor*', '*letter_to_mayor*', '*letter*mayor*'],
+                    'certificate_of_indigency' => ['*indigency*', '*certificate*']
+                ];
+                
+                if (isset($pattern_mappings[$document_type])) {
+                    foreach ($pattern_mappings[$document_type] as $pattern) {
+                        $search_pattern = $dir . $student_id . '_' . $pattern;
+                        $files = glob($search_pattern);
+                        if (!empty($files)) {
+                            $found_file = $files[0]; // Take the first match
+                            error_log("Found file using pattern search: " . $found_file);
+                            break 2;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if ($found_file && file_exists($found_file)) {
+            $file_path = $found_file;
+            
+            // Update the database with the correct path
+            $update_query = "UPDATE documents SET file_path = $1 WHERE student_id = $2 AND type = $3";
+            pg_query_params($connection, $update_query, [$file_path, $student_id, $document_type]);
+            error_log("Updated database with correct file path: " . $file_path);
+        } else {
+            // Try alternative paths if the stored path doesn't work
+            $alternative_paths = [
+                // If path is relative, try absolute
+                __DIR__ . '/../../' . ltrim($file_path, './'),
+                // If it's in the temp folder, try with correct prefix
+                str_replace('../../assets/uploads/temp/', __DIR__ . '/../../assets/uploads/temp/', $file_path),
+                // Try the direct path from root
+                str_replace('../../', __DIR__ . '/../../', $file_path)
+            ];
+            
+            foreach ($alternative_paths as $alt_path) {
+                if (file_exists($alt_path)) {
+                    $file_path = $alt_path;
+                    error_log("Found file at alternative path: " . $alt_path);
+                    break;
+                }
             }
         }
         

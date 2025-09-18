@@ -1424,7 +1424,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
                     // Also save to documents table with OCR confidence for confidence calculation
                     $docQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                    pg_query_params($connection, $docQuery, [$student_id, 'eaf', $tempEnrollmentPath, false, $enrollmentConfidence]);
+                    pg_query_params($connection, $docQuery, [$student_id, 'eaf', $tempEnrollmentPath, 'false', $enrollmentConfidence]);
                     
                     error_log("Successfully saved EAF to database for student $student_id with confidence $enrollmentConfidence%");
                     break; // Only process the first valid file
@@ -1470,7 +1470,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 if (copy($letterTempFile, $letterTempPath)) {
                     // Save letter record to database with temporary path and OCR confidence
                     $letterQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                    $letterResult = pg_query_params($connection, $letterQuery, [$student_id, 'letter_to_mayor', $letterTempPath, false, $letterConfidence]);
+                    $letterResult = pg_query_params($connection, $letterQuery, [$student_id, 'letter_to_mayor', $letterTempPath, 'false', $letterConfidence]);
                     
                     if (!$letterResult) {
                         error_log("Failed to save letter to database: " . pg_last_error($connection));
@@ -1528,7 +1528,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 if (copy($certificateTempFile, $certificateTempPath)) {
                     // Save certificate record to database with temporary path and OCR confidence
                     $certificateQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                    $certificateResult = pg_query_params($connection, $certificateQuery, [$student_id, 'certificate_of_indigency', $certificateTempPath, false, $certificateConfidence]);
+                    $certificateResult = pg_query_params($connection, $certificateQuery, [$student_id, 'certificate_of_indigency', $certificateTempPath, 'false', $certificateConfidence]);
                     
                     if (!$certificateResult) {
                         error_log("Failed to save certificate to database: " . pg_last_error($connection));
