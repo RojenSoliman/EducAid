@@ -7,7 +7,7 @@ if (!isset($_SESSION['admin_username']) || !isset($_GET['id'])) {
     exit;
 }
 
-$student_id = intval($_GET['id']);
+$student_id = trim($_GET['id']); // Remove intval for TEXT student_id
 
 $query = "SELECT s.*, b.name as barangay_name, u.name as university_name, yl.name as year_level_name,
                  ef.file_path as enrollment_form_path, ef.original_filename,
@@ -27,6 +27,24 @@ if (!$student) {
     echo '<div class="alert alert-warning">Student not found or already processed.</div>';
     exit;
 }
+// Fetch documents (latest per type)
+$docQuery = "SELECT type, file_path FROM documents WHERE student_id = $1 ORDER BY upload_date DESC";
+$docResult = pg_query_params($connection, $docQuery, [$student_id]);
+$documents = [];
+if ($docResult) {
+    while ($row = pg_fetch_assoc($docResult)) {
+        $type = $row['type'];
+        if (!isset($documents[$type])) { // keep first (latest due to DESC)
+            $documents[$type] = $row['file_path'];
+        }
+    }
+}
+// Friendly names
+$docNames = [
+    'eaf' => 'Enrollment Assessment Form',
+    'letter_to_mayor' => 'Letter to Mayor',
+    'certificate_of_indigency' => 'Certificate of Indigency'
+];
 ?>
 
 <div class="row">
@@ -248,26 +266,31 @@ function displayConfidenceBreakdown(breakdown) {
     container.innerHTML = html;
 }
 </script>
-
-<?php if ($student['enrollment_form_path']): ?>
-    <div class="mt-4">
-        <h6 class="fw-bold text-primary mb-3">Documents</h6>
-        <div class="border rounded p-3">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <i class="bi bi-file-earmark-pdf"></i>
-                    <strong>Enrollment Assessment Form</strong>
-                    <br>
-                    <small class="text-muted"><?php echo htmlspecialchars($student['original_filename']); ?></small>
+<!-- Documents Section -->
+<div class="mt-4">
+    <h6 class="fw-bold text-primary mb-3">Documents</h6>
+    <div class="row g-3">
+        <?php foreach ($docNames as $type => $label): $has = isset($documents[$type]); ?>
+            <div class="col-md-4">
+                <div class="border rounded p-3 h-100 d-flex flex-column justify-content-between">
+                    <div>
+                        <div class="d-flex align-items-center mb-1">
+                            <i class="bi bi-file-earmark<?php echo $has ? '-check text-success' : ' text-muted'; ?> me-2"></i>
+                            <strong class="small mb-0"><?php echo htmlspecialchars($label); ?></strong>
+                        </div>
+                        <small class="text-muted d-block">Status: <?php echo $has ? '<span class="text-success">Uploaded</span>' : '<span class="text-danger">Missing</span>'; ?></small>
+                    </div>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100" 
+                                <?php if ($has): ?>onclick="viewStudentDocument('<?php echo htmlspecialchars($student['student_id']); ?>','<?php echo $type; ?>')"<?php else: ?>disabled<?php endif; ?>>
+                            <i class="bi bi-eye"></i> View
+                        </button>
+                    </div>
                 </div>
-                <button type="button" class="btn btn-outline-primary btn-sm" 
-                        onclick="bootstrap.Modal.getInstance(document.getElementById('studentDetailsModal')).hide(); setTimeout(() => viewDocument('<?php echo htmlspecialchars($student['enrollment_form_path']); ?>', '<?php echo htmlspecialchars($student['original_filename']); ?>'), 300);">
-                    <i class="bi bi-eye"></i> View
-                </button>
             </div>
-        </div>
+        <?php endforeach; ?>
     </div>
-<?php endif; ?>
+</div>
 
 <div class="mt-4 d-flex gap-2">
     <button type="button" class="btn btn-success" 

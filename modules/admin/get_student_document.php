@@ -3,32 +3,64 @@ include __DIR__ . '/../../config/database.php';
 session_start();
 
 // Function to convert absolute server paths to web-accessible relative paths
-function convertToWebPath($absolutePath) {
-    // Get the document root (EducAid folder)
-    $docRoot = realpath(__DIR__ . '/../../');
-    
-    // Normalize path separators
-    $absolutePath = str_replace('\\', '/', $absolutePath);
-    $docRoot = str_replace('\\', '/', $docRoot);
-    
-    // If the path is already relative, just clean it up
-    if (strpos($absolutePath, '../../') === 0) {
-        return ltrim($absolutePath, './');
+function convertToWebPath($inputPath) {
+    $root = realpath(__DIR__ . '/../../');
+    $rootNorm = str_replace('\\', '/', $root);
+    $p = str_replace('\\', '/', $inputPath);
+
+    // Already looks like a relative web path we serve from document root
+    if (preg_match('#^(assets|modules|uploads|images|css|js)/#', ltrim($p, './'))) {
+        return ltrim($p, './');
     }
-    
-    // If it's an absolute path, convert it to relative
-    if (strpos($absolutePath, $docRoot) === 0) {
-        $relativePath = substr($absolutePath, strlen($docRoot));
-        return ltrim($relativePath, '/');
+
+    // Handle ../../ prefixed paths (keep them relative to app root)
+    if (strpos($p, '../../') === 0) {
+        // Normalize by stripping leading ../ while ensuring we still start at project root
+        $trimmed = ltrim($p, './'); // becomes ../../assets/...
+        // Remove leading ../ occurrences
+        while (strpos($trimmed, '../') === 0) {
+            $trimmed = substr($trimmed, 3);
+        }
+        return $trimmed; // assets/uploads/...
     }
-    
-    // If nothing else works, just return as-is
-    return $absolutePath;
+
+    // Absolute path under project root
+    if (strpos($p, $rootNorm) === 0) {
+        $rel = ltrim(substr($p, strlen($rootNorm)), '/');
+        return $rel;
+    }
+
+    // Sometimes DB stored path like /opt/../EducAid/assets/uploads/... try basename reconstruction
+    $basename = basename($p);
+    $parent = basename(dirname($p));
+    $candidateDirs = [
+        'assets/uploads/temp/enrollment_forms',
+        'assets/uploads/temp/letter_mayor',
+        'assets/uploads/temp/indigency',
+        'assets/uploads/student/enrollment_forms',
+        'assets/uploads/student/letter_to_mayor',
+        'assets/uploads/student/indigency'
+    ];
+    foreach ($candidateDirs as $dir) {
+        $full = $rootNorm . '/' . $dir . '/' . $basename;
+        if (file_exists($full)) {
+            return $dir . '/' . $basename;
+        }
+        // Also try parent + basename match
+        $full2 = $rootNorm . '/' . $dir . '/' . $parent . '/' . $basename;
+        if (file_exists($full2)) {
+            return $dir . '/' . $parent . '/' . $basename;
+        }
+    }
+
+    // Fallback: return just uploads/temp with basename so UI at least tries
+    return 'assets/uploads/temp/' . $parent . '/' . $basename;
 }
 
 if (!isset($_SESSION['admin_username'])) {
     header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    error_log("Session check failed. Session vars: " . print_r($_SESSION, true));
+    echo json_encode(['success' => false, 'message' => 'Unauthorized - No admin session']);
     exit;
 }
 
@@ -50,6 +82,7 @@ $result = pg_query_params($connection, $query, [$student_id, $document_type]);
 
 // Debug logging
 error_log("Looking for document: student_id=$student_id, type=$document_type");
+error_log("Session admin: " . ($_SESSION['admin_username'] ?? 'NOT SET'));
 
 if ($result && pg_num_rows($result) > 0) {
     $document = pg_fetch_assoc($result);
@@ -151,15 +184,75 @@ if ($result && pg_num_rows($result) > 0) {
         $filename .= '.' . $path_info['extension'];
     }
     
+    // Determine mime for frontend hints
+    $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
+    $mimeMap = [
+        'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'gif' => 'image/gif',
+        'pdf' => 'application/pdf'
+    ];
+    $mime = $mimeMap[$ext] ?? 'application/octet-stream';
+
+    $webPath = convertToWebPath($file_path);
+    $absolute_url = $webPath; // front-end relative usage
+
     header('Content-Type: application/json');
     echo json_encode([
         'success' => true,
-        'file_path' => convertToWebPath($file_path),
-        'filename' => $filename
+        'file_path' => $webPath,
+        'filename' => $filename,
+        'mime' => $mime,
+        'debug_original_path' => $file_path,
+        'debug_web_path' => $webPath
     ]);
 } else {
-    header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'Document not found']);
+    // As a last resort attempt to discover a file even if DB row missing
+    error_log("No document row. Attempting filesystem discovery for $student_id / $document_type");
+    $searchDirs = [
+        __DIR__ . '/../../assets/uploads/temp/enrollment_forms',
+        __DIR__ . '/../../assets/uploads/temp/letter_mayor',
+        __DIR__ . '/../../assets/uploads/temp/indigency',
+        __DIR__ . '/../../assets/uploads/student/enrollment_forms',
+        __DIR__ . '/../../assets/uploads/student/letter_to_mayor',
+        __DIR__ . '/../../assets/uploads/student/indigency'
+    ];
+    $patterns = [
+        'eaf' => ['eaf', 'enrollment'],
+        'letter_to_mayor' => ['letter', 'mayor'],
+        'certificate_of_indigency' => ['indigency', 'certificate']
+    ];
+    $foundFS = null;
+    foreach ($searchDirs as $d) {
+        if (!is_dir($d)) continue;
+        $glob = glob($d . '/' . $student_id . '_*');
+        foreach ($glob as $g) {
+            $bn = strtolower(basename($g));
+            $matchTokens = $patterns[$document_type] ?? [];
+            $tokenHit = false;
+            foreach ($matchTokens as $tok) {
+                if (strpos($bn, $tok) !== false) { $tokenHit = true; break; }
+            }
+            if ($tokenHit) { $foundFS = $g; break 2; }
+        }
+    }
+    if ($foundFS) {
+        $webPath = convertToWebPath($foundFS);
+        $ext = strtolower(pathinfo($foundFS, PATHINFO_EXTENSION));
+        $mimeMap = [ 'jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png','gif'=>'image/gif','pdf'=>'application/pdf'];
+        $mime = $mimeMap[$ext] ?? 'application/octet-stream';
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => true,
+            'file_path' => $webPath,
+            'filename' => ucfirst(str_replace('_',' ', $document_type)) . ' - Student ' . $student_id . '.' . $ext,
+            'mime' => $mime,
+            'debug_fallback' => true,
+            'debug_found_path' => $foundFS
+        ]);
+    } else {
+        error_log("Still no file after filesystem scan for $student_id / $document_type");
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Document not found (no DB row, no filesystem match)']);
+    }
 }
 
 pg_close($connection);
