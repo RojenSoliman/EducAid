@@ -24,19 +24,20 @@ $municipality_id = 1;
     <link rel="stylesheet" href="../../assets/css/registration.css" />
     <style>
         .step-panel.d-none { display: none !important; }
-        .step-indicator { display: flex; justify-content: center; margin-bottom: 20px; }
+        .step-indicator { display: flex; justify-content: center; margin-bottom: 15px; }
         .step {
             display: flex; align-items: center; justify-content: center;
-            width: 30px; height: 30px; border-radius: 50%;
+            width: 28px; height: 28px; border-radius: 50%;
             background-color: #e0e0e0; color: #777; font-weight: bold;
-            margin: 0 5px; transition: background-color 0.3s, color 0.3s;
+            margin: 0 4px; transition: background-color 0.3s, color 0.3s;
+            font-size: 0.85rem;
         }
         .step.active { background-color: #007bff; color: white; }
         .notifier {
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-            padding: 15px 30px; background-color: #f8d7da; color: #721c24;
+            padding: 12px 24px; background-color: #f8d7da; color: #721c24;
             border-radius: 5px; display: none; box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            z-index: 1000;
+            z-index: 1000; font-size: 0.9rem;
         }
         .notifier.success { background-color: #d4edda; color: #155724; }
         .verified-email { background-color: #e9f7e9; color: #28a745; }
@@ -48,8 +49,144 @@ $municipality_id = 1;
         }
         
         .form-label .text-muted {
-            font-size: 0.85em;
+            font-size: 0.8em;
             font-style: italic;
+        }
+
+        /* Compact form styling - CSS only modifications */
+        .register-card {
+            max-width: 500px !important;
+            padding: 1.25rem !important;
+        }
+        
+        .register-card h4 {
+            margin-bottom: 0.75rem !important;
+            font-size: 1.3rem !important;
+        }
+        
+        /* Reduce spacing between form groups */
+        .mb-3 {
+            margin-bottom: 0.6rem !important;
+        }
+        
+        /* Compact form controls */
+        .form-control, .form-select {
+            padding: 0.45rem 0.65rem !important;
+            font-size: 0.85rem !important;
+            height: auto !important;
+            min-height: 2.2rem !important;
+        }
+        
+        /* Compact form labels */
+        .form-label {
+            margin-bottom: 0.25rem !important;
+            font-size: 0.85rem !important;
+            font-weight: 500 !important;
+            line-height: 1.2 !important;
+        }
+        
+        /* Compact buttons */
+        .btn {
+            padding: 0.5rem 1rem !important;
+            font-size: 0.85rem !important;
+            border-radius: 0.4rem !important;
+            font-weight: 500 !important;
+        }
+        
+        /* Reduce button spacing */
+        .w-100.mb-2 {
+            margin-bottom: 0.4rem !important;
+        }
+        
+        /* Compact radio buttons */
+        .form-check {
+            margin-bottom: 0.3rem !important;
+            padding-left: 1.2rem !important;
+        }
+        
+        .form-check-input {
+            margin-top: 0.15rem !important;
+        }
+        
+        .form-check-label {
+            font-size: 0.85rem !important;
+        }
+        
+        /* Compact file upload */
+        .form-control[type="file"] {
+            padding: 0.35rem 0.5rem !important;
+            font-size: 0.8rem !important;
+        }
+        
+        /* Compact preview container */
+        #previewContainer {
+            max-height: 200px !important;
+            font-size: 0.8rem !important;
+        }
+        
+        /* Compact step indicator */
+        .step-indicator {
+            margin-bottom: 0.75rem !important;
+        }
+        
+        /* Reduce main container padding */
+        .registration-main.container {
+            padding-top: 1.5rem !important;
+            padding-bottom: 1.5rem !important;
+        }
+        
+        /* Compact alert spacing */
+        .alert {
+            padding: 0.6rem 1rem !important;
+            margin-bottom: 0.75rem !important;
+        }
+        
+        /* Compact terms checkbox */
+        #termsCheckbox {
+            margin-top: 0.3rem !important;
+        }
+    </style>
+
+        /* Compact form styling */
+        .register-card {
+            max-width: 520px !important;
+            padding: 1.5rem !important;
+        }
+        
+        .register-card h4 {
+            margin-bottom: 1rem !important;
+            font-size: 1.4rem;
+        }
+        
+        .mb-3 {
+            margin-bottom: 0.75rem !important;
+        }
+        
+        .form-control, .form-select {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.9rem;
+            border-radius: 0.5rem;
+        }
+        
+        .form-label {
+            margin-bottom: 0.3rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        
+        .btn {
+            padding: 0.6rem 1.2rem;
+            font-size: 0.9rem;
+            border-radius: 0.5rem;
+        }
+        
+        .row.g-3 > * {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+        
+        .registration-main {
+            padding: 2rem 1rem !important;
         }
     </style>
 </head>
