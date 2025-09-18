@@ -87,10 +87,10 @@ $municipality_id = 1;
     <?php 
     // Configure navbar for registration page
     $custom_brand_config = [
-        'href' => '../../landingpage.html'
+        'href' => '../../landingpage.php'
     ];
     $custom_nav_links = [
-        ['href' => '../../landingpage.html', 'label' => '<i class="bi bi-house me-1"></i>Back to Home', 'active' => false]
+        ['href' => '../../landingpage.php', 'label' => '<i class="bi bi-house me-1"></i>Back to Home', 'active' => false]
     ];
     $simple_nav_style = true;
     include '../../includes/website/navbar.php'; 

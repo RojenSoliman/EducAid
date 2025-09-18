@@ -994,6 +994,42 @@ footer a {
     font-size: 0.9rem;
   }
 }
+
+/* Enhanced chatbot response formatting */
+.ea-chat__bubble .req-header-emoji {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--thm-primary);
+  margin: 8px 0 6px 0;
+}
+
+.ea-chat__bubble .req-header-numbered {
+  font-size: 1em;
+  font-weight: 600;
+  color: var(--thm-primary);
+  margin: 8px 0 4px 0;
+}
+
+.ea-chat__bubble .req-header-spaced {
+  font-weight: 600;
+  color: var(--thm-primary);
+  margin: 8px 0 4px 0;
+}
+
+.ea-chat__bubble .req-item {
+  margin: 3px 0 3px 8px;
+  padding-left: 8px;
+  line-height: 1.4;
+}
+
+.ea-chat__bubble .req-spacer {
+  height: 8px;
+}
+
+.ea-chat__bubble strong {
+  color: var(--thm-primary);
+}
+
 /* Simple spacing enhancement - add to your landing_page.css */
 
 .ea-chat__bubble {

@@ -363,10 +363,18 @@
     <div class="ea-chat__body" id="eaBody">
       <div class="ea-chat__msg">
         <div class="ea-chat__bubble">
-          👋 Hi! I can help with EducAid requirements, schedules, and account questions.
+          👋 Hi! I'm your EducAid Assistant. I can help you with:
+          <br><br>
+          • <strong>Eligibility requirements</strong>
+          <br>• <strong>Required documents</strong>
+          <br>• <strong>Application process</strong>
+          <br>• <strong>Deadlines & schedules</strong>
+          <br>• <strong>Contact information</strong>
+          <br><br>
+          What would you like to know about the EducAid scholarship program?
         </div>
       </div>
-      <div class="ea-typing" id="eaTyping">EducAid Assistant is typing</div>
+      <div class="ea-typing" id="eaTyping">EducAid Assistant is typing...</div>
     </div>
     <div class="ea-chat__footer">
       <input class="ea-chat__input" id="eaInput" placeholder="Type your message…" />
@@ -500,18 +508,26 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-// ALTERNATIVE: Simpler formatting function
+// Enhanced formatting function for improved Gemini responses
 function formatChatbotResponse(text) {
   return text
     // Clean up single asterisks first (remove them)
     .replace(/(?<!\*)\*(?!\*)/g, '')
     
+    // Convert emoji headers with bold text
+    .replace(/📋\s*\*\*(.*?)\*\*/g, '<div class="req-header-emoji">📋 <strong>$1</strong></div>')
+    
+    // Convert numbered sections (1., 2., etc.)
+    .replace(/(\d+)\.\s*\*\*(.*?)\*\*/g, '<div class="req-header-numbered"><strong>$1. $2</strong></div>')
+    
     // Convert bold headers with colons - add spacing class
     .replace(/\*\*([^:]+):\*\*/g, '<div class="req-header-spaced"><strong>$1:</strong></div>')
+    
+    // Convert general bold text
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     
-    // Convert bullet points/dashes to list items
-    .replace(/^[-•]\s*(.+)$/gm, '<div class="req-item">$1</div>')
+    // Convert bullet points/dashes to styled list items
+    .replace(/^[-•]\s*(.+)$/gm, '<div class="req-item">• $1</div>')
     
     // Handle line breaks - keep double breaks as section separators
     .replace(/\n\n+/g, '<div class="req-spacer"></div>')
