@@ -15,8 +15,20 @@
   <link href="assets/css/website/landing_page.css" rel="stylesheet" />
 </head>
 <body>
-  <?php include 'includes/website/topbar.php'; ?>
-  <?php include 'includes/website/navbar.php'; ?>
+  <?php
+  // Custom navigation for landing page
+  $custom_nav_links = [
+    ['href' => '#home', 'label' => 'Home', 'active' => true],
+    ['href' => 'about.php', 'label' => 'About', 'active' => false],
+    ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => false],
+    ['href' => '#announcements', 'label' => 'Announcements', 'active' => false],
+    ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
+    ['href' => '#contact', 'label' => 'Contact', 'active' => false]
+  ];
+  
+  include 'includes/website/topbar.php';
+  include 'includes/website/navbar.php';
+  ?>
 
   <!-- Hero -->
   <header id="home" class="hero">
@@ -30,8 +42,8 @@
                 <h1 class="display-5 mb-2">Educational Assistance, Simplified.</h1>
                 <p class="mb-4">Apply, upload requirements, track status, and claim assistance with QR — all in one city-run portal designed for students and families in General Trias.</p>
                 <div class="d-flex gap-2 justify-content-center justify-content-lg-start">
-                  <a href="#apply" class="btn cta-btn btn-primary-custom"><i class="bi bi-journal-text me-2"></i>Apply Now</a>
-                  <a href="#status" class="btn cta-btn btn-outline-custom"><i class="bi bi-qr-code me-2"></i>Check Status / QR</a>
+                  <a href="register.php" class="btn cta-btn btn-primary-custom"><i class="bi bi-journal-text me-2"></i>Apply Now</a>
+                  <a href="unified_login.php" class="btn cta-btn btn-outline-custom"><i class="bi bi-box-arrow-in-right me-2"></i>Sign In</a>
                 </div>
               </div>
               <div class="text-center">
@@ -52,10 +64,10 @@
           <a class="ql-card" href="#announcements"><span class="ql-icon"><i class="bi bi-megaphone"></i></span><span>Latest Announcements</span></a>
         </div>
         <div class="col-6 col-lg">
-          <a class="ql-card" href="#requirements"><span class="ql-icon"><i class="bi bi-list-check"></i></span><span>Requirements</span></a>
+          <a class="ql-card" href="requirements.php"><span class="ql-icon"><i class="bi bi-list-check"></i></span><span>Requirements</span></a>
         </div>
         <div class="col-6 col-lg">
-          <a class="ql-card" href="#how"><span class="ql-icon"><i class="bi bi-gear-wide-connected"></i></span><span>How It Works</span></a>
+          <a class="ql-card" href="how-it-works.php"><span class="ql-icon"><i class="bi bi-gear-wide-connected"></i></span><span>How It Works</span></a>
         </div>
         <div class="col-6 col-lg">
           <a class="ql-card" href="#faq"><span class="ql-icon"><i class="bi bi-question-circle"></i></span><span>FAQs</span></a>
@@ -317,8 +329,8 @@
         </div>
         <div class="col-lg-6">
           <div class="row">
-            <div class="col-6 col-md-4"><h6>Explore</h6><ul class="list-unstyled small"><li><a href="#about">About</a></li><li><a href="#how">Process</a></li><li><a href="#announcements">Announcements</a></li></ul></div>
-            <div class="col-6 col-md-4"><h6>Links</h6><ul class="list-unstyled small"><li><a href="#faq">FAQs</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#contact">Contact</a></li></ul></div>
+            <div class="col-6 col-md-4"><h6>Explore</h6><ul class="list-unstyled small"><li><a href="#about">About</a></li><li><a href="how-it-works.php">Process</a></li><li><a href="#announcements">Announcements</a></li></ul></div>
+            <div class="col-6 col-md-4"><h6>Links</h6><ul class="list-unstyled small"><li><a href="#faq">FAQs</a></li><li><a href="requirements.php">Requirements</a></li><li><a href="#contact">Contact</a></li></ul></div>
             <div class="col-12 col-md-4 mt-3 mt-md-0">
               <h6>Stay Updated</h6>
               <form class="d-flex gap-2">
@@ -509,6 +521,11 @@ function formatChatbotResponse(text) {
     .replace(/\*/g, '');
 }
 </script>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Mobile Navbar JS -->
+<script src="assets/js/website/mobile-navbar.js"></script>
 
 <!-- Enhanced scroll animations - KEEP ONLY THIS ONE -->
 <script>

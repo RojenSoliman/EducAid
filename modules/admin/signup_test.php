@@ -50,11 +50,11 @@
         <form method="post" action="">
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label class="form-label">First Name</label>
+                    <label class="form-label">First Name *</label>
                     <input type="text" class="form-control" name="first_name" required>
                 </div>
                 <div class="col-md-6 mb-3">
-                    <label class="form-label">Last Name</label>
+                    <label class="form-label">Last Name *</label>
                     <input type="text" class="form-control" name="last_name" required>
                 </div>
             </div>
@@ -65,23 +65,32 @@
             </div>
 
             <div class="mb-3">
-                <label class="form-label">Email Address</label>
+                <label class="form-label">Email Address *</label>
                 <input type="email" class="form-control" name="email" required>
             </div>
 
             <div class="mb-3">
-                <label class="form-label">Username (Legacy - Optional)</label>
-                <input type="text" class="form-control" name="username" placeholder="For backward compatibility">
+                <label class="form-label">Username *</label>
+                <input type="text" class="form-control" name="username" required placeholder="Choose a unique username">
             </div>
 
             <div class="mb-3">
-                <label class="form-label">Password</label>
+                <label class="form-label">Role</label>
+                <select class="form-control" name="role" required>
+                    <option value="">Select Role</option>
+                    <option value="super_admin">Super Admin</option>
+                    <option value="sub_admin">Sub Admin</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Password *</label>
                 <input type="password" class="form-control" name="password" minlength="12" required>
                 <div class="form-text">Must be at least 12 characters long</div>
             </div>
 
             <div class="mb-3">
-                <label class="form-label">Confirm Password</label>
+                <label class="form-label">Confirm Password *</label>
                 <input type="password" class="form-control" name="confirm_password" minlength="12" required>
             </div>
 
@@ -99,15 +108,20 @@
         $last_name = trim($_POST['last_name']);
         $middle_name = trim($_POST['middle_name']) ?: null;
         $email = trim($_POST['email']);
-        $username = trim($_POST['username']) ?: null; // Legacy field, optional
+        $username = trim($_POST['username']);
+        $role = $_POST['role'];
         $pass = $_POST['password'];
         $confirm = $_POST['confirm_password'];
 
-        // Validation
-        if ($pass !== $confirm) {
+        // Enhanced validation
+        if (empty($first_name) || empty($last_name) || empty($email) || empty($username) || empty($role)) {
+            echo "<div class='alert alert-danger mt-3'>All required fields must be filled.</div>";
+        } elseif ($pass !== $confirm) {
             echo "<div class='alert alert-danger mt-3'>Passwords do not match.</div>";
         } elseif (strlen($pass) < 12) {
             echo "<div class='alert alert-danger mt-3'>Password must be at least 12 characters long.</div>";
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            echo "<div class='alert alert-danger mt-3'>Please enter a valid email address.</div>";
         } else {
             // Check if email already exists
             $emailCheck = pg_query_params($connection, 
@@ -115,34 +129,60 @@
                 [$email]
             );
             
-            if (pg_num_rows($emailCheck) > 0) {
+            if ($emailCheck === false) {
+                echo "<div class='alert alert-danger mt-3'>Database error: " . pg_last_error($connection) . "</div>";
+            } elseif (pg_num_rows($emailCheck) > 0) {
                 echo "<div class='alert alert-danger mt-3'>Email already exists. Please use a different email.</div>";
             } else {
-                $hashed = password_hash($pass, PASSWORD_ARGON2ID);
-                $municipality_id = 1; // Default municipality
-
-                // Insert new admin with all required fields
-                $query = "INSERT INTO admins (municipality_id, first_name, middle_name, last_name, email, username, password) 
-                         VALUES ($1, $2, $3, $4, $5, $6, $7)";
-                $result = pg_query_params($connection, $query, [
-                    $municipality_id, 
-                    $first_name, 
-                    $middle_name, 
-                    $last_name, 
-                    $email, 
-                    $username, 
-                    $hashed
-                ]);
-
-                if ($result) {
-                    echo "<div class='alert alert-success mt-3'>
-                        <strong>Admin registered successfully!</strong><br>
-                        Name: $first_name $last_name<br>
-                        Email: $email<br>
-                        You can now login using the <a href='../../unified_login.php'>unified login system</a>.
-                    </div>";
+                // Check if username already exists
+                $usernameCheck = pg_query_params($connection, 
+                    "SELECT admin_id FROM admins WHERE username = $1", 
+                    [$username]
+                );
+                
+                if ($usernameCheck === false) {
+                    echo "<div class='alert alert-danger mt-3'>Database error: " . pg_last_error($connection) . "</div>";
+                } elseif (pg_num_rows($usernameCheck) > 0) {
+                    echo "<div class='alert alert-danger mt-3'>Username already exists. Please choose a different username.</div>";
                 } else {
-                    echo "<div class='alert alert-danger mt-3'>Error: " . pg_last_error($connection) . "</div>";
+                    // Hash password and insert admin
+                    $hashed = password_hash($pass, PASSWORD_ARGON2ID);
+                    $municipality_id = 1; // Default municipality
+
+                    // Insert new admin with all required fields including role and is_active
+                    $query = "INSERT INTO admins (municipality_id, first_name, middle_name, last_name, email, username, password, role, is_active, created_at) 
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())";
+                    $result = pg_query_params($connection, $query, [
+                        $municipality_id, 
+                        $first_name, 
+                        $middle_name, 
+                        $last_name, 
+                        $email, 
+                        $username, 
+                        $hashed,
+                        $role,
+                        true // is_active = true by default
+                    ]);
+
+                    if ($result) {
+                        echo "<div class='alert alert-success mt-3'>
+                            <strong>✅ Admin registered successfully!</strong><br>
+                            <strong>Name:</strong> $first_name $last_name<br>
+                            <strong>Email:</strong> $email<br>
+                            <strong>Username:</strong> $username<br>
+                            <strong>Role:</strong> $role<br>
+                            <strong>Status:</strong> Active<br><br>
+                            <a href='../../unified_login.php' class='btn btn-sm btn-success'>Go to Login</a>
+                        </div>";
+                        
+                        // Clear form by redirecting after success (optional)
+                        // echo "<script>setTimeout(() => window.location.href = '../../unified_login.php', 3000);</script>";
+                    } else {
+                        echo "<div class='alert alert-danger mt-3'>
+                            <strong>Registration failed!</strong><br>
+                            Error: " . pg_last_error($connection) . "
+                        </div>";
+                    }
                 }
             }
         }

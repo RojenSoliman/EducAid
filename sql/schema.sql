@@ -3,6 +3,12 @@
 -- EDUCAID PostgreSQL SCHEMA (Updated)
 -- ===========================================
 
+-- Create the educaid database if it doesn't exist
+CREATE DATABASE IF NOT EXISTS educaid;
+
+-- Connect to the educaid database
+\c educaid;
+
 -- Municipalities (for CMS multi-tenancy)
 CREATE TABLE municipalities (
     municipality_id SERIAL PRIMARY KEY,
