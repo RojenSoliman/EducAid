@@ -182,6 +182,13 @@ function render_table($applicants, $connection) {
                                     </form>
                                 <?php else: ?>
                                     <span class="text-muted">Incomplete documents</span>
+                                    <?php if (!empty($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'super_admin'): ?>
+                                    <form method="POST" class="d-inline ms-2" onsubmit="return confirm('Override verification and mark this student as Active even without complete grades/documents?');">
+                                        <input type="hidden" name="student_id" value="<?= $student_id ?>">
+                                        <input type="hidden" name="mark_verified_override" value="1">
+                                        <button class="btn btn-warning btn-sm"><i class="bi bi-exclamation-triangle me-1"></i> Override Verify</button>
+                                    </form>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                                 
                                 <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
@@ -250,6 +257,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
         }
         
+        // Redirect to refresh list
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    // Override verify even if incomplete (super_admin only)
+    if (!empty($_POST['mark_verified_override']) && isset($_POST['student_id'])) {
+        if (!empty($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'super_admin') {
+            $sid = trim($_POST['student_id']);
+            // Get student name for notification
+            $studentQuery = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$sid]);
+            $student = pg_fetch_assoc($studentQuery);
+
+            /** @phpstan-ignore-next-line */
+            pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$sid]);
+
+            // Add admin notification noting override
+            if ($student) {
+                $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                $notification_msg = "OVERRIDE: Student promoted to active without complete grades/docs: " . $student_name . " (ID: " . $sid . ")";
+                pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+            }
+        }
         // Redirect to refresh list
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
