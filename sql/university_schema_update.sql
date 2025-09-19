@@ -68,8 +68,6 @@ INSERT INTO universities (name, code) VALUES
 ('Southern Luzon State University - Gumaca Campus', 'SLSU_GUMACA'),
 ('Southern Luzon State University - Infanta Campus', 'SLSU_INFANTA'),
 ('Southern Luzon State University - Tayabas Campus', 'SLSU_TAYABAS'),
-
--- Private Universities and Colleges
 ('De La Salle University - Dasmariñas', 'DLSU_DASMARINAS'),
 ('University of Perpetual Help System DALTA - Las Piñas', 'UPHSD_LASPINAS'),
 ('University of Perpetual Help System DALTA - Molino', 'UPHSD_MOLINO'),

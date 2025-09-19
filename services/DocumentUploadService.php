@@ -5,7 +5,7 @@ class DocumentUploadService {
     private $uploadBaseDir;
     
     const REQUIRED_DOCUMENTS = [
-        'id_picture' => 'ID Picture',
+        'eaf' => 'Enrollment Assessment Form',
         'letter_to_mayor' => 'Letter to Mayor', 
         'certificate_of_indigency' => 'Certificate of Indigency'
     ];
@@ -63,17 +63,38 @@ class DocumentUploadService {
             return ['success' => false, 'errors' => $errors];
         }
         
-        // Create student directory
-        $studentDir = $this->uploadBaseDir . $studentName . '/';
+        // Create organized directory structure based on document type
+        switch ($type) {
+            case 'id_picture':
+                $typeDir = 'id_pictures/';
+                break;
+            case 'grades':
+                $typeDir = 'grades/';
+                break;
+            default:
+                $typeDir = '';
+        }
+        
+        $studentDir = $this->uploadBaseDir . $studentName . '/' . $typeDir;
         if (!file_exists($studentDir)) {
             if (!mkdir($studentDir, 0755, true)) {
                 return ['success' => false, 'errors' => ['Failed to create upload directory']];
             }
         }
         
+        // Check if document already exists and delete old file
+        $existingQuery = "SELECT file_path FROM documents WHERE student_id = $1 AND type = $2";
+        $existingResult = pg_query_params($this->connection, $existingQuery, [$studentId, $type]);
+        if ($existingRow = pg_fetch_assoc($existingResult)) {
+            $oldFilePath = $existingRow['file_path'];
+            if (file_exists($oldFilePath)) {
+                unlink($oldFilePath); // Auto-delete old file
+            }
+        }
+        
         // Generate unique filename
         $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
-        $filename = $type . '_' . time() . '.' . $extension;
+        $filename = $studentId . '_' . $studentName . '_' . $type . '_' . time() . '.' . $extension;
         $filePath = $studentDir . $filename;
         
         // Move uploaded file

@@ -13,10 +13,10 @@ $student_id = $_SESSION['student_id'];
 // Get student information including QR code data
 $query = "
     SELECT s.student_id, s.first_name, s.middle_name, s.last_name, 
-           s.payroll_no, s.unique_student_id, s.status,
+           s.payroll_no, s.status,
            q.unique_id as qr_unique_id, q.status as qr_status, q.created_at as qr_created_at
     FROM students s
-    LEFT JOIN qr_codes q ON s.unique_student_id = q.student_unique_id AND s.payroll_no = q.payroll_number
+    LEFT JOIN qr_codes q ON s.student_id = q.student_id AND s.payroll_no = q.payroll_number
     WHERE s.student_id = $1
 ";
 
@@ -262,7 +262,7 @@ if ($has_qr_code) {
               </div>
               <div class="info-item">
                 <div class="info-label">Student ID</div>
-                <div class="info-value"><?= htmlspecialchars($student_data['unique_student_id']) ?></div>
+                <div class="info-value"><?= htmlspecialchars($student_data['student_id']) ?></div>
               </div>
               <div class="info-item">
                 <div class="info-label">Status</div>

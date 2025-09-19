@@ -17,7 +17,7 @@ $qr_res = pg_query($connection, "
     SELECT 
         qr_codes.qr_id, 
         qr_codes.payroll_number, 
-        qr_codes.student_unique_id, 
+        qr_codes.student_id, 
         qr_codes.status AS qr_status, 
         students.first_name, 
         students.last_name, 
@@ -25,7 +25,7 @@ $qr_res = pg_query($connection, "
     FROM 
         qr_codes
     JOIN 
-        students ON students.unique_student_id = qr_codes.student_unique_id
+        students ON students.student_id = qr_codes.student_id
     WHERE 
         students.status = 'active'  -- Only active students
         AND qr_codes.payroll_number IS NOT NULL  -- Students with a payroll number

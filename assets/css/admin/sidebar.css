@@ -65,6 +65,8 @@
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
   border-top-right-radius: 12px;
   border-bottom-right-radius: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar.close {
@@ -77,6 +79,7 @@
   align-items: center;
   justify-content: center;
   padding-bottom: 20px;
+  flex-shrink: 0; /* Don't shrink logo area */
 }
 
 .sidebar .logo-details .icon {
@@ -103,6 +106,29 @@
   list-style: none;
   padding: 0;
   margin: 0;
+  flex: 1; /* Take remaining space */
+  overflow-y: auto; /* Make scrollable */
+  overflow-x: hidden;
+  padding-right: 5px; /* Add some padding for scrollbar */
+}
+
+/* Custom scrollbar styling */
+.nav-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nav-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+}
+
+.nav-list::-webkit-scrollbar-thumb {
+  background: var(--gt-blue);
+  border-radius: 3px;
+}
+
+.nav-list::-webkit-scrollbar-thumb:hover {
+  background: var(--gt-sky);
 }
 
 .nav-item {

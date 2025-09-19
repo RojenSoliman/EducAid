@@ -7,6 +7,96 @@ if (!isset($_SESSION['student_username'])) {
 // Include database connection
 include __DIR__ . '/../../config/database.php';
 
+// Fetch student info including last login
+$studentId = $_SESSION['student_id'];
+$student_info_query = "SELECT last_login, first_name, last_name FROM students WHERE student_id = $1";
+$student_info_result = pg_query_params($connection, $student_info_query, [$studentId]);
+$student_info = pg_fetch_assoc($student_info_result);
+
+// Check if this is a fresh login (within last 5 minutes) and adjust display
+$current_time = new DateTime('now', new DateTimeZone('Asia/Manila'));
+$display_login_time = null;
+
+if ($student_info['last_login']) {
+    $last_login_time = new DateTime($student_info['last_login']);
+    $last_login_time->setTimezone(new DateTimeZone('Asia/Manila'));
+    $time_diff = $current_time->diff($last_login_time);
+    
+    // If login was very recent (within 5 minutes), it's likely the current session
+    // So we should show a different message or use the session previous_login if available
+    if ($time_diff->days == 0 && $time_diff->h == 0 && $time_diff->i <= 5) {
+        // Recent login - use session previous_login if available
+        $display_login_time = $_SESSION['previous_login'] ?? null;
+        
+        // If no session previous_login, this might be first time login
+        if (!$display_login_time) {
+            $display_login_time = "first_time";
+        }
+    } else {
+        // Not a recent login, safe to show database value
+        $display_login_time = $student_info['last_login'];
+    }
+} else {
+    $display_login_time = "first_time";
+}
+
+// Helper function to format last login time
+function formatLastLogin($last_login_string) {
+    if (!$last_login_string || $last_login_string === "first_time") {
+        return "First time login - Welcome!";
+    }
+    
+    try {
+        $last_login = new DateTime($last_login_string);
+        $last_login->setTimezone(new DateTimeZone('Asia/Manila'));
+        $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        $diff = $now->diff($last_login);
+        
+        // If login was today, show relative time
+        if ($diff->days == 0) {
+            if ($diff->h == 0 && $diff->i < 30) {
+                return "Last login: Just now";
+            } elseif ($diff->h == 0) {
+                return "Last login: " . $diff->i . " minute" . ($diff->i != 1 ? "s" : "") . " ago";
+            } else {
+                return "Last login: " . $diff->h . " hour" . ($diff->h != 1 ? "s" : "") . " ago";
+            }
+        }
+        // If login was yesterday
+        elseif ($diff->days == 1) {
+            return "Last login: Yesterday at " . $last_login->format('g:i A');
+        }
+        // For older logins, show full date
+        else {
+            return "Last login: " . $last_login->format('F j, Y – g:i A');
+        }
+    } catch (Exception $e) {
+        return "Last login: " . htmlspecialchars($last_login_string);
+    }
+}
+
+// Fetch past distributions where this student participated
+$past_participation_query = "
+    SELECT DISTINCT
+        ds.distribution_date,
+        ds.location,
+        ds.academic_year,
+        ds.semester,
+        ds.finalized_at,
+        ds.notes,
+        CONCAT(a.first_name, ' ', a.last_name) as finalized_by_name
+    FROM distribution_snapshots ds
+    LEFT JOIN admins a ON ds.finalized_by = a.admin_id
+    WHERE ds.students_data::text LIKE '%\"student_id\":\"' || $1 || '\"%'
+       OR ds.students_data::text LIKE '%\"student_id\":' || $1 || ',%'
+       OR ds.students_data::text LIKE '%\"student_id\":' || $1 || '}%'
+       OR ds.students_data::text LIKE '%\"student_id\": \"' || $1 || '\"%'
+       OR ds.students_data::text LIKE '%\"student_id\": ' || $1 || ',%'
+       OR ds.students_data::text LIKE '%\"student_id\": ' || $1 || '}%'
+    ORDER BY ds.finalized_at DESC
+";
+$past_participation_result = pg_query_params($connection, $past_participation_query, [$studentId]);
+
 if (!isset($_SESSION['schedule_modal_shown'])) {
     $_SESSION['schedule_modal_shown'] = true;
     $showScheduleModal = true;
@@ -53,7 +143,27 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
           <img src="../../assets/images/default/profile.png" class="rounded-circle me-3" width="60" height="60" alt="Student Profile">
           <div>
             <h2 class="fw-bold mb-1">Welcome, <?php echo htmlspecialchars($_SESSION['student_username']); ?>!</h2>
-            <small class="text-muted">Last login: July 10, 2025 – 9:14 AM</small>
+            <small class="text-muted">
+              <?php 
+              // Temporary debug output (remove after fixing)
+              if (isset($_GET['debug'])) {
+                echo "<br><strong>DEBUG:</strong><br>";
+                echo "Database last_login: " . ($student_info['last_login'] ?? 'NULL') . "<br>";
+                echo "Session previous_login: " . (($_SESSION['previous_login'] ?? null) ? $_SESSION['previous_login'] : 'NULL') . "<br>";
+                echo "Calculated display_login_time: " . ($display_login_time === "first_time" ? "FIRST_TIME" : ($display_login_time ?? 'NULL')) . "<br>";
+                
+                if ($student_info['last_login']) {
+                    $last_login_time = new DateTime($student_info['last_login']);
+                    $current_time = new DateTime();
+                    $diff = $current_time->diff($last_login_time);
+                    echo "Time since DB login: {$diff->i} minutes ago<br>";
+                }
+                echo "Formatted: ";
+              }
+              
+              echo formatLastLogin($display_login_time);
+              ?>
+            </small>
           </div>
         </div>
 
@@ -195,6 +305,137 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
         }
         ?>
 
+        <!-- Past Distributions Section -->
+        <?php if ($past_participation_result && pg_num_rows($past_participation_result) > 0): ?>
+        <div class="custom-card mb-4 shadow-sm section-spacing">
+            <div class="custom-card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-archive me-2"></i>Your Distribution History</h5>
+            </div>
+            <div class="custom-card-body">
+                <p class="text-muted mb-3">Previous distributions you have participated in:</p>
+                
+                <!-- Carousel Container -->
+                <div class="distribution-carousel-container">
+                    <div class="distribution-carousel" id="distributionCarousel">
+                        <div class="carousel-track" id="carouselTrack">
+                            <?php 
+                            $distributions = [];
+                            while ($dist = pg_fetch_assoc($past_participation_result)) {
+                                $distributions[] = $dist;
+                            }
+                            
+                            // Group distributions into sets of 3 for carousel pages
+                            $itemsPerPage = 3;
+                            $totalPages = ceil(count($distributions) / $itemsPerPage);
+                            
+                            for ($page = 0; $page < $totalPages; $page++):
+                                $pageStart = $page * $itemsPerPage;
+                                $pageEnd = min($pageStart + $itemsPerPage, count($distributions));
+                            ?>
+                                <div class="carousel-page">
+                                    <div class="row g-3">
+                                        <?php for ($i = $pageStart; $i < $pageEnd; $i++): 
+                                            $dist = $distributions[$i];
+                                        ?>
+                                            <div class="col-md-4">
+                                                <div class="distribution-card border rounded p-3 h-100">
+                                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                                        <h6 class="mb-0 text-success fw-bold">
+                                                            <i class="bi bi-calendar-check me-1"></i>
+                                                            <?php echo date('M d, Y', strtotime($dist['distribution_date'])); ?>
+                                                        </h6>
+                                                        <span class="badge bg-success">Distributed</span>
+                                                    </div>
+                                                    
+                                                    <div class="mb-2">
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-geo-alt me-1"></i>
+                                                            <strong>Location:</strong> <?php echo htmlspecialchars($dist['location']); ?>
+                                                        </small>
+                                                    </div>
+                                                    
+                                                    <?php if (!empty($dist['academic_year']) || !empty($dist['semester'])): ?>
+                                                    <div class="mb-2">
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-mortarboard me-1"></i>
+                                                            <strong>Academic Period:</strong> 
+                                                            <?php 
+                                                            $period_parts = [];
+                                                            if (!empty($dist['academic_year'])) $period_parts[] = 'AY ' . $dist['academic_year'];
+                                                            if (!empty($dist['semester'])) $period_parts[] = $dist['semester'];
+                                                            echo htmlspecialchars(implode(', ', $period_parts));
+                                                            ?>
+                                                        </small>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    
+                                                    <div class="mb-2">
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-clock me-1"></i>
+                                                            <strong>Processed:</strong> <?php echo date('M d, Y g:i A', strtotime($dist['finalized_at'])); ?>
+                                                        </small>
+                                                    </div>
+                                                    
+                                                    <?php if (!empty($dist['finalized_by_name'])): ?>
+                                                    <div class="mb-2">
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-person-check me-1"></i>
+                                                            <strong>Processed by:</strong> <?php echo htmlspecialchars($dist['finalized_by_name']); ?>
+                                                        </small>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    
+                                                    <?php if (!empty($dist['notes'])): ?>
+                                                    <div class="mt-2 pt-2 border-top">
+                                                        <small class="text-muted">
+                                                            <i class="bi bi-sticky me-1"></i>
+                                                            <strong>Notes:</strong> <?php echo htmlspecialchars($dist['notes']); ?>
+                                                        </small>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+                                        <?php endfor; ?>
+                                    </div>
+                                </div>
+                            <?php endfor; ?>
+                        </div>
+                    </div>
+                    
+                    <!-- Navigation Controls -->
+                    <?php if ($totalPages > 1): ?>
+                    <div class="carousel-controls">
+                        <button class="carousel-btn carousel-prev" id="carouselPrev">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <button class="carousel-btn carousel-next" id="carouselNext">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Dot Indicators -->
+                    <div class="carousel-indicators">
+                        <?php for ($i = 0; $i < $totalPages; $i++): ?>
+                        <button class="carousel-dot <?php echo $i === 0 ? 'active' : ''; ?>" data-page="<?php echo $i; ?>"></button>
+                        <?php endfor; ?>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                
+                <!-- Summary Info -->
+                <div class="text-center mt-3">
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Showing <?php echo count($distributions); ?> distribution<?php echo count($distributions) !== 1 ? 's' : ''; ?>
+                        <?php if ($totalPages > 1): ?>
+                            across <?php echo $totalPages; ?> page<?php echo $totalPages !== 1 ? 's' : ''; ?>
+                        <?php endif; ?>
+                    </small>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Announcements -->
         <?php
           // Fetch latest active announcement
@@ -278,13 +519,6 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/homepage.js"></script>
   <script src="../../assets/js/deadline.js"></script>
-  <script>
-    function confirmLogout(event) {
-      event.preventDefault();
-      if (confirm("Are you sure you want to logout?")) {
-        window.location.href = 'logout.php';
-      }
-    }
-  </script>
+  <script src="../../assets/js/student/student_homepage.js"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ function hasPayrollAndQR($connection) {
                COUNT(CASE WHEN s.payroll_no > 0 THEN 1 END) as with_payroll,
                COUNT(q.qr_id) as with_qr
         FROM students s
-        LEFT JOIN qr_codes q ON q.student_unique_id = s.unique_student_id
+        LEFT JOIN qr_codes q ON q.student_id = s.student_id
         WHERE s.status = 'active'
     ";
     

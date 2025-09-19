@@ -20,16 +20,16 @@ if (
     $em = trim($_POST['email']);
     $pw = $_POST['password'];
 
-    // Check if user is a student (simplified query)
+    // Check if user is a student (only allow active students to login)
     $studentRes = pg_query_params($connection,
-        "SELECT student_id, password, first_name, last_name, 'student' as role FROM students
-         WHERE email = $1",
+        "SELECT student_id, password, first_name, last_name, status, 'student' as role FROM students
+         WHERE email = $1 AND status != 'under_registration'",
         [$em]
     );
     
-    // Check if user is an admin (simplified query)
+    // Check if user is an admin (get actual role from database)
     $adminRes = pg_query_params($connection,
-        "SELECT admin_id, password, first_name, last_name, 'admin' as role FROM admins
+        "SELECT admin_id, password, first_name, last_name, role FROM admins
          WHERE email = $1",
         [$em]
     );
@@ -38,13 +38,53 @@ if (
     if ($studentRow = pg_fetch_assoc($studentRes)) {
         $user = $studentRow;
         $user['id'] = $user['student_id'];
+        
+        // Check if student is blacklisted
+        if ($user['status'] === 'blacklisted') {
+            // Get blacklist reason
+            $blacklistQuery = pg_query_params($connection,
+                "SELECT reason_category, detailed_reason FROM blacklisted_students WHERE student_id = $1",
+                [$user['id']]
+            );
+            $blacklistInfo = pg_fetch_assoc($blacklistQuery);
+            
+            $reasonText = 'violation of terms';
+            if ($blacklistInfo) {
+                switch($blacklistInfo['reason_category']) {
+                    case 'fraudulent_activity': $reasonText = 'fraudulent activity'; break;
+                    case 'academic_misconduct': $reasonText = 'academic misconduct'; break;
+                    case 'system_abuse': $reasonText = 'system abuse'; break;
+                    case 'other': $reasonText = 'policy violation'; break;
+                }
+            }
+            
+            echo json_encode([
+                'status' => 'error',
+                'message' => "Account permanently suspended due to {$reasonText}. Please contact the Office of the Mayor for assistance.",
+                'is_blacklisted' => true
+            ]);
+            exit;
+        }
     } elseif ($adminRow = pg_fetch_assoc($adminRes)) {
         $user = $adminRow;
         $user['id'] = $user['admin_id'];
     }
 
     if (!$user) {
-        echo json_encode(['status'=>'error','message'=>'Email not found.']);
+        // Check if the email exists but with 'under_registration' status
+        $underRegistrationCheck = pg_query_params($connection,
+            "SELECT student_id FROM students WHERE email = $1 AND status = 'under_registration'",
+            [$em]
+        );
+        
+        if (pg_fetch_assoc($underRegistrationCheck)) {
+            echo json_encode([
+                'status'=>'error',
+                'message'=>'Your account is still under review. Please wait for admin approval before logging in.'
+            ]);
+        } else {
+            echo json_encode(['status'=>'error','message'=>'Email not found.']);
+        }
         exit;
     }
     
@@ -111,10 +151,33 @@ if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
     if ($pending['role'] === 'student') {
         $_SESSION['student_id'] = $pending['user_id'];
         $_SESSION['student_username'] = $pending['name'];
+        
+        // Get the previous login time before updating (for display purposes)
+        $prev_login_result = pg_query_params($connection,
+            "SELECT last_login FROM students WHERE student_id = $1",
+            [$pending['user_id']]
+        );
+        $prev_login = pg_fetch_assoc($prev_login_result);
+        $_SESSION['previous_login'] = $prev_login['last_login'] ?? null;
+        
+        // Update last_login timestamp for student
+        pg_query_params($connection, 
+            "UPDATE students SET last_login = NOW() WHERE student_id = $1", 
+            [$pending['user_id']]
+        );
+        
         $redirect = 'modules/student/student_homepage.php';
     } else {
         $_SESSION['admin_id'] = $pending['user_id'];
         $_SESSION['admin_username'] = $pending['name'];
+        $_SESSION['admin_role'] = $pending['role']; // Store the actual admin role
+        
+        // Update last_login timestamp for admin
+        pg_query_params($connection, 
+            "UPDATE admins SET last_login = NOW() WHERE admin_id = $1", 
+            [$pending['user_id']]
+        );
+        
         $redirect = 'modules/admin/homepage.php';
     }
     
@@ -134,9 +197,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     if ($_POST['forgot_action'] === 'send_otp' && !empty($_POST['forgot_email'])) {
         $email = trim($_POST['forgot_email']);
         
-        // Check both tables
-        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1", [$email]);
-        $adminRes = pg_query_params($connection, "SELECT admin_id, 'admin' as role FROM admins WHERE email = $1", [$email]);
+        // Check both tables (exclude students under registration and blacklisted)
+        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status NOT IN ('under_registration', 'blacklisted')", [$email]);
+        $adminRes = pg_query_params($connection, "SELECT admin_id, role FROM admins WHERE email = $1", [$email]);
         
         $user = null;
         if ($studentRow = pg_fetch_assoc($studentRes)) {
@@ -146,7 +209,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
         }
         
         if (!$user) {
-            echo json_encode(['status'=>'error','message'=>'Email not found.']);
+            // Check if it's a student under registration
+            $underRegistrationCheck = pg_query_params($connection,
+                "SELECT student_id FROM students WHERE email = $1 AND status = 'under_registration'",
+                [$email]
+            );
+            
+            // Check if it's a blacklisted student
+            $blacklistedCheck = pg_query_params($connection,
+                "SELECT student_id FROM students WHERE email = $1 AND status = 'blacklisted'",
+                [$email]
+            );
+            
+            if (pg_fetch_assoc($underRegistrationCheck)) {
+                echo json_encode([
+                    'status'=>'error',
+                    'message'=>'Your account is still under review. Password reset is not available until your account is approved.'
+                ]);
+            } elseif (pg_fetch_assoc($blacklistedCheck)) {
+                echo json_encode([
+                    'status'=>'error',
+                    'message'=>'Account suspended. Please contact the Office of the Mayor for assistance.'
+                ]);
+            } else {
+                echo json_encode(['status'=>'error','message'=>'Email not found.']);
+            }
             exit;
         }
         
@@ -245,11 +332,100 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
     <link href="assets/css/universal.css" rel="stylesheet">
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/website/landing_page.css" rel="stylesheet">
+    
+    <style>
+        /* Login page specific adjustments for navbar */
+        body.login-page {
+            padding-top: 0;
+        }
+        
+        /* Adjust brand section height */
+        .brand-section {
+            min-height: calc(100vh - 140px);
+        }
+        
+        /* Ensure login form section adjusts properly */
+        .col-lg-6:not(.brand-section) {
+            min-height: calc(100vh - 140px);
+            display: flex;
+            align-items: center;
+        }
+        
+        /* Mobile adjustments */
+        @media (max-width: 991.98px) {
+            .container-fluid {
+                min-height: calc(100vh - 100px) !important;
+            }
+            
+            .topbar {
+                display: none !important;
+            }
+            
+            .col-lg-6:not(.brand-section) {
+                min-height: calc(100vh - 80px);
+            }
+        }
+        
+        /* Navbar styling for login page */
+        .navbar .btn-outline-primary {
+            border-color: var(--thm-primary);
+            color: var(--thm-primary);
+        }
+        
+        .navbar .btn-outline-primary:hover {
+            background: var(--thm-primary);
+            color: white;
+        }
+    </style>
 
 </head>
 <body class = "login-page"> 
-    <div class="container-fluid p-0">
-        <div class="row g-0 min-vh-100">
+    <!-- Top Info Bar -->
+    <div class="topbar py-2 d-none d-md-block">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-telephone"></i>
+                            <span>(046) 509-5555</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-envelope"></i>
+                            <span>educaid@generaltrias.gov.ph</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 text-end">
+                    <div class="d-flex align-items-center justify-content-end gap-3">
+                        <span>🏛️ Official City Portal</span>
+                        <div class="d-flex gap-2">
+                            <a href="#" class="text-white"><i class="bi bi-facebook"></i></a>
+                            <a href="#" class="text-white"><i class="bi bi-twitter"></i></a>
+                            <a href="#" class="text-white"><i class="bi bi-instagram"></i></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <?php 
+    // Configure navbar for login page
+    $custom_brand_config = [
+        'href' => 'landingpage.php'
+    ];
+    $custom_nav_links = [
+        ['href' => 'landingpage.php', 'label' => '<i class="bi bi-house me-1"></i>Back to Home', 'active' => false]
+    ];
+    $simple_nav_style = true;
+    include 'includes/website/navbar.php'; 
+    ?>
+    
+    <!-- Main Login Container -->
+    <div class="container-fluid p-0" style="min-height: calc(100vh - 140px);">
+        <div class="row g-0 h-100">
             <!-- Brand Section - Hidden on mobile, visible on tablet+ -->
             <div class="col-lg-6 d-none d-lg-flex brand-section">
                 <div class="brand-content">
@@ -300,9 +476,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
 
             <!-- Form Section -->
             <div class="col-12 col-lg-6 form-section">
-                <div class="container h-100">
+                <div class="container h-100 py-4 py-lg-0">
                     <div class="row justify-content-center align-items-center h-100">
-                        <div class="col-12 col-sm-10 col-md-8 col-lg-12 col-xl-10 col-xxl-8">
+                        <div class="col-12 col-sm-11 col-md-9 col-lg-11 col-xl-9 col-xxl-8">
                             <div class="login-card">
                                 <div class="login-header">
                                     <h2 class="login-title">Welcome Back</h2>
@@ -327,6 +503,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
 
                                 <!-- Messages Container -->
                                 <div id="messages" class="message-container mb-3"></div>
+
+                                <!-- Logout Success Message -->
+                                <?php if (isset($_SESSION['logout_message'])): ?>
+                                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                    <i class="bi bi-check-circle-fill me-2"></i>
+                                    <?= htmlspecialchars($_SESSION['logout_message']) ?>
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                                <?php unset($_SESSION['logout_message']); ?>
+                                <?php endif; ?>
 
                                 <!-- Step 1: Simplified Credentials (Email + Password Only) -->
                                 <div id="step1" class="step active">

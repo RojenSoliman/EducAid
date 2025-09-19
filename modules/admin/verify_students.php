@@ -23,25 +23,32 @@ $student_counts = getStudentCounts($connection);
 /* ---------------------------
    HELPERS
 ----------------------------*/
-function fetch_students($connection, $status, $sort, $barangayFilter) {
-    $query = "
-        SELECT s.student_id, s.first_name, s.middle_name, s.last_name, s.mobile, s.email,
-               b.name AS barangay, s.payroll_no, s.unique_student_id,
-               (
-                 SELECT unique_id FROM qr_codes q2
-                 WHERE q2.student_unique_id = s.unique_student_id AND q2.payroll_number = s.payroll_no
-                 ORDER BY q2.qr_id DESC LIMIT 1
-               ) AS unique_id
-        FROM students s
-        JOIN barangays b ON s.barangay_id = b.barangay_id
-        WHERE s.status = $1";
-    $params = [$status];
-    if (!empty($barangayFilter)) {
-        $query .= " AND b.barangay_id = $2";
-        $params[] = $barangayFilter;
-    }
-    $query .= " ORDER BY s.last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
-    return pg_query_params($connection, $query, $params);
+function fetch_students($connection, $status, $sort, $barangayFilter, $searchSurname = '') {
+  $query = "
+    SELECT s.student_id, s.first_name, s.middle_name, s.last_name, s.mobile, s.email,
+         b.name AS barangay, s.payroll_no, s.student_id as display_student_id,
+         (
+         SELECT unique_id FROM qr_codes q2
+         WHERE q2.student_id = s.student_id AND q2.payroll_number = s.payroll_no
+         ORDER BY q2.qr_id DESC LIMIT 1
+         ) AS unique_id
+    FROM students s
+    JOIN barangays b ON s.barangay_id = b.barangay_id
+    WHERE s.status = $1";
+  $params = [$status];
+  $paramIndex = 2;
+  if (!empty($barangayFilter)) {
+    $query .= " AND b.barangay_id = $" . $paramIndex;
+    $params[] = $barangayFilter;
+    $paramIndex++;
+  }
+  if (!empty($searchSurname)) {
+    $query .= " AND s.last_name ILIKE $" . $paramIndex;
+    $params[] = "%$searchSurname%";
+    $paramIndex++;
+  }
+  $query .= " ORDER BY s.last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
+  return pg_query_params($connection, $query, $params);
 }
 
 /* ---------------------------
@@ -50,25 +57,49 @@ function fetch_students($connection, $status, $sort, $barangayFilter) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Revert selected actives back to applicants
-    if (isset($_POST['deactivate']) && !empty($_POST['selected_actives'])) {
-        $count = count($_POST['selected_actives']);
-        foreach ($_POST['selected_actives'] as $student_id) {
-            // Get unique_student_id for this student
-            $res = pg_query_params($connection, "SELECT unique_student_id FROM students WHERE student_id = $1", [$student_id]);
-            $row = pg_fetch_assoc($res);
-            if ($row && !empty($row['unique_student_id'])) {
-                // Delete QR code PNGs and DB records for this student
-                $qr_res = pg_query_params($connection, "SELECT unique_id FROM qr_codes WHERE student_unique_id = $1", [$row['unique_student_id']]);
-                while ($qr_row = pg_fetch_assoc($qr_res)) {
-                    $png_path = __DIR__ . '/../../assets/js/qrcode/phpqrcode-master/temp/' . $qr_row['unique_id'] . '.png';
-                    if (file_exists($png_path)) {
-                        @unlink($png_path);
-                    }
-                }
-                pg_query_params($connection, "DELETE FROM qr_codes WHERE student_unique_id = $1", [$row['unique_student_id']]);
-            }
-            pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
+  if (isset($_POST['deactivate']) && !empty($_POST['selected_actives'])) {
+    $count = count($_POST['selected_actives']);
+    foreach ($_POST['selected_actives'] as $student_id) {
+      // Delete QR code PNGs and DB records for this student
+      // Try new schema (qr_codes.student_unique_id) via join
+      $qr_res = pg_query_params(
+        $connection,
+        "SELECT q.unique_id
+         FROM qr_codes q
+         JOIN students s ON q.student_unique_id = s.unique_student_id
+         WHERE s.student_id = $1",
+        [$student_id]
+      );
+      if ($qr_res) {
+        while ($qr_row = pg_fetch_assoc($qr_res)) {
+          if (!empty($qr_row['unique_id'])) {
+            $png_path = __DIR__ . '/../../assets/js/qrcode/phpqrcode-master/temp/' . $qr_row['unique_id'] . '.png';
+            if (file_exists($png_path)) { @unlink($png_path); }
+          }
         }
+        // Delete QR rows using join
+        pg_query_params(
+          $connection,
+          "DELETE FROM qr_codes q USING students s
+           WHERE q.student_unique_id = s.unique_student_id AND s.student_id = $1",
+          [$student_id]
+        );
+      } else {
+        // Fallback to old schema (qr_codes.student_id)
+        $qr_res_old = pg_query_params($connection, "SELECT unique_id FROM qr_codes WHERE student_id = $1", [$student_id]);
+        if ($qr_res_old) {
+          while ($qr_row = pg_fetch_assoc($qr_res_old)) {
+            if (!empty($qr_row['unique_id'])) {
+              $png_path = __DIR__ . '/../../assets/js/qrcode/phpqrcode-master/temp/' . $qr_row['unique_id'] . '.png';
+              if (file_exists($png_path)) { @unlink($png_path); }
+            }
+          }
+          pg_query_params($connection, "DELETE FROM qr_codes WHERE student_id = $1", [$student_id]);
+        }
+      }
+      // Finally, revert student status
+      pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
+    }
         // Reset finalized flag
         pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
         $isFinalized = false;
@@ -126,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['generate_payroll'])) {
         // 1. Assign payroll numbers
         $result = pg_query($connection, "
-            SELECT student_id, unique_student_id
+            SELECT student_id
             FROM students
             WHERE status = 'active'
             ORDER BY last_name ASC, first_name ASC, middle_name ASC
@@ -136,7 +167,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($result) {
             while ($row = pg_fetch_assoc($result)) {
                 $student_id = $row['student_id'];
-                $unique_student_id = $row['unique_student_id'];
                 // Assign payroll number
                 pg_query_params(
                     $connection,
@@ -144,7 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     [$payroll_no, $student_id]
                 );
                 $student_payrolls[] = [
-                    'unique_student_id' => $unique_student_id,
+                    'student_id' => $student_id,
                     'payroll_no' => $payroll_no
                 ];
                 $payroll_no++;
@@ -159,15 +189,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($student_payrolls as $sp) {
             $qr_exists = pg_query_params(
                 $connection,
-                "SELECT qr_id FROM qr_codes WHERE student_unique_id = $1 AND payroll_number = $2",
-                [$sp['unique_student_id'], $sp['payroll_no']]
+                "SELECT qr_id FROM qr_codes WHERE student_id = $1 AND payroll_number = $2",
+                [$sp['student_id'], $sp['payroll_no']]
             );
             if (!pg_fetch_assoc($qr_exists)) {
                 $unique_id = 'qr_' . uniqid();
                 pg_query_params(
                     $connection,
-                    "INSERT INTO qr_codes (payroll_number, student_unique_id, unique_id, status, created_at) VALUES ($1, $2, $3, 'Pending', NOW())",
-                    [$sp['payroll_no'], $sp['unique_student_id'], $unique_id]
+                    "INSERT INTO qr_codes (payroll_number, student_id, unique_id, status, created_at) VALUES ($1, $2, $3, 'Pending', NOW())",
+                    [$sp['payroll_no'], $sp['student_id'], $unique_id]
                 );
             }
         }
@@ -187,15 +217,8 @@ $sort = $_GET['sort'] ?? 'asc';
 $barangayFilter = $_GET['barangay'] ?? '';
 $searchSurname = trim($_GET['search_surname'] ?? '');
 
-/* Active list for table (search by surname handled separately below if needed) */
-$query = "SELECT * FROM students WHERE status = 'active'";
-$params = [];
-if (!empty($searchSurname)) {
-    $query .= " AND last_name ILIKE $1";
-    $params[] = "%$searchSurname%";
-}
-$query .= " ORDER BY last_name " . ($sort === 'desc' ? 'DESC' : 'ASC');
-$activesRaw = !empty($params) ? pg_query_params($connection, $query, $params) : pg_query($connection, $query);
+/* Active list for table (with applied filters) */
+// Use helper to apply status, barangay, and surname search consistently
 
 /* Barangay options */
 $barangayOptions = [];
@@ -292,9 +315,12 @@ while ($row = pg_fetch_assoc($barangayResult)) {
                 <?php endforeach; ?>
               </select>
             </div>
-            <div class="col-md-4 d-flex align-items-end">
+            <div class="col-md-4 d-flex align-items-end gap-2">
               <button type="submit" class="btn btn-primary w-100">
                 <i class="bi bi-funnel me-1"></i> Apply Filters
+              </button>
+              <button type="button" class="btn btn-secondary w-100" id="resetFiltersBtn">
+                <i class="bi bi-x-circle me-1"></i> Reset
               </button>
             </div>
           </form>
@@ -327,10 +353,10 @@ while ($row = pg_fetch_assoc($barangayResult)) {
                 <tbody>
                   <?php
                   // Re-apply barangay filter and sort using helper to ensure consistent join with barangays
-                  $actives = fetch_students($connection, 'active', $sort, $barangayFilter);
+                  $actives = fetch_students($connection, 'active', $sort, $barangayFilter, $searchSurname);
                   if ($actives && pg_num_rows($actives) > 0):
                     while ($row = pg_fetch_assoc($actives)):
-                      $id       = (int)$row['student_id'];
+                      $id       = htmlspecialchars($row['student_id'], ENT_QUOTES);
                       $name     = htmlspecialchars($row['last_name'] . ', ' . $row['first_name'] . ' ' . $row['middle_name']);
                       $email    = htmlspecialchars($row['email'] ?? '');
                       $mobile   = htmlspecialchars($row['mobile'] ?? '');
@@ -344,9 +370,9 @@ while ($row = pg_fetch_assoc($barangayResult)) {
                         $qr_img = '../../modules/admin/phpqrcode/generate_qr.php?data=' . urlencode($unique_id);
                       }
                   ?>
-                      <tr>
-                        <td>
-                          <input type="checkbox" name="selected_actives[]" value="<?= $id ?>" <?= $isFinalized ? 'disabled' : '' ?>>
+                      <tr onclick="showStudentOptions('<?= $id ?>', '<?= htmlspecialchars($name, ENT_QUOTES) ?>', '<?= htmlspecialchars($email, ENT_QUOTES) ?>', '<?= htmlspecialchars($barangay, ENT_QUOTES) ?>')" style="cursor: pointer;" title="Click for options">
+                        <td onclick="event.stopPropagation();">
+                          <input type="checkbox" name="selected_actives[]" value="<?= $id ?>" <?= $isFinalized ? 'disabled' : '' ?> />
                         </td>
                         <td><?= $name ?></td>
                         <td><?= $email ?></td>
@@ -371,7 +397,10 @@ while ($row = pg_fetch_assoc($barangayResult)) {
                   <?php
                     endwhile;
                   else:
-                      echo '<tr><td colspan="7" class="text-center text-muted">No active students found.</td></tr>';
+                      $msg = !empty($searchSurname)
+                        ? 'No student found with the surname \'' . htmlspecialchars($searchSurname, ENT_QUOTES) . '\'.'
+                        : 'No active students found.';
+                      echo '<tr><td colspan="7" class="text-center text-muted">' . $msg . '</td></tr>';
                   endif;
                   ?>
                 </tbody>
@@ -501,6 +530,34 @@ while ($row = pg_fetch_assoc($barangayResult)) {
   </div>
 </div>
 
+<!-- Student Options Modal -->
+<div class="modal fade" id="studentOptionsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Student Options</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="studentOptionsInfo"></p>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-info" onclick="viewStudentDetails()">
+                        <i class="bi bi-eye me-2"></i>View Student Details
+                    </button>
+                    <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
+                    <button type="button" class="btn btn-danger" onclick="triggerBlacklistFromOptions()">
+                        <i class="bi bi-shield-exclamation me-2"></i>Blacklist Student
+                    </button>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Include Blacklist Modal -->
+<?php include '../../includes/admin/blacklist_modal.php'; ?>
+
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
@@ -557,13 +614,26 @@ while ($row = pg_fetch_assoc($barangayResult)) {
     form.submit();
   });
 
+  // ====== Reset Filters ======
+  document.getElementById('resetFiltersBtn')?.addEventListener('click', function(){
+    // Navigate to base path without query string
+    window.location.href = window.location.pathname;
+  });
+
   // ====== Select-all for active students ======
   window.addEventListener('load', function() {
     var isFinalized = <?= $isFinalized ? 'true' : 'false' ?>;
     // Disable/enable inputs based on finalized
     document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => cb.disabled = isFinalized);
     var revertBtn = document.getElementById('revertBtn');
-    if (revertBtn) revertBtn.disabled = isFinalized;
+
+    function updateRevertState() {
+      var selectedCount = document.querySelectorAll("input[name='selected_actives[]']:checked").length;
+      if (revertBtn) revertBtn.disabled = isFinalized || selectedCount === 0;
+    }
+
+    // Initial state
+    updateRevertState();
 
     // Payroll and QR columns are always visible; cell content is N/A if not finalized
 
@@ -574,9 +644,76 @@ while ($row = pg_fetch_assoc($barangayResult)) {
         document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => {
           if (!cb.disabled) cb.checked = selectAll.checked;
         });
+        updateRevertState();
+      });
+    }
+
+    // Individual checkbox changes
+    document.querySelectorAll("input[name='selected_actives[]']").forEach(cb => {
+      cb.addEventListener('change', updateRevertState);
+    });
+
+    // Prevent submit if none selected
+    var form = document.getElementById('activeStudentsForm');
+    if (form) {
+      form.addEventListener('submit', function(e){
+        if (document.activeElement && document.activeElement.name === 'deactivate') {
+          var count = document.querySelectorAll("input[name='selected_actives[]']:checked").length;
+          if (count === 0) {
+            e.preventDefault();
+            alert('Please select at least one student to revert.');
+          }
+        }
       });
     }
   });
+
+  // Student options functionality
+  let currentStudent = null;
+
+  function showStudentOptions(studentId, studentName, studentEmail, barangay) {
+    currentStudent = {
+      id: studentId,
+      name: studentName,
+      email: studentEmail,
+      barangay: barangay
+    };
+    
+    document.getElementById('studentOptionsInfo').innerHTML = `
+      <strong>Student:</strong> ${studentName}<br>
+      <strong>Email:</strong> ${studentEmail}<br>
+      <strong>Barangay:</strong> ${barangay}
+    `;
+    
+    new bootstrap.Modal(document.getElementById('studentOptionsModal')).show();
+  }
+
+  function viewStudentDetails() {
+    if (currentStudent) {
+      // You can implement student details viewing here
+      alert('View details functionality can be implemented here for: ' + currentStudent.name);
+    }
+  }
+
+  function triggerBlacklistFromOptions() {
+    if (currentStudent) {
+      // Close the options modal first
+      bootstrap.Modal.getInstance(document.getElementById('studentOptionsModal')).hide();
+      
+      // Show blacklist modal
+      setTimeout(() => {
+        showBlacklistModal(
+          currentStudent.id, 
+          currentStudent.name, 
+          currentStudent.email, 
+          {
+            barangay: currentStudent.barangay,
+            status: 'Active Student'
+          }
+        );
+      }, 300);
+    }
+  }
 </script>
 </body>
 </html>

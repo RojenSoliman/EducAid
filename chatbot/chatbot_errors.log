@@ -1,0 +1,37 @@
+[18-Sep-2025 22:04:59 UTC] HTTP Code: 200
+[18-Sep-2025 22:04:59 UTC] Raw Response: {
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "Hi there!  Welcome to EducAid! I'm EducAid Assistant, here to help you with your questions about our scholarship program in General Trias City, Cavite.  How can I assist you today?  😊\n"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "avgLogprobs": -0.13468388293651826
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 482,
+    "candidatesTokenCount": 47,
+    "totalTokenCount": 529,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 482
+      }
+    ],
+    "candidatesTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 47
+      }
+    ]
+  },
+  "modelVersion": "gemini-1.5-flash",
+  "responseId": "CYLMaK7mGOrUz7IPg82v2Ak"
+}
+

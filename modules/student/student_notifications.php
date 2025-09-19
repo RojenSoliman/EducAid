@@ -10,10 +10,10 @@ if (!isset($_SESSION['student_username'])) {
 $student_id = $_SESSION['student_id'];
 // Handle clear all notifications via POST and set flash
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_notifications'])) {
-    // Delete all notifications for this student
-    $deleteSql = "DELETE FROM notifications WHERE student_id = " . intval($student_id);
+    // Delete all notifications for this student (using parameterized query for TEXT student_id)
+    $deleteSql = "DELETE FROM notifications WHERE student_id = $1";
     /** @phpstan-ignore-next-line */
-    @pg_query($connection, $deleteSql);
+    @pg_query_params($connection, $deleteSql, [$student_id]);
     $_SESSION['notif_cleared'] = true;
     // Redirect back to avoid form resubmission
     header("Location: student_notifications.php");
@@ -22,9 +22,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_notifications']
 // Flash for cleared notifications
 $flash_cleared = $_SESSION['notif_cleared'] ?? false;
 unset($_SESSION['notif_cleared']);
-$selectSql = "SELECT message, created_at FROM notifications WHERE student_id = " . intval($student_id) . " ORDER BY created_at DESC";
+$selectSql = "SELECT message, created_at FROM notifications WHERE student_id = $1 ORDER BY created_at DESC";
 /** @phpstan-ignore-next-line */
-@$notifRes = pg_query($connection, $selectSql);
+@$notifRes = pg_query_params($connection, $selectSql, [$student_id]);
 $notifications = $notifRes ? pg_fetch_all($notifRes) : [];
 ?>
 
