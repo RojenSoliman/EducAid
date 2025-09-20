@@ -1,3 +1,6 @@
+<?php
+// filepath: c:\xampp\htdocs\EducAid\landingpage.php
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
