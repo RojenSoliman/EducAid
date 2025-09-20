@@ -3,6 +3,8 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
 require_once __DIR__ . '/../phpmailer/vendor/autoload.php';
+// Include our new email template
+require_once __DIR__ . '/../includes/email_templates/otp_email_template.php';
 
 class OTPService {
     private $connection;
@@ -108,7 +110,7 @@ class OTPService {
     }
     
     /**
-     * Send OTP email using PHPMailer
+     * Send OTP email using PHPMailer with professional template
      */
     private function sendOTPEmail($email, $otp, $purpose) {
         $mail = new PHPMailer(true);
@@ -129,27 +131,28 @@ class OTPService {
             
             // Content
             $mail->isHTML(true);
-            $mail->Subject = 'EducAid OTP Verification';
+            $mail->Subject = 'EducAid Verification Code - ' . $otp;
             
-            $purposeText = $purpose === 'email_change' ? 'email address change' : 'password change';
+            // Get user's name from database (optional enhancement)
+            $recipient_name = 'Admin User'; // Default name
             
-            $mail->Body = "
-                <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
-                    <h2 style='color: #007bff;'>EducAid OTP Verification</h2>
-                    <p>You have requested a <strong>{$purposeText}</strong> for your EducAid admin account.</p>
-                    <div style='background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;'>
-                        <h3 style='color: #28a745; margin: 0; font-size: 32px; letter-spacing: 3px;'>{$otp}</h3>
-                    </div>
-                    <p><strong>Important:</strong></p>
-                    <ul>
-                        <li>This OTP is valid for 10 minutes only</li>
-                        <li>Do not share this code with anyone</li>
-                        <li>If you didn't request this change, please ignore this email</li>
-                    </ul>
-                    <hr style='border: none; border-top: 1px solid #dee2e6; margin: 20px 0;'>
-                    <small style='color: #6c757d;'>This is an automated message from EducAid System. Please do not reply to this email.</small>
-                </div>
-            ";
+            // Try to get actual name from database
+            $nameQuery = "SELECT firstname, lastname FROM admin_accounts WHERE email = $1";
+            $nameResult = pg_query_params($this->connection, $nameQuery, [$email]);
+            if ($nameResult && pg_num_rows($nameResult) > 0) {
+                $nameRow = pg_fetch_assoc($nameResult);
+                $recipient_name = trim($nameRow['firstname'] . ' ' . $nameRow['lastname']) ?: 'Admin User';
+            }
+            
+            // Generate professional email using our template
+            $purposeMapping = [
+                'email_change' => 'login',
+                'password_change' => 'password_reset',
+                'login' => 'login'
+            ];
+            $templatePurpose = $purposeMapping[$purpose] ?? 'login';
+            
+            $mail->Body = generateOTPEmailTemplate($otp, $recipient_name, $templatePurpose);
             
             $mail->send();
             return true;

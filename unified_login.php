@@ -6,6 +6,9 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 
+// Include our professional email template
+require_once __DIR__ . '/includes/email_templates/otp_email_template.php';
+
 // Always return JSON for AJAX requests
 if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
     header('Content-Type: application/json');
@@ -103,7 +106,7 @@ if (
         'name' => trim($user['first_name'] . ' ' . $user['last_name'])
     ];
 
-    // Send via email (same email logic as before)
+    // Send via email (using professional template)
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
@@ -114,11 +117,16 @@ if (
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port = 587;
 
-        $mail->setFrom('dilucayaka02@gmail.com','EducAid');
+        $mail->setFrom('dilucayaka02@gmail.com','EducAid System');
         $mail->addAddress($em);
         $mail->isHTML(true);
-        $mail->Subject = 'Your EducAid Login OTP';
-        $mail->Body = "Hello {$user['first_name']},<br><br>Your one-time login code is: <strong>$otp</strong><br>Valid for 5 minutes.";
+        $mail->Subject = 'EducAid Verification Code - ' . $otp;
+        
+        // Get user's full name for personalization
+        $recipient_name = trim($user['first_name'] . ' ' . $user['last_name']) ?: 'User';
+        
+        // Use professional email template for login OTP
+        $mail->Body = generateOTPEmailTemplate($otp, $recipient_name, 'login');
 
         $mail->send();
         echo json_encode(['status'=>'otp_sent','message'=>'OTP sent to your email.']);
@@ -253,11 +261,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port = 587;
 
-            $mail->setFrom('dilucayaka02@gmail.com','EducAid');
+            $mail->setFrom('dilucayaka02@gmail.com','EducAid System');
             $mail->addAddress($email);
             $mail->isHTML(true);
-            $mail->Subject = 'EducAid Password Reset OTP';
-            $mail->Body = "Hello,<br><br>You requested a password reset for your EducAid account.<br><br>Your OTP is: <strong>$otp</strong><br><br>This code is valid for 5 minutes.<br><br>If you didn't request this reset, please ignore this email.";
+            $mail->Subject = 'EducAid Password Reset Code - ' . $otp;
+            
+            // Get user's name for personalization
+            $recipient_name = 'User';
+            if ($_SESSION['forgot_otp_role'] === 'admin') {
+                $nameQuery = "SELECT firstname, lastname FROM admin_accounts WHERE email = $1";
+            } else {
+                $nameQuery = "SELECT first_name, last_name FROM students WHERE email = $1";
+            }
+            
+            $nameResult = pg_query_params($connection, $nameQuery, [$email]);
+            if ($nameResult && pg_num_rows($nameResult) > 0) {
+                $nameRow = pg_fetch_assoc($nameResult);
+                if ($_SESSION['forgot_otp_role'] === 'admin') {
+                    $recipient_name = trim($nameRow['firstname'] . ' ' . $nameRow['lastname']) ?: 'User';
+                } else {
+                    $recipient_name = trim($nameRow['first_name'] . ' ' . $nameRow['last_name']) ?: 'User';
+                }
+            }
+            
+            // Use professional email template
+            $mail->Body = generateOTPEmailTemplate($otp, $recipient_name, 'password_reset');
 
             $mail->send();
             echo json_encode(['status'=>'success','message'=>'OTP sent to your email.']);
