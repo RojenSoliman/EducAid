@@ -221,9 +221,17 @@
                     return;
                 }
                 
+                // Validate reCAPTCHA
+                const recaptchaResponse = grecaptcha.getResponse();
+                if (!recaptchaResponse) {
+                    showMessage('Please complete the CAPTCHA verification.', 'danger');
+                    return;
+                }
+                
                 const formData = new FormData();
                 formData.append('email', email);
                 formData.append('password', password);
+                formData.append('g-recaptcha-response', recaptchaResponse);
                 
                 const submitBtn = this.querySelector('button[type="submit"]');
                 const originalText = submitBtn.innerHTML;
@@ -237,12 +245,18 @@
                         if (data.status === 'otp_sent') {
                             showStep2();
                             showMessage('Verification code sent to your email!', 'success');
+                            // Reset reCAPTCHA for next attempt
+                            grecaptcha.reset();
                         } else {
                             showMessage(data.message, 'danger');
+                            // Reset reCAPTCHA on error
+                            grecaptcha.reset();
                         }
                     },
                     function(error) {
                         setButtonLoading(submitBtn, false, originalText);
+                        // Reset reCAPTCHA on error
+                        grecaptcha.reset();
                     }
                 );
             });

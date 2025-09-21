@@ -26,6 +26,16 @@ $brand_config = [
 if (isset($custom_brand_config)) {
   $brand_config = array_merge($brand_config, $custom_brand_config);
 }
+
+// Determine if we're in a subfolder and calculate relative path to root
+$base_path = '';
+if (strpos($_SERVER['PHP_SELF'], '/website/') !== false) {
+  $base_path = '../';
+} elseif (strpos($_SERVER['PHP_SELF'], '/modules/student/') !== false) {
+  $base_path = '../../';
+} elseif (strpos($_SERVER['PHP_SELF'], '/modules/admin/') !== false) {
+  $base_path = '../../';
+}
 ?>
 
 <!-- Navbar -->
@@ -39,17 +49,6 @@ if (isset($custom_brand_config)) {
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="nav">
-      <?php if (isset($simple_nav_style) && $simple_nav_style): ?>
-      <!-- Simple navigation style for login/register pages -->
-      <div class="navbar-nav ms-auto">
-        <?php foreach ($nav_links as $link): ?>
-          <a href="<?php echo $link['href']; ?>" class="btn btn-outline-primary btn-sm <?php echo $link['active'] ? 'active' : ''; ?>">
-            <?php echo $link['label']; ?>
-          </a>
-        <?php endforeach; ?>
-      </div>
-      <?php else: ?>
-      <!-- Default navigation style for main site -->
       <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
         <?php foreach ($nav_links as $link): ?>
         <li class="nav-item">
@@ -61,14 +60,13 @@ if (isset($custom_brand_config)) {
       </ul>
       <?php if (!isset($hide_auth_buttons) || !$hide_auth_buttons): ?>
       <div class="navbar-nav ms-lg-3 mt-2 mt-lg-0">
-        <a href="unified_login.php" class="btn btn-outline-primary btn-sm me-2 mb-2 mb-lg-0">
+        <a href="<?php echo $base_path; ?>unified_login.php" class="btn btn-outline-primary btn-sm me-2 mb-2 mb-lg-0">
           <i class="bi bi-box-arrow-in-right"></i><span class="d-none d-sm-inline ms-1">Sign In</span>
         </a>
-        <a href="register.php" class="btn btn-primary btn-sm">
+        <a href="<?php echo $base_path; ?>register.php" class="btn btn-primary btn-sm">
           <i class="bi bi-journal-text"></i><span class="d-none d-sm-inline ms-1">Apply</span>
         </a>
       </div>
-      <?php endif; ?>
       <?php endif; ?>
     </div>
   </div>

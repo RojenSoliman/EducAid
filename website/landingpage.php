@@ -15,10 +15,13 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <!-- Bootstrap Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
-  <link href="assets/css/website/landing_page.css" rel="stylesheet" />
+  <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
 </head>
 <body>
   <?php
+  // Determine base path for links
+  $base_path = '../';
+  
   // Custom navigation for landing page
   $custom_nav_links = [
     ['href' => '#home', 'label' => 'Home', 'active' => true],
@@ -29,8 +32,8 @@
     ['href' => '#contact', 'label' => 'Contact', 'active' => false]
   ];
   
-  include 'includes/website/topbar.php';
-  include 'includes/website/navbar.php';
+  include '../includes/website/topbar.php';
+  include '../includes/website/navbar.php';
   ?>
 
   <!-- Hero -->
@@ -45,8 +48,8 @@
                 <h1 class="display-5 mb-2">Educational Assistance, Simplified.</h1>
                 <p class="mb-4">Apply, upload requirements, track status, and claim assistance with QR — all in one city-run portal designed for students and families in General Trias.</p>
                 <div class="d-flex gap-2 justify-content-center justify-content-lg-start">
-                  <a href="register.php" class="btn cta-btn btn-primary-custom"><i class="bi bi-journal-text me-2"></i>Apply Now</a>
-                  <a href="unified_login.php" class="btn cta-btn btn-outline-custom"><i class="bi bi-box-arrow-in-right me-2"></i>Sign In</a>
+                  <a href="<?php echo $base_path; ?>register.php" class="btn cta-btn btn-primary-custom"><i class="bi bi-journal-text me-2"></i>Apply Now</a>
+                  <a href="<?php echo $base_path; ?>unified_login.php" class="btn cta-btn btn-outline-custom"><i class="bi bi-box-arrow-in-right me-2"></i>Sign In</a>
                 </div>
               </div>
               <div class="text-center">
@@ -81,6 +84,32 @@
       </div>
     </div>
   </div>
+
+  <!-- Mayor's Message -->
+  <section class="mayor-section bg-body-tertiary">
+    <div class="container">
+      <div class="row g-4 align-items-center">
+        <div class="col-md-2 text-center text-md-start">
+          <img class="mayor-photo" src="https://www.generaltrias.gov.ph/storage/image_upload/mayor.PNG" alt="Mayor Jon-Jon Ferrer" />
+        </div>
+        <div class="col-md-10">
+          <h2 class="section-title mb-2">Message from the Mayor</h2>
+          <p class="mb-2">Welcome to the City Government of General Trias' online platform — built to enhance connectivity, accessibility, and transparency for our thriving community. Our vision is a modern and sustainable city where every citizen can prosper.</p>
+          <p class="mb-2">Through this portal, we aim to empower students and families with timely information and accessible services, upholding transparency and accountability in governance.</p>
+          <div class="d-flex align-items-center gap-3 mb-2">
+            <img class="mayor-sign" src="https://www.generaltrias.gov.ph/storage/image_upload/mayorpng.png" alt="Mayor signature" />
+            <div class="small">
+              <strong>Hon. Luis "Jon‑Jon" Ferrer IV</strong><br/>
+              City Mayor, General Trias
+            </div>
+          </div>
+          <div class="mt-2">
+            <a class="link-primary" href="https://generaltrias.gov.ph/" target="_blank" rel="noopener">Read full message on the official website</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- About -->
   <section id="about">
@@ -303,7 +332,7 @@
               <li><i class="bi bi-geo-alt me-2 text-primary"></i>City Government of General Trias, Cavite</li>
             </ul>
             <div class="d-flex gap-2 mt-3">
-              <a href="#apply" class="btn btn-green cta-btn"><i class="bi bi-journal-text me-2"></i>Start Application</a>
+              <a href="<?php echo $base_path; ?>register.php" class="btn btn-green cta-btn"><i class="bi bi-journal-text me-2"></i>Start Application</a>
               <a href="#announcements" class="btn btn-outline-custom cta-btn">See Announcements</a>
             </div>
           </div>

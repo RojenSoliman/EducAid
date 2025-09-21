@@ -1,3 +1,14 @@
+<?php
+// Determine if we're in a subfolder and calculate relative path to root
+$base_path = '';
+if (strpos($_SERVER['PHP_SELF'], '/website/') !== false) {
+  $base_path = '../';
+} elseif (strpos($_SERVER['PHP_SELF'], '/modules/student/') !== false) {
+  $base_path = '../../';
+} elseif (strpos($_SERVER['PHP_SELF'], '/modules/admin/') !== false) {
+  $base_path = '../../';
+}
+?>
 <!-- Top information bar -->
 <div class="topbar py-2">
   <div class="container d-flex align-items-center justify-content-between gap-3 flex-wrap">

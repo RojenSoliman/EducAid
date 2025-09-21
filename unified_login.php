@@ -1,5 +1,6 @@
 <?php
 include __DIR__ . '/config/database.php';
+include __DIR__ . '/config/recaptcha_config.php';
 session_start();
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -8,6 +9,54 @@ require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 
 // Include our professional email template
 require_once __DIR__ . '/includes/email_templates/otp_email_template.php';
+
+// Function to verify reCAPTCHA v3
+function verifyRecaptcha($recaptchaResponse, $action = 'login') {
+    $secretKey = RECAPTCHA_SECRET_KEY;
+    
+    if (empty($recaptchaResponse)) {
+        return ['success' => false, 'message' => 'No CAPTCHA response provided'];
+    }
+    
+    $url = RECAPTCHA_VERIFY_URL;
+    $data = [
+        'secret' => $secretKey,
+        'response' => $recaptchaResponse,
+        'remoteip' => $_SERVER['REMOTE_ADDR']
+    ];
+    
+    $options = [
+        'http' => [
+            'header' => "Content-type: application/x-www-form-urlencoded\r\n",
+            'method' => 'POST',
+            'content' => http_build_query($data)
+        ]
+    ];
+    
+    $context = stream_context_create($options);
+    $result = file_get_contents($url, false, $context);
+    
+    if ($result === false) {
+        return ['success' => false, 'message' => 'CAPTCHA verification failed'];
+    }
+    
+    $resultJson = json_decode($result, true);
+    
+    // For v3, check success, score, and action
+    if (isset($resultJson['success']) && $resultJson['success'] === true) {
+        $score = $resultJson['score'] ?? 0;
+        $actionReceived = $resultJson['action'] ?? '';
+        
+        // Score threshold (0.5 is recommended, lower = more likely bot)
+        if ($score >= 0.5 && $actionReceived === $action) {
+            return ['success' => true, 'score' => $score];
+        } else {
+            return ['success' => false, 'message' => 'CAPTCHA score too low or action mismatch', 'score' => $score];
+        }
+    }
+    
+    return ['success' => false, 'message' => 'CAPTCHA verification failed'];
+}
 
 // Always return JSON for AJAX requests
 if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
@@ -20,6 +69,14 @@ if (
     && !isset($_POST['login_action'])
     && !isset($_POST['forgot_action'])
 ) {
+    // Verify reCAPTCHA v3 first
+    $recaptchaResponse = $_POST['g-recaptcha-response'] ?? '';
+    $captchaResult = verifyRecaptcha($recaptchaResponse, 'login');
+    if (!$captchaResult['success']) {
+        echo json_encode(['status'=>'error','message'=>'Security verification failed. Please try again.']);
+        exit;
+    }
+    
     $em = trim($_POST['email']);
     $pw = $_POST['password'];
 
@@ -362,6 +419,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/css/website/landing_page.css" rel="stylesheet">
     
+    <!-- Google reCAPTCHA v3 -->
+    <script src="https://www.google.com/recaptcha/api.js?render=<?php echo RECAPTCHA_SITE_KEY; ?>"></script>
+    
     <style>
         /* Login page specific adjustments for navbar */
         body.login-page {
@@ -404,6 +464,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
         .navbar .btn-outline-primary:hover {
             background: var(--thm-primary);
             color: white;
+        }
+        
+        /* reCAPTCHA v3 badge positioning */
+        .grecaptcha-badge {
+            z-index: 9999 !important;
+            position: fixed !important;
+            bottom: 14px !important;
+            right: 14px !important;
         }
     </style>
 
@@ -561,8 +629,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                                 </button>
                                             </div>
                                         </div>
+                                        
                                         <div class="d-grid">
-                                            <button type="submit" class="btn btn-primary btn-lg">
+                                            <button type="submit" class="btn btn-primary btn-lg" id="loginSubmitBtn">
                                                 <i class="bi bi-envelope me-2"></i>Send Verification Code
                                             </button>
                                         </div>
@@ -702,6 +771,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
 
     <script src="assets/js/bootstrap.bundle.min.js"></script>
     <script src="assets/js/login.js"></script>
+    
+    <!-- reCAPTCHA v3 Integration -->
+    <script>
+        // Override the login form submission to include reCAPTCHA v3
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginForm = document.getElementById('loginForm');
+            if (loginForm) {
+                // Remove existing event listeners and add our own
+                const newForm = loginForm.cloneNode(true);
+                loginForm.parentNode.replaceChild(newForm, loginForm);
+                
+                newForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    const email = document.getElementById('email').value.trim();
+                    const password = document.getElementById('password').value;
+                    
+                    // Basic validation
+                    if (!email || !password) {
+                        showMessage('Please fill in all fields.', 'danger');
+                        return;
+                    }
+                    
+                    if (!isValidEmail(email)) {
+                        showMessage('Please enter a valid email address.', 'danger');
+                        return;
+                    }
+                    
+                    const submitBtn = this.querySelector('button[type="submit"]');
+                    const originalText = submitBtn.innerHTML;
+                    
+                    setButtonLoading(submitBtn, true);
+
+                    // Get reCAPTCHA v3 token
+                    grecaptcha.ready(function() {
+                        grecaptcha.execute('<?php echo RECAPTCHA_SITE_KEY; ?>', {action: 'login'}).then(function(token) {
+                            const formData = new FormData();
+                            formData.append('email', email);
+                            formData.append('password', password);
+                            formData.append('g-recaptcha-response', token);
+
+                            fetch('unified_login.php', {
+                                method: 'POST',
+                                body: formData,
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                setButtonLoading(submitBtn, false, originalText);
+                                
+                                if (data.status === 'otp_sent') {
+                                    showStep2();
+                                    showMessage('Verification code sent to your email!', 'success');
+                                } else {
+                                    showMessage(data.message, 'danger');
+                                }
+                            })
+                            .catch(error => {
+                                setButtonLoading(submitBtn, false, originalText);
+                                showMessage('Connection error. Please try again.', 'danger');
+                            });
+                        });
+                    });
+                });
+            }
+        });
+    </script>
 
 </body>
 </html>
