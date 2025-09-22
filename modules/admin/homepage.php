@@ -1,6 +1,35 @@
 <?php
-include __DIR__ . '/../../config/database.php';
 session_start();
+
+// Demo mode handling: support a persistent toggle via session + robust query parsing
+// 1) Toggle: ?toggle_demo=1 -> flips the current mode and redirects (PRG)
+if (isset($_GET['toggle_demo'])) {
+  $_SESSION['DEMO_MODE'] = !($_SESSION['DEMO_MODE'] ?? false);
+  header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?'));
+  exit;
+}
+
+// 2) Explicit set: ?demo=1|true|yes|on or ?demo=0|false|no|off -> sets and redirects (PRG)
+if (isset($_GET['demo'])) {
+  $val = strtolower((string)$_GET['demo']);
+  $truthy = ['1','true','yes','on'];
+  $falsy  = ['0','false','no','off',''];
+  if (in_array($val, $truthy, true)) {
+    $_SESSION['DEMO_MODE'] = true;
+  } elseif (in_array($val, $falsy, true)) {
+    $_SESSION['DEMO_MODE'] = false;
+  }
+  header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?'));
+  exit;
+}
+
+// Effective mode comes from session (defaults to off)
+$DEMO_MODE = $_SESSION['DEMO_MODE'] ?? false;
+
+// Only include DB when not in demo mode
+if (!$DEMO_MODE) {
+  include __DIR__ . '/../../config/database.php';
+}
 if (!isset($_SESSION['admin_username'])) {
   header("Location: ../../unified_login.php");
   exit;
@@ -8,103 +37,175 @@ if (!isset($_SESSION['admin_username'])) {
 
 $municipality_id = 1; // Default municipality
 
-// Fetch municipality max capacity
-$capacityResult = pg_query_params($connection, "SELECT max_capacity FROM municipalities WHERE municipality_id = $1", [$municipality_id]);
+// Fetch municipality max capacity (or use demo value)
 $maxCapacity = null;
-if ($capacityResult && pg_num_rows($capacityResult) > 0) {
+if ($DEMO_MODE) {
+  $maxCapacity = 1200;
+} else {
+  $capacityResult = pg_query_params($connection, "SELECT max_capacity FROM municipalities WHERE municipality_id = $1", [$municipality_id]);
+  if ($capacityResult && pg_num_rows($capacityResult) > 0) {
     $capacityRow = pg_fetch_assoc($capacityResult);
     $maxCapacity = $capacityRow['max_capacity'];
+  }
 }
 
-// Fetch barangay distribution
-$barangayRes = pg_query($connection, "
-  SELECT b.name AS barangay,
-         SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS verified,
-         SUM(CASE WHEN status='applicant' THEN 1 ELSE 0 END) AS applicant
-  FROM students st
-  JOIN barangays b ON st.barangay_id = b.barangay_id
-  GROUP BY b.name
-  HAVING COUNT(*) > 0
-  ORDER BY b.name");
+// Fetch barangay distribution (or use demo data)
 $barangayLabels = $barangayVerified = $barangayApplicant = [];
-while ($row = pg_fetch_assoc($barangayRes)) {
-    $barangayLabels[] = $row['barangay'];
-    $barangayVerified[] = (int)$row['verified'];
-    $barangayApplicant[] = (int)$row['applicant'];
+if ($DEMO_MODE) {
+    $barangayLabels = ['Santiago','San Roque','Poblacion','Mataas na Bayan','Bucal','Tamacan'];
+    $barangayVerified = [84, 67, 112, 93, 45, 61];
+    $barangayApplicant = [40, 25, 58, 32, 18, 27];
+} else {
+    $barangayRes = pg_query($connection, "
+      SELECT b.name AS barangay,
+             SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS verified,
+             SUM(CASE WHEN status='applicant' THEN 1 ELSE 0 END) AS applicant
+      FROM students st
+      JOIN barangays b ON st.barangay_id = b.barangay_id
+      GROUP BY b.name
+      HAVING COUNT(*) > 0
+      ORDER BY b.name");
+    while ($row = pg_fetch_assoc($barangayRes)) {
+        $barangayLabels[] = $row['barangay'];
+        $barangayVerified[] = (int)$row['verified'];
+        $barangayApplicant[] = (int)$row['applicant'];
+    }
 }
 
-// Fetch gender distribution
-$genderRes = pg_query($connection, "
-  SELECT sex AS gender,
-         SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS verified,
-         SUM(CASE WHEN status='applicant' THEN 1 ELSE 0 END) AS applicant
-  FROM students
-  WHERE sex IS NOT NULL
-  GROUP BY sex
-  HAVING COUNT(*) > 0
-  ORDER BY sex");
+// Fetch gender distribution (or use demo data)
 $genderLabels = $genderVerified = $genderApplicant = [];
-while ($row = pg_fetch_assoc($genderRes)) {
-    $genderLabels[] = $row['gender'];
-    $genderVerified[] = (int)$row['verified'];
-    $genderApplicant[] = (int)$row['applicant'];
+if ($DEMO_MODE) {
+    $genderLabels = ['Male','Female'];
+    $genderVerified = [260, 224];
+    $genderApplicant = [130, 228];
+} else {
+    $genderRes = pg_query($connection, "
+      SELECT sex AS gender,
+             SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS verified,
+             SUM(CASE WHEN status='applicant' THEN 1 ELSE 0 END) AS applicant
+      FROM students
+      WHERE sex IS NOT NULL
+      GROUP BY sex
+      HAVING COUNT(*) > 0
+      ORDER BY sex");
+    while ($row = pg_fetch_assoc($genderRes)) {
+        $genderLabels[] = $row['gender'];
+        $genderVerified[] = (int)$row['verified'];
+        $genderApplicant[] = (int)$row['applicant'];
+    }
 }
 
-// Fetch university distribution
-$universityRes = pg_query($connection, "
-  SELECT u.name AS university,
-         SUM(CASE WHEN st.status='active' THEN 1 ELSE 0 END) AS verified,
-         SUM(CASE WHEN st.status='applicant' THEN 1 ELSE 0 END) AS applicant
-  FROM students st
-  JOIN universities u ON st.university_id = u.university_id
-  GROUP BY u.name
-  HAVING COUNT(*) > 0
-  ORDER BY u.name");
+// Fetch university distribution (or use demo data)
 $universityLabels = $universityVerified = $universityApplicant = [];
-while ($row = pg_fetch_assoc($universityRes)) {
-    $universityLabels[] = $row['university'];
-    $universityVerified[] = (int)$row['verified'];
-    $universityApplicant[] = (int)$row['applicant'];
+if ($DEMO_MODE) {
+    $universityLabels = [
+      'Lyceum of the Philippines University - Cavite',
+      'Cavite State University',
+      'De La Salle University - Dasmariñas',
+      'Far Eastern University',
+      'Polytechnic University of the Philippines'
+    ];
+    $universityVerified = [95, 132, 78, 54, 60];
+    $universityApplicant = [42, 66, 40, 22, 30];
+} else {
+    $universityRes = pg_query($connection, "
+      SELECT u.name AS university,
+             SUM(CASE WHEN st.status='active' THEN 1 ELSE 0 END) AS verified,
+             SUM(CASE WHEN st.status='applicant' THEN 1 ELSE 0 END) AS applicant
+      FROM students st
+      JOIN universities u ON st.university_id = u.university_id
+      GROUP BY u.name
+      HAVING COUNT(*) > 0
+      ORDER BY u.name");
+    while ($row = pg_fetch_assoc($universityRes)) {
+        $universityLabels[] = $row['university'];
+        $universityVerified[] = (int)$row['verified'];
+        $universityApplicant[] = (int)$row['applicant'];
+    }
 }
 
-// Fetch year level distribution
-$yearLevelRes = pg_query($connection, "
-  SELECT yl.name AS year_level,
-         SUM(CASE WHEN st.status='active' THEN 1 ELSE 0 END) AS verified,
-         SUM(CASE WHEN st.status='applicant' THEN 1 ELSE 0 END) AS applicant
-  FROM students st
-  JOIN year_levels yl ON st.year_level_id = yl.year_level_id
-  GROUP BY yl.name, yl.sort_order
-  HAVING COUNT(*) > 0
-  ORDER BY yl.sort_order");
+// Fetch year level distribution (or use demo data)
 $yearLevelLabels = $yearLevelVerified = $yearLevelApplicant = [];
-while ($row = pg_fetch_assoc($yearLevelRes)) {
-    $yearLevelLabels[] = $row['year_level'];
-    $yearLevelVerified[] = (int)$row['verified'];
-    $yearLevelApplicant[] = (int)$row['applicant'];
+if ($DEMO_MODE) {
+    $yearLevelLabels = ['1st Year','2nd Year','3rd Year','4th Year'];
+    $yearLevelVerified = [140, 160, 100, 84];
+    $yearLevelApplicant = [90, 72, 56, 40];
+} else {
+    $yearLevelRes = pg_query($connection, "
+      SELECT yl.name AS year_level,
+             SUM(CASE WHEN st.status='active' THEN 1 ELSE 0 END) AS verified,
+             SUM(CASE WHEN st.status='applicant' THEN 1 ELSE 0 END) AS applicant
+      FROM students st
+      JOIN year_levels yl ON st.year_level_id = yl.year_level_id
+      GROUP BY yl.name, yl.sort_order
+      HAVING COUNT(*) > 0
+      ORDER BY yl.sort_order");
+    while ($row = pg_fetch_assoc($yearLevelRes)) {
+        $yearLevelLabels[] = $row['year_level'];
+        $yearLevelVerified[] = (int)$row['verified'];
+        $yearLevelApplicant[] = (int)$row['applicant'];
+    }
 }
 
-// Fetch past distributions (most recent 5)
-$pastDistributionsRes = pg_query($connection, "
-  SELECT 
-    ds.snapshot_id,
-    ds.distribution_date,
-    ds.location,
-    ds.total_students_count,
-    ds.academic_year,
-    ds.semester,
-    ds.finalized_at,
-    ds.notes,
-    CONCAT(a.first_name, ' ', a.last_name) as finalized_by_name
-  FROM distribution_snapshots ds
-  LEFT JOIN admins a ON ds.finalized_by = a.admin_id
-  ORDER BY ds.finalized_at DESC
-  LIMIT 5
-");
+// Fetch past distributions (or use demo data)
 $pastDistributions = [];
-if ($pastDistributionsRes) {
-    while ($row = pg_fetch_assoc($pastDistributionsRes)) {
-        $pastDistributions[] = $row;
+if ($DEMO_MODE) {
+    $pastDistributions = [
+      [
+        'snapshot_id' => 1,
+        'distribution_date' => date('Y-m-d', strtotime('-20 days')),
+        'location' => 'Town Plaza',
+        'total_students_count' => 520,
+        'academic_year' => '2025-2026',
+        'semester' => '1st Sem',
+        'finalized_at' => date('Y-m-d H:i:s', strtotime('-19 days 15:00')),
+        'notes' => 'Smooth distribution; minor queue delays.',
+        'finalized_by_name' => 'Admin User'
+      ],
+      [
+        'snapshot_id' => 2,
+        'distribution_date' => date('Y-m-d', strtotime('-90 days')),
+        'location' => 'Municipal Gym',
+        'total_students_count' => 480,
+        'academic_year' => '2024-2025',
+        'semester' => '2nd Sem',
+        'finalized_at' => date('Y-m-d H:i:s', strtotime('-89 days 14:30')),
+        'notes' => '',
+        'finalized_by_name' => 'Jane Doe'
+      ],
+      [
+        'snapshot_id' => 3,
+        'distribution_date' => date('Y-m-d', strtotime('-200 days')),
+        'location' => 'Barangay Hall',
+        'total_students_count' => 450,
+        'academic_year' => '2024-2025',
+        'semester' => '1st Sem',
+        'finalized_at' => date('Y-m-d H:i:s', strtotime('-199 days 10:15')),
+        'notes' => 'Special priority lanes tested successfully.',
+        'finalized_by_name' => 'John Smith'
+      ]
+    ];
+} else {
+    $pastDistributionsRes = pg_query($connection, "
+      SELECT 
+        ds.snapshot_id,
+        ds.distribution_date,
+        ds.location,
+        ds.total_students_count,
+        ds.academic_year,
+        ds.semester,
+        ds.finalized_at,
+        ds.notes,
+        CONCAT(a.first_name, ' ', a.last_name) as finalized_by_name
+      FROM distribution_snapshots ds
+      LEFT JOIN admins a ON ds.finalized_by = a.admin_id
+      ORDER BY ds.finalized_at DESC
+      LIMIT 5
+    ");
+    if ($pastDistributionsRes) {
+        while ($row = pg_fetch_assoc($pastDistributionsRes)) {
+            $pastDistributions[] = $row;
+        }
     }
 }
 ?>
@@ -135,8 +236,16 @@ if ($pastDistributionsRes) {
       </nav>
 
       <div class="container-fluid py-4 px-4">
-        <h1 class="fw-bold mb-3">Welcome, <?php echo htmlspecialchars($_SESSION['admin_username']); ?></h1>
-        <p class="text-muted mb-4">Here you can manage student registrations, verify applicants, and more.</p>
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+          <h1 class="fw-bold mb-1 mb-2 mb-sm-0">Welcome, <?php echo htmlspecialchars($_SESSION['admin_username']); ?></h1>
+          <a class="btn btn-sm <?php echo $DEMO_MODE ? 'btn-warning' : 'btn-outline-warning'; ?> ms-sm-2" href="?toggle_demo=1" title="Toggle demo mode">
+            <i class="bi bi-camera-video me-1"></i><?php echo $DEMO_MODE ? 'Exit Demo' : 'Enter Demo'; ?>
+          </a>
+          <?php if ($DEMO_MODE): ?>
+            <span class="badge bg-warning text-dark ms-2"><i class="bi bi-lightning-charge me-1"></i>Demo Mode</span>
+          <?php endif; ?>
+        </div>
+        <p class="text-muted mb-0">Here you can manage student registrations, verify applicants, and more.</p>
 
         <!-- Dashboard Tiles -->
         <div class="dashboard-tile-row">
@@ -144,14 +253,14 @@ if ($pastDistributionsRes) {
             <div class="tile-icon"><i class="bi bi-people-fill"></i></div>
             <div class="tile-number">
               <?php
-                $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status IN ('applicant', 'active')");
-                $row = pg_fetch_assoc($result);
-                $totalStudents = $row['total'];
-                if ($maxCapacity !== null) {
-                    echo $totalStudents . '/' . $maxCapacity;
+                if ($DEMO_MODE) {
+                  $totalStudents = array_sum($genderVerified ?? []) + array_sum($genderApplicant ?? []);
                 } else {
-                    echo $totalStudents;
+                  $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status IN ('applicant', 'active')");
+                  $row = pg_fetch_assoc($result);
+                  $totalStudents = (int)$row['total'];
                 }
+                echo $maxCapacity !== null ? ($totalStudents . '/' . $maxCapacity) : $totalStudents;
               ?>
             </div>
             <div class="tile-label">
@@ -163,9 +272,13 @@ if ($pastDistributionsRes) {
             <div class="tile-icon"><i class="bi bi-clipboard-check"></i></div>
             <div class="tile-number">
               <?php
-                $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'under_registration'");
-                $row = pg_fetch_assoc($result);
-                echo $row['total'];
+                if ($DEMO_MODE) {
+                  echo 37; // sample
+                } else {
+                  $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'under_registration'");
+                  $row = pg_fetch_assoc($result);
+                  echo $row['total'];
+                }
               ?>
             </div>
             <div class="tile-label">Still on Registration</div>
@@ -175,9 +288,13 @@ if ($pastDistributionsRes) {
             <div class="tile-icon"><i class="bi bi-hourglass-split"></i></div>
             <div class="tile-number">
               <?php
-                $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'applicant'");
-                $row = pg_fetch_assoc($result);
-                echo $row['total'];
+                if ($DEMO_MODE) {
+                  echo array_sum($genderApplicant ?? []);
+                } else {
+                  $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'applicant'");
+                  $row = pg_fetch_assoc($result);
+                  echo $row['total'];
+                }
               ?>
             </div>
             <div class="tile-label">Pending Applications</div>
@@ -187,9 +304,13 @@ if ($pastDistributionsRes) {
             <div class="tile-icon"><i class="bi bi-check-circle"></i></div>
             <div class="tile-number">
               <?php
-                $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'active'");
-                $row = pg_fetch_assoc($result);
-                echo $row['total'];
+                if ($DEMO_MODE) {
+                  echo array_sum($genderVerified ?? []);
+                } else {
+                  $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status = 'active'");
+                  $row = pg_fetch_assoc($result);
+                  echo $row['total'];
+                }
               ?>
             </div>
             <div class="tile-label">Verified Students</div>
@@ -230,58 +351,34 @@ if ($pastDistributionsRes) {
                 </a>
               </div>
               <div class="custom-card-body">
-                <div class="table-responsive">
-                  <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                      <tr>
-                        <th><i class="bi bi-calendar me-1"></i>Date</th>
-                        <th><i class="bi bi-geo-alt me-1"></i>Location</th>
-                        <th><i class="bi bi-people me-1"></i>Students</th>
-                        <th><i class="bi bi-mortarboard me-1"></i>Academic Period</th>
-                        <th><i class="bi bi-person-check me-1"></i>Finalized By</th>
-                        <th><i class="bi bi-clock me-1"></i>Finalized At</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <?php foreach ($pastDistributions as $distribution): ?>
-                      <tr>
-                        <td>
-                          <span class="badge bg-primary">
-                            <?php echo date('M d, Y', strtotime($distribution['distribution_date'])); ?>
-                          </span>
-                        </td>
-                        <td>
-                          <i class="bi bi-geo-alt text-muted me-1"></i>
-                          <?php echo htmlspecialchars($distribution['location']); ?>
-                        </td>
-                        <td>
-                          <span class="badge bg-success">
-                            <?php echo number_format($distribution['total_students_count']); ?> students
-                          </span>
-                        </td>
-                        <td>
-                          <?php if ($distribution['academic_year'] && $distribution['semester']): ?>
-                            <small class="text-muted">
-                              <?php echo htmlspecialchars($distribution['academic_year'] . ' - ' . $distribution['semester']); ?>
-                            </small>
-                          <?php else: ?>
-                            <small class="text-muted">-</small>
-                          <?php endif; ?>
-                        </td>
-                        <td>
-                          <small class="text-muted">
-                            <?php echo htmlspecialchars($distribution['finalized_by_name'] ?: 'Unknown'); ?>
-                          </small>
-                        </td>
-                        <td>
-                          <small class="text-muted">
-                            <?php echo date('M d, Y H:i', strtotime($distribution['finalized_at'])); ?>
-                          </small>
-                        </td>
-                      </tr>
-                      <?php endforeach; ?>
-                    </tbody>
-                  </table>
+                <div class="row g-3">
+                  <?php foreach ($pastDistributions as $distribution): ?>
+                  <div class="col-12 col-md-6 col-xl-4">
+                    <div class="border rounded-3 p-3 h-100 shadow-sm">
+                      <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="badge bg-primary">
+                          <i class="bi bi-calendar me-1"></i><?php echo date('M d, Y', strtotime($distribution['distribution_date'])); ?>
+                        </span>
+                        <span class="badge bg-success">
+                          <i class="bi bi-people me-1"></i><?php echo number_format($distribution['total_students_count']); ?> students
+                        </span>
+                      </div>
+                      <div class="mb-2 text-truncate" title="<?php echo htmlspecialchars($distribution['location']); ?>">
+                        <i class="bi bi-geo-alt text-muted me-1"></i>
+                        <strong><?php echo htmlspecialchars($distribution['location']); ?></strong>
+                      </div>
+                      <div class="d-flex flex-wrap small text-muted mb-2">
+                        <?php if ($distribution['academic_year'] && $distribution['semester']): ?>
+                          <span class="me-2"><i class="bi bi-mortarboard me-1"></i><?php echo htmlspecialchars($distribution['academic_year'] . ' - ' . $distribution['semester']); ?></span>
+                        <?php endif; ?>
+                      </div>
+                      <div class="d-flex justify-content-between align-items-center small text-muted">
+                        <span><i class="bi bi-person-check me-1"></i><?php echo htmlspecialchars($distribution['finalized_by_name'] ?: 'Unknown'); ?></span>
+                        <span><i class="bi bi-clock me-1"></i><?php echo date('M d, Y H:i', strtotime($distribution['finalized_at'])); ?></span>
+                      </div>
+                    </div>
+                  </div>
+                  <?php endforeach; ?>
                 </div>
                 
                 <?php if (!empty($pastDistributions[0]['notes'])): ?>
@@ -489,4 +586,4 @@ if ($pastDistributionsRes) {
 </body>
 </html>
 
-<?php pg_close($connection); ?>
+<?php if (!$DEMO_MODE && isset($connection)) { pg_close($connection); } ?>
