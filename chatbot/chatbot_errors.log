@@ -35,3 +35,40 @@
   "responseId": "CYLMaK7mGOrUz7IPg82v2Ak"
 }
 
+[22-Sep-2025 05:06:56 Europe/Berlin] HTTP Code: 200
+[22-Sep-2025 05:06:56 Europe/Berlin] Raw Response: {
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "Hi there! Welcome to EducAid!  I'm EducAid Assistant, here to help you with your inquiries about our scholarship program in General Trias City, Cavite.  How can I assist you today?  Let me know what you'd like to know about our program, and I'll do my best to answer your questions.  Remember to always verify information on our official portal for the most up-to-date details.\n"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "avgLogprobs": -0.096182812815127167
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 482,
+    "candidatesTokenCount": 92,
+    "totalTokenCount": 574,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 482
+      }
+    ],
+    "candidatesTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 92
+      }
+    ]
+  },
+  "modelVersion": "gemini-1.5-flash",
+  "responseId": "UL3QaPjLHu3Uz7IP2NS36Qg"
+}
+

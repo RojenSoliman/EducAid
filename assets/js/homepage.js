@@ -3,6 +3,13 @@ document.addEventListener("DOMContentLoaded", function () {
   const sidebar = document.getElementById("sidebar");
   const toggleBtn = document.getElementById("menu-toggle");
   const backdrop = document.getElementById("sidebar-backdrop");
+  const homeSection = document.querySelector(".home-section");
+
+  // DEBUG: Disable transitions for sidebar and content to avoid stuck states on refresh
+  sidebar.style.transition = 'none';
+  if (homeSection) {
+    homeSection.style.transition = 'none';
+  }
 
   function isMobile() {
     return window.innerWidth <= 768;

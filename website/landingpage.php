@@ -1,5 +1,30 @@
 <?php
 // filepath: c:\xampp\htdocs\EducAid\landingpage.php
+
+// Start session and check verification
+session_start();
+
+// Check if user has completed CAPTCHA verification
+if (!isset($_SESSION['captcha_verified']) || $_SESSION['captcha_verified'] !== true) {
+    // Redirect to security verification page
+    header('Location: security_verification.php');
+    exit;
+}
+
+// Optional: Check if verification is still valid (expires after 24 hours)
+$verificationTime = $_SESSION['captcha_verified_time'] ?? 0;
+$expirationTime = 24 * 60 * 60; // 24 hours in seconds
+
+if (time() - $verificationTime > $expirationTime) {
+    // Verification expired, require re-verification
+    unset($_SESSION['captcha_verified']);
+    unset($_SESSION['captcha_verified_time']);
+    header('Location: security_verification.php');
+    exit;
+}
+
+// Include reCAPTCHA v2 configuration
+require_once '../config/recaptcha_v2_config.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -16,6 +41,10 @@
   <!-- Bootstrap Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
+  <link href="../assets/css/website/recaptcha_v2.css" rel="stylesheet" />
+  
+  <!-- Google reCAPTCHA v2 -->
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
   <?php
@@ -365,10 +394,11 @@
             <div class="col-6 col-md-4"><h6>Links</h6><ul class="list-unstyled small"><li><a href="#faq">FAQs</a></li><li><a href="requirements.php">Requirements</a></li><li><a href="#contact">Contact</a></li></ul></div>
             <div class="col-12 col-md-4 mt-3 mt-md-0">
               <h6>Stay Updated</h6>
-              <form class="d-flex gap-2">
-                <input type="email" class="form-control" placeholder="Email address" />
-                <button class="btn btn-light" type="button">Subscribe</button>
+              <form id="newsletterForm" class="d-flex gap-2">
+                <input type="email" id="emailInput" class="form-control" placeholder="Email address" required />
+                <button class="btn btn-light" type="submit" id="subscribeBtn">Subscribe</button>
               </form>
+              <div id="newsletterMessage" class="small text-center mt-2" style="display: none;"></div>
             </div>
           </div>
         </div>
@@ -432,6 +462,73 @@
 
   // Current year
   document.getElementById('year').textContent = new Date().getFullYear();
+
+  // Newsletter form handler (no CAPTCHA)
+  const newsletterForm = document.getElementById('newsletterForm');
+  const newsletterMessage = document.getElementById('newsletterMessage');
+  const subscribeBtn = document.getElementById('subscribeBtn');
+  
+  if (newsletterForm) {
+    newsletterForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const email = document.getElementById('emailInput').value;
+      
+      // Reset message
+      newsletterMessage.style.display = 'none';
+      newsletterMessage.className = 'small text-center mt-2';
+      
+      // Validate email
+      if (!email || !email.includes('@')) {
+        showNewsletterMessage('Please enter a valid email address', 'error');
+        return;
+      }
+      
+      // Disable button and show loading
+      subscribeBtn.disabled = true;
+      subscribeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Subscribing...';
+      
+      try {
+        const formData = new FormData();
+        formData.append('email', email);
+        
+        const response = await fetch('newsletter_subscribe.php', {
+          method: 'POST',
+          body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          showNewsletterMessage(result.message, 'success');
+          newsletterForm.reset();
+        } else {
+          showNewsletterMessage(result.message, 'error');
+        }
+        
+      } catch (error) {
+        console.error('Newsletter subscription error:', error);
+        showNewsletterMessage('Network error. Please try again later.', 'error');
+      } finally {
+        // Re-enable button
+        subscribeBtn.disabled = false;
+        subscribeBtn.innerHTML = 'Subscribe';
+      }
+    });
+  }
+  
+  function showNewsletterMessage(message, type) {
+    newsletterMessage.textContent = message;
+    newsletterMessage.className = `small text-center ${type === 'success' ? 'text-success' : 'text-danger'}`;
+    newsletterMessage.style.display = 'block';
+    
+    // Auto-hide success messages after 5 seconds
+    if (type === 'success') {
+      setTimeout(() => {
+        newsletterMessage.style.display = 'none';
+      }, 5000);
+    }
+  }
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -440,7 +537,7 @@
 <script>
 // Enhanced EducAid Chatbot
 document.addEventListener('DOMContentLoaded', function() {
-  const apiUrl = 'chatbot/gemini_chat.php'; // Update this path as needed
+  const apiUrl = '../chatbot/gemini_chat.php'; // Fixed path - go up one directory
   const toggle = document.getElementById('eaToggle');
   const panel  = document.getElementById('eaPanel');
   const close  = document.getElementById('eaClose');
@@ -464,7 +561,7 @@ document.addEventListener('DOMContentLoaded', function() {
   toggle.addEventListener('click', toggleChat);
   close.addEventListener('click', toggleChat);
 
-  // Send message function
+  // Send message function (no CAPTCHA)
   async function sendMsg() {
     const text = input.value.trim();
     if (!text) return;

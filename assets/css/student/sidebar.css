@@ -3,20 +3,20 @@
 =========================== */
 .sidebar {
   position: fixed;
-  top: 0;
+  top: var(--topbar-h); /* Start below the fixed topbar */
   left: 0;
-  height: 100%;
+  height: calc(100% - var(--topbar-h)); /* Adjust height to account for topbar */
   width: 260px;
   background: #ffffff;
   border-right: 1px solid #e5e5e5;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.05);
-  transition: width 0.3s ease-in-out, transform 0.3s ease-in-out;
-  z-index: 1040;
+  z-index: 1020;
   overflow-x: hidden;
 }
 
 .sidebar.close {
   width: 78px;
+  transition: none !important;
 }
 
 .logo-details {
@@ -36,7 +36,6 @@
   margin-left: 12px;
   color: #003366;
   white-space: nowrap;
-  transition: opacity 0.3s ease-in-out;
 }
 
 .sidebar.close .logo_name {
@@ -64,7 +63,6 @@
   border-radius: 10px;
   text-decoration: none;
   font-size: 18px;
-  transition: background 0.3s ease-in-out;
 }
 
 .nav-item a:hover {
@@ -119,7 +117,6 @@
   inset: 0;
   background-color: rgba(0, 0, 0, 0.4);
   opacity: 1;
-  transition: opacity 0.3s ease;
   z-index: 1030;
 }
 
@@ -149,14 +146,17 @@ body:not(.js-ready) .sidebar {
   .sidebar {
     transform: translateX(-100%);
     left: 0;
+    transition: none !important;
   }
 
   .sidebar.open {
     transform: translateX(0);
+    transition: none !important;
   }
 
   .sidebar.close {
     transform: translateX(-100%);
+    transition: none !important;
   }
 
   .sidebar-toggle {

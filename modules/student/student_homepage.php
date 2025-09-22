@@ -112,8 +112,8 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>EducAid – Student Dashboard</title>
 
-  <!-- Bootstrap + Icons -->
-  <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
+  <!-- Bootstrap 5.3.3 + Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
 
   <!-- Custom CSS -->
@@ -121,112 +121,200 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
   <link rel="stylesheet" href="../../assets/css/student/sidebar.css" />
   <style>
     body:not(.js-ready) .sidebar { visibility: hidden; transition: none !important; }
+    
+    /* Main header styles */
+    .main-header {
+      background: white;
+      border-bottom: 1px solid #e9ecef;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+      padding: 0.5rem 0; /* restored thickness */
+      z-index: 1030;
+      position: relative;
+    }
+    .main-header .header-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .main-header .container-fluid { padding-left: 1rem; padding-right: 1rem; }
+    .main-header .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .notification-btn, .profile-btn {
+      background: none;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 0.5rem;
+      color: #6c757d;
+      transition: all 0.2s;
+      position: relative;
+    }
+  .notification-btn .bi, .profile-btn .bi { font-size: 1rem; }
+    .notification-btn:hover, .profile-btn:hover {
+      background: #f8f9fa;
+      border-color: #0068da;
+      color: #0068da;
+    }
+    .notification-btn .badge {
+      position: absolute;
+      top: -5px;
+      right: -8px;
+    }
+    .profile-dropdown {
+      position: relative;
+    }
+    /* Sidebar toggle inside header */
+    .header-left .sidebar-toggle { padding: 0.25rem 0.5rem; }
+    
+    /* Footer styles - Small chip/sticker */
+    .main-footer {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: white;
+      border: 1px solid #e9ecef;
+      border-radius: 25px;
+      padding: 0.5rem 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      font-size: 0.75rem;
+      color: #6c757d;
+      z-index: 1000;
+      max-width: 250px;
+    }
+    .footer-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      white-space: nowrap;
+    }
+    .footer-chip .bi {
+      font-size: 0.875rem;
+      color: #0068da;
+    }
+    
+    /* Adjust main content spacing */
+    .home-section {
+      padding-top: 0;
+    }
   </style>
 </head>
 <body>
-  <div id="wrapper">
+  <!-- Student Topbar -->
+  <?php include __DIR__ . '/../../includes/student/student_topbar.php'; ?>
+
+  <div id="wrapper" style="padding-top: var(--topbar-h);">
     <!-- Sidebar -->
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
-   <!-- Page Content -->
+   
     <!-- Page Content -->
     <section class="home-section" id="page-content-wrapper">
-      <nav>
-        <div class="sidebar-toggle px-4 py-3">
-          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
-        </div>
-      </nav>
 
-      <div class="container-fluid py-4 px-4">
-        <!-- Header -->
-        <div class="d-flex align-items-center mb-4 section-spacing">
-          <img src="../../assets/images/default/profile.png" class="rounded-circle me-3" width="60" height="60" alt="Student Profile">
-          <div>
-            <h2 class="fw-bold mb-1">Welcome, <?php echo htmlspecialchars($_SESSION['student_username']); ?>!</h2>
-            <small class="text-muted">
-              <?php 
-              // Temporary debug output (remove after fixing)
-              if (isset($_GET['debug'])) {
-                echo "<br><strong>DEBUG:</strong><br>";
-                echo "Database last_login: " . ($student_info['last_login'] ?? 'NULL') . "<br>";
-                echo "Session previous_login: " . (($_SESSION['previous_login'] ?? null) ? $_SESSION['previous_login'] : 'NULL') . "<br>";
-                echo "Calculated display_login_time: " . ($display_login_time === "first_time" ? "FIRST_TIME" : ($display_login_time ?? 'NULL')) . "<br>";
-                
-                if ($student_info['last_login']) {
-                    $last_login_time = new DateTime($student_info['last_login']);
-                    $current_time = new DateTime();
-                    $diff = $current_time->diff($last_login_time);
-                    echo "Time since DB login: {$diff->i} minutes ago<br>";
-                }
-                echo "Formatted: ";
-              }
+      <!-- Main Header -->
+      <div class="main-header">
+        <div class="container-fluid px-4">
+          <div class="header-content">
+            <div class="header-left d-flex align-items-center">
+              <div class="sidebar-toggle me-2">
+                <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
+              </div>
+            </div>
+            <div class="header-actions">
+              <button class="notification-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-bell"></i>
+                <span class="badge rounded-pill bg-danger">3</span>
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><h6 class="dropdown-header">Notifications</h6></li>
+                <li><a class="dropdown-item" href="#"><i class="bi bi-info-circle me-2"></i>New announcement available</a></li>
+                <li><a class="dropdown-item" href="#"><i class="bi bi-upload me-2"></i>Document review completed</a></li>
+                <li><a class="dropdown-item" href="#"><i class="bi bi-calendar me-2"></i>Deadline reminder</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item text-center" href="#">View all notifications</a></li>
+              </ul>
               
-              echo formatLastLogin($display_login_time);
-              ?>
+              <div class="profile-dropdown">
+                <button class="profile-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                  <i class="bi bi-person-circle"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                  <li><h6 class="dropdown-header"><?php echo htmlspecialchars($student_info['first_name'] . ' ' . $student_info['last_name']); ?></h6></li>
+                  <li><a class="dropdown-item" href="student_profile.php"><i class="bi bi-person me-2"></i>Profile</a></li>
+                  <li><a class="dropdown-item" href="student_settings.php"><i class="bi bi-gear me-2"></i>Settings</a></li>
+                  <li><hr class="dropdown-divider"></li>
+                  <li><a class="dropdown-item" href="../../unified_login.php?logout=true"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Main Content -->
+      <div class="container-fluid py-4 px-4">
+        <!-- Welcome Section -->
+        <div class="d-flex align-items-center mb-3 section-spacing">
+          <img src="../../assets/images/default/profile.png" class="rounded-circle me-2" width="52" height="52" alt="Student Profile">
+          <div>
+            <h2 class="fw-bold mb-1" style="font-size:1.35rem;">Welcome, <?php echo htmlspecialchars($_SESSION['student_username']); ?>!</h2>
+            <small class="text-muted" style="font-size:0.9rem;">
+              <?php echo formatLastLogin($display_login_time); ?>
             </small>
           </div>
         </div>
-
-        <!-- Dashboard Cards -->
-        <div class="row g-4 section-spacing">
+        
+        <!-- Three banners under welcome -->
+        <?php
+          $result = pg_query_params($connection, "SELECT status FROM students WHERE student_id = $1", [$_SESSION['student_id']]);
+          $status = null;
+          if ($result && pg_num_rows($result) > 0) {
+            $row = pg_fetch_assoc($result);
+            $status = $row['status'];
+          }
+          if ($status === 'active') {
+            $badgeClass = 'bg-success';
+            $icon = 'bi-check2-circle';
+            $statusText = 'Verified';
+          } elseif ($status === 'applicant') {
+            $badgeClass = 'bg-warning text-dark';
+            $icon = 'bi-hourglass-split';
+            $statusText = 'Applicant';
+          } elseif ($status === 'disabled') {
+            $badgeClass = 'bg-danger';
+            $icon = 'bi-x-circle';
+            $statusText = 'Disabled';
+          } else {
+            $badgeClass = 'bg-secondary';
+            $icon = 'bi-question-circle';
+            $statusText = 'Unknown';
+          }
+        ?>
+        <div class="row g-3 info-banners">
           <div class="col-md-4">
-            <div class="custom-card shadow-sm">
-              <div class="custom-card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-award me-2"></i>Scholarship Program</h5>
-              </div>
-              <div class="custom-card-body">
-                Tertiary Education Assistance
+            <div class="info-banner banner-primary">
+              <span class="icon text-primary"><i class="bi bi-award"></i></span>
+              <div>
+                <div class="label">Scholarship Program</div>
+                <div class="value">Tertiary Education Assistance</div>
               </div>
             </div>
           </div>
-
           <div class="col-md-4">
-            <?php
-            $result = pg_query_params($connection, "SELECT status FROM students WHERE student_id = $1", [$_SESSION['student_id']]);
-            $status = null;
-            if ($result && pg_num_rows($result) > 0) {
-              $row = pg_fetch_assoc($result);
-              $status = $row['status'];
-            }
-            if ($status === 'active') {
-              $cardHeaderClass = 'bg-success text-white';
-              $icon = 'bi-check2-circle';
-              $statusText = 'Verified';
-              $bodyClass = 'text-success fw-semibold';
-            } elseif ($status === 'applicant') {
-              $cardHeaderClass = 'bg-warning text-dark';
-              $icon = 'bi-hourglass-split';
-              $statusText = 'Applicant';
-              $bodyClass = 'text-warning fw-semibold';
-            } elseif ($status === 'disabled') {
-              $cardHeaderClass = 'bg-danger text-white';
-              $icon = 'bi-x-circle';
-              $statusText = 'Disabled';
-              $bodyClass = 'text-danger fw-semibold';
-            } else {
-              $cardHeaderClass = 'bg-secondary text-white';
-              $icon = 'bi-question-circle';
-              $statusText = 'Unknown';
-              $bodyClass = 'text-secondary fw-semibold';
-            }
-            ?>
-            <div class="custom-card shadow-sm">
-              <div class="custom-card-header <?php echo $cardHeaderClass; ?>">
-                <h5 class="mb-0"><i class="bi <?php echo $icon; ?> me-2"></i>Application Status</h5>
-              </div>
-              <div class="custom-card-body <?php echo $bodyClass; ?>">
-                <?php echo $statusText; ?>
+            <div class="info-banner banner-status">
+              <span class="icon text-success"><i class="bi <?php echo $icon; ?>"></i></span>
+              <div>
+                <div class="label">Application Status</div>
+                <div class="value"><span class="badge <?php echo $badgeClass; ?>"><?php echo $statusText; ?></span></div>
               </div>
             </div>
           </div>
-
           <div class="col-md-4">
-            <div class="custom-card shadow-sm">
-              <div class="custom-card-header bg-secondary text-white">
-                <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Last Updated</h5>
-              </div>
-              <div class="custom-card-body">
-                July 8, 2025
+            <div class="info-banner banner-muted">
+              <span class="icon text-muted"><i class="bi bi-clock-history"></i></span>
+              <div>
+                <div class="label">Last Updated</div>
+                <div class="value text-muted"><?php echo date('M j, Y'); ?></div>
               </div>
             </div>
           </div>
@@ -284,8 +372,9 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
                         . 'modal.show();'
                         . '});</script>';
                 }
-                // Render schedule card
-                echo "<div class='custom-card mb-4'><div class='custom-card-header bg-info text-white'><h5 class='mb-0'><i class='bi bi-calendar3 me-2'></i>Your Schedule</h5></div><div class='custom-card-body'>";
+                // Render schedule section
+                echo "<section class='section-block section-schedule section-spacing'>";
+                echo "<div class='section-header'><h3 class='section-title mb-0'><i class='bi bi-calendar3 me-2'></i>Your Schedule</h3><p class='section-lead m-0'>Published schedules for your account.</p></div>";
                 // Show location in card
                 if ($location !== '') {
                     echo '<p><strong>Location:</strong> ' . htmlspecialchars($location) . '</p>';
@@ -298,21 +387,20 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
                          . '<td>' . htmlspecialchars($s['time_slot']) . '</td>'
                          . '</tr>';
                 }
-                echo "</tbody></table></div></div>";
+        echo "</tbody></table></section>";
             } else {
-                echo "<div class='custom-card mb-4'><div class='custom-card-body'>Your schedule will appear here once published.</div></div>";
+  echo "<section class='section-block section-schedule section-spacing'><div>Your schedule will appear here once published.</div></section>";
             }
         }
         ?>
 
         <!-- Past Distributions Section -->
-        <?php if ($past_participation_result && pg_num_rows($past_participation_result) > 0): ?>
-        <div class="custom-card mb-4 shadow-sm section-spacing">
-            <div class="custom-card-header bg-success text-white">
-                <h5 class="mb-0"><i class="bi bi-archive me-2"></i>Your Distribution History</h5>
-            </div>
-            <div class="custom-card-body">
-                <p class="text-muted mb-3">Previous distributions you have participated in:</p>
+    <?php if ($past_participation_result && pg_num_rows($past_participation_result) > 0): ?>
+  <section class="section-block section-history section-spacing">
+      <div class="section-header">
+        <h3 class="section-title mb-0"><i class="bi bi-archive me-2"></i>Your Distribution History</h3>
+        <p class="section-lead m-0">Previous distributions you have participated in:</p>
+      </div>
                 
                 <!-- Carousel Container -->
                 <div class="distribution-carousel-container">
@@ -432,11 +520,10 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
                         <?php endif; ?>
                     </small>
                 </div>
-            </div>
-        </div>
+    </section>
         <?php endif; ?>
 
-        <!-- Announcements -->
+        <!-- Announcements Section -->
         <?php
           // Fetch latest active announcement
           $annRes = pg_query($connection, 
@@ -444,79 +531,152 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
           );
           if ($annRes && pg_num_rows($annRes) > 0) {
               $ann = pg_fetch_assoc($annRes);
-              echo "<div class='custom-card mb-4 shadow-sm section-spacing'>";
-              echo "<div class='custom-card-header bg-warning text-dark'><h5 class='mb-0'><i class='bi bi-megaphone me-2'></i>" . htmlspecialchars(
-                       $ann['title']) . "</h5></div>";
-              echo "<div class='custom-card-body'><p class='mb-1'>" . nl2br(htmlspecialchars($ann['remarks'])) . "</p>";
-              echo "<small class='text-muted'>Posted on: " . date('F j, Y, g:i A', strtotime($ann['posted_at'])) . "</small></div></div>";
+              echo "<section class='section-block section-announcements section-spacing'>";
+              echo "<div class='section-header'><h3 class='section-title'><i class='bi bi-megaphone me-2'></i>Latest Announcement</h3><p class='section-lead m-0'>Stay updated with news and information.</p></div>";
+              echo "<div><h5 class='fw-bold mb-2'>" . htmlspecialchars($ann['title']) . "</h5>";
+              echo "<p class='mb-2'>" . nl2br(htmlspecialchars($ann['remarks'])) . "</p>";
+              echo "<small class='text-muted'>Posted on: " . date('F j, Y, g:i A', strtotime($ann['posted_at'])) . "</small></div>";
+              echo "</section>";
           } else {
-              echo "<div class='custom-card mb-4 shadow-sm section-spacing'>";
-              echo "<div class='custom-card-header bg-warning text-dark'><h5 class='mb-0'><i class='bi bi-megaphone me-2'></i>No current announcements.</h5></div></div>";
+              echo "<section class='section-block section-announcements section-spacing'>";
+              echo "<div class='section-header'><h3 class='section-title'><i class='bi bi-megaphone me-2'></i>Latest Announcement</h3><p class='section-lead m-0'>Stay updated with news and information.</p></div>";
+              echo "<div class='text-muted'>No current announcements.</div>";
+              echo "</section>";
           }
         ?>
 
-        <!-- Deadline Section -->
+        <!-- Submission Deadlines & Reminders -->
         <?php
-        // Load deadlines from JSON file
-        $deadlinesPath = __DIR__ . '/../../data/deadlines.json';
-        $deadlines = file_exists($deadlinesPath) ? json_decode(file_get_contents($deadlinesPath), true) : [];
-        $today = date('Y-m-d');
-        echo '<div id="deadline-section" class="custom-card border border-2 border-danger-subtle shadow-sm section-spacing">';
-        echo '<div class="p-3 d-flex justify-content-between align-items-center bg-danger-subtle border-bottom" data-bs-toggle="collapse" data-bs-target="#deadline-body" style="cursor: pointer;">';
-        echo '<h5 class="mb-0 text-danger fw-bold"><i class="bi bi-hourglass-top me-2"></i>Submission Deadlines</h5>';
-        echo '<span class="badge bg-light text-danger border border-danger">' . count(array_filter($deadlines, fn($d) => $d['active'])) . ' item(s)</span>';
-        echo '</div><div id="deadline-body" class="collapse show"><div class="custom-card-body"><ul class="list-unstyled mb-0">';
-        foreach ($deadlines as $d) {
-            if (empty($d['active'])) continue;
-            $due = $d['deadline_date'];
-            $onTime = ($today <= $due);
-            $badgeClass = $onTime ? 'bg-success' : 'bg-danger';
-            $badgeIcon = $onTime ? 'bi-check-circle' : 'bi-exclamation-triangle';
-            echo '<li class="mb-3">';
-            echo '<strong>' . htmlspecialchars($d['label']) . ':</strong><br>' . date('F j, Y', strtotime($due));
-            echo ' <span class="badge ' . $badgeClass . ' ms-2"><i class="' . $badgeIcon . ' me-1"></i>' . ($onTime ? 'On Time' : 'Overdue') . '</span>';
-            if (!empty($d['link'])) {
-                echo ' <a href="' . htmlspecialchars($d['link']) . '" class="btn btn-primary btn-sm float-end">Go</a>';
-            }
-            echo '</li>';
+    // Load deadlines from JSON file
+    $deadlinesPath = __DIR__ . '/../../data/deadlines.json';
+    $deadlines = file_exists($deadlinesPath) ? json_decode(file_get_contents($deadlinesPath), true) : [];
+    $todayStr = date('Y-m-d');
+    $todayDt = new DateTime('today');
+
+    // Build active list + counts
+    $activeItems = [];
+    if (is_array($deadlines)) {
+      foreach ($deadlines as $d) {
+        if (!empty($d['active'])) { $activeItems[] = $d; }
+      }
+    }
+    $activeCount = count($activeItems);
+
+    // Separate overdue vs upcoming (overdue first)
+    $overdueItems = [];
+    $upcomingItems = [];
+    foreach ($activeItems as $d) {
+      $dueStr = isset($d['deadline_date']) ? $d['deadline_date'] : '';
+      $dueDt = null;
+      try { if ($dueStr) { $dueDt = new DateTime($dueStr); } } catch (Exception $e) { $dueDt = null; }
+      $isOverdue = $dueDt ? ($dueDt < $todayDt) : false;
+      $isToday = $dueDt ? ($dueDt->format('Y-m-d') === $todayStr) : false;
+      $daysAbs = $dueDt ? $todayDt->diff($dueDt)->days : null;
+      $item = [
+        'label' => $d['label'] ?? 'Untitled',
+        'link' => $d['link'] ?? '',
+        'dueDt' => $dueDt,
+        'dueStr' => $dueStr,
+        'isOverdue' => $isOverdue,
+        'isToday' => $isToday,
+        'daysAbs' => $daysAbs,
+      ];
+      if ($isOverdue) { $overdueItems[] = $item; } else { $upcomingItems[] = $item; }
+    }
+
+    echo '<section class="section-block section-deadlines section-spacing">';
+    echo '  <div class="section-header d-flex justify-content-between align-items-center">';
+    echo '    <div><h3 class="section-title mb-0"><i class="bi bi-hourglass-top me-2"></i>Submission Deadlines</h3><p class="section-lead m-0">Upcoming and active requirements.</p></div>';
+    echo '    <span class="badge bg-danger-subtle text-danger border border-danger">' . $activeCount . ' item(s)</span>';
+    echo '  </div>';
+
+    echo '  <div class="deadline-list">';
+    // Render overdue first with strong accents
+    foreach ($overdueItems as $it) {
+      $title = htmlspecialchars($it['label']);
+      $dateText = $it['dueDt'] ? $it['dueDt']->format('F j, Y') : htmlspecialchars($it['dueStr']);
+      $statusText = ($it['daysAbs'] !== null && $it['daysAbs'] > 0)
+        ? ('Overdue by ' . $it['daysAbs'] . ' day' . ($it['daysAbs'] != 1 ? 's' : ''))
+        : 'Overdue';
+      $link = $it['link'] ? htmlspecialchars($it['link']) : '';
+      echo '    <div class="deadline-item is-overdue">';
+      echo '      <div class="deadline-left">';
+      echo '        <div class="deadline-title"><i class="bi bi-exclamation-octagon-fill text-danger me-2"></i>' . $title . '</div>';
+      echo '        <div class="deadline-meta"><span class="due-date"><i class="bi bi-calendar-event me-1"></i>' . $dateText . '</span></div>';
+      echo '      </div>';
+      echo '      <div class="deadline-right">';
+      echo '        <span class="chip chip-overdue"><i class="bi bi-lightning-charge-fill me-1"></i>' . $statusText . '</span>';
+      if ($link) {
+        echo '        <a href="' . $link . '" class="btn btn-danger btn-sm ms-2">Resolve</a>';
+      }
+      echo '      </div>';
+      echo '    </div>';
+    }
+
+    // Then on-time/upcoming
+    foreach ($upcomingItems as $it) {
+      $title = htmlspecialchars($it['label']);
+      $dateText = $it['dueDt'] ? $it['dueDt']->format('F j, Y') : htmlspecialchars($it['dueStr']);
+      if ($it['isToday']) {
+        $statusText = 'Due today';
+      } else if ($it['daysAbs'] !== null) {
+        $statusText = 'Due in ' . $it['daysAbs'] . ' day' . ($it['daysAbs'] != 1 ? 's' : '');
+      } else {
+        $statusText = 'Upcoming';
+      }
+      $link = $it['link'] ? htmlspecialchars($it['link']) : '';
+      echo '    <div class="deadline-item is-ontime">';
+      echo '      <div class="deadline-left">';
+      echo '        <div class="deadline-title"><i class="bi bi-clipboard-check text-success me-2"></i>' . $title . '</div>';
+      echo '        <div class="deadline-meta"><span class="due-date"><i class="bi bi-calendar-event me-1"></i>' . $dateText . '</span></div>';
+      echo '      </div>';
+      echo '      <div class="deadline-right">';
+      echo '        <span class="chip chip-ontime"><i class="bi bi-clock me-1"></i>' . $statusText . '</span>';
+      if ($link) {
+        echo '        <a href="' . $link . '" class="btn btn-primary btn-sm ms-2">Go</a>';
+      }
+      echo '      </div>';
+      echo '    </div>';
+    }
+    echo '  </div>';
+
+    // Merge reminders content here
+    $deadlineData = $deadlines;
+    $reminderDate = '';
+    if (is_array($deadlineData)) {
+      foreach ($deadlineData as $d) {
+        if (isset($d['key']) && $d['key'] === 'grades_submission' && !empty($d['active'])) {
+          $rd = isset($d['deadline_date']) ? $d['deadline_date'] : '';
+          if ($rd) { $reminderDate = date('F j', strtotime($rd)); }
+          break;
         }
-        echo '</ul></div></div></div>';
+      }
+    }
+    echo '  <div class="mt-3 pt-3 border-top">';
+    echo '    <h6 class="fw-bold mb-2"><i class="bi bi-bell-fill me-2"></i>Reminders</h6>';
+    echo '    <ul class="mb-0">';
+    echo '      <li>Upload your updated grades by <strong>' . htmlspecialchars($reminderDate ?: 'TBD') . '</strong>.</li>';
+    echo '      <li>Check notifications regularly for city updates.</li>';
+    echo '    </ul>';
+    echo '  </div>';
+    echo '</section>';
         ?>
-
-        <!-- Reminders -->
-        <?php
-        // Load reminder date from deadlines JSON
-        $deadlineData = file_exists(__DIR__ . '/../../data/deadlines.json') ? json_decode(file_get_contents(__DIR__ . '/../../data/deadlines.json'), true) : [];
-        $reminderDate = '';
-        foreach ($deadlineData as $d) {
-            if (isset($d['key']) && $d['key'] === 'grades_submission' && !empty($d['active'])) {
-                $reminderDate = date('F j', strtotime($d['deadline_date']));
-                break;
-            }
-        }
-        ?>
-
-        <!-- Reminders -->
-        <div class="custom-card shadow-sm section-spacing">
-          <div class="custom-card-header bg-info text-white">
-            <h5 class="mb-0"><i class="bi bi-bell-fill me-2"></i>Reminders</h5>
-          </div>
-          <div class="custom-card-body">
-            <ul class="mb-0">
-              <li>Upload your updated grades by <strong><?php echo htmlspecialchars($reminderDate ?: 'TBD'); ?></strong>.</li>
-              <li>Check notifications regularly for city updates.</li>
-            </ul>
-          </div>
-        </div>
-
         
 
       </div>
     </section>
   </div>
 
+  <!-- Footer Chip -->
+  <footer class="main-footer">
+    <div class="footer-chip">
+      <i class="bi bi-c-circle"></i>
+      <span><?php echo date('Y'); ?> City of General Trias</span>
+    </div>
+  </footer>
+
   <!-- JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/homepage.js"></script>
   <script src="../../assets/js/deadline.js"></script>
   <script src="../../assets/js/student/student_homepage.js"></script>
