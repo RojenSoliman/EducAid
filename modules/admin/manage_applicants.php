@@ -263,6 +263,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migration_action'])) 
     }
     if ($_POST['migration_action'] === 'confirm' && isset($_SESSION['migration_preview'])) {
         $selected = $_POST['select'] ?? [];
+        if (empty($selected)) {
+            $_SESSION['migration_result'] = ['inserted'=>0, 'errors'=>['No rows selected for migration.']];
+            unset($_SESSION['migration_preview']);
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
         $preview = $_SESSION['migration_preview'];
         $municipality_id = intval($preview['municipality_id']);
         $inserted = 0; $errors = [];
@@ -933,8 +939,8 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
                                     <div class="ms-auto small text-muted" id="selectedCounter">0 selected</div>
                                 </div>
 
-                                <div class="modal-footer justify-content-end mt-3 sticky-confirm">
-                                    <button class="btn btn-success"><i class="bi bi-check2-circle me-1"></i> Confirm & Migrate</button>
+                                            <div class="modal-footer justify-content-end mt-3 sticky-confirm">
+                                                <button type="submit" class="btn btn-success"><i class="bi bi-check2-circle me-1"></i> Confirm & Migrate</button>
                                 </div>
                     </form>
                 <?php endif; ?>
@@ -1142,8 +1148,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Cancel migration on modal close with confirmation
     const migrationModalEl2 = document.getElementById('migrationModal');
+    let _isSubmittingMigration = false;
+    // Mark when the confirm form is submitting so we don't cancel preview
+    const confirmActionInput = document.querySelector('#migrationModal input[name="migration_action"][value="confirm"]');
+    if (confirmActionInput && confirmActionInput.form) {
+        confirmActionInput.form.addEventListener('submit', function(){ _isSubmittingMigration = true; });
+    }
     if (migrationModalEl2) {
         migrationModalEl2.addEventListener('hide.bs.modal', function (e) {
+            if (_isSubmittingMigration) { return; }
             // If there is a preview in session, confirm cancel
             <?php if (!empty($_SESSION['migration_preview'])): ?>
             const ok = confirm('Closing will cancel the migration preview. Continue?');
