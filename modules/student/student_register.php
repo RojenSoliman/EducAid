@@ -2151,6 +2151,7 @@ if (!$isAjaxRequest) {
 <script src="../../assets/js/student/user_registration.js?v=<?php echo time(); ?>"></script>
 
 <script>
+document.addEventListener('DOMContentLoaded', function() {
     // Registration state tracking
     let registrationInProgress = false;
     let hasUploadedFiles = false;
@@ -2605,10 +2606,12 @@ if (!$isAjaxRequest) {
             nextButton.classList.add('btn-primary');
         }
     }
+}); // End of DOMContentLoaded
 </script>
 
 <!-- Enhanced registration form submission with duplicate checking -->
 <script>
+document.addEventListener('DOMContentLoaded', function() {
     // Track enrollment form uploads
     document.getElementById('enrollmentForm').addEventListener('change', function(e) {
         if (e.target.files[0]) {
@@ -2708,6 +2711,7 @@ if (!$isAjaxRequest) {
     ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(event => {
         document.addEventListener(event, resetInactivityTimer, true);
     });
+}); // End of DOMContentLoaded
 </script>
 
 <!-- ADD this modal HTML before closing </body> tag -->
