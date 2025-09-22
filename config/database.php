@@ -7,9 +7,4 @@
     else {
         //echo "Connection successful";
     }
-
-    
-//nigga
-
-
 ?>

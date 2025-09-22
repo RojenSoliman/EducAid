@@ -2,6 +2,27 @@
 include_once '../../config/database.php';
 session_start();
 
+// Start output buffering to prevent any early HTML from leaking into JSON responses
+if (ob_get_level() === 0) {
+    ob_start();
+}
+
+// Small helper to emit clean JSON and terminate early
+if (!function_exists('json_response')) {
+    function json_response(array $payload, int $statusCode = 200): void {
+        // Clear any previously buffered output (e.g., DOCTYPE/HTML) so JSON stays valid
+        while (ob_get_level() > 0) {
+            @ob_end_clean();
+        }
+        http_response_code($statusCode);
+        header_remove('X-Powered-By');
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($payload);
+        flush();
+        exit;
+    }
+}
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
@@ -9,6 +30,13 @@ require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 
 $municipality_id = 1;
 
+// Check if this is an AJAX request (OCR or OTP processing)
+$isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) || 
+                 isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) || 
+                 isset($_POST['processCertificateOcr']);
+
+// Only output HTML for non-AJAX requests
+if (!$isAjaxRequest) {
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -97,6 +125,8 @@ $municipality_id = 1;
     ?>
 
 <?php
+} // End of HTML output for non-AJAX requests
+
 // --- Slot check ---
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
@@ -190,14 +220,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
     $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid email format.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'Invalid email format.']);
     }
 
     $checkEmail = pg_query_params($connection, "SELECT 1 FROM students WHERE email = $1", [$email]);
     if (pg_num_rows($checkEmail) > 0) {
-        echo json_encode(['status' => 'error', 'message' => 'This email is already registered. Please use a different email or login.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'This email is already registered. Please use a different email or login.']);
     }
 
     $otp = rand(100000, 999999);
@@ -226,12 +254,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
         $mail->AltBody = "Your One-Time Password (OTP) for EducAid registration is: $otp. This OTP is valid for 40 seconds.";
 
         $mail->send();
-        echo json_encode(['status' => 'success', 'message' => 'OTP sent to your email. Please check your inbox and spam folder.']);
+        json_response(['status' => 'success', 'message' => 'OTP sent to your email. Please check your inbox and spam folder.']);
     } catch (Exception $e) {
         error_log("PHPMailer Error: {$mail->ErrorInfo}");
-        echo json_encode(['status' => 'error', 'message' => 'Message could not be sent. Please check your email address and try again.']);
+        json_response(['status' => 'error', 'message' => 'Message could not be sent. Please check your email address and try again.']);
     }
-    exit;
 }
 
 // --- OTP verify ---
@@ -240,37 +267,32 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
     $email_for_otp = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
 
     if (!isset($_SESSION['otp']) || !isset($_SESSION['otp_email']) || !isset($_SESSION['otp_timestamp'])) {
-        echo json_encode(['status' => 'error', 'message' => 'No OTP sent or session expired. Please request a new OTP.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'No OTP sent or session expired. Please request a new OTP.']);
     }
 
     if ($_SESSION['otp_email'] !== $email_for_otp) {
-         echo json_encode(['status' => 'error', 'message' => 'Email mismatch for OTP. Please ensure you are verifying the correct email.']);
-         exit;
+        json_response(['status' => 'error', 'message' => 'Email mismatch for OTP. Please ensure you are verifying the correct email.']);
     }
 
     if ((time() - $_SESSION['otp_timestamp']) > 300) {
         unset($_SESSION['otp'], $_SESSION['otp_email'], $_SESSION['otp_timestamp']);
-        echo json_encode(['status' => 'error', 'message' => 'OTP has expired. Please request a new OTP.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'OTP has expired. Please request a new OTP.']);
     }
 
     if ((int)$enteredOtp === (int)$_SESSION['otp']) {
-        echo json_encode(['status' => 'success', 'message' => 'OTP verified successfully!']);
+        json_response(['status' => 'success', 'message' => 'OTP verified successfully!']);
         $_SESSION['otp_verified'] = true;
         unset($_SESSION['otp'], $_SESSION['otp_email'], $_SESSION['otp_timestamp']);
     } else {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid OTP. Please try again.']);
+        json_response(['status' => 'error', 'message' => 'Invalid OTP. Please try again.']);
         $_SESSION['otp_verified'] = false;
     }
-    exit;
 }
 
 // --- Document OCR Processing ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     if (!isset($_FILES['enrollment_form']) || $_FILES['enrollment_form']['error'] !== UPLOAD_ERR_OK) {
-        echo json_encode(['status' => 'error', 'message' => 'No file uploaded or upload error.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'No file uploaded or upload error.']);
     }
 
     $uploadDir = '../../assets/uploads/temp/enrollment_forms/';
@@ -293,8 +315,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     $formLastName = trim($_POST['last_name'] ?? '');
 
     if (empty($formFirstName) || empty($formLastName)) {
-        echo json_encode(['status' => 'error', 'message' => 'First name and last name are required for filename validation.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'First name and last name are required for filename validation.']);
     }
 
     // Remove file extension and validate format
@@ -302,16 +323,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     $expectedFormat = $formLastName . '_' . $formFirstName . '_EAF';
 
     if (strcasecmp($nameWithoutExt, $expectedFormat) !== 0) {
-        echo json_encode([
+        json_response([
             'status' => 'error', 
             'message' => "Filename must follow format: {$formLastName}_{$formFirstName}_EAF.{file_extension}"
         ]);
-        exit;
     }
 
     if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
-        echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded file.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'Failed to save uploaded file.']);
     }
 
     // Get form data for comparison
@@ -379,7 +398,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
             
             // If no text could be extracted
             if (empty($ocrText) || strlen(trim($ocrText)) < 10) {
-                echo json_encode([
+                json_response([
                     'status' => 'error', 
                     'message' => 'Unable to extract text from PDF. Please try one of these alternatives:',
                     'suggestions' => [
@@ -389,7 +408,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
                         '4. Ensure the PDF contains selectable text (not a scanned image)'
                     ]
                 ]);
-                exit;
             }
         }
     } else {
@@ -401,7 +419,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         $outputFile = $outputBase . ".txt";
 
         if (!file_exists($outputFile)) {
-            echo json_encode([
+            json_response([
                 'status' => 'error', 
                 'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
                 'debug_info' => $tesseractOutput,
@@ -412,7 +430,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
                     '4. Use JPG or PNG format for best results'
                 ]
             ]);
-            exit;
         }
 
         $ocrText = file_get_contents($outputFile);
@@ -429,11 +446,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     }
     
     if (empty(trim($ocrText))) {
-        echo json_encode([
+        json_response([
             'status' => 'error', 
             'message' => 'No text could be extracted from the document. Please ensure the image is clear and contains readable text.'
         ]);
-        exit;
     }
     
     $ocrTextLower = strtolower($ocrText);
@@ -658,15 +674,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
     ];
     file_put_contents($confidenceFile, json_encode($confidenceData));
 
-    echo json_encode(['status' => 'success', 'verification' => $verification]);
-    exit;
+    json_response(['status' => 'success', 'verification' => $verification]);
 }
 
 // --- Letter to Mayor OCR Processing ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) {
     if (!isset($_FILES['letter_to_mayor']) || $_FILES['letter_to_mayor']['error'] !== UPLOAD_ERR_OK) {
-        echo json_encode(['status' => 'error', 'message' => 'No letter file uploaded or upload error.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'No letter file uploaded or upload error.']);
     }
 
     $uploadDir = '../../assets/uploads/temp/letter_mayor/';
@@ -685,8 +699,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
     $targetPath = $uploadDir . $fileName;
 
     if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
-        echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded letter file.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'Failed to save uploaded letter file.']);
     }
 
     // Get form data for comparison
@@ -742,7 +755,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
             
             // If no text could be extracted
             if (empty($ocrText) || strlen(trim($ocrText)) < 10) {
-                echo json_encode([
+                json_response([
                     'status' => 'error', 
                     'message' => 'Unable to extract text from PDF. Please try one of these alternatives:',
                     'suggestions' => [
@@ -752,7 +765,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
                         '4. Ensure the PDF contains selectable text (not a scanned image)'
                     ]
                 ]);
-                exit;
             }
         }
     } else {
@@ -764,7 +776,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
         $outputFile = $outputBase . ".txt";
         
         if (!file_exists($outputFile)) {
-            echo json_encode([
+            json_response([
                 'status' => 'error', 
                 'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
                 'debug_info' => $tesseractOutput,
@@ -775,7 +787,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
                     '4. Use JPG or PNG format for best results'
                 ]
             ]);
-            exit;
         }
         
         $ocrText = file_get_contents($outputFile);
@@ -787,11 +798,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
     }
     
     if (empty(trim($ocrText))) {
-        echo json_encode([
+        json_response([
             'status' => 'error', 
             'message' => 'No text could be extracted from the document. Please ensure the image is clear and contains readable text.'
         ]);
-        exit;
     }
 
     // Improved verification checks for letter to mayor with fuzzy matching
@@ -966,15 +976,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
     // Note: Letter file is kept in temp directory for final registration step
     // It will be cleaned up during registration completion
     
-    echo json_encode(['status' => 'success', 'verification' => $verification]);
-    exit;
+    json_response(['status' => 'success', 'verification' => $verification]);
 }
 
 // --- Certificate of Indigency OCR Processing ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr'])) {
     if (!isset($_FILES['certificate_of_indigency']) || $_FILES['certificate_of_indigency']['error'] !== UPLOAD_ERR_OK) {
-        echo json_encode(['status' => 'error', 'message' => 'No certificate file uploaded or upload error.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'No certificate file uploaded or upload error.']);
     }
 
     $uploadDir = '../../assets/uploads/temp/indigency/';
@@ -993,8 +1001,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
     $targetPath = $uploadDir . $fileName;
 
     if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
-        echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded certificate file.']);
-        exit;
+        json_response(['status' => 'error', 'message' => 'Failed to save uploaded certificate file.']);
     }
 
     // Get form data for comparison
@@ -1050,7 +1057,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
             
             // If no text could be extracted
             if (empty($ocrText) || strlen(trim($ocrText)) < 10) {
-                echo json_encode([
+                json_response([
                     'status' => 'error', 
                     'message' => 'Unable to extract text from PDF. Please try one of these alternatives:',
                     'suggestions' => [
@@ -1060,7 +1067,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
                         '4. Ensure the PDF contains selectable text (not a scanned image)'
                     ]
                 ]);
-                exit;
             }
         }
     } else {
@@ -1072,7 +1078,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
         $outputFile = $outputBase . ".txt";
         
         if (!file_exists($outputFile)) {
-            echo json_encode([
+            json_response([
                 'status' => 'error', 
                 'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
                 'debug_info' => $tesseractOutput,
@@ -1083,7 +1089,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
                     '4. Use JPG or PNG format for best results'
                 ]
             ]);
-            exit;
         }
         
         $ocrText = file_get_contents($outputFile);
@@ -1095,11 +1100,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
     }
     
     if (empty(trim($ocrText))) {
-        echo json_encode([
+        json_response([
             'status' => 'error', 
             'message' => 'No text could be extracted from the document. Please ensure the image is clear and contains readable text.'
         ]);
-        exit;
     }
 
     // Improved verification checks for certificate of indigency with fuzzy matching
@@ -1304,8 +1308,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
     // Note: Certificate file is kept in temp directory for final registration step
     // It will be cleaned up during registration completion
     
-    echo json_encode(['status' => 'success', 'verification' => $verification]);
-    exit;
+    json_response(['status' => 'success', 'verification' => $verification]);
 }
 
 // --- Registration logic ---
@@ -1675,6 +1678,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 
     }
 }
+
+// Only output main registration HTML for non-AJAX requests
+if (!$isAjaxRequest) {
 ?>
 
 <!-- Main Registration Content -->
@@ -2489,3 +2495,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
 </div>
 </body>
 </html>
+<?php
+} // End of main registration HTML for non-AJAX requests
+?>
