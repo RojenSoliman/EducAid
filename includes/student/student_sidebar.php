@@ -2,9 +2,13 @@
 // student_sidebar.php
 ?>
 <div class="sidebar" id="sidebar">
-  <div class="logo-details">
-    <i class="bi bi-mortarboard-fill icon"></i>
-    <span class="logo_name">EducAid</span>
+  <!-- Colored hero block (about 1/4 of the sidebar height) -->
+  <div class="sidebar-hero">
+    <div class="hero-content">
+      <div class="hero-icon">
+        <i class="bi bi-mortarboard-fill"></i>
+      </div>
+    </div>
   </div>
   <ul class="nav-list">
     <li class="nav-item <?php echo basename($_SERVER['PHP_SELF']) === 'student_homepage.php' ? 'active' : ''; ?>">

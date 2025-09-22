@@ -198,6 +198,78 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
     .home-section {
       padding-top: 0;
     }
+    
+    /* Welcome Banner Styles - Matches info banner design */
+    .welcome-banner {
+      background: white;
+      border: 1px solid #e9ecef;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      border-left: 4px solid #0068da;
+    }
+    .welcome-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .profile-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .profile-avatar {
+      position: relative;
+    }
+    .profile-avatar img {
+      border: 2px solid #e9ecef;
+    }
+    .status-indicator {
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid white;
+    }
+    .profile-info h4.welcome-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 0 0 4px 0;
+      color: #212529;
+    }
+    .profile-info .login-info {
+      margin: 0;
+      color: #6c757d;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+    }
+    .welcome-actions .btn {
+      color: #0068da;
+      border-color: #0068da;
+    }
+    .welcome-actions .btn:hover {
+      background: #0068da;
+      color: white;
+    }
+    
+    @media (max-width: 768px) {
+      .welcome-content {
+        text-align: center;
+      }
+      .profile-section {
+        flex-direction: column;
+        text-align: center;
+      }
+      .welcome-actions {
+        width: 100%;
+        text-align: center;
+      }
+    }
   </style>
 </head>
 <body>
@@ -206,8 +278,7 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
 
   <div id="wrapper" style="padding-top: var(--topbar-h);">
     <!-- Sidebar -->
-    <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+  <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
    
     <!-- Page Content -->
     <section class="home-section" id="page-content-wrapper">
@@ -253,14 +324,28 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
       </div>
       <!-- Main Content -->
       <div class="container-fluid py-4 px-4">
-        <!-- Welcome Section -->
-        <div class="d-flex align-items-center mb-3 section-spacing">
-          <img src="../../assets/images/default/profile.png" class="rounded-circle me-2" width="52" height="52" alt="Student Profile">
-          <div>
-            <h2 class="fw-bold mb-1" style="font-size:1.35rem;">Welcome, <?php echo htmlspecialchars($_SESSION['student_username']); ?>!</h2>
-            <small class="text-muted" style="font-size:0.9rem;">
-              <?php echo formatLastLogin($display_login_time); ?>
-            </small>
+        <!-- Welcome Section - Banner Style -->
+        <div class="welcome-banner mb-4">
+          <div class="welcome-content">
+            <div class="profile-section">
+              <div class="profile-avatar">
+                <img src="../../assets/images/profile.jpg" class="rounded-circle" width="48" height="48" alt="Student Profile">
+                <div class="status-indicator bg-success"></div>
+              </div>
+              <div class="profile-info">
+                <h4 class="welcome-title">Welcome back, <?php echo htmlspecialchars($_SESSION['student_username']); ?>!</h4>
+                <p class="login-info">
+                  <i class="bi bi-clock me-1"></i>
+                  <?php echo formatLastLogin($display_login_time); ?>
+                </p>
+              </div>
+            </div>
+            <div class="welcome-actions">
+              <button class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-gear me-1"></i>
+                Settings
+              </button>
+            </div>
           </div>
         </div>
         
