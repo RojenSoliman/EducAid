@@ -10,16 +10,22 @@ require_once __DIR__ . '/../../phpmailer/vendor/autoload.php';
 // Resolve current admin's municipality context
 $adminMunicipalityId = null;
 $adminMunicipalityName = '';
+$adminId = $_SESSION['admin_id'] ?? null;
 $adminUsername = $_SESSION['admin_username'] ?? null;
-if ($adminUsername) {
+if ($adminId) {
+    $admRes = pg_query_params($connection, "SELECT a.municipality_id, a.role, COALESCE(m.name,'') AS municipality_name FROM admins a LEFT JOIN municipalities m ON m.municipality_id = a.municipality_id WHERE a.admin_id = $1 LIMIT 1", [$adminId]);
+} elseif ($adminUsername) {
+    // Fallback to username if admin_id is not available in session
     $admRes = pg_query_params($connection, "SELECT a.municipality_id, a.role, COALESCE(m.name,'') AS municipality_name FROM admins a LEFT JOIN municipalities m ON m.municipality_id = a.municipality_id WHERE a.username = $1 LIMIT 1", [$adminUsername]);
-    if ($admRes && pg_num_rows($admRes)) {
-        $admRow = pg_fetch_assoc($admRes);
-        $adminMunicipalityId = $admRow['municipality_id'] ? intval($admRow['municipality_id']) : null;
-        $adminMunicipalityName = $admRow['municipality_name'] ?? '';
-        if (empty($_SESSION['admin_role']) && !empty($admRow['role'])) {
-            $_SESSION['admin_role'] = $admRow['role'];
-        }
+} else {
+    $admRes = false;
+}
+if ($admRes && pg_num_rows($admRes)) {
+    $admRow = pg_fetch_assoc($admRes);
+    $adminMunicipalityId = $admRow['municipality_id'] ? intval($admRow['municipality_id']) : null;
+    $adminMunicipalityName = $admRow['municipality_name'] ?? '';
+    if (empty($_SESSION['admin_role']) && !empty($admRow['role'])) {
+        $_SESSION['admin_role'] = $admRow['role'];
     }
 }
 
@@ -57,8 +63,8 @@ function to_bdate_from_age($age) {
 
 function map_gender($g) {
     $g = strtolower(trim((string)$g));
-    if (in_array($g, ['m','male'])) return 'male';
-    if (in_array($g, ['f','female'])) return 'female';
+    if (in_array($g, ['m','male'])) return 'Male';
+    if (in_array($g, ['f','female'])) return 'Female';
     return null;
 }
 
@@ -116,19 +122,87 @@ function generateUniqueStudentId_admin($connection, $year_level_id) {
 function send_migration_email($toEmail, $toName, $passwordPlain) {
     try {
         $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-        // Configure via phpMailer defaults in project (assumes SMTP set in php.ini or elsewhere)
-        $mail->setFrom('no-reply@educaid.local', 'EducAid');
+        
+        // Server settings - using same configuration as OTPService
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = 'dilucayaka02@gmail.com';
+        $mail->Password   = 'jlld eygl hksj flvg';
+        $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+        
+        // Recipients
+        $mail->setFrom('dilucayaka02@gmail.com', 'EducAid System');
         $mail->addAddress($toEmail, $toName ?: $toEmail);
         $mail->isHTML(true);
-        $mail->Subject = 'Your EducAid account has been created';
-        $mail->Body = '<p>Hello ' . htmlspecialchars($toName ?: $toEmail) . ',</p>' .
-            '<p>Your EducAid account has been created via migration.</p>' .
-            '<p><strong>Login Email:</strong> ' . htmlspecialchars($toEmail) . '<br>' .
-            '<strong>Temporary Password:</strong> ' . htmlspecialchars($passwordPlain) . '</p>' .
-            '<p>For security, you will be asked to verify with a One-Time Password (OTP) during your first login, and then you should change your password.</p>' .
-            '<p>Login here: <a href="' . htmlspecialchars((isset($_SERVER['HTTPS'])?'https':'http') . '://' . $_SERVER['HTTP_HOST'] . '/EducAid/unified_login.php') . '">EducAid Login</a></p>' .
-            '<p>Thank you.</p>';
-        $mail->AltBody = 'Your EducAid account has been created. Email: ' . $toEmail . ' Temporary Password: ' . $passwordPlain . ' Login at /EducAid/unified_login.php';
+        $mail->Subject = 'Welcome to EducAid - Your Account Has Been Created';
+        
+        $loginUrl = (isset($_SERVER['HTTPS'])?'https':'http') . '://' . $_SERVER['HTTP_HOST'] . '/EducAid/unified_login.php';
+        
+        $mail->Body = '
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+            <div style="background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #1182FF; margin: 0; font-size: 28px;">Welcome to EducAid!</h1>
+                    <p style="color: #6c757d; margin: 10px 0 0 0;">Your educational assistance account is ready</p>
+                </div>
+                
+                <div style="background-color: #e3f2fd; padding: 20px; border-radius: 6px; margin-bottom: 25px;">
+                    <h3 style="color: #1976d2; margin: 0 0 15px 0;">📧 Your Login Credentials</h3>
+                    <p style="margin: 8px 0;"><strong>Email:</strong> ' . htmlspecialchars($toEmail) . '</p>
+                    <p style="margin: 8px 0;"><strong>Temporary Password:</strong> <code style="background: #fff; padding: 4px 8px; border-radius: 4px; color: #d32f2f; font-weight: bold;">' . htmlspecialchars($passwordPlain) . '</code></p>
+                </div>
+                
+                <div style="background-color: #fff3cd; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #ffc107;">
+                    <h3 style="color: #856404; margin: 0 0 15px 0;">⚠️ Important Security Notice</h3>
+                    <ul style="margin: 0; padding-left: 20px; color: #856404;">
+                        <li>Keep your password confidential - never share it with anyone</li>
+                        <li>You will need to verify with a One-Time Password (OTP) during your first login</li>
+                        <li>Please change your password after your first successful login</li>
+                    </ul>
+                </div>
+                
+                <div style="background-color: #d4edda; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #28a745;">
+                    <h3 style="color: #155724; margin: 0 0 15px 0;">📋 Next Steps - Required Documents</h3>
+                    <p style="color: #155724; margin: 0 0 10px 0;">After logging in, please upload these required documents:</p>
+                    <ul style="margin: 0; padding-left: 20px; color: #155724;">
+                        <li><strong>Educational Assistance Form (EAF)</strong> - Completed and signed</li>
+                        <li><strong>Letter to Mayor</strong> - Formal request letter</li>
+                        <li><strong>Certificate of Indigency</strong> - From your barangay</li>
+                        <li><strong>Academic Grades</strong> - Recent transcript or report card</li>
+                    </ul>
+                    <p style="color: #155724; margin: 15px 0 0 0; font-style: italic;">Your application will be reviewed once all documents are uploaded.</p>
+                </div>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="' . htmlspecialchars($loginUrl) . '" style="background-color: #1182FF; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">🔐 Login to EducAid</a>
+                </div>
+                
+                <div style="border-top: 1px solid #dee2e6; padding-top: 20px; margin-top: 30px; text-align: center; color: #6c757d; font-size: 14px;">
+                    <p>If you have any questions, please contact your local EducAid administrator.</p>
+                    <p style="margin: 5px 0 0 0;">This is an automated message. Please do not reply to this email.</p>
+                </div>
+            </div>
+        </div>';
+        
+        $mail->AltBody = "Welcome to EducAid!\n\n" .
+            "Your account has been created successfully.\n\n" .
+            "Login Details:\n" .
+            "Email: " . $toEmail . "\n" .
+            "Temporary Password: " . $passwordPlain . "\n\n" .
+            "IMPORTANT SECURITY NOTICE:\n" .
+            "- Keep your password confidential\n" .
+            "- You will need OTP verification on first login\n" .
+            "- Change your password after first login\n\n" .
+            "REQUIRED DOCUMENTS TO UPLOAD:\n" .
+            "1. Educational Assistance Form (EAF)\n" .
+            "2. Letter to Mayor\n" .
+            "3. Certificate of Indigency\n" .
+            "4. Academic Grades\n\n" .
+            "Login here: " . $loginUrl . "\n\n" .
+            "Contact your local EducAid administrator for assistance.";
+            
         $mail->send();
         return true;
     } catch (Exception $e) { return false; }
@@ -136,6 +210,21 @@ function send_migration_email($toEmail, $toName, $passwordPlain) {
 
 // Handle Migration POST actions
 $migration_preview = $_SESSION['migration_preview'] ?? null;
+$migration_result = $_SESSION['migration_result'] ?? null;
+
+// Clear migration sessions on GET request to prevent resubmission warnings
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['clear_migration'])) {
+    // If a preview still exists, only clear the result so remaining rows persist
+    if (!empty($_SESSION['migration_preview'])) {
+        unset($_SESSION['migration_result']);
+    } else {
+        unset($_SESSION['migration_preview']);
+        unset($_SESSION['migration_result']);
+    }
+    header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?'));
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migration_action'])) {
     if ($_POST['migration_action'] === 'preview' && isset($_FILES['csv_file'])) {
         $municipality_id = intval($adminMunicipalityId ?? 0);
@@ -260,43 +349,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migration_action'])) 
             header('Location: ' . $_SERVER['PHP_SELF']);
             exit;
         }
-    }
-    if ($_POST['migration_action'] === 'confirm' && isset($_SESSION['migration_preview'])) {
-        $selected = $_POST['select'] ?? [];
-        if (empty($selected)) {
-            $_SESSION['migration_result'] = ['inserted'=>0, 'errors'=>['No rows selected for migration.']];
-            unset($_SESSION['migration_preview']);
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit;
-        }
-        $preview = $_SESSION['migration_preview'];
-        $municipality_id = intval($preview['municipality_id']);
-        $inserted = 0; $errors = [];
-        foreach ($preview['rows'] as $idx => $row) {
-            if (!isset($selected[(string)$idx])) continue; // not selected
-            $r = $row['row']; $uni = $row['university']; $yl = $row['year_level']; $brgy = $row['barangay'];
-            if (!$r['bdate'] || !$r['sex'] || !$uni || !$yl || !$brgy || !filter_var($r['email'], FILTER_VALIDATE_EMAIL)) { $errors[] = "Row #$idx has unresolved fields"; continue; }
-            // generate password
-            $plain = rand_password_12(); $hashed = password_hash($plain, PASSWORD_DEFAULT);
-            // student id
-            $stud_id = generateUniqueStudentId_admin($connection, $yl['year_level_id']);
-            if (!$stud_id) { $errors[] = "Row #$idx could not generate student id"; continue; }
-            // insert
-            $insert = pg_query_params($connection, "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'applicant',0,0,FALSE,NOW(),$11,$12,$13,$14,$15)", [
-                $stud_id, $municipality_id, $r['first_name'], $r['middle_name'], $r['last_name'], $r['extension_name'], $r['email'], $r['mobile'], $hashed, $r['sex'], $r['bdate'], $brgy['barangay_id'], $uni['university_id'], $yl['year_level_id'], null
-            ]);
-            if ($insert) {
-                $inserted++;
-                send_migration_email($r['email'], $r['first_name'] . ' ' . $r['last_name'], $plain);
+    } // end preview action
+    if ($_POST['migration_action'] === 'confirm') {
+        if (!isset($_SESSION['migration_preview'])) {
+            // Preview missing – likely session loss; set a clear result so UI shows error
+            $_SESSION['migration_result'] = ['inserted'=>0, 'errors'=>['Migration preview expired or session lost. Please re-upload the CSV and try again.'], 'status'=>'error'];
+        } else {
+        // Verify admin password before migration
+        $adminPassword = trim($_POST['admin_password'] ?? '');
+        if (empty($adminPassword)) {
+            $_SESSION['migration_result'] = ['inserted'=>0, 'errors'=>['Admin password verification required.'], 'status'=>'error'];
+        } else {
+            // Verify admin password
+            $adminId = $_SESSION['admin_id'] ?? null;
+            $adminUsername = $_SESSION['admin_username'] ?? null;
+            $passwordValid = false;
+            if ($adminId) {
+                $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE admin_id = $1", [$adminId]);
+            } elseif ($adminUsername) {
+                $adminQuery = pg_query_params($connection, "SELECT password FROM admins WHERE username = $1", [$adminUsername]);
+            } else { $adminQuery = false; }
+            if ($adminQuery && pg_num_rows($adminQuery)) {
+                $adminData = pg_fetch_assoc($adminQuery);
+                $passwordValid = password_verify($adminPassword, $adminData['password']);
             } else {
-                $errors[] = "Row #$idx DB error: " . pg_last_error($connection);
+                if (function_exists('error_log')) { error_log('[MIGRATION] Admin lookup failed. Session admin_id=' . ($_SESSION['admin_id'] ?? 'NULL') . ', admin_username=' . ($_SESSION['admin_username'] ?? 'NULL')); }
+            }
+            
+            if (!$passwordValid) {
+                $_SESSION['migration_result'] = ['inserted'=>0, 'errors'=>['Invalid admin password.'], 'status'=>'error'];
+            } else {
+                $selected = $_POST['select'] ?? [];
+                if (empty($selected)) {
+                    $_SESSION['migration_result'] = ['inserted'=>0, 'errors'=>['No rows selected for migration.'], 'status'=>'warning'];
+                } else {
+            $preview = $_SESSION['migration_preview'];
+            $municipality_id = intval($preview['municipality_id']);
+            $inserted = 0; $errors = [];
+            // Debug: log session and selection size
+            if (function_exists('error_log')) {
+                error_log('[MIGRATION] Confirm started: session ok, selected=' . count($selected) . ', muni=' . $municipality_id);
+            }
+            foreach ($preview['rows'] as $idx => $row) {
+                if (!isset($selected[(string)$idx])) continue; // not selected
+                $r = $row['row']; $uni = $row['university']; $yl = $row['year_level']; $brgy = $row['barangay'];
+                if (!$r['bdate'] || !$r['sex'] || !$uni || !$yl || !$brgy || !filter_var($r['email'], FILTER_VALIDATE_EMAIL)) { $errors[] = "Row #$idx has unresolved fields"; continue; }
+                // generate password
+                $plain = rand_password_12(); $hashed = password_hash($plain, PASSWORD_DEFAULT);
+                // student id
+                $stud_id = generateUniqueStudentId_admin($connection, $yl['year_level_id']);
+                if (!$stud_id) { $errors[] = "Row #$idx could not generate student id"; continue; }
+                // insert
+                $insert = pg_query_params($connection, "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'applicant',0,0,FALSE,NOW(),$11,$12,$13,$14,$15)", [
+                    $stud_id, $municipality_id, $r['first_name'], $r['middle_name'], $r['last_name'], $r['extension_name'], $r['email'], $r['mobile'], $hashed, $r['sex'], $r['bdate'], $brgy['barangay_id'], $uni['university_id'], $yl['year_level_id'], null
+                ]);
+                if ($insert) {
+                    $inserted++;
+                    send_migration_email($r['email'], $r['first_name'] . ' ' . $r['last_name'], $plain);
+                } else {
+                    $dbErr = pg_last_error($connection);
+                    $errors[] = "Row #$idx DB error: " . $dbErr;
+                    if (function_exists('error_log')) { error_log('[MIGRATION] Insert failed for row #' . $idx . ': ' . $dbErr); }
+                }
+            }
+            // Rebuild preview with rows that were NOT selected or that failed
+            $remaining = [];
+            // Build a set of row indices that failed during insert (from error messages)
+            $failedIndices = [];
+            foreach ($errors as $er) {
+                if (preg_match('/Row\s+#(\d+)/', $er, $m)) {
+                    $failedIndices[(string)$m[1]] = true;
+                }
+            }
+
+            foreach ($preview['rows'] as $idx => $row) {
+                $wasSelected = isset($selected[(string)$idx]);
+                // Consider a row as failed if it was selected but appears in the failedIndices
+                $hadError = $wasSelected && isset($failedIndices[(string)$idx]);
+                if (!$wasSelected || $hadError) { $remaining[] = $row; }
+            }
+
+            if (!empty($remaining)) {
+                $_SESSION['migration_preview'] = ['municipality_id'=>$municipality_id, 'rows'=>$remaining];
+            } else {
+                unset($_SESSION['migration_preview']);
+            }
+
+            $_SESSION['migration_result'] = [
+                'inserted'=>$inserted, 
+                'errors'=>$errors,
+                'status' => $inserted > 0 ? 'success' : 'error'
+            ];
+            // If client expects JSON (AJAX), respond with the result now and exit
+            if (strpos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') !== false) {
+                header('Content-Type: application/json');
+                echo json_encode($_SESSION['migration_result']);
+                // Do not unset here; GET will display and then unset
+                exit;
+            }
+            // Don't redirect after confirm - let the modal show results
+            // header('Location: ' . $_SERVER['PHP_SELF']);
+            // exit;
+                }
             }
         }
-        $_SESSION['migration_result'] = ['inserted'=>$inserted, 'errors'=>$errors];
-        unset($_SESSION['migration_preview']);
-        header('Location: ' . $_SERVER['PHP_SELF']);
-        exit;
+        } // close else (preview exists)
+        // end else preview exists
     }
+    // end confirm action
     if ($_POST['migration_action'] === 'cancel') {
         unset($_SESSION['migration_preview']);
         unset($_SESSION['migration_result']);
@@ -304,7 +464,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migration_action'])) 
         http_response_code(204);
         exit;
     }
-}
+} // end POST migration_action handler
+// End migration_action POST handler
 
 // Normalize a string for comparison (letters only, lowercase)
 function _normalize_token($s) {
@@ -846,14 +1007,7 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
                                 <button class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="migrationCloseBtn"></button>
                     </div>
             <div class="modal-body">
-                <?php if (!empty($_SESSION['migration_result'])): $mr = $_SESSION['migration_result']; unset($_SESSION['migration_result']); ?>
-                        <div class="alert alert-success"><i class="bi bi-check2-circle me-2"></i>Inserted <?= intval($mr['inserted']) ?> students.</div>
-                        <?php if (!empty($mr['errors'])): ?>
-                                <div class="alert alert-warning"><strong>Some rows failed:</strong>
-                                    <ul class="mb-0 small"><?php foreach ($mr['errors'] as $er) echo '<li>'.htmlspecialchars($er).'</li>'; ?></ul>
-                                </div>
-                        <?php endif; ?>
-                <?php endif; ?>
+        <?php /* Migration result is now shown via JS alert after reload; avoid unsetting here to prevent race */ ?>
 
             <form method="POST" enctype="multipart/form-data" class="mb-3" id="migrationUploadForm">
                     <input type="hidden" name="migration_action" value="preview">
@@ -886,7 +1040,7 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
                 </form>
 
                         <?php if (!empty($_SESSION['migration_preview'])): $mp = $_SESSION['migration_preview']; ?>
-                    <form method="POST">
+                    <form method="POST" id="migrationForm">
                         <input type="hidden" name="migration_action" value="confirm">
                                                         <div class="d-flex justify-content-end gap-2 mb-2 preview-scroll-controls">
                                                 <button type="button" class="btn btn-outline-secondary btn-sm" id="scrollStartBtn" title="Scroll to start"><i class="bi bi-skip-backward"></i></button>
@@ -940,7 +1094,13 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
                                 </div>
 
                                             <div class="modal-footer justify-content-end mt-3 sticky-confirm">
-                                                <button type="submit" class="btn btn-success"><i class="bi bi-check2-circle me-1"></i> Confirm & Migrate</button>
+                                                <button type="submit" class="btn btn-success" id="confirmMigrateBtn">
+                                                  <span class="migration-btn-text"><i class="bi bi-check2-circle me-1"></i> Confirm & Migrate</span>
+                                                  <span class="migration-btn-loading d-none">
+                                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                                    Migrating... <span id="migrationProgress">0</span>/<span id="migrationTotal">0</span>
+                                                  </span>
+                                                </button>
                                 </div>
                     </form>
                 <?php endif; ?>
@@ -949,10 +1109,39 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
     </div>
 </div>
 
+<!-- Password Confirmation Modal -->
+<div class="modal fade" id="passwordConfirmModal" tabindex="-1" aria-labelledby="passwordConfirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="passwordConfirmModalLabel"><i class="bi bi-shield-lock me-2"></i>Confirm Password</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3">Please enter your admin password to confirm this migration:</p>
+                <div class="form-floating">
+                    <input type="password" class="form-control" id="adminPasswordInput" placeholder="Password" required>
+                    <label for="adminPasswordInput">Admin Password</label>
+                </div>
+                <div id="passwordError" class="alert alert-danger mt-2 d-none">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    <span></span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmPasswordBtn">
+                    <i class="bi bi-check2-circle me-1"></i>Confirm Migration
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
-<script src="../../assets/js/admin/manage_applicants.js"></script>
+<!-- Removed external manage_applicants.js include (404 caused script parse error) -->
 <script>
 // Image Zoom Functionality
 function openImageZoom(imageSrc, imageTitle) {
@@ -1070,14 +1259,15 @@ function updateTableData() {
             console.log('Update failed:', error);
         })
         .finally(() => {
-            isUpdating = false;
-            setTimeout(updateTableData, 100); // Update every 100ms
+        isUpdating = false;
+        // Slow down polling to avoid racing with migrations and reduce load
+        setTimeout(updateTableData, 3000); // Update every 3s
         });
 }
 
 // Start real-time updates when page loads
 document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(updateTableData, 100);
+    setTimeout(updateTableData, 300);
     // Auto-open migration modal if preview/result exists
     <?php if (!empty($_SESSION['migration_preview']) || !empty($_SESSION['migration_result'])): ?>
     const migrationModalEl = document.getElementById('migrationModal');
@@ -1149,11 +1339,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Cancel migration on modal close with confirmation
     const migrationModalEl2 = document.getElementById('migrationModal');
     let _isSubmittingMigration = false;
-    // Mark when the confirm form is submitting so we don't cancel preview
-    const confirmActionInput = document.querySelector('#migrationModal input[name="migration_action"][value="confirm"]');
-    if (confirmActionInput && confirmActionInput.form) {
-        confirmActionInput.form.addEventListener('submit', function(){ _isSubmittingMigration = true; });
-    }
+    // Note: Form submission is now handled by password confirmation modal
     if (migrationModalEl2) {
         migrationModalEl2.addEventListener('hide.bs.modal', function (e) {
             if (_isSubmittingMigration) { return; }
@@ -1169,6 +1355,272 @@ document.addEventListener('DOMContentLoaded', function() {
                     .catch(() => { /* ignore */ });
             }
             <?php endif; ?>
+        });
+    }
+
+    // Password confirmation for migration
+    const confirmMigrateBtn = document.getElementById('confirmMigrateBtn');
+    const passwordModal = document.getElementById('passwordConfirmModal');
+    const adminPasswordInput = document.getElementById('adminPasswordInput');
+    const confirmPasswordBtn = document.getElementById('confirmPasswordBtn');
+    const passwordError = document.getElementById('passwordError');
+    let pendingFormData = null;
+
+    // Debug logging
+    console.log('Elements found:', {
+        confirmMigrateBtn: !!confirmMigrateBtn,
+        passwordModal: !!passwordModal,
+        adminPasswordInput: !!adminPasswordInput,
+        confirmPasswordBtn: !!confirmPasswordBtn,
+        passwordError: !!passwordError
+    });
+
+    // Show migration result alerts (only on GET). On POST (fetch), don't clear result yet.
+    <?php if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['migration_result'])): ?>
+        const result = <?= json_encode($_SESSION['migration_result']) ?>;
+        console.log('Migration result found:', result);
+        showMigrationAlert(result);
+        <?php unset($_SESSION['migration_result']); ?>
+    <?php endif; ?>
+
+    // Intercept confirm migration button click
+    if (confirmMigrateBtn) {
+        console.log('Migration button found, adding event listener');
+        confirmMigrateBtn.addEventListener('click', function(e) {
+            console.log('Migration button clicked');
+            e.preventDefault();
+            
+            // Check if any rows are selected
+            const selectedCheckboxes = document.querySelectorAll('.migration-preview .row-select:checked');
+            console.log('Selected checkboxes:', selectedCheckboxes.length);
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select at least one row to migrate.');
+                return;
+            }
+            
+            // Collect form data
+            const form = document.getElementById('migrationForm');
+            if (!form) {
+                console.error('Migration form not found');
+                alert('Error: Migration form not found. Please refresh the page.');
+                return;
+            }
+            console.log('Migration form found:', form);
+            
+            pendingFormData = new FormData(form);
+            pendingFormData.set('migration_action', 'confirm');
+            
+            // Store selected count for later use
+            window.migrationSelectedCount = selectedCheckboxes.length;
+            
+            // Show password modal
+            if (adminPasswordInput) adminPasswordInput.value = '';
+            if (passwordError) passwordError.classList.add('d-none');
+            
+            if (passwordModal) {
+                console.log('Showing password modal');
+                const passwordModalInstance = new bootstrap.Modal(passwordModal);
+                passwordModalInstance.show();
+            } else {
+                console.error('Password modal not found');
+                alert('Error: Password confirmation modal not found. Please refresh the page.');
+            }
+        });
+    } else {
+        console.error('Confirm migrate button not found');
+    }
+
+    // Handle password confirmation
+    if (confirmPasswordBtn) {
+        confirmPasswordBtn.addEventListener('click', function() {
+            const password = adminPasswordInput ? adminPasswordInput.value.trim() : '';
+            if (!password) {
+                showPasswordError('Please enter your password.');
+                return;
+            }
+
+            // Add password to form data
+            if (pendingFormData) {
+                pendingFormData.set('admin_password', password);
+            } else {
+                console.error('No pending form data');
+                showPasswordError('Error: Please try again.');
+                return;
+            }
+            
+            // Show loading state on password button
+            const originalText = confirmPasswordBtn.innerHTML;
+            confirmPasswordBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Verifying...';
+            confirmPasswordBtn.disabled = true;
+            
+            // Submit the form
+            fetch(window.location.href, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' },
+                body: pendingFormData
+            }).then(response => {
+                console.log('Migration response received:', response.status);
+                if (response.ok) {
+                    // Close password modal
+                    if (passwordModal && bootstrap.Modal.getInstance(passwordModal)) {
+                        bootstrap.Modal.getInstance(passwordModal).hide();
+                    }
+                    
+                    // Show migration loading in original modal
+                    _isSubmittingMigration = true;
+                    const btn = document.getElementById('confirmMigrateBtn');
+                    if (btn) {
+                        btn.disabled = true;
+                        const btnText = btn.querySelector('.migration-btn-text');
+                        const btnLoading = btn.querySelector('.migration-btn-loading');
+                        
+                        if (btnText) btnText.classList.add('d-none');
+                        if (btnLoading) btnLoading.classList.remove('d-none');
+                        
+                        const total = window.migrationSelectedCount || 1;
+                        const totalEl = document.getElementById('migrationTotal');
+                        if (totalEl) totalEl.textContent = total;
+                        
+                        // Simulate progress
+                        let progress = 0;
+                        const progressEl = document.getElementById('migrationProgress');
+                        if (progressEl) {
+                            const interval = setInterval(() => {
+                                if (progress < total) {
+                                    progress++;
+                                    progressEl.textContent = progress;
+                                } else {
+                                    clearInterval(interval);
+                                    console.log('Migration progress simulation complete');
+                                }
+                            }, 100);
+                        }
+                    }
+                    
+                    // Try to parse JSON result and show alert immediately
+                    response.clone().json().then(data => {
+                        try { showMigrationAlert(data); } catch (_) { /* ignore */ }
+                    }).catch(() => { /* not JSON, fallback to reload */ });
+
+                    // Reload page to show results after migration completes (fallback)
+                    setTimeout(() => {
+                        console.log('Reloading page to show migration results');
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    console.error('Migration request failed:', response.status);
+                    throw new Error('Migration request failed with status: ' + response.status);
+                }
+            }).catch(error => {
+                console.error('Migration error:', error);
+                showPasswordError(error.message || 'Migration failed. Please try again.');
+                confirmPasswordBtn.innerHTML = originalText;
+                confirmPasswordBtn.disabled = false;
+            });
+        });
+        
+        // Enter key in password field
+        if (adminPasswordInput) {
+            adminPasswordInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    confirmPasswordBtn.click();
+                }
+            });
+        }
+    }
+
+    function showPasswordError(message) {
+        console.log('Password error:', message);
+        if (passwordError && passwordError.querySelector('span')) {
+            passwordError.querySelector('span').textContent = message;
+            passwordError.classList.remove('d-none');
+        } else {
+            console.error('Password error element not found');
+            alert('Error: ' + message);
+        }
+    }
+
+    function showMigrationAlert(result) {
+        console.log('Showing migration alert:', result);
+        const alertContainer = document.createElement('div');
+        alertContainer.className = 'container-fluid mt-3';
+        
+        let alertType, icon, title;
+        if (result.status === 'success') {
+            alertType = 'alert-success';
+            icon = 'bi-check-circle-fill';
+            title = 'Migration Successful';
+        } else if (result.status === 'warning') {
+            alertType = 'alert-warning';
+            icon = 'bi-exclamation-triangle-fill';
+            title = 'Migration Warning';
+        } else {
+            alertType = 'alert-danger';
+            icon = 'bi-x-circle-fill';
+            title = 'Migration Failed';
+        }
+        
+        let message = '';
+        if (result.inserted > 0) {
+            message += `<strong>${result.inserted}</strong> student(s) successfully migrated.`;
+        }
+        if (result.errors && result.errors.length > 0) {
+            if (message) message += '<br>';
+            message += '<strong>Errors:</strong><ul class="mb-0 mt-2">';
+            result.errors.forEach(error => {
+                message += `<li>${error}</li>`;
+            });
+            message += '</ul>';
+        }
+        
+        alertContainer.innerHTML = `
+            <div class="alert ${alertType} alert-dismissible fade show" role="alert">
+                <i class="bi ${icon} me-2"></i>
+                <strong>${title}</strong><br>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+        
+        // Insert after header
+        const header = document.querySelector('.section-header');
+        if (header && header.parentNode) {
+            header.parentNode.insertBefore(alertContainer, header.nextSibling);
+            console.log('Migration alert inserted successfully');
+            
+            // Auto dismiss after 10 seconds for success
+            if (result.status === 'success') {
+                setTimeout(() => {
+                    const alert = alertContainer.querySelector('.alert');
+                    if (alert) {
+                        bootstrap.Alert.getOrCreateInstance(alert).close();
+                    }
+                }, 10000);
+                
+                // Clear the migration session and close modal after showing success
+                setTimeout(() => {
+                    clearMigrationSession();
+                    const migrationModal = document.getElementById('migrationModal');
+                    if (migrationModal && bootstrap.Modal.getInstance(migrationModal)) {
+                        bootstrap.Modal.getInstance(migrationModal).hide();
+                    }
+                }, 3000);
+            }
+        } else {
+            console.error('Header element not found for alert insertion');
+        }
+    }
+
+    function clearMigrationSession() {
+        // Clear migration session on server
+        fetch(window.location.href + '?clear_migration=1', {
+            method: 'GET'
+        }).then(() => {
+            console.log('Migration session cleared');
+        }).catch(error => {
+            console.error('Error clearing migration session:', error);
         });
     }
 });
