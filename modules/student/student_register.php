@@ -30,10 +30,89 @@ require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 
 $municipality_id = 1;
 
-// Check if this is an AJAX request (OCR or OTP processing)
+// Check if this is an AJAX request (OCR, OTP processing, cleanup, or duplicate check)
 $isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) || 
                  isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) || 
-                 isset($_POST['processCertificateOcr']);
+                 isset($_POST['processCertificateOcr']) || isset($_POST['cleanup_temp']) ||
+                 isset($_POST['check_existing']);
+
+// Handle cleanup when user navigates away (AJAX endpoint)
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['cleanup_temp'])) {
+    $tempDirs = [
+        '../../assets/uploads/temp/enrollment_forms/',
+        '../../assets/uploads/temp/letter_mayor/',
+        '../../assets/uploads/temp/indigency/'
+    ];
+    
+    $deletedFiles = 0;
+    foreach ($tempDirs as $dir) {
+        if (is_dir($dir)) {
+            $files = glob($dir . '*');
+            foreach ($files as $file) {
+                if (is_file($file)) {
+                    unlink($file);
+                    $deletedFiles++;
+                }
+            }
+        }
+    }
+    
+    // Clear any OTP session data
+    unset($_SESSION['otp'], $_SESSION['otp_email'], $_SESSION['otp_timestamp'], $_SESSION['otp_verified']);
+    
+    json_response(['status' => 'success', 'message' => "Cleaned up $deletedFiles temporary files"]);
+}
+
+// Check for existing registration (prevent duplicates)
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['check_existing'])) {
+    $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
+    $mobile = preg_replace('/[^0-9]/', '', $_POST['mobile'] ?? '');
+    
+    $existingAccount = false;
+    $existingType = '';
+    
+    if (!empty($email)) {
+        $checkEmail = pg_query_params($connection, "SELECT status FROM students WHERE email = $1", [$email]);
+        if (pg_num_rows($checkEmail) > 0) {
+            $row = pg_fetch_assoc($checkEmail);
+            $existingAccount = true;
+            $existingType = 'email';
+            $status = $row['status'];
+        }
+    }
+    
+    if (!$existingAccount && !empty($mobile)) {
+        $checkMobile = pg_query_params($connection, "SELECT status FROM students WHERE mobile = $1", [$mobile]);
+        if (pg_num_rows($checkMobile) > 0) {
+            $row = pg_fetch_assoc($checkMobile);
+            $existingAccount = true;
+            $existingType = 'mobile';
+            $status = $row['status'];
+        }
+    }
+    
+    if ($existingAccount) {
+        $statusMessages = [
+            'under_registration' => 'You have a pending registration. Please complete it or wait for admin review.',
+            'applicant' => 'You already have an approved application under review.',
+            'active' => 'You already have an active account in the system.',
+            'blacklist' => 'Your account has been suspended. Please contact the administrator.',
+            'rejected' => 'Your previous application was rejected. You may reapply after addressing the issues.'
+        ];
+        
+        $message = $statusMessages[$status] ?? 'You already have an account in the system.';
+        
+        json_response([
+            'status' => 'exists', 
+            'type' => $existingType,
+            'account_status' => $status,
+            'message' => $message,
+            'can_reapply' => $status === 'rejected'
+        ]);
+    } else {
+        json_response(['status' => 'available', 'message' => 'No existing account found']);
+    }
+}
 
 // Only output HTML for non-AJAX requests
 if (!$isAjaxRequest) {
@@ -2072,6 +2151,111 @@ if (!$isAjaxRequest) {
 <script src="../../assets/js/student/user_registration.js?v=<?php echo time(); ?>"></script>
 
 <script>
+    // Registration state tracking
+    let registrationInProgress = false;
+    let hasUploadedFiles = false;
+    let hasVerifiedOTP = false;
+    
+    // Track when user starts uploading documents
+    function trackFileUpload() {
+        hasUploadedFiles = true;
+        registrationInProgress = true;
+    }
+    
+    // Track when OTP is verified
+    function trackOTPVerification() {
+        hasVerifiedOTP = true;
+        registrationInProgress = true;
+    }
+    
+    // Check for existing account before allowing registration
+    function checkExistingAccount(email, mobile) {
+        return fetch('', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                'check_existing': '1',
+                'email': email || '',
+                'mobile': mobile || ''
+            })
+        })
+        .then(response => response.json());
+    }
+    
+    // Cleanup temporary files
+    function cleanupTempFiles() {
+        return fetch('', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                'cleanup_temp': '1'
+            })
+        })
+        .then(response => response.json());
+    }
+    
+    // Enhanced beforeunload warning
+    window.addEventListener('beforeunload', function(e) {
+        if (registrationInProgress && !document.querySelector('form').submitted) {
+            const message = 'You have unsaved registration progress. If you leave this page, your uploaded documents and verification progress will be lost. Are you sure you want to leave?';
+            e.preventDefault();
+            e.returnValue = message;
+            
+            // Attempt to cleanup (may not always work due to browser limitations)
+            navigator.sendBeacon('', new URLSearchParams({
+                'cleanup_temp': '1'
+            }));
+            
+            return message;
+        }
+    });
+    
+    // Handle page visibility change (user switches tabs or minimizes)
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'hidden' && registrationInProgress) {
+            // User switched away, start a timer for cleanup
+            setTimeout(() => {
+                if (document.visibilityState === 'hidden') {
+                    // Still hidden after 5 minutes, cleanup
+                    cleanupTempFiles().catch(err => console.log('Cleanup failed:', err));
+                }
+            }, 300000); // 5 minutes
+        }
+    });
+    
+    // Enhanced email/mobile validation with duplicate check
+    async function validateAccountDetails() {
+        const email = document.querySelector('input[name="email"]').value.trim();
+        const mobile = document.querySelector('input[name="phone"]').value.trim();
+        
+        if (!email && !mobile) return true;
+        
+        try {
+            const result = await checkExistingAccount(email, mobile);
+            
+            if (result.status === 'exists') {
+                const confirmMsg = `${result.message}\n\nAccount found using your ${result.type}.\nStatus: ${result.account_status.replace('_', ' ').toUpperCase()}\n\n`;
+                
+                if (result.can_reapply) {
+                    const reapply = confirm(confirmMsg + 'Would you like to continue with a new application? This will replace your previous rejected application.');
+                    if (!reapply) return false;
+                } else {
+                    alert(confirmMsg + 'Please use the login page instead or contact support if you believe this is an error.');
+                    return false;
+                }
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('Account validation failed:', error);
+            return true; // Allow registration if check fails
+        }
+    }
+
     // Letter to Mayor Upload Handling
     document.getElementById('letterToMayorForm').addEventListener('change', function(e) {
         const file = e.target.files[0];
@@ -2082,6 +2266,8 @@ if (!$isAjaxRequest) {
         const processBtn = document.getElementById('processLetterOcrBtn');
 
         if (file) {
+            trackFileUpload(); // Track that user has uploaded files
+            
             // Show preview section
             previewContainer.classList.remove('d-none');
             ocrSection.classList.remove('d-none');
@@ -2280,6 +2466,8 @@ if (!$isAjaxRequest) {
         const processBtn = document.getElementById('processCertificateOcrBtn');
 
         if (file) {
+            trackFileUpload(); // Track that user has uploaded files
+            
             // Show preview section
             previewContainer.classList.remove('d-none');
             ocrSection.classList.remove('d-none');
@@ -2417,6 +2605,109 @@ if (!$isAjaxRequest) {
             nextButton.classList.add('btn-primary');
         }
     }
+</script>
+
+<!-- Enhanced registration form submission with duplicate checking -->
+<script>
+    // Track enrollment form uploads
+    document.getElementById('enrollmentForm').addEventListener('change', function(e) {
+        if (e.target.files[0]) {
+            trackFileUpload();
+        }
+    });
+    
+    // Enhanced form submission with validation and duplicate checking
+    document.getElementById('multiStepForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        // Check for duplicates before final submission
+        const isValid = await validateAccountDetails();
+        if (!isValid) {
+            return false;
+        }
+        
+        // Show final confirmation
+        const confirmSubmit = confirm(
+            'Are you sure you want to submit your registration?\n\n' +
+            'Please review:\n' +
+            '✓ All personal information is correct\n' +
+            '✓ All required documents are uploaded and verified\n' +
+            '✓ Email and phone number are valid\n' +
+            '✓ Password meets requirements\n\n' +
+            'Once submitted, you cannot edit your application.'
+        );
+        
+        if (!confirmSubmit) {
+            return false;
+        }
+        
+        // Mark form as submitted to prevent cleanup warning
+        this.submitted = true;
+        registrationInProgress = false;
+        
+        // Submit the form
+        this.submit();
+    });
+    
+    // Enhanced OTP verification tracking
+    const originalVerifyOtp = document.getElementById('verifyOtpBtn').onclick;
+    document.getElementById('verifyOtpBtn').addEventListener('click', function() {
+        // Track OTP verification
+        setTimeout(() => {
+            if (document.getElementById('emailStatus').classList.contains('text-success')) {
+                trackOTPVerification();
+            }
+        }, 1000);
+    });
+    
+    // Add cleanup button for manual clearing (optional)
+    function addCleanupButton() {
+        const cleanupBtn = document.createElement('button');
+        cleanupBtn.type = 'button';
+        cleanupBtn.className = 'btn btn-outline-warning btn-sm mt-2';
+        cleanupBtn.innerHTML = '<i class="bi bi-trash"></i> Clear All Progress';
+        cleanupBtn.onclick = function() {
+            if (confirm('This will delete all uploaded files and reset your progress. Are you sure?')) {
+                cleanupTempFiles().then(() => {
+                    alert('All temporary files cleared. You can start fresh.');
+                    location.reload();
+                });
+            }
+        };
+        
+        // Add to the first step
+        const firstStep = document.getElementById('step-1');
+        if (firstStep && !document.getElementById('cleanup-btn')) {
+            cleanupBtn.id = 'cleanup-btn';
+            firstStep.appendChild(cleanupBtn);
+        }
+    }
+    
+    // Add cleanup button when page loads
+    document.addEventListener('DOMContentLoaded', addCleanupButton);
+    
+    // Periodic cleanup check (every 30 minutes of inactivity)
+    let inactivityTimer;
+    function resetInactivityTimer() {
+        clearTimeout(inactivityTimer);
+        if (registrationInProgress) {
+            inactivityTimer = setTimeout(() => {
+                if (confirm('You have been inactive for 30 minutes. Would you like to keep your progress or clean up temporary files?')) {
+                    resetInactivityTimer(); // User wants to continue
+                } else {
+                    cleanupTempFiles().then(() => {
+                        alert('Temporary files cleared due to inactivity.');
+                        location.reload();
+                    });
+                }
+            }, 1800000); // 30 minutes
+        }
+    }
+    
+    // Reset timer on user activity
+    ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(event => {
+        document.addEventListener(event, resetInactivityTimer, true);
+    });
 </script>
 
 <!-- ADD this modal HTML before closing </body> tag -->

@@ -15,6 +15,115 @@ let filenameValid = false;
 let hasUnsavedChanges = false;
 let autoSaveTimer = null;
 
+// Registration progress tracking
+let registrationInProgress = false;
+let hasUploadedFiles = false;
+let hasVerifiedOTP = false;
+let formSubmitted = false;
+
+// Track when user starts uploading documents
+function trackFileUpload() {
+    hasUploadedFiles = true;
+    registrationInProgress = true;
+    console.log('File upload tracked - registration in progress');
+}
+
+// Track when OTP is verified
+function trackOTPVerification() {
+    hasVerifiedOTP = true;
+    registrationInProgress = true;
+    console.log('OTP verification tracked - registration in progress');
+}
+
+// Check for existing account before allowing registration
+async function checkExistingAccount(email, mobile) {
+    try {
+        const response = await fetch('', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                'check_existing': '1',
+                'email': email || '',
+                'mobile': mobile || ''
+            })
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('Error checking existing account:', error);
+        return { status: 'error', message: 'Could not verify account status' };
+    }
+}
+
+// Cleanup temporary files
+async function cleanupTempFiles() {
+    try {
+        const response = await fetch('', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                'cleanup_temp': '1'
+            })
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('Error cleaning up temp files:', error);
+        return { status: 'error', message: 'Cleanup failed' };
+    }
+}
+
+// Enhanced beforeunload warning
+function setupNavigationWarning() {
+    window.addEventListener('beforeunload', function(e) {
+        if (registrationInProgress && !formSubmitted) {
+            const message = 'You have unsaved registration progress. If you leave this page, your uploaded documents and verification progress will be lost. Are you sure you want to leave?';
+            e.preventDefault();
+            e.returnValue = message;
+            
+            // Attempt to cleanup (may not always work due to browser limitations)
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon('', new URLSearchParams({
+                    'cleanup_temp': '1'
+                }));
+            }
+            
+            return message;
+        }
+    });
+}
+
+// Enhanced email/mobile validation with duplicate check
+async function validateAccountDetails() {
+    const email = document.querySelector('input[name="email"]')?.value.trim();
+    const mobile = document.querySelector('input[name="phone"]')?.value.trim();
+    
+    if (!email && !mobile) return true;
+    
+    try {
+        const result = await checkExistingAccount(email, mobile);
+        
+        if (result.status === 'exists') {
+            const confirmMsg = `${result.message}\n\nAccount found using your ${result.type}.\nStatus: ${result.account_status.replace('_', ' ').toUpperCase()}\n\n`;
+            
+            if (result.can_reapply) {
+                const reapply = confirm(confirmMsg + 'Would you like to continue with a new application? This will replace your previous rejected application.');
+                if (!reapply) return false;
+            } else {
+                alert(confirmMsg + 'Please use the login page instead or contact support if you believe this is an error.');
+                return false;
+            }
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('Account validation failed:', error);
+        return true; // Allow registration if check fails
+    }
+}
+
 function updateRequiredFields() {
     // Disable all required fields initially
     document.querySelectorAll('.step-panel input[required], .step-panel select[required], .step-panel textarea[required]').forEach(el => {
@@ -703,6 +812,7 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
             triggerMobileVibration('success');
             showNotifier(data.message, 'success');
             otpVerified = true;
+            trackOTPVerification(); // Track OTP verification completion
             document.getElementById('otp').disabled = true;
             verifyOtpBtn.classList.add('btn-success');
             verifyOtpBtn.textContent = 'Verified!';
@@ -933,13 +1043,42 @@ confirmPasswordInput.addEventListener('input', function() {
 });
 
 // ----- FIX FOR REQUIRED FIELD ERROR -----
-document.getElementById('multiStepForm').addEventListener('submit', function(e) {
+document.getElementById('multiStepForm').addEventListener('submit', async function(e) {
     if (currentStep !== 8) {
         e.preventDefault();
         triggerMobileVibration('error');
         showNotifier('Please complete all steps first.', 'error');
         return;
     }
+    
+    // Prevent default to allow for validation
+    e.preventDefault();
+    
+    // Check for duplicates before final submission
+    const isValid = await validateAccountDetails();
+    if (!isValid) {
+        return false;
+    }
+    
+    // Show final confirmation
+    const confirmSubmit = confirm(
+        'Are you sure you want to submit your registration?\n\n' +
+        'Please review:\n' +
+        '✓ All personal information is correct\n' +
+        '✓ All required documents are uploaded and verified\n' +
+        '✓ Email and phone number are valid\n' +
+        '✓ Password meets requirements\n\n' +
+        'Once submitted, you cannot edit your application.'
+    );
+    
+    if (!confirmSubmit) {
+        return false;
+    }
+    
+    // Mark form as submitted to prevent cleanup warning
+    formSubmitted = true;
+    registrationInProgress = false;
+    
     // Show all panels and enable all fields for browser validation
     document.querySelectorAll('.step-panel').forEach(panel => {
         panel.classList.remove('d-none');
@@ -948,6 +1087,9 @@ document.getElementById('multiStepForm').addEventListener('submit', function(e) 
     document.querySelectorAll('input, select, textarea').forEach(el => {
         el.disabled = false;
     });
+    
+    // Submit the form
+    this.submit();
     
     triggerMobileVibration('success'); // Success vibration on form submission
 });
@@ -981,6 +1123,7 @@ document.getElementById('enrollmentForm').addEventListener('change', function(e)
     const filenameError = document.getElementById('filenameError');
 
     if (file) {
+        trackFileUpload(); // Track that user has uploaded files
         triggerMobileVibration('success'); // File selected vibration
         
         // Get form data for filename validation
