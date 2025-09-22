@@ -1,6 +1,7 @@
 /* ===========================
-   Base Layout
+  Base Layout
 =========================== */
+:root { --topbar-h: 44px; }
 * {
   box-sizing: border-box;
 }
@@ -26,9 +27,9 @@ body {
 .home-section {
   margin-left: 260px;
   width: calc(100% - 260px);
-  transition: margin-left 0.3s ease-in-out, width 0.3s ease-in-out;
-  min-height: 100vh;
+  min-height: calc(100vh - var(--topbar-h)); /* Account for fixed topbar */
   background: #f8f9fa;
+  padding-top: 0;
 }
 
 .sidebar.close ~ .home-section {
@@ -36,9 +37,7 @@ body {
   width: calc(100% - 78px);
 }
 
-.sidebar-toggle {
-  padding: 20px 30px;
-}
+.sidebar-toggle { padding: 10px 16px; }
 
 #menu-toggle {
   font-size: 28px;
@@ -58,13 +57,9 @@ body {
   border-radius: 12px;
   background-color: #ffffff;
   overflow: hidden;
-  transition: box-shadow 0.3s ease, transform 0.2s ease;
 }
 
-.custom-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.06);
-}
+
 
 .custom-card-header {
   padding: 16px 20px;
@@ -95,6 +90,147 @@ h5 {
   font-weight: 600;
   margin: 0;
 }
+
+/* ===========================
+   Section-style Blocks (landing-like)
+=========================== */
+.section-block {
+  background: #ffffff;
+  border: 1px solid #e9ecef;
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.section-block.section-announcements {
+  border-left: 4px solid #fd7e14; /* orange */
+  background: #fff6ed; /* light orange tint */
+}
+.section-block.section-deadlines {
+  border-left: 4px solid #dc3545; /* red */
+  background: #fff1f3; /* light red tint */
+}
+.section-block.section-schedule {
+  border-left: 4px solid #0d6efd; /* blue */
+  background: #eef4ff; /* light blue tint */
+}
+.section-block.section-history {
+  border-left: 4px solid #198754; /* green */
+  background: #eef9f2; /* light green tint */
+}
+.section-announcements .section-title { color: #d96a00; }
+.section-deadlines .section-title { color: #b02a37; }
+.section-schedule .section-title { color: #0d6efd; }
+.section-history  .section-title { color: #198754; }
+.section-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 6px 0;
+}
+.section-lead {
+  color: #6c757d;
+  margin-bottom: 14px;
+}
+.section-header {
+  margin-bottom: 12px;
+}
+
+/* ===========================
+   Inline Info Banners (3-up)
+=========================== */
+.info-banners { margin-bottom: 16px; }
+.info-banner {
+  background: #ffffff;
+  border: 1px solid #e9ecef;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.info-banner.banner-primary { border-left: 3px solid #0d6efd; background: #eef5ff; }
+.info-banner.banner-status  { border-left: 3px solid #198754; background: #effaf3; }
+.info-banner.banner-muted   { border-left: 3px solid #6c757d; background: #f6f7f9; }
+.info-banner .icon { font-size: 1.25rem; opacity: 0.9; }
+.info-banner .label { font-size: 0.85rem; color: #6c757d; line-height: 1; }
+.info-banner .value { font-weight: 600; line-height: 1.2; }
+/* Deadline list - highly scannable */
+.deadline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.deadline-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  position: relative;
+}
+.deadline-item .deadline-left { min-width: 0; }
+.deadline-item .deadline-title {
+  font-weight: 600;
+  color: #1f2937;
+}
+.deadline-item .deadline-meta {
+  font-size: 0.85rem;
+  color: #6c757d;
+}
+.deadline-item .deadline-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* Accent bars */
+.deadline-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+}
+/* Overdue: strong red treatment */
+.deadline-item.is-overdue {
+  background: #fff5f5; /* light red */
+  border-color: #f1aeb5; /* bootstrap red-subtle border */
+}
+.deadline-item.is-overdue::before { background: #dc3545; }
+.deadline-item.is-overdue .deadline-title { color: #b02a37; }
+.deadline-item.is-overdue .chip-overdue {
+  background: #dc3545;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.deadline-item.is-overdue .btn { box-shadow: 0 0 0 2px rgba(220,53,69,0.15); }
+
+/* On time: calmer green */
+.deadline-item.is-ontime {
+  background: #f4fbf4; /* very light green */
+  border-color: #b9e6c9;
+}
+.deadline-item.is-ontime::before { background: #28a745; }
+.deadline-item.is-ontime .chip-ontime {
+  background: #28a745;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+@media (max-width: 576px) {
+  .deadline-item { align-items: flex-start; }
+  .deadline-right { margin-left: auto; }
+}
+.info-banner .value .badge { vertical-align: middle; }
 
 /* ===========================
    Badge Styles
@@ -163,6 +299,11 @@ h5 {
   .section-spacing {
     margin-bottom: 16px;
   }
+
+  .section-title { font-size: 1.25rem; }
+  .section-block { padding: 14px 16px; }
+  .info-banners { margin-bottom: 12px; }
+  .info-banner { padding: 10px 12px; }
 }
 
 /* ===========================
