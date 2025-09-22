@@ -256,6 +256,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migration_action'])) 
                 ];
             }
             $_SESSION['migration_preview'] = ['municipality_id'=>$municipality_id, 'rows'=>$preview];
+            // Redirect to avoid form re-submission warnings (PRG pattern)
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
         }
     }
     if ($_POST['migration_action'] === 'confirm' && isset($_SESSION['migration_preview'])) {
@@ -286,6 +289,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migration_action'])) 
         $_SESSION['migration_result'] = ['inserted'=>$inserted, 'errors'=>$errors];
         unset($_SESSION['migration_preview']);
         header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    if ($_POST['migration_action'] === 'cancel') {
+        unset($_SESSION['migration_preview']);
+        unset($_SESSION['migration_result']);
+        // For XHR cancel, return quickly without rendering
+        http_response_code(204);
         exit;
     }
 }
@@ -816,7 +826,7 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
 <?php include '../../includes/admin/blacklist_modal.php'; ?>
 
 <!-- Migration Modal -->
-<div class="modal fade" id="migrationModal" tabindex="-1">
+<div class="modal fade" id="migrationModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
                     <div class="modal-header">
@@ -824,7 +834,10 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
                             <h5 class="modal-title mb-0"><i class="bi bi-upload me-2"></i>CSV Migration</h5>
                             <small class="text-muted">Upload your CSV, review conflicts, select rows, then confirm to migrate.</small>
                         </div>
-                        <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                <form method="POST" class="ms-auto" id="migrationCancelForm">
+                                    <input type="hidden" name="migration_action" value="cancel">
+                                </form>
+                                <button class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="migrationCloseBtn"></button>
                     </div>
             <div class="modal-body">
                 <?php if (!empty($_SESSION['migration_result'])): $mr = $_SESSION['migration_result']; unset($_SESSION['migration_result']); ?>
@@ -1125,6 +1138,25 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (scrollStartBtn) scrollStartBtn.addEventListener('click', () => smoothScrollTo(0));
         if (scrollConflictsBtn) scrollConflictsBtn.addEventListener('click', () => smoothScrollTo(scrollWrap.scrollWidth));
+    }
+
+    // Cancel migration on modal close with confirmation
+    const migrationModalEl2 = document.getElementById('migrationModal');
+    if (migrationModalEl2) {
+        migrationModalEl2.addEventListener('hide.bs.modal', function (e) {
+            // If there is a preview in session, confirm cancel
+            <?php if (!empty($_SESSION['migration_preview'])): ?>
+            const ok = confirm('Closing will cancel the migration preview. Continue?');
+            if (!ok) { e.preventDefault(); return; }
+            // Post cancel to clear preview
+            const form = document.getElementById('migrationCancelForm');
+            if (form) {
+                fetch(window.location.pathname, { method: 'POST', body: new FormData(form) })
+                    .then(() => { /* cleared */ })
+                    .catch(() => { /* ignore */ });
+            }
+            <?php endif; ?>
+        });
     }
 });
 </script>
