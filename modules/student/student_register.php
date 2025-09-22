@@ -280,12 +280,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
     }
 
     if ((int)$enteredOtp === (int)$_SESSION['otp']) {
-        json_response(['status' => 'success', 'message' => 'OTP verified successfully!']);
         $_SESSION['otp_verified'] = true;
+        error_log("OTP verified successfully for email: " . $_SESSION['otp_email'] . ", session set to true");
         unset($_SESSION['otp'], $_SESSION['otp_email'], $_SESSION['otp_timestamp']);
+        json_response(['status' => 'success', 'message' => 'OTP verified successfully!']);
     } else {
-        json_response(['status' => 'error', 'message' => 'Invalid OTP. Please try again.']);
         $_SESSION['otp_verified'] = false;
+        error_log("OTP verification failed - entered: " . $enteredOtp . ", expected: " . $_SESSION['otp']);
+        json_response(['status' => 'error', 'message' => 'Invalid OTP. Please try again.']);
     }
 }
 
@@ -1313,8 +1315,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
 
 // --- Registration logic ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
+    // Debug: Log session state for troubleshooting
+    error_log("Registration attempt - OTP session state: " . print_r($_SESSION, true));
+    
     if (!isset($_SESSION['otp_verified']) || $_SESSION['otp_verified'] !== true) {
-        echo "<script>alert('OTP not verified. Please verify your email first.'); history.back();</script>";
+        echo "<script>
+            console.log('Session state:', " . json_encode($_SESSION) . ");
+            alert('OTP not verified. Please verify your email first.'); 
+            history.back();
+        </script>";
         exit;
     }
 
@@ -1436,8 +1445,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $activeSlot = pg_fetch_assoc($activeSlotQuery);
     $slot_id = $activeSlot ? $activeSlot['slot_id'] : null;
 
-    $insertQuery = "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id, documents_submitted, documents_validated)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_registration', 0, 0, FALSE, NOW(), $11, $12, $13, $14, $15, FALSE, FALSE) RETURNING student_id";
+    $insertQuery = "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_registration', 0, 0, FALSE, NOW(), $11, $12, $13, $14, $15) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $student_id,

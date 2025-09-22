@@ -774,6 +774,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     
     <!-- reCAPTCHA v3 Integration -->
     <script>
+        // Email validation function
+        function isValidEmail(email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return emailRegex.test(email);
+        }
+        
+        // Message display function
+        function showMessage(message, type) {
+            const messagesContainer = document.getElementById('messages');
+            messagesContainer.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                const alert = messagesContainer.querySelector('.alert');
+                if (alert) {
+                    alert.remove();
+                }
+            }, 5000);
+        }
+        
+        // Button loading state function
+        function setButtonLoading(button, loading, originalText = '') {
+            if (loading) {
+                button.disabled = true;
+                button.innerHTML = `
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    <span>Processing...</span>
+                `;
+            } else {
+                button.disabled = false;
+                button.innerHTML = originalText || button.innerHTML;
+            }
+        }
+        
         // Override the login form submission to include reCAPTCHA v3
         document.addEventListener('DOMContentLoaded', function() {
             const loginForm = document.getElementById('loginForm');

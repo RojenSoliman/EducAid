@@ -10,12 +10,6 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/chatbot_errors.log');
 
-$API_KEY = 'AIzaSyDzc8HJ7mpbjkftNtzTP3i1u-DeOXpxUUs'; // ← move to a secure include if you like
-
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Headers: Content-Type');
-
 $API_KEY = 'AIzaSyCU7iNNvWUQv9-dBflcV-VlpIpBeTiB5dI';
 
 // Read JSON POST data
