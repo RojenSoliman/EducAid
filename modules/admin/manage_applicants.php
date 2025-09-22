@@ -6,12 +6,70 @@ if (!isset($_SESSION['admin_username'])) {
 }
 include '../../config/database.php';
 
+// Normalize a string for comparison (letters only, lowercase)
+function _normalize_token($s) {
+    return preg_replace('/[^a-z]/', '', strtolower($s ?? ''));
+}
+
+// Find newest file in a folder that matches both first and last name (case-insensitive)
+function find_student_documents($first_name, $last_name) {
+    $server_base = dirname(__DIR__, 2) . '/assets/uploads/student/'; // absolute server path
+    $web_base    = '../../assets/uploads/student/';                   // web path from this PHP file
+
+    $first = _normalize_token($first_name);
+    $last  = _normalize_token($last_name);
+
+    $document_types = [
+        'eaf' => 'enrollment_forms',
+        'letter_to_mayor' => 'letter_to_mayor',
+        'certificate_of_indigency' => 'indigency'
+    ];
+
+    $found = [];
+    foreach ($document_types as $type => $folder) {
+        $dir = $server_base . $folder . '/';
+        if (!is_dir($dir)) continue;
+
+        // Scan all files and pick the newest that contains both name tokens
+        $matches = [];
+        foreach (glob($dir . '*.*') as $file) {
+            $base = pathinfo($file, PATHINFO_FILENAME);
+            $baseNorm = _normalize_token($base);
+            if ($first && $last && strpos($baseNorm, $first) !== false && strpos($baseNorm, $last) !== false) {
+                $matches[filemtime($file)] = $file;
+            }
+        }
+
+        if (!empty($matches)) {
+            krsort($matches); // newest first
+            $picked = reset($matches);
+            $found[$type] = $web_base . $folder . '/' . basename($picked);
+        }
+    }
+
+    return $found;
+}
+
+// Helper to find documents by student_id by first fetching the name
+function find_student_documents_by_id($connection, $student_id) {
+    $res = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$student_id]);
+    if ($res && pg_num_rows($res)) {
+        $row = pg_fetch_assoc($res);
+        return find_student_documents($row['first_name'] ?? '', $row['last_name'] ?? '');
+    }
+    return [];
+}
+
 // Function to check if all required documents are uploaded
 function check_documents($connection, $student_id) {
     $required = ['eaf', 'letter_to_mayor', 'certificate_of_indigency'];
+    // First check database records
     $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
     $uploaded = [];
     while ($row = pg_fetch_assoc($query)) $uploaded[] = $row['type'];
+    // Also check file system for new structure by student name
+    $found_documents = find_student_documents_by_id($connection, $student_id);
+    $uploaded = array_unique(array_merge($uploaded, array_keys($found_documents)));
     
     // Check if grades are uploaded
     $grades_query = pg_query_params($connection, "SELECT COUNT(*) as count FROM grade_uploads WHERE student_id = $1", [$student_id]);
@@ -104,32 +162,89 @@ function render_table($applicants, $connection) {
                             </div>
                             <div class="modal-body">
                                 <?php
+                                // First, get documents from database
                                 $docs = pg_query_params($connection, "SELECT * FROM documents WHERE student_id = $1", [$student_id]);
-                                if (pg_num_rows($docs)) {
-                                    while ($doc = pg_fetch_assoc($docs)) {
-                                        $label = ucfirst(str_replace('_', ' ', $doc['type']));
-                                        $filePath = htmlspecialchars($doc['file_path']);
-                                        if (preg_match('/\.(jpg|jpeg|png|gif)$/i', $filePath)) {
-                                            // Show image preview with zoom functionality
-                                            echo "<div class='doc-preview mb-3'>
-                                                    <strong>$label:</strong><br>
-                                                    <img src='$filePath' alt='$label' class='img-fluid rounded border zoomable-image' 
-                                                         style='max-height: 200px; max-width: 100%;' 
-                                                         onclick='openImageZoom(this.src, \"$label\")'>
-                                                  </div>";
-                                        } elseif (preg_match('/\.pdf$/i', $filePath)) {
-                                            // Show embedded PDF
-                                            echo "<div class='doc-preview mb-3'>
-                                                    <strong>$label:</strong><br>
-                                                    <iframe src='$filePath' width='100%' height='400' style='border: 1px solid #ccc;'></iframe>
-                                                  </div>";
-                                        } else {
-                                            // Fallback link
-                                            echo "<p><strong>$label:</strong> <a href='$filePath' target='_blank'>View</a></p>";
+                                $db_documents = [];
+                                while ($doc = pg_fetch_assoc($docs)) {
+                                    $db_documents[$doc['type']] = $doc['file_path'];
+                                }
+
+                                // Then, search for documents in new file structure by applicant name
+                                $found_documents = find_student_documents($applicant['first_name'] ?? '', $applicant['last_name'] ?? '');
+
+                                // Merge both sources, prioritizing new file structure
+                                $all_documents = array_merge($db_documents, $found_documents);
+
+                                $document_labels = [
+                                    'eaf' => 'EAF',
+                                    'letter_to_mayor' => 'Letter to Mayor',
+                                    'certificate_of_indigency' => 'Certificate of Indigency'
+                                ];
+
+                                // Build cards grid
+                                echo "<div class='doc-grid'>";
+                                $has_documents = false;
+                                foreach ($document_labels as $type => $label) {
+                                    $cardTitle = htmlspecialchars($label);
+                                    if (isset($all_documents[$type])) {
+                                        $has_documents = true;
+                                        $filePath = $all_documents[$type];
+
+                                        // Resolve server path for metadata
+                                        $server_root = dirname(__DIR__, 2);
+                                        $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+                                        $server_path = $server_root . '/' . $relative_from_root;
+
+                                        $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $filePath);
+                                        $is_pdf   = preg_match('/\.pdf$/i', $filePath);
+
+                                        $size_str = '';
+                                        $date_str = '';
+                                        if (file_exists($server_path)) {
+                                            $size = filesize($server_path);
+                                            $units = ['B','KB','MB','GB'];
+                                            $pow = $size > 0 ? floor(log($size, 1024)) : 0;
+                                            $size_str = number_format($size / pow(1024, $pow), $pow ? 2 : 0) . ' ' . $units[$pow];
+                                            $date_str = date('M d, Y h:i A', filemtime($server_path));
                                         }
+
+                                        $thumbHtml = $is_image
+                                            ? "<img src='" . htmlspecialchars($filePath) . "' class='doc-thumb' alt='$cardTitle'>"
+                                            : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
+
+                                        $safeSrc = htmlspecialchars($filePath);
+                                        echo "<div class='doc-card'>
+                                                <div class='doc-card-header'>$cardTitle</div>
+                                                <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
+                                                <div class='doc-meta'>" .
+                                                    ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
+                                                    ($size_str ? "<span><i class='bi bi-hdd me-1'></i>$size_str</span>" : "") .
+                                                "</div>
+                                                <div class='doc-actions'>
+                                                    <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\"><i class='bi bi-eye me-1'></i>View</button>
+                                                    <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank'><i class='bi bi-box-arrow-up-right me-1'></i>Open</a>
+                                                    <a class='btn btn-sm btn-outline-success' href='$safeSrc' download><i class='bi bi-download me-1'></i>Download</a>
+                                                </div>
+                                              </div>";
+                                    } else {
+                                        echo "<div class='doc-card doc-card-missing'>
+                                                <div class='doc-card-header'>$cardTitle</div>
+                                                <div class='doc-card-body missing'>
+                                                    <div class='missing-icon'><i class='bi bi-exclamation-triangle'></i></div>
+                                                    <div class='missing-text'>Not uploaded</div>
+                                                </div>
+                                                <div class='doc-actions'>
+                                                    <span class='text-muted small'>Awaiting submission</span>
+                                                </div>
+                                              </div>";
                                     }
-                                } else echo "<p class='text-muted'>No documents uploaded.</p>";
-                                
+                                }
+                                echo "</div>"; // end doc-grid
+
+                                if (!$has_documents) {
+                                    echo "<p class='text-muted'>No documents uploaded.</p>";
+                                }
+
                                 // Check for grades
                                 $grades_query = pg_query_params($connection, "SELECT * FROM grade_uploads WHERE student_id = $1 ORDER BY upload_date DESC LIMIT 1", [$student_id]);
                                 if (pg_num_rows($grades_query) > 0) {
@@ -540,6 +655,169 @@ function updateTableData() {
 document.addEventListener('DOMContentLoaded', function() {
     setTimeout(updateTableData, 100);
 });
+</script>
+<style>
+/* Document grid */
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.doc-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; display: flex; flex-direction: column; }
+.doc-card-header { font-weight: 600; padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+.doc-card-body { padding: 8px; display: flex; align-items: center; justify-content: center; min-height: 160px; cursor: zoom-in; background: #fafafa; }
+.doc-thumb { max-width: 100%; max-height: 150px; border-radius: 4px; }
+.doc-thumb-pdf { font-size: 48px; color: #d32f2f; display: flex; align-items: center; justify-content: center; height: 150px; width: 100%; }
+.doc-meta { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; color: #6b7280; font-size: 12px; border-top: 1px dashed #eee; }
+.doc-actions { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #f0f0f0; }
+.doc-card-missing .missing { background: #fff7e6; color: #8a6d3b; min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.doc-card-missing .missing-icon { font-size: 28px; margin-bottom: 6px; }
+
+/* Fullscreen viewer */
+.doc-viewer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; z-index: 1060; }
+.doc-viewer { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 95vw; max-width: 1280px; height: 85vh; background: #111; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+.doc-viewer-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; padding: 8px 12px; background: #1f2937; color: #fff; }
+.doc-viewer-toolbar .btn { padding: 4px 8px; }
+.doc-viewer-content { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+.doc-viewer-canvas { touch-action: none; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.doc-viewer-content img { will-change: transform; transform-origin: center center; user-select: none; -webkit-user-drag: none; }
+.doc-viewer-content iframe { width: 100%; height: 100%; border: none; }
+.doc-viewer-close { background: transparent; border: 0; color: #fff; font-size: 20px; }
+
+@media (max-width: 576px) {
+    .doc-grid { grid-template-columns: 1fr; }
+    .doc-viewer { width: 100vw; height: 90vh; border-radius: 0; }
+}
+</style>
+
+<script>
+// Lightweight document viewer (image/pdf)
+function ensureDocViewer() {
+    let backdrop = document.getElementById('docViewerBackdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.id = 'docViewerBackdrop';
+        backdrop.className = 'doc-viewer-backdrop';
+        backdrop.innerHTML = `
+            <div class="doc-viewer">
+                <div class="doc-viewer-toolbar">
+                    <div id="docViewerTitle"></div>
+                    <div class="d-flex flex-wrap gap-1">
+                        <button id="docZoomOutBtn" class="btn btn-sm btn-outline-light" title="Zoom Out"><i class="bi bi-zoom-out"></i></button>
+                        <button id="docZoomInBtn" class="btn btn-sm btn-outline-light" title="Zoom In"><i class="bi bi-zoom-in"></i></button>
+                        <button id="docRotateLeftBtn" class="btn btn-sm btn-outline-light" title="Rotate Left"><i class="bi bi-arrow-counterclockwise"></i></button>
+                        <button id="docRotateRightBtn" class="btn btn-sm btn-outline-light" title="Rotate Right"><i class="bi bi-arrow-clockwise"></i></button>
+                        <button id="docFitWidthBtn" class="btn btn-sm btn-outline-light" title="Fit Width"><i class="bi bi-arrows-expand"></i></button>
+                        <button id="docFitScreenBtn" class="btn btn-sm btn-outline-light" title="Fit Screen"><i class="bi bi-arrows-fullscreen"></i></button>
+                        <button id="docResetBtn" class="btn btn-sm btn-outline-secondary" title="Reset"><i class="bi bi-arrow-repeat"></i></button>
+                        <div class="vr mx-1"></div>
+                        <button id="docOpenBtn" class="btn btn-sm btn-outline-light"><i class="bi bi-box-arrow-up-right"></i> Open</button>
+                        <button id="docDownloadBtn" class="btn btn-sm btn-success"><i class="bi bi-download"></i> Download</button>
+                        <button class="doc-viewer-close ms-1" onclick="closeDocumentViewer()">&times;</button>
+                    </div>
+                </div>
+                <div class="doc-viewer-content">
+                    <div class="doc-viewer-canvas">
+                        <img id="docViewerImg" alt="preview" style="display:none;" />
+                        <iframe id="docViewerPdf" style="display:none;"></iframe>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(backdrop);
+        backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeDocumentViewer(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDocumentViewer(); });
+    }
+    return backdrop;
+}
+
+// Viewer state
+let _viewState = { scale: 1, rotation: 0, originX: 0, originY: 0, panX: 0, panY: 0, isImage: false };
+
+function applyImageTransform(img) {
+    img.style.transform = `translate(${_viewState.panX}px, ${_viewState.panY}px) rotate(${_viewState.rotation}deg) scale(${_viewState.scale})`;
+}
+
+function resetView(img) {
+    _viewState = { scale: 1, rotation: 0, originX: 0, originY: 0, panX: 0, panY: 0, isImage: _viewState.isImage };
+    if (img) applyImageTransform(img);
+}
+
+function openDocumentViewer(src, title) {
+    const backdrop = ensureDocViewer();
+    const img = document.getElementById('docViewerImg');
+    const pdf = document.getElementById('docViewerPdf');
+    const openBtn = document.getElementById('docOpenBtn');
+    const downloadBtn = document.getElementById('docDownloadBtn');
+    const zoomInBtn = document.getElementById('docZoomInBtn');
+    const zoomOutBtn = document.getElementById('docZoomOutBtn');
+    const rotateLeftBtn = document.getElementById('docRotateLeftBtn');
+    const rotateRightBtn = document.getElementById('docRotateRightBtn');
+    const fitWidthBtn = document.getElementById('docFitWidthBtn');
+    const fitScreenBtn = document.getElementById('docFitScreenBtn');
+    const resetBtn = document.getElementById('docResetBtn');
+    document.getElementById('docViewerTitle').textContent = title || 'Document';
+
+    // Reset
+    img.style.display = 'none';
+    pdf.style.display = 'none';
+    img.src = '';
+    pdf.src = '';
+    resetView(img);
+
+    const isImage = /\.(jpg|jpeg|png|gif)$/i.test(src);
+    const isPdf = /\.pdf$/i.test(src);
+    _viewState.isImage = isImage;
+    if (isImage) {
+        img.src = src;
+        img.style.display = 'block';
+    } else if (isPdf) {
+        pdf.src = src;
+        pdf.style.display = 'block';
+    }
+
+    openBtn.onclick = () => window.open(src, '_blank');
+    downloadBtn.onclick = () => { const a = document.createElement('a'); a.href = src; a.download = ''; a.click(); };
+
+    // Controls
+    function setScale(mult) { _viewState.scale = Math.min(8, Math.max(0.25, _viewState.scale * mult)); applyImageTransform(img); }
+    function rotate(delta) { _viewState.rotation = (_viewState.rotation + delta + 360) % 360; applyImageTransform(img); }
+    function fitWidth() {
+        const container = document.querySelector('.doc-viewer-content');
+        if (!container || !img.naturalWidth) return; 
+        _viewState.scale = (container.clientWidth * 0.95) / img.naturalWidth; _viewState.panX = 0; _viewState.panY = 0; applyImageTransform(img);
+    }
+    function fitScreen() {
+        const container = document.querySelector('.doc-viewer-content');
+        if (!container || !img.naturalWidth || !img.naturalHeight) return; 
+        const scaleX = (container.clientWidth * 0.95) / img.naturalWidth;
+        const scaleY = (container.clientHeight * 0.95) / img.naturalHeight;
+        _viewState.scale = Math.min(scaleX, scaleY); _viewState.panX = 0; _viewState.panY = 0; applyImageTransform(img);
+    }
+
+    zoomInBtn.onclick = () => _viewState.isImage && setScale(1.2);
+    zoomOutBtn.onclick = () => _viewState.isImage && setScale(1/1.2);
+    rotateLeftBtn.onclick = () => _viewState.isImage && rotate(-90);
+    rotateRightBtn.onclick = () => _viewState.isImage && rotate(90);
+    fitWidthBtn.onclick = () => _viewState.isImage ? fitWidth() : (pdf.src = src + '#zoom=page-width');
+    fitScreenBtn.onclick = () => _viewState.isImage ? fitScreen() : (pdf.src = src + '#zoom=page-fit');
+    resetBtn.onclick = () => { resetView(img); if (!isImage) pdf.src = src; };
+
+    // Pan & wheel zoom for images
+    const canvas = document.querySelector('.doc-viewer-canvas');
+    let dragging = false, lastX = 0, lastY = 0;
+    canvas.onpointerdown = (e) => { if (!_viewState.isImage) return; dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); };
+    canvas.onpointermove = (e) => { if (!_viewState.isImage || !dragging) return; _viewState.panX += (e.clientX - lastX); _viewState.panY += (e.clientY - lastY); lastX = e.clientX; lastY = e.clientY; applyImageTransform(img); };
+    canvas.onpointerup = () => { dragging = false; };
+    canvas.onwheel = (e) => { if (!_viewState.isImage) return; e.preventDefault(); setScale(e.deltaY < 0 ? 1.1 : 1/1.1); };
+
+    // Double-tap/double-click to toggle zoom
+    let lastTap = 0;
+    canvas.ondblclick = () => { if (!_viewState.isImage) return; _viewState.scale = _viewState.scale < 2 ? 2 : 1; _viewState.panX = 0; _viewState.panY = 0; applyImageTransform(img); };
+    canvas.ontouchend = () => { const now = Date.now(); if (now - lastTap < 300) { canvas.ondblclick(); } lastTap = now; };
+
+    backdrop.style.display = 'block';
+}
+
+function closeDocumentViewer() {
+    const backdrop = document.getElementById('docViewerBackdrop');
+    if (backdrop) backdrop.style.display = 'none';
+}
 </script>
 </body>
 </html>
