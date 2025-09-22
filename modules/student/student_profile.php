@@ -274,6 +274,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_password'])) {
 $stuRes = pg_query($connection, "SELECT first_name, middle_name, last_name, bdate, email, mobile FROM students WHERE student_id = '" . pg_escape_string($connection, $student_id) . "'");
 $student = pg_fetch_assoc($stuRes);
 
+// Get student info for header dropdown
+$student_info_query = "SELECT first_name, last_name FROM students WHERE student_id = $1";
+$student_info_result = pg_query_params($connection, $student_info_query, [$student_id]);
+$student_info = pg_fetch_assoc($student_info_result);
+
 // Flash message
 $flash = $_SESSION['profile_flash'] ?? '';
 $flash_type = $_SESSION['profile_flash_type'] ?? '';
@@ -297,13 +302,18 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
   </style>
 </head>
 <body>
-  <div class="container-fluid">
+  <!-- Student Topbar -->
+  <?php include __DIR__ . '/../../includes/student/student_topbar.php'; ?>
+
+  <div class="container-fluid" style="padding-top: var(--topbar-h);">
     <div class="row">
       <!-- Include Sidebar -->
       <?php include '../../includes/student/student_sidebar.php' ?>
       <!-- Main Content Area -->
       <section class="home-section" id="page-content-wrapper">
-        <nav class="px-4 py-3"><i class="bi bi-list" id="menu-toggle"></i></nav>
+        <!-- Student Header -->
+        <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
+        
         <div class="container py-5">
           <div class="card mb-4 p-4">
             <h4>Profile Information</h4>

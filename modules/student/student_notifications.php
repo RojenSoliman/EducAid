@@ -8,6 +8,12 @@ if (!isset($_SESSION['student_username'])) {
 }
 // Get student ID for operations
 $student_id = $_SESSION['student_id'];
+
+// Get student info for header dropdown
+$student_info_query = "SELECT first_name, last_name FROM students WHERE student_id = $1";
+$student_info_result = pg_query_params($connection, $student_info_query, [$student_id]);
+$student_info = pg_fetch_assoc($student_info_result);
+
 // Handle clear all notifications via POST and set flash
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_notifications'])) {
     // Delete all notifications for this student (using parameterized query for TEXT student_id)
@@ -43,17 +49,18 @@ $notifications = $notifRes ? pg_fetch_all($notifRes) : [];
   </style>
 </head>
 <body>
-  <div id="wrapper">
+  <!-- Student Topbar -->
+  <?php include __DIR__ . '/../../includes/student/student_topbar.php'; ?>
+
+  <div id="wrapper" style="padding-top: var(--topbar-h);">
     <!-- Sidebar -->
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
     <!-- Page Content -->
     <section class="home-section" id="page-content-wrapper">
-      <nav>
-        <div class="sidebar-toggle px-4 py-3">
-          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
-        </div>
-      </nav>
+      <!-- Student Header -->
+      <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
+      
       <div class="container py-5">
         <?php if (!empty($flash_cleared)): ?>
           <div class="alert alert-success text-center">

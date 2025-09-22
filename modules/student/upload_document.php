@@ -7,6 +7,13 @@ if (!isset($_SESSION['student_username'])) {
     header("Location: ../../unified_login.php");
     exit;
 }
+
+// Fetch student info for header dropdown
+$studentId = $_SESSION['student_id'];
+$student_info_query = "SELECT last_login, first_name, last_name FROM students WHERE student_id = $1";
+$student_info_result = pg_query_params($connection, $student_info_query, [$studentId]);
+$student_info = pg_fetch_assoc($student_info_result);
+
 // Session flash for upload status
 $flash_success = false;
 $flash_fail = false;
@@ -266,21 +273,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
   </style>
 </head>
 <body>
-  <div id="wrapper">
+  <!-- Student Topbar -->
+  <?php include __DIR__ . '/../../includes/student/student_topbar.php'; ?>
+
+  <div id="wrapper" style="padding-top: var(--topbar-h);">
     <!-- Sidebar -->
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+    
     <!-- Main Content Area -->
-    <section class="home-section upload-container with-sidebar" id="page-content-wrapper">
-      <nav class="px-4 py-3 d-flex align-items-center justify-content-between">
-        <div class="d-flex align-items-center">
-          <i class="bi bi-list" id="menu-toggle"></i>
-          
-        </div>
+    <section class="home-section upload-container" id="page-content-wrapper">
+      <!-- Student Header -->
+      <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
       
-      </nav>
-      
-      <div class="container py-4">
+      <div class="container-fluid py-4 px-4">
         <div class="upload-card">
           <!-- Header Section -->
           <div class="upload-header">

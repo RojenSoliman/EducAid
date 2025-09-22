@@ -28,6 +28,11 @@ if (!$student_data) {
     exit;
 }
 
+// Get student info for header dropdown
+$student_info_query = "SELECT first_name, last_name FROM students WHERE student_id = $1";
+$student_info_result = pg_query_params($connection, $student_info_query, [$student_id]);
+$student_info = pg_fetch_assoc($student_info_result);
+
 $has_qr_code = !empty($student_data['qr_unique_id']) && !empty($student_data['payroll_no']);
 $qr_image_url = '';
 
@@ -236,15 +241,15 @@ if ($has_qr_code) {
   </style>
 </head>
 <body>
-  <div id="wrapper">
+  <!-- Student Topbar -->
+  <?php include __DIR__ . '/../../includes/student/student_topbar.php'; ?>
+
+  <div id="wrapper" style="padding-top: var(--topbar-h);">
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
     <section class="home-section" id="page-content-wrapper">
-      <nav class="px-4 py-3 d-flex align-items-center justify-content-between">
-        <div class="d-flex align-items-center">
-          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
-        </div>
-      </nav>
+      <!-- Student Header -->
+      <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
       
       <div class="main-content">
         <div class="qr-card">
