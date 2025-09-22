@@ -351,58 +351,34 @@ if ($DEMO_MODE) {
                 </a>
               </div>
               <div class="custom-card-body">
-                <div class="table-responsive">
-                  <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                      <tr>
-                        <th><i class="bi bi-calendar me-1"></i>Date</th>
-                        <th><i class="bi bi-geo-alt me-1"></i>Location</th>
-                        <th><i class="bi bi-people me-1"></i>Students</th>
-                        <th><i class="bi bi-mortarboard me-1"></i>Academic Period</th>
-                        <th><i class="bi bi-person-check me-1"></i>Finalized By</th>
-                        <th><i class="bi bi-clock me-1"></i>Finalized At</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <?php foreach ($pastDistributions as $distribution): ?>
-                      <tr>
-                        <td>
-                          <span class="badge bg-primary">
-                            <?php echo date('M d, Y', strtotime($distribution['distribution_date'])); ?>
-                          </span>
-                        </td>
-                        <td>
-                          <i class="bi bi-geo-alt text-muted me-1"></i>
-                          <?php echo htmlspecialchars($distribution['location']); ?>
-                        </td>
-                        <td>
-                          <span class="badge bg-success">
-                            <?php echo number_format($distribution['total_students_count']); ?> students
-                          </span>
-                        </td>
-                        <td>
-                          <?php if ($distribution['academic_year'] && $distribution['semester']): ?>
-                            <small class="text-muted">
-                              <?php echo htmlspecialchars($distribution['academic_year'] . ' - ' . $distribution['semester']); ?>
-                            </small>
-                          <?php else: ?>
-                            <small class="text-muted">-</small>
-                          <?php endif; ?>
-                        </td>
-                        <td>
-                          <small class="text-muted">
-                            <?php echo htmlspecialchars($distribution['finalized_by_name'] ?: 'Unknown'); ?>
-                          </small>
-                        </td>
-                        <td>
-                          <small class="text-muted">
-                            <?php echo date('M d, Y H:i', strtotime($distribution['finalized_at'])); ?>
-                          </small>
-                        </td>
-                      </tr>
-                      <?php endforeach; ?>
-                    </tbody>
-                  </table>
+                <div class="row g-3">
+                  <?php foreach ($pastDistributions as $distribution): ?>
+                  <div class="col-12 col-md-6 col-xl-4">
+                    <div class="border rounded-3 p-3 h-100 shadow-sm">
+                      <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="badge bg-primary">
+                          <i class="bi bi-calendar me-1"></i><?php echo date('M d, Y', strtotime($distribution['distribution_date'])); ?>
+                        </span>
+                        <span class="badge bg-success">
+                          <i class="bi bi-people me-1"></i><?php echo number_format($distribution['total_students_count']); ?> students
+                        </span>
+                      </div>
+                      <div class="mb-2 text-truncate" title="<?php echo htmlspecialchars($distribution['location']); ?>">
+                        <i class="bi bi-geo-alt text-muted me-1"></i>
+                        <strong><?php echo htmlspecialchars($distribution['location']); ?></strong>
+                      </div>
+                      <div class="d-flex flex-wrap small text-muted mb-2">
+                        <?php if ($distribution['academic_year'] && $distribution['semester']): ?>
+                          <span class="me-2"><i class="bi bi-mortarboard me-1"></i><?php echo htmlspecialchars($distribution['academic_year'] . ' - ' . $distribution['semester']); ?></span>
+                        <?php endif; ?>
+                      </div>
+                      <div class="d-flex justify-content-between align-items-center small text-muted">
+                        <span><i class="bi bi-person-check me-1"></i><?php echo htmlspecialchars($distribution['finalized_by_name'] ?: 'Unknown'); ?></span>
+                        <span><i class="bi bi-clock me-1"></i><?php echo date('M d, Y H:i', strtotime($distribution['finalized_at'])); ?></span>
+                      </div>
+                    </div>
+                  </div>
+                  <?php endforeach; ?>
                 </div>
                 
                 <?php if (!empty($pastDistributions[0]['notes'])): ?>
