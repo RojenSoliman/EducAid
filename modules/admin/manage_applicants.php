@@ -5,6 +5,290 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 include '../../config/database.php';
+require_once __DIR__ . '/../../phpmailer/vendor/autoload.php';
+
+// Resolve current admin's municipality context
+$adminMunicipalityId = null;
+$adminMunicipalityName = '';
+$adminUsername = $_SESSION['admin_username'] ?? null;
+if ($adminUsername) {
+    $admRes = pg_query_params($connection, "SELECT a.municipality_id, a.role, COALESCE(m.name,'') AS municipality_name FROM admins a LEFT JOIN municipalities m ON m.municipality_id = a.municipality_id WHERE a.username = $1 LIMIT 1", [$adminUsername]);
+    if ($admRes && pg_num_rows($admRes)) {
+        $admRow = pg_fetch_assoc($admRes);
+        $adminMunicipalityId = $admRow['municipality_id'] ? intval($admRow['municipality_id']) : null;
+        $adminMunicipalityName = $admRow['municipality_name'] ?? '';
+        if (empty($_SESSION['admin_role']) && !empty($admRow['role'])) {
+            $_SESSION['admin_role'] = $admRow['role'];
+        }
+    }
+}
+
+// --- Migration helpers ---
+function rand_password_12() {
+    $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    $pwd = '';
+    for ($i=0; $i<12; $i++) $pwd .= $chars[random_int(0, strlen($chars)-1)];
+    return $pwd;
+}
+
+function to_bdate_from_age($age) {
+    $age = trim((string)$age);
+    if ($age === '') return null;
+    // If looks like a date string
+    if (preg_match('/\\d{4}-\\d{2}-\\d{2}|\\d{1,2}[\\/\\-]\\d{1,2}[\\/\\-]\\d{2,4}/', $age)) {
+        $ts = strtotime($age);
+        return $ts ? date('Y-m-d', $ts) : null;
+    }
+    // If looks like Excel serial
+    if (ctype_digit($age) && (int)$age > 20000 && (int)$age < 60000) {
+        $base = (int)$age;
+        $unix = ($base - 25569) * 86400; // Excel to Unix
+        return date('Y-m-d', $unix);
+    }
+    // If numeric years
+    if (is_numeric($age)) {
+        $years = (int)$age;
+        if ($years < 5 || $years > 100) return null;
+        $y = (int)date('Y') - $years;
+        return sprintf('%04d-06-15', $y); // mid-year default
+    }
+    return null;
+}
+
+function map_gender($g) {
+    $g = strtolower(trim((string)$g));
+    if (in_array($g, ['m','male'])) return 'male';
+    if (in_array($g, ['f','female'])) return 'female';
+    return null;
+}
+
+function normalize_str($s) { return strtolower(trim(preg_replace('/\s+/', ' ', preg_replace('/[^a-z0-9 ]/i',' ', (string)$s)))); }
+
+function find_best_match($needle, $rows, $field) {
+    $needleN = normalize_str($needle);
+    $best = null; $bestScore = 0;
+    foreach ($rows as $r) {
+        $val = normalize_str($r[$field] ?? '');
+        if ($val === $needleN) return $r; // exact
+        similar_text($needleN, $val, $pct);
+        if ($pct > $bestScore) { $bestScore = $pct; $best = $r; }
+    }
+    return $bestScore >= 70 ? $best : null;
+}
+
+// Barangay-specific matcher: strips common prefixes (brgy, barangay) and uses a slightly lower threshold
+function find_best_barangay($needle, $rows) {
+    $needle = preg_replace('/\b(brgy|barangay|bgry|bgy)\b\.?/i', ' ', (string)$needle);
+    $needle = normalize_str($needle);
+    $best = null; $bestScore = 0;
+    foreach ($rows as $r) {
+        $val = normalize_str($r['name'] ?? '');
+        if ($val === $needle) return $r; // exact after cleanup
+        // containments
+        if ($val && $needle && (str_contains($val, $needle) || str_contains($needle, $val))) {
+            // prefer longer match
+            $score = 95 - abs(strlen($val) - strlen($needle));
+            if ($score > $bestScore) { $bestScore = $score; $best = $r; }
+            continue;
+        }
+        similar_text($needle, $val, $pct);
+        if ($pct > $bestScore) { $bestScore = $pct; $best = $r; }
+    }
+    return $bestScore >= 60 ? $best : null;
+}
+
+function generateUniqueStudentId_admin($connection, $year_level_id) {
+    // Map year_level_id to code number (1..4...), fallback 0
+    $code = '0';
+    $res = pg_query_params($connection, "SELECT code FROM year_levels WHERE year_level_id = $1", [$year_level_id]);
+    if ($res && pg_num_rows($res)) { $row = pg_fetch_assoc($res); $code = preg_replace('/[^0-9]/','',$row['code'] ?? '0'); if ($code==='') $code='0'; }
+    $current_year = date('Y');
+    $max_attempts = 100; $attempts = 0; $exists = true; $unique_id = '';
+    while ($exists && $attempts < $max_attempts) {
+        $random_digits = str_pad((string)mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+        $unique_id = $current_year . '-' . $code . '-' . $random_digits;
+        $check = pg_query_params($connection, "SELECT 1 FROM students WHERE student_id = $1", [$unique_id]);
+        $exists = $check && pg_num_rows($check) > 0; $attempts++;
+    }
+    return $exists ? null : $unique_id;
+}
+
+function send_migration_email($toEmail, $toName, $passwordPlain) {
+    try {
+        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+        // Configure via phpMailer defaults in project (assumes SMTP set in php.ini or elsewhere)
+        $mail->setFrom('no-reply@educaid.local', 'EducAid');
+        $mail->addAddress($toEmail, $toName ?: $toEmail);
+        $mail->isHTML(true);
+        $mail->Subject = 'Your EducAid account has been created';
+        $mail->Body = '<p>Hello ' . htmlspecialchars($toName ?: $toEmail) . ',</p>' .
+            '<p>Your EducAid account has been created via migration.</p>' .
+            '<p><strong>Login Email:</strong> ' . htmlspecialchars($toEmail) . '<br>' .
+            '<strong>Temporary Password:</strong> ' . htmlspecialchars($passwordPlain) . '</p>' .
+            '<p>For security, you will be asked to verify with a One-Time Password (OTP) during your first login, and then you should change your password.</p>' .
+            '<p>Login here: <a href="' . htmlspecialchars((isset($_SERVER['HTTPS'])?'https':'http') . '://' . $_SERVER['HTTP_HOST'] . '/EducAid/unified_login.php') . '">EducAid Login</a></p>' .
+            '<p>Thank you.</p>';
+        $mail->AltBody = 'Your EducAid account has been created. Email: ' . $toEmail . ' Temporary Password: ' . $passwordPlain . ' Login at /EducAid/unified_login.php';
+        $mail->send();
+        return true;
+    } catch (Exception $e) { return false; }
+}
+
+// Handle Migration POST actions
+$migration_preview = $_SESSION['migration_preview'] ?? null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migration_action'])) {
+    if ($_POST['migration_action'] === 'preview' && isset($_FILES['csv_file'])) {
+        $municipality_id = intval($adminMunicipalityId ?? 0);
+        if (!$municipality_id) { $municipality_id = intval($_POST['municipality_id'] ?? 0); }
+        $csv = $_FILES['csv_file'];
+        if ($csv['error'] === UPLOAD_ERR_OK) {
+            $rows = [];
+            $fh = fopen($csv['tmp_name'], 'r');
+            if ($fh) {
+                $header = null; $map = [];
+                // Header synonyms mapping to internal keys
+                $syn = [
+                    'last_name' => ['lastname','last name','surname','family name','last'],
+                    'first_name'=> ['firstname','first name','given name','first','given'],
+                    'middle_name'=>['middlename','middle name','mi','m.i.','middle','mname','m name'],
+                    'extension_name'=>['extension','suffix','name extension','ext'],
+                    'age' => ['age','years','yrs','yr'],
+                    'bdate' => ['birthdate','birth date','bday','date of birth','dob'],
+                    'sex' => ['sex','gender'],
+                    'barangay_name'=>['barangay','brgy','bgry','bgy','village','barangay name'],
+                    'university_name'=>['university','school','college','univ','institution','campus'],
+                    'year_level_name'=>['year level','year','level','yr level','grade'],
+                    'email'=>['email','e-mail','email address'],
+                    'mobile'=>['mobile','contact number','phone','number','contact','cellphone','cp number','mobile number','phone number','contact no','contact #']
+                ];
+                $normalizeHeader = function($s){ return strtolower(trim(preg_replace('/\s+|\_|\-/',' ', (string)$s))); };
+                $recognize = function($label) use ($syn,$normalizeHeader){
+                    $l = $normalizeHeader($label);
+                    foreach ($syn as $key => $arr) {
+                        foreach ($arr as $cand) { if ($l === $normalizeHeader($cand)) return $key; }
+                    }
+                    return null;
+                };
+
+                $rowIndex = 0;
+                while (($data = fgetcsv($fh)) !== false) {
+                    $rowIndex++;
+                    // Attempt to detect header in first row
+                    if ($rowIndex === 1) {
+                        $isHeader = false; $hdr = [];
+                        foreach ($data as $i => $col) {
+                            $key = $recognize($col);
+                            if ($key) { $hdr[$key] = $i; $isHeader = true; }
+                        }
+                        if ($isHeader) { $header = $data; $map = $hdr; continue; }
+                        // else no header, fall through to positional mapping
+                    }
+
+                    // Build row using header map if present, else positional fallback
+                    $get = function($key) use ($map,$data){ return isset($map[$key]) ? ($data[$map[$key]] ?? '') : null; };
+                    if ($map) {
+                        $last = $get('last_name');
+                        $first = $get('first_name');
+                        $mid = $get('middle_name');
+                        $ext = $get('extension_name');
+                        $ageVal = $get('age');
+                        $bdateVal = $get('bdate');
+                        $gender = $get('sex');
+                        $barangayName = $get('barangay_name');
+                        $universityName = $get('university_name');
+                        $yearLevelName = $get('year_level_name');
+                        $email = $get('email');
+                        $mobile = $get('mobile');
+                    } else {
+                        if (count($data) < 11) continue; // insufficient columns in positional mode
+                        list($last,$first,$ext,$mid,$ageVal,$gender,$barangayName,$universityName,$yearLevelName,$email,$mobile) = $data;
+                        $bdateVal = null;
+                    }
+
+                    // Normalize values
+                    $email = trim((string)$email);
+                    $mobile = preg_replace('/[^0-9]/','', (string)$mobile);
+                    if (strlen($mobile) === 10) $mobile = '0' . $mobile;
+                    $bdate = $bdateVal ? to_bdate_from_age($bdateVal) : to_bdate_from_age($ageVal);
+                    $sex = map_gender($gender);
+
+                    $rows[] = [
+                        'first_name'=>trim((string)$first), 'middle_name'=>trim((string)$mid), 'last_name'=>trim((string)$last), 'extension_name'=>trim((string)$ext),
+                        'bdate'=>$bdate, 'sex'=>$sex, 'barangay_name'=>trim((string)$barangayName), 'university_name'=>trim((string)$universityName),
+                        'year_level_name'=>trim((string)$yearLevelName), 'email'=>$email, 'mobile'=>$mobile, 'municipality_id'=>$municipality_id,
+                        'include'=>true,
+                    ];
+                }
+                fclose($fh);
+            }
+
+            // Prefetch mapping tables
+            $universities = pg_fetch_all(pg_query($connection, "SELECT university_id, name, COALESCE(code,'') code FROM universities")) ?: [];
+            $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name, COALESCE(code,'') code FROM year_levels")) ?: [];
+            $barangays = $municipality_id ? (pg_fetch_all(pg_query_params($connection, "SELECT barangay_id, name FROM barangays WHERE municipality_id = $1", [$municipality_id])) ?: []) : [];
+
+            // Attempt mappings and generate preview
+            $preview = [];
+            foreach ($rows as $r) {
+                $uni = find_best_match($r['university_name'], $universities, 'name');
+                if (!$uni) $uni = find_best_match($r['university_name'], $universities, 'code');
+                $yl = find_best_match($r['year_level_name'], $yearLevels, 'name');
+                if (!$yl) $yl = find_best_match($r['year_level_name'], $yearLevels, 'code');
+                $brgy = $barangays ? find_best_barangay($r['barangay_name'], $barangays) : null;
+
+                $conflicts = [];
+                if (!$r['bdate']) $conflicts[] = 'Birthdate missing/invalid (age column)';
+                if (!$r['sex']) $conflicts[] = 'Gender unknown';
+                if (!$uni) $conflicts[] = 'University not recognized';
+                if (!$yl) $conflicts[] = 'Year level unknown';
+                if (!$brgy) $conflicts[] = 'Barangay not found';
+                if (!filter_var($r['email'], FILTER_VALIDATE_EMAIL)) $conflicts[] = 'Invalid email';
+                // Duplicate email/mobile check
+                $dupEmail = pg_fetch_assoc(pg_query_params($connection, "SELECT 1 FROM students WHERE email = $1", [$r['email']])) ? true : false;
+                $dupMobile = $r['mobile'] ? (pg_fetch_assoc(pg_query_params($connection, "SELECT 1 FROM students WHERE mobile = $1", [$r['mobile']])) ? true : false) : false;
+                if ($dupEmail) $conflicts[] = 'Email already exists';
+                if ($dupMobile) $conflicts[] = 'Mobile already exists';
+
+                $preview[] = [
+                    'row'=>$r,
+                    'university'=>$uni, 'year_level'=>$yl, 'barangay'=>$brgy,
+                    'conflicts'=>$conflicts,
+                ];
+            }
+            $_SESSION['migration_preview'] = ['municipality_id'=>$municipality_id, 'rows'=>$preview];
+        }
+    }
+    if ($_POST['migration_action'] === 'confirm' && isset($_SESSION['migration_preview'])) {
+        $selected = $_POST['select'] ?? [];
+        $preview = $_SESSION['migration_preview'];
+        $municipality_id = intval($preview['municipality_id']);
+        $inserted = 0; $errors = [];
+        foreach ($preview['rows'] as $idx => $row) {
+            if (!isset($selected[(string)$idx])) continue; // not selected
+            $r = $row['row']; $uni = $row['university']; $yl = $row['year_level']; $brgy = $row['barangay'];
+            if (!$r['bdate'] || !$r['sex'] || !$uni || !$yl || !$brgy || !filter_var($r['email'], FILTER_VALIDATE_EMAIL)) { $errors[] = "Row #$idx has unresolved fields"; continue; }
+            // generate password
+            $plain = rand_password_12(); $hashed = password_hash($plain, PASSWORD_DEFAULT);
+            // student id
+            $stud_id = generateUniqueStudentId_admin($connection, $yl['year_level_id']);
+            if (!$stud_id) { $errors[] = "Row #$idx could not generate student id"; continue; }
+            // insert
+            $insert = pg_query_params($connection, "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'applicant',0,0,FALSE,NOW(),$11,$12,$13,$14,$15)", [
+                $stud_id, $municipality_id, $r['first_name'], $r['middle_name'], $r['last_name'], $r['extension_name'], $r['email'], $r['mobile'], $hashed, $r['sex'], $r['bdate'], $brgy['barangay_id'], $uni['university_id'], $yl['year_level_id'], null
+            ]);
+            if ($insert) {
+                $inserted++;
+                send_migration_email($r['email'], $r['first_name'] . ' ' . $r['last_name'], $plain);
+            } else {
+                $errors[] = "Row #$idx DB error: " . pg_last_error($connection);
+            }
+        }
+        $_SESSION['migration_result'] = ['inserted'=>$inserted, 'errors'=>$errors];
+        unset($_SESSION['migration_preview']);
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+}
 
 // Normalize a string for comparison (letters only, lowercase)
 function _normalize_token($s) {
@@ -440,12 +724,15 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
     // Return table content and stats for real-time updates
     ob_start();
     ?>
-    <div class="section-header mb-3">
-        <h2 class="fw-bold text-primary">
+    <div class="section-header mb-3 d-flex justify-content-between align-items-center">
+        <h2 class="fw-bold text-primary mb-0">
             <i class="bi bi-person-vcard"></i>
             Manage Applicants
         </h2>
-        <div class="text-end">
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#migrationModal">
+                <i class="bi bi-upload me-1"></i> Migrate from CSV
+            </button>
             <span class="badge bg-info fs-6"><?php echo $totalApplicants; ?> Total Applicants</span>
         </div>
     </div>
@@ -482,15 +769,18 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
       </div>
     </nav>
     <div class="container-fluid py-4 px-4">
-      <div class="section-header mb-3 d-flex justify-content-between align-items-center">
-        <h2 class="fw-bold text-primary mb-0">
-          <i class="bi bi-person-vcard" ></i>
-          Manage Applicants
-        </h2>
-        <div class="text-end">
-          <span class="badge bg-info fs-6"><?php echo $totalApplicants; ?> Total Applicants</span>
-        </div>
-      </div>
+            <div class="section-header mb-3 d-flex justify-content-between align-items-center">
+                <h2 class="fw-bold text-primary mb-0">
+                    <i class="bi bi-person-vcard" ></i>
+                    Manage Applicants
+                </h2>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#migrationModal">
+                        <i class="bi bi-upload me-1"></i> Migrate from CSV
+                    </button>
+                    <span class="badge bg-info fs-6"><?php echo $totalApplicants; ?> Total Applicants</span>
+                </div>
+            </div>
       <!-- Filter Container -->
       <div class="filter-container card shadow-sm mb-4 p-3">
         <form class="row g-3" id="filterForm" method="GET">
@@ -524,6 +814,121 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
 
 <!-- Include Blacklist Modal -->
 <?php include '../../includes/admin/blacklist_modal.php'; ?>
+
+<!-- Migration Modal -->
+<div class="modal fade" id="migrationModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <h5 class="modal-title mb-0"><i class="bi bi-upload me-2"></i>CSV Migration</h5>
+                            <small class="text-muted">Upload your CSV, review conflicts, select rows, then confirm to migrate.</small>
+                        </div>
+                        <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+            <div class="modal-body">
+                <?php if (!empty($_SESSION['migration_result'])): $mr = $_SESSION['migration_result']; unset($_SESSION['migration_result']); ?>
+                        <div class="alert alert-success"><i class="bi bi-check2-circle me-2"></i>Inserted <?= intval($mr['inserted']) ?> students.</div>
+                        <?php if (!empty($mr['errors'])): ?>
+                                <div class="alert alert-warning"><strong>Some rows failed:</strong>
+                                    <ul class="mb-0 small"><?php foreach ($mr['errors'] as $er) echo '<li>'.htmlspecialchars($er).'</li>'; ?></ul>
+                                </div>
+                        <?php endif; ?>
+                <?php endif; ?>
+
+            <form method="POST" enctype="multipart/form-data" class="mb-3" id="migrationUploadForm">
+                    <input type="hidden" name="migration_action" value="preview">
+                                            <div class="row g-3 align-items-end">
+                                                <div class="col-12 col-md-6">
+                                                    <label class="form-label fw-semibold text-primary">CSV File</label>
+                                                    <input type="file" name="csv_file" id="csvFileInput" class="form-control" accept=".csv" required>
+                                                    <div class="form-text">Format: Lastname, firstname, extension name, middle name, age, gender, barangay, university, year level, email, number</div>
+                                                    <div id="csvFilename" class="small text-muted mt-1" aria-live="polite"></div>
+                                                </div>
+                                                            <div class="col-12 col-md-4">
+                                                                <label class="form-label fw-semibold text-primary">Municipality</label>
+                                                                <?php if (!empty($adminMunicipalityId)): ?>
+                                                                    <div class="form-control bg-light" disabled>
+                                                                        <span class="badge bg-secondary-subtle text-dark border"><?= htmlspecialchars($adminMunicipalityName ?: 'Unknown') ?></span>
+                                                                    </div>
+                                                                    <input type="hidden" name="municipality_id" value="<?= htmlspecialchars((string)$adminMunicipalityId) ?>">
+                                                                <?php else: ?>
+                                                                    <select name="municipality_id" class="form-select" required>
+                                                                        <option value="" disabled selected>Select municipality</option>
+                                                                        <?php $munis = pg_fetch_all(pg_query($connection, "SELECT municipality_id,name FROM municipalities ORDER BY name")) ?: [];
+                                                                            foreach ($munis as $m) echo '<option value="'.$m['municipality_id'].'">'.htmlspecialchars($m['name']).'</option>'; ?>
+                                                                    </select>
+                                                                <?php endif; ?>
+                                                            </div>
+                                                <div class="col-12 col-md-2 text-md-end">
+                                                    <button class="btn btn-primary w-100"><i class="bi bi-search me-1"></i> Preview</button>
+                                                </div>
+                                            </div>
+                </form>
+
+                        <?php if (!empty($_SESSION['migration_preview'])): $mp = $_SESSION['migration_preview']; ?>
+                    <form method="POST">
+                        <input type="hidden" name="migration_action" value="confirm">
+                                                        <div class="d-flex justify-content-end gap-2 mb-2 preview-scroll-controls">
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" id="scrollStartBtn" title="Scroll to start"><i class="bi bi-skip-backward"></i></button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm" id="scrollConflictsBtn" title="Scroll to conflicts"><i class="bi bi-skip-forward"></i></button>
+                                            </div>
+                                            <div class="table-responsive border rounded migration-preview">
+                                    <table class="table table-sm align-middle mb-0 preview-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Select</th>
+                                        <th>Name</th>
+                                        <th>Sex</th>
+                                        <th>Bdate</th>
+                                        <th>Barangay</th>
+                                        <th>University</th>
+                                        <th>Year Level</th>
+                                        <th>Email</th>
+                                        <th>Mobile</th>
+                                        <th>Conflicts</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                        <?php foreach ($mp['rows'] as $idx => $r): $row=$r['row']; $conf=$r['conflicts']; ?>
+                                            <tr class="<?= $conf? 'table-warning':'' ?>" data-has-conflict="<?= $conf? '1':'0' ?>">
+                                                <td data-label="Select"><input type="checkbox" class="row-select" name="select[<?= $idx ?>]" <?= $conf? '':'checked' ?>></td>
+                                                <td data-label="Name"><?= htmlspecialchars(trim(($row['last_name'] ?? '') . ', ' . ($row['first_name'] ?? '') . ' ' . ($row['middle_name'] ?? '') . ' ' . ($row['extension_name'] ?? ''))) ?></td>
+                                                <td data-label="Sex"><?= htmlspecialchars($row['sex'] ?: '-') ?></td>
+                                                <td data-label="Bdate"><?= htmlspecialchars($row['bdate'] ?: '-') ?></td>
+                                                <td data-label="Barangay"><?= htmlspecialchars(($r['barangay']['name'] ?? ($row['barangay_name'] ?? ''))) ?></td>
+                                                <td data-label="University"><?= htmlspecialchars(($r['university']['name'] ?? ($row['university_name'] ?? ''))) ?></td>
+                                                <td data-label="Year Level"><?= htmlspecialchars(($r['year_level']['name'] ?? ($row['year_level_name'] ?? ''))) ?></td>
+                                                <td data-label="Email"><?= htmlspecialchars($row['email'] ?? '') ?></td>
+                                                <td data-label="Mobile"><?= htmlspecialchars($row['mobile'] ?? '') ?></td>
+                                                <td data-label="Conflicts" class="small">
+                                                    <?php if ($conf) { echo '<ul class="mb-0 ps-3">'; foreach ($conf as $c) echo '<li>'.htmlspecialchars($c).'</li>'; echo '</ul>'; } else { echo '<span class="text-success"><i class="bi bi-check2 me-1"></i>Ready</span>'; } ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                                <div class="mt-3 d-flex flex-wrap gap-2 align-items-center justify-content-between">
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="selectAllValidBtn"><i class="bi bi-check2-all me-1"></i> Select All Valid</button>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="showConflictsOnly">
+                                            <label class="form-check-label" for="showConflictsOnly">Show conflicts only</label>
+                                        </div>
+                                    </div>
+                                    <div class="ms-auto small text-muted" id="selectedCounter">0 selected</div>
+                                </div>
+
+                                <div class="modal-footer justify-content-end mt-3 sticky-confirm">
+                                    <button class="btn btn-success"><i class="bi bi-check2-circle me-1"></i> Confirm & Migrate</button>
+                                </div>
+                    </form>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -654,6 +1059,73 @@ function updateTableData() {
 // Start real-time updates when page loads
 document.addEventListener('DOMContentLoaded', function() {
     setTimeout(updateTableData, 100);
+    // Auto-open migration modal if preview/result exists
+    <?php if (!empty($_SESSION['migration_preview']) || !empty($_SESSION['migration_result'])): ?>
+    const migrationModalEl = document.getElementById('migrationModal');
+    if (migrationModalEl) {
+        const modal = new bootstrap.Modal(migrationModalEl);
+        modal.show();
+    }
+    <?php endif; ?>
+
+    // Migration UI helpers
+    const csvInput = document.getElementById('csvFileInput');
+    const csvFilename = document.getElementById('csvFilename');
+    if (csvInput && csvFilename) {
+        csvInput.addEventListener('change', () => {
+            const file = csvInput.files && csvInput.files[0];
+            csvFilename.textContent = file ? `Selected: ${file.name} (${Math.round(file.size/1024)} KB)` : '';
+        });
+    }
+
+    function updateSelectedCounter() {
+        const counter = document.getElementById('selectedCounter');
+        if (!counter) return;
+        const checks = document.querySelectorAll('.migration-preview .row-select');
+        let n = 0; checks.forEach(c => { if (c.checked) n++; });
+        counter.textContent = `${n} selected`;
+    }
+
+    // Initialize selection counter and controls if preview table is present
+    const previewTable = document.querySelector('.migration-preview');
+    if (previewTable) {
+        document.querySelectorAll('.migration-preview .row-select').forEach(cb => cb.addEventListener('change', updateSelectedCounter));
+        updateSelectedCounter();
+
+        const selectAllBtn = document.getElementById('selectAllValidBtn');
+        if (selectAllBtn) {
+            selectAllBtn.addEventListener('click', () => {
+                document.querySelectorAll('.migration-preview tbody tr').forEach(tr => {
+                    const hasConflict = tr.getAttribute('data-has-conflict') === '1';
+                    const cb = tr.querySelector('.row-select');
+                    if (cb && !hasConflict) cb.checked = true;
+                });
+                updateSelectedCounter();
+            });
+        }
+
+        const conflictToggle = document.getElementById('showConflictsOnly');
+        if (conflictToggle) {
+            conflictToggle.addEventListener('change', () => {
+                const only = conflictToggle.checked;
+                document.querySelectorAll('.migration-preview tbody tr').forEach(tr => {
+                    const hasConflict = tr.getAttribute('data-has-conflict') === '1';
+                    tr.style.display = (!only || hasConflict) ? '' : 'none';
+                });
+            });
+        }
+
+        // Horizontal scroll helpers
+        const scrollWrap = document.querySelector('.migration-preview');
+        const scrollStartBtn = document.getElementById('scrollStartBtn');
+        const scrollConflictsBtn = document.getElementById('scrollConflictsBtn');
+        function smoothScrollTo(x) {
+            if (!scrollWrap) return;
+            scrollWrap.scrollTo({ left: x, behavior: 'smooth' });
+        }
+        if (scrollStartBtn) scrollStartBtn.addEventListener('click', () => smoothScrollTo(0));
+        if (scrollConflictsBtn) scrollConflictsBtn.addEventListener('click', () => smoothScrollTo(scrollWrap.scrollWidth));
+    }
 });
 </script>
 <style>
@@ -683,6 +1155,36 @@ document.addEventListener('DOMContentLoaded', function() {
 @media (max-width: 576px) {
     .doc-grid { grid-template-columns: 1fr; }
     .doc-viewer { width: 100vw; height: 90vh; border-radius: 0; }
+}
+
+/* Migration preview responsive table */
+.migration-preview .preview-table thead { position: sticky; top: 0; z-index: 1; }
+@media (max-width: 768px) {
+    .migration-preview .preview-table thead { display: none; }
+    .migration-preview .preview-table tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; padding: 10px; border-bottom: 1px solid #eee; }
+    .migration-preview .preview-table tbody td { display: flex; justify-content: space-between; align-items: center; border: none !important; padding: 4px 0; }
+    .migration-preview .preview-table tbody td::before { content: attr(data-label); font-weight: 600; color: #1182FF; margin-right: 8px; }
+    .migration-preview .preview-table tbody td[data-label="Select"] { grid-column: 1 / -1; justify-content: flex-start; }
+    .migration-preview .preview-table tbody td[data-label="Conflicts"] { grid-column: 1 / -1; }
+}
+.sticky-confirm { position: sticky; bottom: 0; background: #fff; border-top: 1px solid #eee; }
+
+/* Horizontal scroll improvements for preview table */
+.migration-preview { overflow-x: auto; }
+.migration-preview .preview-table { min-width: 1100px; }
+.migration-preview .preview-table th, .migration-preview .preview-table td { white-space: nowrap; }
+.migration-preview .preview-table thead th { position: sticky; top: 0; background: #f8fbff; }
+.migration-preview .preview-table td[data-label="Select"],
+.migration-preview .preview-table th:first-child { position: sticky; left: 0; background: #fff; z-index: 2; }
+.migration-preview .preview-table td[data-label="Conflicts"],
+.migration-preview .preview-table th:last-child { position: sticky; right: 0; background: #fff; z-index: 2; }
+
+/* Hide scroll controls on small screens and improve wrapping */
+@media (max-width: 768px) {
+    .preview-scroll-controls { display: none; }
+    .migration-preview .preview-table { min-width: 100%; }
+    .migration-preview .preview-table th, .migration-preview .preview-table td { white-space: normal; }
+    .migration-preview .preview-table thead th { position: static; }
 }
 </style>
 
