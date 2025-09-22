@@ -74,43 +74,10 @@ if ($has_qr_code) {
     }
     
     .home-section {
-      margin-left: 0;
-      transition: margin-left 0.3s ease;
-      width: 100%;
       min-height: 100vh;
     }
     
-    .home-section.sidebar-open {
-      margin-left: 250px;
-    }
-    
-    nav {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-      width: 100%;
-    }
-    
-    #menu-toggle {
-      font-size: 2rem;
-      color: #007bff;
-      cursor: pointer;
-      padding: 0.75rem;
-      border-radius: 8px;
-      transition: all 0.3s ease;
-      background: rgba(0, 123, 255, 0.1);
-      border: 2px solid transparent;
-    }
-    
-    #menu-toggle:hover {
-      background: rgba(0, 123, 255, 0.2);
-      color: #0056b3;
-      border-color: #007bff;
-      transform: scale(1.05);
-    }
+    /* Use shared header for nav and menu toggle styling */
     
     .qr-card {
       background: white;
@@ -228,15 +195,7 @@ if ($has_qr_code) {
       .qr-card { padding: 1.5rem; }
       .qr-image { max-width: 280px; }
       .home-section { margin-left: 0 !important; }
-      nav { 
-        position: sticky;
-        top: 0;
-        z-index: 1000;
-      }
-      #menu-toggle {
-        font-size: 1.8rem;
-        padding: 0.6rem;
-      }
+      /* Rely on shared header responsiveness */
     }
   </style>
 </head>
@@ -245,8 +204,7 @@ if ($has_qr_code) {
   <?php include __DIR__ . '/../../includes/student/student_topbar.php'; ?>
 
   <div id="wrapper" style="padding-top: var(--topbar-h);">
-    <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+  <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     <section class="home-section" id="page-content-wrapper">
       <!-- Student Header -->
       <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>

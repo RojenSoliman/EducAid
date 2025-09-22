@@ -34,85 +34,7 @@ $municipality_id = 1;
 $isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) || 
                  isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) || 
                  isset($_POST['processCertificateOcr']) || isset($_POST['cleanup_temp']) ||
-                 isset($_POST['check_existing']);
-
-// Handle cleanup when user navigates away (AJAX endpoint)
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['cleanup_temp'])) {
-    $tempDirs = [
-        '../../assets/uploads/temp/enrollment_forms/',
-        '../../assets/uploads/temp/letter_mayor/',
-        '../../assets/uploads/temp/indigency/'
-    ];
-    
-    $deletedFiles = 0;
-    foreach ($tempDirs as $dir) {
-        if (is_dir($dir)) {
-            $files = glob($dir . '*');
-            foreach ($files as $file) {
-                if (is_file($file)) {
-                    unlink($file);
-                    $deletedFiles++;
-                }
-            }
-        }
-    }
-    
-    // Clear any OTP session data
-    unset($_SESSION['otp'], $_SESSION['otp_email'], $_SESSION['otp_timestamp'], $_SESSION['otp_verified']);
-    
-    json_response(['status' => 'success', 'message' => "Cleaned up $deletedFiles temporary files"]);
-}
-
-// Check for existing registration (prevent duplicates)
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['check_existing'])) {
-    $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
-    $mobile = preg_replace('/[^0-9]/', '', $_POST['mobile'] ?? '');
-    
-    $existingAccount = false;
-    $existingType = '';
-    
-    if (!empty($email)) {
-        $checkEmail = pg_query_params($connection, "SELECT status FROM students WHERE email = $1", [$email]);
-        if (pg_num_rows($checkEmail) > 0) {
-            $row = pg_fetch_assoc($checkEmail);
-            $existingAccount = true;
-            $existingType = 'email';
-            $status = $row['status'];
-        }
-    }
-    
-    if (!$existingAccount && !empty($mobile)) {
-        $checkMobile = pg_query_params($connection, "SELECT status FROM students WHERE mobile = $1", [$mobile]);
-        if (pg_num_rows($checkMobile) > 0) {
-            $row = pg_fetch_assoc($checkMobile);
-            $existingAccount = true;
-            $existingType = 'mobile';
-            $status = $row['status'];
-        }
-    }
-    
-    if ($existingAccount) {
-        $statusMessages = [
-            'under_registration' => 'You have a pending registration. Please complete it or wait for admin review.',
-            'applicant' => 'You already have an approved application under review.',
-            'active' => 'You already have an active account in the system.',
-            'blacklist' => 'Your account has been suspended. Please contact the administrator.',
-            'rejected' => 'Your previous application was rejected. You may reapply after addressing the issues.'
-        ];
-        
-        $message = $statusMessages[$status] ?? 'You already have an account in the system.';
-        
-        json_response([
-            'status' => 'exists', 
-            'type' => $existingType,
-            'account_status' => $status,
-            'message' => $message,
-            'can_reapply' => $status === 'rejected'
-        ]);
-    } else {
-        json_response(['status' => 'available', 'message' => 'No existing account found']);
-    }
-}
+                 isset($_POST['check_existing']) || isset($_POST['test_db']);
 
 // Only output HTML for non-AJAX requests
 if (!$isAjaxRequest) {
@@ -294,6 +216,76 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     }
 }
 
+// --- Check existing account ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['check_existing'])) {
+    $email = isset($_POST['email']) ? filter_var($_POST['email'], FILTER_SANITIZE_EMAIL) : '';
+    $mobile = isset($_POST['mobile']) ? preg_replace('/[^0-9+]/', '', $_POST['mobile']) : '';
+    
+    if (empty($email) && empty($mobile)) {
+        json_response(['status' => 'error', 'message' => 'Email or mobile number required']);
+    }
+    
+    try {
+        // Check for existing accounts with same email or mobile
+        $conditions = [];
+        $params = [];
+        $paramIndex = 1;
+        
+        if (!empty($email)) {
+            $conditions[] = "email = $" . $paramIndex++;
+            $params[] = $email;
+        }
+        
+        if (!empty($mobile)) {
+            $conditions[] = "mobile = $" . $paramIndex++;
+            $params[] = $mobile;
+        }
+        
+        if (empty($conditions)) {
+            json_response(['status' => 'success', 'message' => 'No conflicts found']);
+        }
+        
+        $query = "SELECT email, mobile, status, first_name, last_name 
+                  FROM students 
+                  WHERE " . implode(' OR ', $conditions) . " 
+                  LIMIT 1";
+        
+        $result = pg_query_params($connection, $query, $params);
+        
+        if (!$result) {
+            json_response(['status' => 'error', 'message' => 'Database error occurred']);
+        }
+        
+        $existing = pg_fetch_assoc($result);
+        
+        if ($existing) {
+            $conflictType = '';
+            if (!empty($email) && $existing['email'] === $email) {
+                $conflictType = 'email';
+            } elseif (!empty($mobile) && $existing['mobile'] === $mobile) {
+                $conflictType = 'phone number';
+            }
+            
+            $canReapply = in_array($existing['status'], ['rejected', 'disqualified']);
+            
+            json_response([
+                'status' => 'exists',
+                'message' => "An account already exists with this {$conflictType}.",
+                'type' => $conflictType,
+                'account_status' => $existing['status'],
+                'name' => $existing['first_name'] . ' ' . $existing['last_name'],
+                'can_reapply' => $canReapply
+            ]);
+        } else {
+            json_response(['status' => 'success', 'message' => 'No conflicts found']);
+        }
+        
+    } catch (Exception $e) {
+        error_log("Check existing account error: " . $e->getMessage());
+        json_response(['status' => 'error', 'message' => 'Could not verify account status']);
+    }
+}
+
 // --- OTP send ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
     $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
@@ -327,10 +319,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
         $mail->setFrom('dilucayaka02@gmail.com', 'EducAid');
         $mail->addAddress($email);
 
-        $mail->isHTML(true);
-        $mail->Subject = 'Your EducAid OTP Code';
-        $mail->Body    = "Your One-Time Password (OTP) for EducAid registration is: <strong>$otp</strong><br><br>This OTP is valid for 40 seconds.";
-        $mail->AltBody = "Your One-Time Password (OTP) for EducAid registration is: $otp. This OTP is valid for 40 seconds.";
+    $mail->isHTML(true);
+    $mail->Subject = 'Your EducAid OTP Code';
+    $mail->Body    = "Your One-Time Password (OTP) for EducAid registration is: <strong>$otp</strong><br><br>This OTP is valid for 5 minutes.";
+    $mail->AltBody = "Your One-Time Password (OTP) for EducAid registration is: $otp. This OTP is valid for 5 minutes.";
 
         $mail->send();
         json_response(['status' => 'success', 'message' => 'OTP sent to your email. Please check your inbox and spam folder.']);
@@ -346,10 +338,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
     $email_for_otp = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
 
     if (!isset($_SESSION['otp']) || !isset($_SESSION['otp_email']) || !isset($_SESSION['otp_timestamp'])) {
+        error_log("OTP verification error: session data missing (otp, otp_email, otp_timestamp). Session ID: " . session_id());
         json_response(['status' => 'error', 'message' => 'No OTP sent or session expired. Please request a new OTP.']);
     }
 
-    if ($_SESSION['otp_email'] !== $email_for_otp) {
+    // Normalize email for robust comparison (trim + lowercase)
+    $sessionEmail = strtolower(trim($_SESSION['otp_email']));
+    $submittedEmail = strtolower(trim($email_for_otp));
+    if ($sessionEmail !== $submittedEmail) {
+        error_log("OTP email mismatch: session={$sessionEmail} submitted={$submittedEmail}");
         json_response(['status' => 'error', 'message' => 'Email mismatch for OTP. Please ensure you are verifying the correct email.']);
     }
 
@@ -1394,10 +1391,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
 
 // --- Registration logic ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
-    // Debug: Log session state for troubleshooting
-    error_log("Registration attempt - OTP session state: " . print_r($_SESSION, true));
+    // Debug: Log registration attempt
+    error_log("Registration attempt started");
+    error_log("POST data keys: " . implode(', ', array_keys($_POST)));
+    error_log("Session state: " . print_r($_SESSION, true));
     
     if (!isset($_SESSION['otp_verified']) || $_SESSION['otp_verified'] !== true) {
+        error_log("OTP verification failed - Session otp_verified: " . (isset($_SESSION['otp_verified']) ? $_SESSION['otp_verified'] : 'not set'));
         echo "<script>
             console.log('Session state:', " . json_encode($_SESSION) . ");
             alert('OTP not verified. Please verify your email first.'); 
@@ -1419,8 +1419,28 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
     $pass = $_POST['password'];
     $confirm = $_POST['confirm_password'];
+    $agree_terms = isset($_POST['agree_terms']) ? $_POST['agree_terms'] : '';
+
+    // Validate terms agreement
+    if (empty($agree_terms)) {
+        error_log("Terms agreement validation failed");
+        echo "<script>alert('You must agree to the terms and conditions.'); history.back();</script>";
+        exit;
+    }
 
     if (empty($firstname) || empty($lastname) || empty($bdate) || empty($sex) || empty($barangay) || empty($university) || empty($year_level) || empty($mobile) || empty($email) || empty($pass) || empty($confirm)) {
+        error_log("Required field validation failed");
+        error_log("Missing fields - firstname: " . ($firstname ? 'OK' : 'MISSING') . 
+                 ", lastname: " . ($lastname ? 'OK' : 'MISSING') . 
+                 ", bdate: " . ($bdate ? 'OK' : 'MISSING') . 
+                 ", sex: " . ($sex ? 'OK' : 'MISSING') . 
+                 ", barangay: " . ($barangay ? 'OK' : 'MISSING') . 
+                 ", university: " . ($university ? 'OK' : 'MISSING') . 
+                 ", year_level: " . ($year_level ? 'OK' : 'MISSING') . 
+                 ", mobile: " . ($mobile ? 'OK' : 'MISSING') . 
+                 ", email: " . ($email ? 'OK' : 'MISSING') . 
+                 ", pass: " . ($pass ? 'OK' : 'MISSING') . 
+                 ", confirm: " . ($confirm ? 'OK' : 'MISSING'));
         echo "<script>alert('Please fill in all required fields.'); history.back();</script>";
         exit;
     }
@@ -1525,7 +1545,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $slot_id = $activeSlot ? $activeSlot['slot_id'] : null;
 
     $insertQuery = "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_registration', 0, 0, FALSE, NOW(), $11, $12, $13, $14, $15) RETURNING student_id";
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_registration', 0, NULL, FALSE, NOW(), $11, $12, $13, $14, $15) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $student_id,
@@ -2094,15 +2114,15 @@ if (!$isAjaxRequest) {
                         <span id="emailStatus" class="text-success d-none">Verified</span>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Phone Number</label>
-                        <input type="tel" class="form-control" name="phone" maxlength="11" pattern="09[0-9]{9}" placeholder="e.g., 09123456789" required />
+                        <label class="form-label" for="phone">Phone Number</label>
+                        <input type="tel" class="form-control" name="phone" id="phone" maxlength="11" pattern="09[0-9]{9}" placeholder="e.g., 09123456789" required />
                     </div>
                     <div class="mb-3">
                         <button type="button" class="btn btn-info" id="sendOtpBtn">Send OTP (Email)</button>
                     </div>
                     <div id="otpSection" class="d-none mt-3">
                         <div class="mb-3">
-                            <label class="form-label">Enter OTP</label>
+                            <label class="form-label" for="otp">Enter OTP</label>
                             <input type="text" class="form-control" name="otp" id="otp" required />
                         </div>
                         <button type="button" class="btn btn-success w-100 mb-2" id="verifyOtpBtn">Verify OTP</button>
@@ -2115,14 +2135,14 @@ if (!$isAjaxRequest) {
                 <!-- Step 8: Password and Confirmation -->
                 <div class="step-panel d-none" id="step-8">
                     <div class="mb-3">
-                        <label class="form-label">Password</label>
+                        <label class="form-label" for="password">Password</label>
                         <input type="password" class="form-control" name="password" id="password" minlength="12" required />
                     </div>
                     <div class="form-text">
                         Must be at least 12 characters long with letters, numbers, and symbols.
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Confirm Password</label>
+                        <label class="form-label" for="confirmPassword">Confirm Password</label>
                         <input type="password" class="form-control" name="confirm_password" id="confirmPassword" minlength="12" required />
                     </div>
                     <div class="mb-3">
@@ -2160,112 +2180,6 @@ if (!$isAjaxRequest) {
 <script src="../../assets/js/student/user_registration.js?v=<?php echo time(); ?>"></script>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Registration state tracking
-    let registrationInProgress = false;
-    let hasUploadedFiles = false;
-    let hasVerifiedOTP = false;
-    
-    // Track when user starts uploading documents
-    function trackFileUpload() {
-        hasUploadedFiles = true;
-        registrationInProgress = true;
-    }
-    
-    // Track when OTP is verified
-    function trackOTPVerification() {
-        hasVerifiedOTP = true;
-        registrationInProgress = true;
-    }
-    
-    // Check for existing account before allowing registration
-    function checkExistingAccount(email, mobile) {
-        return fetch('', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                'check_existing': '1',
-                'email': email || '',
-                'mobile': mobile || ''
-            })
-        })
-        .then(response => response.json());
-    }
-    
-    // Cleanup temporary files
-    function cleanupTempFiles() {
-        return fetch('', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                'cleanup_temp': '1'
-            })
-        })
-        .then(response => response.json());
-    }
-    
-    // Enhanced beforeunload warning
-    window.addEventListener('beforeunload', function(e) {
-        if (registrationInProgress && !document.querySelector('form').submitted) {
-            const message = 'You have unsaved registration progress. If you leave this page, your uploaded documents and verification progress will be lost. Are you sure you want to leave?';
-            e.preventDefault();
-            e.returnValue = message;
-            
-            // Attempt to cleanup (may not always work due to browser limitations)
-            navigator.sendBeacon('', new URLSearchParams({
-                'cleanup_temp': '1'
-            }));
-            
-            return message;
-        }
-    });
-    
-    // Handle page visibility change (user switches tabs or minimizes)
-    document.addEventListener('visibilitychange', function() {
-        if (document.visibilityState === 'hidden' && registrationInProgress) {
-            // User switched away, start a timer for cleanup
-            setTimeout(() => {
-                if (document.visibilityState === 'hidden') {
-                    // Still hidden after 5 minutes, cleanup
-                    cleanupTempFiles().catch(err => console.log('Cleanup failed:', err));
-                }
-            }, 300000); // 5 minutes
-        }
-    });
-    
-    // Enhanced email/mobile validation with duplicate check
-    async function validateAccountDetails() {
-        const email = document.querySelector('input[name="email"]').value.trim();
-        const mobile = document.querySelector('input[name="phone"]').value.trim();
-        
-        if (!email && !mobile) return true;
-        
-        try {
-            const result = await checkExistingAccount(email, mobile);
-            
-            if (result.status === 'exists') {
-                const confirmMsg = `${result.message}\n\nAccount found using your ${result.type}.\nStatus: ${result.account_status.replace('_', ' ').toUpperCase()}\n\n`;
-                
-                if (result.can_reapply) {
-                    const reapply = confirm(confirmMsg + 'Would you like to continue with a new application? This will replace your previous rejected application.');
-                    if (!reapply) return false;
-                } else {
-                    alert(confirmMsg + 'Please use the login page instead or contact support if you believe this is an error.');
-                    return false;
-                }
-            }
-            
-            return true;
-        } catch (error) {
-            console.error('Account validation failed:', error);
-            return true; // Allow registration if check fails
-        }
-    }
-
     // Letter to Mayor Upload Handling
     document.getElementById('letterToMayorForm').addEventListener('change', function(e) {
         const file = e.target.files[0];
@@ -2276,8 +2190,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const processBtn = document.getElementById('processLetterOcrBtn');
 
         if (file) {
-            trackFileUpload(); // Track that user has uploaded files
-            
             // Show preview section
             previewContainer.classList.remove('d-none');
             ocrSection.classList.remove('d-none');
@@ -2476,8 +2388,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const processBtn = document.getElementById('processCertificateOcrBtn');
 
         if (file) {
-            trackFileUpload(); // Track that user has uploaded files
-            
             // Show preview section
             previewContainer.classList.remove('d-none');
             ocrSection.classList.remove('d-none');
@@ -2615,112 +2525,6 @@ document.addEventListener('DOMContentLoaded', function() {
             nextButton.classList.add('btn-primary');
         }
     }
-}); // End of DOMContentLoaded
-</script>
-
-<!-- Enhanced registration form submission with duplicate checking -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Track enrollment form uploads
-    document.getElementById('enrollmentForm').addEventListener('change', function(e) {
-        if (e.target.files[0]) {
-            trackFileUpload();
-        }
-    });
-    
-    // Enhanced form submission with validation and duplicate checking
-    document.getElementById('multiStepForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        // Check for duplicates before final submission
-        const isValid = await validateAccountDetails();
-        if (!isValid) {
-            return false;
-        }
-        
-        // Show final confirmation
-        const confirmSubmit = confirm(
-            'Are you sure you want to submit your registration?\n\n' +
-            'Please review:\n' +
-            '✓ All personal information is correct\n' +
-            '✓ All required documents are uploaded and verified\n' +
-            '✓ Email and phone number are valid\n' +
-            '✓ Password meets requirements\n\n' +
-            'Once submitted, you cannot edit your application.'
-        );
-        
-        if (!confirmSubmit) {
-            return false;
-        }
-        
-        // Mark form as submitted to prevent cleanup warning
-        this.submitted = true;
-        registrationInProgress = false;
-        
-        // Submit the form
-        this.submit();
-    });
-    
-    // Enhanced OTP verification tracking
-    const originalVerifyOtp = document.getElementById('verifyOtpBtn').onclick;
-    document.getElementById('verifyOtpBtn').addEventListener('click', function() {
-        // Track OTP verification
-        setTimeout(() => {
-            if (document.getElementById('emailStatus').classList.contains('text-success')) {
-                trackOTPVerification();
-            }
-        }, 1000);
-    });
-    
-    // Add cleanup button for manual clearing (optional)
-    function addCleanupButton() {
-        const cleanupBtn = document.createElement('button');
-        cleanupBtn.type = 'button';
-        cleanupBtn.className = 'btn btn-outline-warning btn-sm mt-2';
-        cleanupBtn.innerHTML = '<i class="bi bi-trash"></i> Clear All Progress';
-        cleanupBtn.onclick = function() {
-            if (confirm('This will delete all uploaded files and reset your progress. Are you sure?')) {
-                cleanupTempFiles().then(() => {
-                    alert('All temporary files cleared. You can start fresh.');
-                    location.reload();
-                });
-            }
-        };
-        
-        // Add to the first step
-        const firstStep = document.getElementById('step-1');
-        if (firstStep && !document.getElementById('cleanup-btn')) {
-            cleanupBtn.id = 'cleanup-btn';
-            firstStep.appendChild(cleanupBtn);
-        }
-    }
-    
-    // Add cleanup button when page loads
-    document.addEventListener('DOMContentLoaded', addCleanupButton);
-    
-    // Periodic cleanup check (every 30 minutes of inactivity)
-    let inactivityTimer;
-    function resetInactivityTimer() {
-        clearTimeout(inactivityTimer);
-        if (registrationInProgress) {
-            inactivityTimer = setTimeout(() => {
-                if (confirm('You have been inactive for 30 minutes. Would you like to keep your progress or clean up temporary files?')) {
-                    resetInactivityTimer(); // User wants to continue
-                } else {
-                    cleanupTempFiles().then(() => {
-                        alert('Temporary files cleared due to inactivity.');
-                        location.reload();
-                    });
-                }
-            }, 1800000); // 30 minutes
-        }
-    }
-    
-    // Reset timer on user activity
-    ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(event => {
-        document.addEventListener(event, resetInactivityTimer, true);
-    });
-}); // End of DOMContentLoaded
 </script>
 
 <!-- ADD this modal HTML before closing </body> tag -->

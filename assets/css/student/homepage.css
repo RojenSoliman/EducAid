@@ -315,7 +315,7 @@ h5 {
   background-color: rgba(0, 0, 0, 0.4);
   opacity: 1;
   transition: opacity 0.3s ease;
-  z-index: 1030;
+  z-index: 1040;
 }
 
 .sidebar-backdrop.d-none {

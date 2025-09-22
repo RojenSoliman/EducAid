@@ -90,4 +90,18 @@
 }
 /* Sidebar toggle inside header */
 .header-left .sidebar-toggle { padding: 0.25rem 0.5rem; }
+
+/* Unified burger toggle */
+#menu-toggle {
+  font-size: 28px;
+  cursor: pointer;
+  color: #0d6efd;
+  border-radius: 8px;
+  padding: 6px 8px;
+  transition: all 0.2s ease;
+}
+#menu-toggle:hover {
+  background: #f1f5f9;
+  color: #0b5ed7;
+}
 </style>

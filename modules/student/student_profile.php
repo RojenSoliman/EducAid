@@ -299,22 +299,24 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
     .verified-indicator { color: #28a745; font-weight: bold; }
     .form-error { color:#e14343; font-size: 0.92em; font-weight: 500; min-width: 90px; text-align: left; }
     .form-success { color:#41d87d; font-size: 0.92em; font-weight: 500; min-width: 90px; text-align: left; }
+    /* Ensure header is flush under topbar like other pages */
+    .home-section { padding-top: 0 !important; }
+    .home-section > .main-header:first-child { margin-top: 0 !important; }
   </style>
 </head>
 <body>
   <!-- Student Topbar -->
   <?php include __DIR__ . '/../../includes/student/student_topbar.php'; ?>
 
-  <div class="container-fluid" style="padding-top: var(--topbar-h);">
-    <div class="row">
-      <!-- Include Sidebar -->
-      <?php include '../../includes/student/student_sidebar.php' ?>
-      <!-- Main Content Area -->
-      <section class="home-section" id="page-content-wrapper">
+  <div id="wrapper" style="padding-top: var(--topbar-h);">
+    <!-- Include Sidebar -->
+    <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
+    <!-- Main Content Area -->
+    <section class="home-section" id="page-content-wrapper">
         <!-- Student Header -->
         <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
         
-        <div class="container py-5">
+  <div class="container-fluid py-4 px-4">
           <div class="card mb-4 p-4">
             <h4>Profile Information</h4>
             <table class="table borderless">
@@ -422,7 +424,6 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
           </div>
         </div>
       </section>
-    </div>
   </div>
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/homepage.js"></script>

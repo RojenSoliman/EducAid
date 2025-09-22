@@ -14,23 +14,23 @@
     min-height: 100vh !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
-    margin-left: 0 !important;
-    width: 100% !important;
+    /* Respect default layout from homepage.css (.home-section) */
     padding-bottom: 2rem !important;
     scroll-behavior: smooth;
 }
 
-/* Sidebar integration */
-.upload-container.with-sidebar {
+/* Ensure upload page respects sidebar width (desktop) */
+.sidebar ~ .home-section.upload-container {
     margin-left: 260px !important;
     width: calc(100% - 260px) !important;
-    transition: margin-left 0.3s ease-in-out, width 0.3s ease-in-out;
 }
-
-.sidebar.close ~ .upload-container.with-sidebar {
+.sidebar.close ~ .home-section.upload-container {
     margin-left: 78px !important;
     width: calc(100% - 78px) !important;
 }
+
+/* Sidebar integration */
+/* Remove with-sidebar forced widths to prevent overlay issues. The base layout controls width. */
 
 /* Navigation - Override homepage */
 .upload-container nav {
@@ -40,7 +40,7 @@
     padding: 1rem 1.5rem !important;
     position: sticky;
     top: 0;
-    z-index: 100;
+    /* Use header default stacking context; avoid low z-index that lets content overlay sidebar */
 }
 
 .upload-container nav #menu-toggle {

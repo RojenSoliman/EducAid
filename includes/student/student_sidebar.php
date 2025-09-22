@@ -42,7 +42,7 @@
       </a>
     </li>
     <li class="nav-item logout">
-      <a href="logout.php" onclick="return confirm('Are you sure you want to logout?');">
+      <a href="../../unified_login.php?logout=true">
         <i class="bi bi-box-arrow-right icon"></i>
         <span class="links_name">Logout</span>
       </a>
