@@ -80,17 +80,8 @@ $query = "
 $uploads = pg_query($connection, $query);
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Validate Grades - EducAid Admin</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="../../assets/css/admin/homepage.css">
-    <link rel="stylesheet" href="../../assets/css/admin/sidebar.css">
-    <style>
+<?php $page_title='Validate Grades'; $extra_css=[]; include '../../includes/admin/admin_head.php'; ?>
+<style>
         .confidence-high { color: #28a745; font-weight: 600; }
         .confidence-medium { color: #ffc107; font-weight: 600; }
         .confidence-low { color: #dc3545; font-weight: 600; }
@@ -111,17 +102,14 @@ $uploads = pg_query($connection, $query);
     </style>
 </head>
 <body>
-<div id="wrapper">
+<?php include '../../includes/admin/admin_topbar.php'; ?>
+<div id="wrapper" class="admin-wrapper">
     <?php include '../../includes/admin/admin_sidebar.php'; ?>
+    <?php include '../../includes/admin/admin_header.php'; ?>
     
-    <section class="home-section">
-        <nav>
-            <div class="sidebar-toggle px-4 py-3">
-                <i class="bi bi-list" id="menu-toggle"></i>
-            </div>
-        </nav>
+    <section class="home-section" id="mainContent">
         
-        <div class="container-fluid py-4 px-4">
+    <div class="container-fluid py-4 px-4">
             <div class="section-header mb-4">
                 <h2 class="fw-bold text-primary">
                     <i class="bi bi-file-earmark-check me-2"></i>

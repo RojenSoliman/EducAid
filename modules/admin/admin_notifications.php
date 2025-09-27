@@ -47,31 +47,16 @@ function getNotificationIcon($type) {
 }
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin Notifications</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
-  <link rel="stylesheet" href="../../assets/css/admin/homepage.css" />
-  <link rel="stylesheet" href="../../assets/css/admin/notification.css" />
-  <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
-</head>
+<?php $page_title='Notifications'; $extra_css=['../../assets/css/admin/notification.css']; include '../../includes/admin/admin_head.php'; ?>
 <body>
-  <div id="wrapper">
+  <?php include '../../includes/admin/admin_topbar.php'; ?>
+  <div id="wrapper" class="admin-wrapper">
     <?php include '../../includes/admin/admin_sidebar.php'; ?>
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+    <?php include '../../includes/admin/admin_header.php'; ?>
 
     <section class="home-section" id="mainContent">
-      <nav>
-        <div class="sidebar-toggle px-4 py-3">
-          <i class="bi bi-list" id="menu-toggle"></i>
-        </div>
-      </nav>
 
-      <div class="container-fluid py-4 px-4">
+  <div class="container-fluid py-4 px-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h3 class="fw-bold mb-0"><i class="bi bi-bell-fill me-2 text-warning"></i>Notifications
             <span class="badge bg-danger" id="unread-count">0</span>
