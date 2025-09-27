@@ -1,5 +1,6 @@
 /* === GENERAL TRIAS COLOR PALETTE === */
 :root {
+  --admin-topbar-h: 44px;
   --gt-blue: #1A70F0;
   --gt-sky: #57C3F0;
   --gt-cyan: #3BC5DC;
@@ -14,25 +15,25 @@
   --disabled-bg: #f3f4f6;
 }
 
-/* === SIDEBAR BASE === */
+/* === SIDEBAR BASE (primary definition) === */
 .sidebar {
   position: fixed;
-  top: 0;
+  top: var(--admin-topbar-h, 44px); /* ensure it sits BELOW fixed topbar */
   left: 0;
-  height: 100vh;
+  height: calc(100vh - var(--admin-topbar-h, 44px));
   width: 250px;
   background-color: #f9f9f9;
   padding: 20px 0;
   overflow: hidden;
-  z-index: 1000;
+  z-index: 1000; /* keep below topbar (1050) but above content */
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
   border-top-right-radius: 12px;
   border-bottom-right-radius: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
-.sidebar.close {
-  width: 70px;
-}
+.sidebar.close { width: 70px; }
 
 /* === DISABLED NAVIGATION ITEMS === */
 .sidebar .nav-list li.disabled a {
@@ -51,27 +52,7 @@
   opacity: 0.7;
 }
 
-/* === SIDEBAR BASE === */
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  height: 100vh;
-  width: 250px;
-  background-color: #f9f9f9;
-  padding: 20px 0;
-  overflow: hidden;
-  z-index: 1000;
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
-  border-top-right-radius: 12px;
-  border-bottom-right-radius: 12px;
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar.close {
-  width: 70px;
-}
+/* (Removed duplicate .sidebar block that reset top:0 and caused overlap) */
 
 /* === LOGO === */
 .sidebar .logo-details {
@@ -81,6 +62,12 @@
   padding-bottom: 20px;
   flex-shrink: 0; /* Don't shrink logo area */
 }
+
+/* Logo area */
+.sidebar .logo-details { padding: 0 18px 18px 18px; justify-content:center; }
+.sidebar.close .logo-details { padding: 0 12px 18px 12px; justify-content:center; }
+.sidebar .logo-details .icon { font-size:1.6rem; margin-right:8px; color: var(--gt-green); }
+.sidebar.close .logo-details .icon { margin-right:0; }
 
 .sidebar .logo-details .icon {
   font-size: 1.6rem;
@@ -92,8 +79,7 @@
   font-size: 1.1rem;
   color: var(--sidebar-text);
   font-weight: 600;
-  white-space: nowrap;
-  transition: opacity 0.3s ease;
+  white-space: nowrap; /* transition removed */
 }
 
 .sidebar.close .logo-details .logo_name {
@@ -143,8 +129,7 @@
   text-decoration: none;
   font-size: 0.95rem;
   border-radius: 6px;
-  transition: all 0.2s ease;
-  position: relative;
+  position: relative; /* transition removed */
 }
 
 .nav-item a .icon {
@@ -154,8 +139,7 @@
 }
 
 .nav-item a .links_name {
-  white-space: nowrap;
-  transition: opacity 0.2s ease, width 0.2s ease;
+  white-space: nowrap; /* transitions removed */
 }
 
 .sidebar.close .nav-item a .links_name {
@@ -219,8 +203,9 @@
 /* === MOBILE RESPONSIVE === */
 @media (max-width: 768px) {
   .sidebar {
-    transform: translateX(-100%);
-    transition: transform 0.3s ease-in-out;
+    top: 44px;
+    height: calc(100vh - 44px);
+    transform: translateX(-100%); /* transition removed for instant open/close */
   }
 
   .sidebar.open {

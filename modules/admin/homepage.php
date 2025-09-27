@@ -1,4 +1,4 @@
-<?php
+  <?php
 session_start();
 
 // Demo mode handling: support a persistent toggle via session + robust query parsing
@@ -228,9 +228,9 @@ if ($DEMO_MODE) {
   
   <div id="wrapper" class="admin-wrapper">
     <?php include '../../includes/admin/admin_sidebar.php'; ?>
+    <?php include '../../includes/admin/admin_header.php'; ?>
 
     <section class="home-section" id="mainContent">
-      <?php include '../../includes/admin/admin_header.php'; ?>
 
       <div class="container-fluid py-4 px-4">
         <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">

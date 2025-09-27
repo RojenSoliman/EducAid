@@ -57,7 +57,7 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
 <!-- admin_sidebar.php -->
 <div class="sidebar admin-sidebar" id="sidebar">
   <div class="logo-details">
-    <i class="bi bi-shield-lock icon"></i>
+    <i class="bi bi-speedometer2 icon" aria-hidden="true"></i>
     <span class="logo_name">Admin Panel</span>
   </div>
 

@@ -39,7 +39,8 @@ $adminDisplay = htmlspecialchars($_SESSION['admin_username'] ?? 'Admin');
   </div>
 </div>
 <style>
-.admin-main-header {background:#ffffff;border-bottom:1px solid #e1e7e3;box-shadow:0 2px 4px rgba(0,0,0,.06);padding:.55rem 0;position:relative;z-index:1030;margin-top:0;}
+.admin-main-header {background:#ffffff;border-bottom:1px solid #e1e7e3;box-shadow:0 2px 4px rgba(0,0,0,.06);padding:.55rem 0;z-index:1030;margin-top:0;}
+.admin-main-header .container-fluid{height:100%;}
 .admin-header-content{display:flex;align-items:center;justify-content:space-between;}
 .admin-header-actions{display:flex;align-items:center;gap:1rem;}
 .admin-icon-btn{background:#f8fbf8;border:1px solid #d9e4d8;border-radius:10px;padding:.55rem .65rem;position:relative;cursor:pointer;transition:.2s;color:#2e7d32;}
