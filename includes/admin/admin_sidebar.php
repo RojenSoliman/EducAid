@@ -79,14 +79,14 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
 
     <!-- System Controls (super_admin only) -->
     <?php if ($admin_role === 'super_admin'): ?>
-      <li class="nav-item dropdown <?= $isSysControlsActive ? 'active' : '' ?>">
+  <li class="nav-item dropdown">
         <a href="#submenu-sys" data-bs-toggle="collapse" class="dropdown-toggle">
           <i class="bi bi-gear-wide-connected icon"></i>
           <span class="links_name">System Controls</span>
           <i class="bi bi-chevron-down ms-auto small"></i>
         </a>
 
-        <ul class="collapse list-unstyled ms-3 <?= $isSysControlsActive ? 'show' : '' ?>" id="submenu-sys">
+  <ul class="collapse list-unstyled ms-3 <?= $isSysControlsActive ? 'show' : '' ?>" id="submenu-sys">
           <li>
             <a class="submenu-link <?= is_active('manage_slots.php', $current) ? 'active' : '' ?>" href="manage_slots.php">
               <i class="bi bi-sliders me-2"></i> Signup Slots
@@ -197,7 +197,7 @@ function confirmLogout() {
 .admin-sidebar .nav-item.active > a .icon{color:#fff;}
 .admin-sidebar .nav-item.active > a::before{background:#66bb6a;}
 .admin-sidebar .dropdown > a{display:flex;align-items:center;gap:.55rem;margin:4px 12px;padding:10px 14px;border-radius:10px;}
-.admin-sidebar .dropdown.active > a{background:transparent;color:#1b5e20;font-weight:600;box-shadow:none;} /* remove filled green row */
+/* Removed parent highlight; parent stays neutral so only submenu item shows active state */
 .admin-sidebar .submenu-link{display:flex;align-items:center;padding:.4rem .75rem .4rem 2.1rem;margin:2px 0;border-radius:8px;font-size:.8rem;}
 .admin-sidebar .submenu-link.active{background:rgba(76,175,80,.18);font-weight:600;color:#1b5e20;}
 .admin-sidebar .submenu-link:hover{background:rgba(129,199,132,.35);color:#1b5e20;}
@@ -207,7 +207,7 @@ function confirmLogout() {
 @media (max-width:768px){.admin-sidebar .nav-item a{margin:2px 8px;} .admin-sidebar .dropdown > a{margin:4px 8px;} .admin-sidebar .nav-item.logout a.logout-link{margin:6px 8px 8px;}}
 /* Collapse behavior for system controls submenu when sidebar collapsed */
 .admin-sidebar.close #submenu-sys {display:none !important;}
-.admin-sidebar.close .dropdown.active > a {background:transparent;}
+.admin-sidebar.close .dropdown > a {background:transparent;}
 .admin-sidebar.close .dropdown > a .bi-chevron-down{display:none;}
 </style>
 
@@ -218,11 +218,13 @@ document.addEventListener('DOMContentLoaded', function(){
   const sysMenu = document.getElementById('submenu-sys');
   if(!sidebar || !sysMenu) return;
   const parentLi = sysMenu.parentElement;
+  function hasActiveChild(){
+    return !!sysMenu.querySelector('.submenu-link.active');
+  }
   function syncSysMenu(){
     if(sidebar.classList.contains('close')){
       sysMenu.classList.remove('show');
-    } else if(parentLi && parentLi.classList.contains('active')) {
-      // Show submenu automatically only if current page is inside it
+    } else if(hasActiveChild()) {
       if(!sysMenu.classList.contains('show')) sysMenu.classList.add('show');
     }
   }
