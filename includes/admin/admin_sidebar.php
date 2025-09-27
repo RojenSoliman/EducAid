@@ -1,5 +1,10 @@
 <?php
 // admin_sidebar.php — flat for sub_admin, dropbar for super_admin
+// Prevent duplicate inclusion (which caused function redeclare fatal error)
+if (defined('ADMIN_SIDEBAR_LOADED')) {
+  return; // Stop if sidebar already included
+}
+define('ADMIN_SIDEBAR_LOADED', true);
 
 include_once __DIR__ . '/../permissions.php';
 include_once __DIR__ . '/../workflow_control.php';
@@ -18,10 +23,13 @@ $canSchedule = (bool)($workflow_status['can_schedule'] ?? false);
 $canScanQR   = (bool)($workflow_status['can_scan_qr'] ?? false);
 
 /** Helpers */
-function is_active(string $file, string $current): string {
+if (!function_exists('is_active')) {
+  function is_active(string $file, string $current): string {
     return $current === $file ? 'active' : '';
+  }
 }
-function menu_link(string $href, string $icon, string $label, string $activeClass = '', ?array $badge = null, bool $disabled = false, string $lockedMsg = ''): string {
+if (!function_exists('menu_link')) {
+  function menu_link(string $href, string $icon, string $label, string $activeClass = '', ?array $badge = null, bool $disabled = false, string $lockedMsg = ''): string {
     $safeMsg = htmlspecialchars($lockedMsg, ENT_QUOTES);
     $aClass  = $disabled ? ' class="text-muted"' : '';
     $aHref   = $disabled ? '#' : $href;
@@ -32,11 +40,12 @@ function menu_link(string $href, string $icon, string $label, string $activeClas
     $html .=     '<i class="' . $icon . ' icon"></i>';
     $html .=     '<span class="links_name">' . $label . '</span>';
     if ($badge && !empty($badge['text']) && !empty($badge['class'])) {
-        $html .= '<span class="badge ' . $badge['class'] . ' ms-2">' . $badge['text'] . '</span>';
+      $html .= '<span class="badge ' . $badge['class'] . ' ms-2">' . $badge['text'] . '</span>';
     }
     $html .=   '</a>';
     $html .= '</li>';
     return $html;
+  }
 }
 
 /** Submenu membership for “System Controls” (super_admin) */

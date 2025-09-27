@@ -80,84 +80,176 @@ $reasonCategories = [
 ?>
 
 <?php $page_title='Blacklist Archive'; include '../../includes/admin/admin_head.php'; ?>
-    <style>
-        .blacklist-header {
-            background: linear-gradient(135deg, #dc3545, #c82333);
-            color: white;
-            padding: 2rem 0;
-            margin-bottom: 2rem;
-        }
-        
-        .filter-section {
-            background: #f8f9fa;
-            padding: 1.5rem;
-            border-radius: 10px;
-            margin-bottom: 2rem;
-        }
-        
-        .table-responsive {
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        
-        .table thead th {
-            background: #dc3545;
-            color: white;
-            border: none;
-            font-weight: 600;
-        }
-        
-        .table tbody tr:hover {
-            background-color: #f8f9fa;
-        }
-        
-        .reason-badge {
-            font-size: 0.875rem;
-            padding: 0.5rem 0.75rem;
-        }
-        
-        .reason-fraudulent { background-color: #dc3545; }
-        .reason-academic { background-color: #fd7e14; }
-        .reason-system { background-color: #6f42c1; }
-        .reason-other { background-color: #6c757d; }
-        
-        .sort-link {
-            color: white;
-            text-decoration: none;
-        }
-        
-        .sort-link:hover {
-            color: #f8f9fa;
-        }
-        
-        .sort-active {
-            font-weight: bold;
-        }
-        
-        .pagination-info {
-            color: #6c757d;
-            font-size: 0.875rem;
-        }
-        
-        .details-btn {
-            background: none;
-            border: none;
-            color: #007bff;
-            text-decoration: underline;
-            cursor: pointer;
-        }
-    </style>
+<style>
+    .blacklist-hero{background:linear-gradient(135deg,#dc3545,#b71f28);color:#fff;border-radius:18px;padding:1.75rem 1.75rem;margin-bottom:1.75rem;position:relative;overflow:hidden;}
+    .blacklist-hero:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 85% 15%,rgba(255,255,255,.25),transparent 60%);pointer-events:none;}
+    .blacklist-hero h1{font-size:1.6rem;margin:0;font-weight:600;display:flex;align-items:center;gap:.65rem;}
+    .blacklist-hero .meta{font-size:.8rem;opacity:.9;margin-top:.35rem;}
+    .filter-card{background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:1.25rem 1.25rem 1rem;margin-bottom:1.5rem;box-shadow:0 2px 4px rgba(0,0,0,.04);} 
+    .filter-card h6{font-weight:600;font-size:.9rem;margin-bottom:.85rem;display:flex;align-items:center;gap:.4rem;color:#374151;letter-spacing:.5px;text-transform:uppercase;}
+    .filter-card .form-label{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;margin-bottom:.15rem;}
+    .filter-card .btn{border-radius:10px;font-weight:500;}
+    .table-wrap{background:#fff;border:1px solid #e5e7eb;border-radius:18px;box-shadow:0 4px 10px -2px rgba(0,0,0,.05),0 2px 4px -2px rgba(0,0,0,.04);overflow:hidden;}
+    .table thead th{background:#f8f9fa;color:#374151;font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.6px;border-top:none;border-bottom:1px solid #e5e7eb;padding:.75rem .85rem;}
+    .table tbody td{vertical-align:middle;font-size:.85rem;padding:.7rem .85rem;border-color:#f0f2f4;}
+    .table tbody tr:hover{background:#fcfcfd;}
+    .reason-badge{font-size:.65rem;padding:.35rem .55rem;font-weight:600;letter-spacing:.4px;border-radius:20px;}
+    .reason-fraudulent{background:#dc3545;} .reason-academic{background:#fd7e14;} .reason-system{background:#6f42c1;} .reason-other{background:#6c757d;}
+    .reason-badge{color:#fff;}
+    .pagination-info{font-size:.7rem;color:#6b7280;font-weight:500;}
+    .pagination .page-link{font-size:.75rem;padding:.35rem .6rem;border-radius:8px;margin:0 .15rem;}
+    .pagination .page-item.active .page-link{background:#2563eb;border-color:#2563eb;}
+    .empty-state{padding:3.5rem 1rem;}
+    .empty-state i{opacity:.35;}
+    .empty-state h3{font-size:1.15rem;font-weight:600;margin-top:1rem;}
+    .badge-light.text-danger{background:#fff1f1;}
+    .contact-icons i{font-size:.75rem;width:14px;text-align:center;opacity:.8;}
+    .contact-icons small{display:block;line-height:1.15;margin-top:2px;}
+    .truncate-50{max-width:240px;display:inline-block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;}
+    @media (max-width: 992px){.blacklist-hero{padding:1.25rem 1.25rem;} .blacklist-hero h1{font-size:1.35rem;} .filter-card{padding:1rem;} }
+    @media (max-width: 576px){.filter-card .row > div{margin-bottom:.75rem;} .filter-card .row > div:last-child{margin-bottom:0;} .table-wrap{border-radius:14px;} }
+</style>
 </head>
 <body>
-    <div id="wrapper">
-        <?php include '../../includes/admin/admin_sidebar.php'; ?>
-        
-        <section class="home-section" id="mainContent">
-            <div class="blacklist-header">
-                <div class="container">
-                    <h1 class="display-5 fw-bold mb-0">
-                        <i class="bi bi-person-x-fill"></i> Blacklist Archive
+<?php include '../../includes/admin/admin_topbar.php'; ?>
+<div id="wrapper" class="admin-wrapper">
+    <?php include '../../includes/admin/admin_sidebar.php'; ?>
+    <?php include '../../includes/admin/admin_header.php'; ?>
+    <section class="home-section" id="mainContent">
+        <div class="container-fluid py-4 px-4">
+            <div class="blacklist-hero mb-3">
+                <h1><i class="bi bi-person-x-fill"></i> Blacklist Archive <span class="badge bg-light text-danger ms-2" style="font-size:.65rem;">Total <?= $totalRecords ?></span></h1>
+                <div class="meta">Manage and review all blacklisted student records with filtering & quick detail view.</div>
+            </div>
+            <div class="filter-card">
+                <h6><i class="bi bi-funnel"></i> FILTER & SEARCH</h6>
+                <form class="row g-3 align-items-end" method="GET">
+                    <div class="col-lg-4 col-md-6">
+                        <label class="form-label">Search</label>
+                        <input type="text" class="form-control form-control-sm" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Name or email...">
+                    </div>
+                    <div class="col-lg-3 col-md-4 col-sm-6">
+                        <label class="form-label">Reason Category</label>
+                        <select class="form-select form-select-sm" name="reason">
+                            <option value="">All Reasons</option>
+                            <?php foreach ($reasonCategories as $key => $label): ?>
+                                <option value="<?= $key ?>" <?= $reason_filter === $key ? 'selected' : '' ?>><?= $label ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-lg-2 col-sm-6">
+                        <label class="form-label">Sort By</label>
+                        <select class="form-select form-select-sm" name="sort">
+                            <option value="blacklisted_at" <?= $sort_by === 'blacklisted_at' ? 'selected' : '' ?>>Date</option>
+                            <option value="first_name" <?= $sort_by === 'first_name' ? 'selected' : '' ?>>First Name</option>
+                            <option value="last_name" <?= $sort_by === 'last_name' ? 'selected' : '' ?>>Last Name</option>
+                            <option value="reason_category" <?= $sort_by === 'reason_category' ? 'selected' : '' ?>>Reason</option>
+                        </select>
+                    </div>
+                    <div class="col-lg-1 col-sm-6">
+                        <label class="form-label">Order</label>
+                        <select class="form-select form-select-sm" name="order">
+                            <option value="DESC" <?= $sort_order === 'DESC' ? 'selected' : '' ?>>↓</option>
+                            <option value="ASC" <?= $sort_order === 'ASC' ? 'selected' : '' ?>>↑</option>
+                        </select>
+                    </div>
+                    <div class="col-lg-2 col-sm-6 d-flex gap-1">
+                        <button type="submit" class="btn btn-sm btn-primary flex-grow-1"><i class="bi bi-search"></i> Go</button>
+                        <a href="blacklist_archive.php" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-clockwise"></i></a>
+                    </div>
+                </form>
+            </div>
+            <div class="table-wrap">
+                <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom" style="background:#fafafa;">
+                    <span class="fw-semibold small text-uppercase" style="letter-spacing:.6px;">Blacklisted Students</span>
+                    <span class="badge bg-danger" style="font-size:.6rem;">Updated</span>
+                </div>
+                <div class="p-0">
+                <?php if (empty($blacklistedStudents)): ?>
+                    <div class="empty-state text-center">
+                        <i class="bi bi-shield-check display-4 text-success"></i>
+                        <h3 class="mt-2">No Blacklisted Students</h3>
+                        <p class="text-muted small mb-0">Try adjusting your filters or search query.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table mb-0 align-middle">
+                            <thead>
+                                <tr>
+                                    <th style="min-width:180px;">Student</th>
+                                    <th style="min-width:200px;">Contact</th>
+                                    <th style="min-width:160px;">Reason</th>
+                                    <th style="min-width:160px;">Blacklisted By</th>
+                                    <th style="min-width:120px;">Date</th>
+                                    <th style="width:70px;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($blacklistedStudents as $student): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?= htmlspecialchars($student['first_name'] . ' ' . $student['last_name']) ?></strong><br>
+                                        <small class="text-muted"><?= htmlspecialchars($student['barangay_name'] ?? 'N/A') ?></small>
+                                    </td>
+                                    <td class="contact-icons">
+                                        <i class="bi bi-envelope"></i> <small class="truncate-50" title="<?= htmlspecialchars($student['email']) ?>"><?= htmlspecialchars($student['email']) ?></small><br>
+                                        <i class="bi bi-phone"></i> <small><?= htmlspecialchars($student['mobile'] ?? 'N/A') ?></small>
+                                    </td>
+                                    <td>
+                                        <?php $reasonClass = 'reason-' . str_replace('_','-',$student['reason_category']); ?>
+                                        <span class="badge <?= $reasonClass ?> reason-badge"><?= $reasonCategories[$student['reason_category']] ?></span>
+                                        <?php if (!empty($student['detailed_reason'])): ?>
+                                            <div class="text-muted mt-1 truncate-50" title="<?= htmlspecialchars($student['detailed_reason']) ?>">
+                                                <?= htmlspecialchars($student['detailed_reason']) ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <strong><?= htmlspecialchars($student['blacklisted_by_name'] ?? 'System') ?></strong><br>
+                                        <small class="text-muted truncate-50" title="<?= htmlspecialchars($student['admin_email']) ?>"><?= htmlspecialchars($student['admin_email']) ?></small>
+                                    </td>
+                                    <td>
+                                        <?= date('M j, Y', strtotime($student['blacklisted_at'])) ?><br>
+                                        <small class="text-muted"><?= date('g:i A', strtotime($student['blacklisted_at'])) ?></small>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-info" onclick="viewDetails('<?= $student['student_id'] ?>')"><i class="bi bi-eye"></i></button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center p-2 border-top bg-white">
+                        <div class="pagination-info">Showing <?= $offset + 1 ?> to <?= min($offset + $limit, $totalRecords) ?> of <?= $totalRecords ?> entries</div>
+                        <?php if ($totalPages > 1): ?>
+                            <nav>
+                                <ul class="pagination mb-0">
+                                    <?php
+                                        $currentUrl = $_SERVER['REQUEST_URI'];
+                                        $urlParts = parse_url($currentUrl);
+                                        parse_str($urlParts['query'] ?? '', $queryParams);
+                                        unset($queryParams['page']);
+                                        $baseUrl = $urlParts['path'] . '?' . http_build_query($queryParams);
+                                        $baseUrl .= empty($queryParams) ? 'page=' : '&page=';
+                                        if ($page > 1): ?>
+                                            <li class="page-item"><a class="page-link" href="<?= $baseUrl . ($page - 1) ?>">Prev</a></li>
+                                        <?php endif; ?>
+                                        <?php $start = max(1,$page-2); $end = min($totalPages,$page+2); for ($i=$start;$i<=$end;$i++): ?>
+                                            <li class="page-item <?= $i === $page ? 'active' : '' ?>"><a class="page-link" href="<?= $baseUrl . $i ?>"><?= $i ?></a></li>
+                                        <?php endfor; if ($page < $totalPages): ?>
+                                            <li class="page-item"><a class="page-link" href="<?= $baseUrl . ($page + 1) ?>">Next</a></li>
+                                        <?php endif; ?>
+                                </ul>
+                            </nav>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
                         </head>
                     <body>
                         <?php include '../../includes/admin/admin_topbar.php'; ?>
