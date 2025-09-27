@@ -154,29 +154,14 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
             <?php endif; ?>
             <?php if (isset($error)): ?>
                 <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
-            <?php endif; ?>
-            
-            <!-- Universities Management -->
-            <div class="card mb-4">
-                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-building me-2"></i>Universities Management</h5>
-                    <span class="badge bg-light text-dark"><?= count($universities) ?> universities</span>
-                </div>
-                <div class="card-body">
-                    <!-- Controls Row -->
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUniversityModal">
-                                <i class="bi bi-plus"></i> Add University
-                            </button>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="input-group">
-                                <input type="text" class="form-control" id="universitySearch" placeholder="Search universities...">
-                                <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            </div>
-                        </div>
-                    </div>
+            <?php $page_title='System Data'; include '../../includes/admin/admin_head.php'; ?>
+            <body>
+            <?php include '../../includes/admin/admin_topbar.php'; ?>
+            <div id="wrapper" class="admin-wrapper">
+                <?php include '../../includes/admin/admin_sidebar.php'; ?>
+                <?php include '../../includes/admin/admin_header.php'; ?>
+                <section class="home-section" id="mainContent">
+                    <div class="container-fluid py-4 px-4">
                     
                     <!-- Universities List -->
                     <div class="table-responsive">

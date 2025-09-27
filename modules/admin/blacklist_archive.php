@@ -79,17 +79,7 @@ $reasonCategories = [
 ];
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blacklist Archive - EducAid Admin</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="../../assets/css/admin/homepage.css">
-    <link rel="stylesheet" href="../../assets/css/admin/sidebar.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+<?php $page_title='Blacklist Archive'; include '../../includes/admin/admin_head.php'; ?>
     <style>
         .blacklist-header {
             background: linear-gradient(135deg, #dc3545, #c82333);
@@ -168,17 +158,14 @@ $reasonCategories = [
                 <div class="container">
                     <h1 class="display-5 fw-bold mb-0">
                         <i class="bi bi-person-x-fill"></i> Blacklist Archive
-                    </h1>
-                    <p class="lead mb-0">Manage permanently blacklisted students</p>
-                </div>
-            </div>
-
-            <div class="container">
-                <!-- Filter Section -->
-                <div class="filter-section">
-                    <form method="GET" class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label">Search Students</label>
+                        </head>
+                    <body>
+                        <?php include '../../includes/admin/admin_topbar.php'; ?>
+                        <div id="wrapper" class="admin-wrapper">
+                            <?php include '../../includes/admin/admin_sidebar.php'; ?>
+                            <?php include '../../includes/admin/admin_header.php'; ?>
+                            <section class="home-section" id="mainContent">
+                                <div class="container-fluid py-4 px-4">
                             <input type="text" class="form-control" name="search" 
                                    value="<?= htmlspecialchars($search) ?>" 
                                    placeholder="Name or email...">

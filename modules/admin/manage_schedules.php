@@ -317,17 +317,7 @@ if ($usedDatesResult) {
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Manage Schedules</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css"/>
-    <link rel="stylesheet" href="../../assets/css/admin/homepage.css"/>
-    <link rel="stylesheet" href="../../assets/css/admin/sidebar.css"/>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"/>
+<?php $page_title='Manage Schedules'; include '../../includes/admin/admin_head.php'; ?>
     <style>
         .batch-card {
             border: 2px solid #e9ecef;
@@ -361,17 +351,13 @@ if ($usedDatesResult) {
             z-index: 1000;
         }
     </style>
-</head>
+    </head>
 <body>
-<div id="wrapper">
+<?php include '../../includes/admin/admin_topbar.php'; ?>
+<div id="wrapper" class="admin-wrapper">
     <?php include '../../includes/admin/admin_sidebar.php'; ?>
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+    <?php include '../../includes/admin/admin_header.php'; ?>
     <section class="home-section" id="mainContent">
-        <nav>
-            <div class="sidebar-toggle px-4 py-3">
-                <i class="bi bi-list" id="menu-toggle"></i>
-            </div>
-        </nav>
         <div class="container-fluid py-4 px-4">
             <div class="section-header mb-4">
                 <h2 class="fw-bold text-primary">

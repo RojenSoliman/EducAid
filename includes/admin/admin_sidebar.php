@@ -197,7 +197,7 @@ function confirmLogout() {
 .admin-sidebar .nav-item.active > a .icon{color:#fff;}
 .admin-sidebar .nav-item.active > a::before{background:#66bb6a;}
 .admin-sidebar .dropdown > a{display:flex;align-items:center;gap:.55rem;margin:4px 12px;padding:10px 14px;border-radius:10px;}
-.admin-sidebar .dropdown.active > a{background:rgba(46,125,50,.12);color:#1b5e20;font-weight:600;}
+.admin-sidebar .dropdown.active > a{background:transparent;color:#1b5e20;font-weight:600;box-shadow:none;} /* remove filled green row */
 .admin-sidebar .submenu-link{display:flex;align-items:center;padding:.4rem .75rem .4rem 2.1rem;margin:2px 0;border-radius:8px;font-size:.8rem;}
 .admin-sidebar .submenu-link.active{background:rgba(76,175,80,.18);font-weight:600;color:#1b5e20;}
 .admin-sidebar .submenu-link:hover{background:rgba(129,199,132,.35);color:#1b5e20;}
@@ -205,4 +205,32 @@ function confirmLogout() {
 .admin-sidebar .nav-item.logout a.logout-link{background:#ffebee;color:#c62828;border:1px solid #ffcdd2;margin:4px 12px 6px;padding:10px 14px;border-radius:10px;font-weight:600;display:flex;align-items:center;}
 .admin-sidebar .nav-item.logout a.logout-link:hover{background:#ffcdd2;color:#b71c1c;}
 @media (max-width:768px){.admin-sidebar .nav-item a{margin:2px 8px;} .admin-sidebar .dropdown > a{margin:4px 8px;} .admin-sidebar .nav-item.logout a.logout-link{margin:6px 8px 8px;}}
+/* Collapse behavior for system controls submenu when sidebar collapsed */
+.admin-sidebar.close #submenu-sys {display:none !important;}
+.admin-sidebar.close .dropdown.active > a {background:transparent;}
+.admin-sidebar.close .dropdown > a .bi-chevron-down{display:none;}
+</style>
+
+<script>
+// Auto-hide System Controls submenu when sidebar collapses; restore if active when expanded
+document.addEventListener('DOMContentLoaded', function(){
+  const sidebar = document.getElementById('sidebar');
+  const sysMenu = document.getElementById('submenu-sys');
+  if(!sidebar || !sysMenu) return;
+  const parentLi = sysMenu.parentElement;
+  function syncSysMenu(){
+    if(sidebar.classList.contains('close')){
+      sysMenu.classList.remove('show');
+    } else if(parentLi && parentLi.classList.contains('active')) {
+      // Show submenu automatically only if current page is inside it
+      if(!sysMenu.classList.contains('show')) sysMenu.classList.add('show');
+    }
+  }
+  // Observe class changes (JS animation toggles .close)
+  const observer = new MutationObserver(syncSysMenu);
+  observer.observe(sidebar,{attributes:true, attributeFilter:['class']});
+  syncSysMenu();
+});
+</script>
+
 </style>

@@ -134,17 +134,7 @@ if ($students_result) {
 }
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>QR Code Scanner - Admin</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="https://fonts.googleapis.com/css?family=Poppins:400,500,600&display=swap" rel="stylesheet">
-  <link href="../../assets/css/bootstrap.min.css" rel="stylesheet">
-  <link href="../../assets/css/admin/homepage.css" rel="stylesheet">
-  <link href="../../assets/css/admin/sidebar.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+<?php $page_title='QR Code Scanner'; include '../../includes/admin/admin_head.php'; ?>
   <style>
     body { font-family: 'Poppins', sans-serif; }
     #reader { 
@@ -185,17 +175,13 @@ if ($students_result) {
       z-index: 1050;
     }
   </style>
-</head>
+  </head>
 <body>
-  <div id="wrapper">
+  <?php include '../../includes/admin/admin_topbar.php'; ?>
+  <div id="wrapper" class="admin-wrapper">
     <?php include __DIR__ . '/../../includes/admin/admin_sidebar.php'; ?>
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+    <?php include '../../includes/admin/admin_header.php'; ?>
     <section class="home-section" id="page-content-wrapper">
-      <nav>
-        <div class="sidebar-toggle px-4 py-3">
-          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
-        </div>
-      </nav>
       <div class="container py-5">
         <div class="d-flex justify-content-between align-items-center mb-4">
           <h1><i class="bi bi-qr-code-scan me-2"></i>QR Code Scanner & Distribution</h1>
