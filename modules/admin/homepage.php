@@ -224,16 +224,13 @@ if ($DEMO_MODE) {
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <div id="wrapper">
+  <?php include '../../includes/admin/admin_topbar.php'; ?>
+  
+  <div id="wrapper" class="admin-wrapper">
     <?php include '../../includes/admin/admin_sidebar.php'; ?>
-    <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
 
     <section class="home-section" id="mainContent">
-      <nav>
-        <div class="sidebar-toggle px-4 py-3">
-          <i class="bi bi-list" id="menu-toggle"></i>
-        </div>
-      </nav>
+      <?php include '../../includes/admin/admin_header.php'; ?>
 
       <div class="container-fluid py-4 px-4">
         <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">

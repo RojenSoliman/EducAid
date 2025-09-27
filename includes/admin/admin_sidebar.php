@@ -55,13 +55,13 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
 ?>
 
 <!-- admin_sidebar.php -->
-<div class="sidebar" id="sidebar">
+<div class="sidebar admin-sidebar" id="sidebar">
   <div class="logo-details">
-    <i class="bi bi-person-gear icon"></i>
-    <span class="logo_name">Admin</span>
+    <i class="bi bi-shield-lock icon"></i>
+    <span class="logo_name">Admin Panel</span>
   </div>
 
-  <ul class="nav-list">
+  <ul class="nav-list flex-grow-1 d-flex flex-column">
 
     <!-- Dashboard -->
     <?= menu_link('homepage.php', 'bi bi-house-door', 'Dashboard', is_active('homepage.php', $current)); ?>
@@ -162,9 +162,12 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
     <!-- Notifications -->
     <?= menu_link('admin_notifications.php', 'bi bi-bell', 'Notifications', is_active('admin_notifications.php', $current)); ?>
 
-    <!-- Logout -->
-    <li class="nav-item logout">
-      <a href="logout.php" onclick="return confirmLogout();">
+    <!-- Filler flex spacer -->
+    <li class="mt-auto p-0 m-0"></li>
+
+    <!-- Logout at bottom -->
+    <li class="nav-item logout mt-2 pt-1">
+      <a href="logout.php" onclick="return confirmLogout();" class="logout-link">
         <i class="bi bi-box-arrow-right icon"></i>
         <span class="links_name">Logout</span>
       </a>
@@ -181,10 +184,25 @@ function confirmLogout() {
 </script>
 
 <style>
-/* Optional styling tweaks for submenu */
-.sidebar .dropdown > a { display:flex; align-items:center; gap:.5rem; }
-.sidebar .submenu-link { display:flex; align-items:center; padding:.5rem .75rem; border-radius:.6rem; }
-.sidebar .submenu-link.active { background: rgba(40, 167, 69, .15); font-weight: 600; }
-.sidebar .submenu-link .bi { width: 1.1rem; text-align:center; }
-.sidebar .dropdown.active > a { background: rgba(40, 167, 69, .15); border-radius:.8rem; }
+.admin-sidebar {background:linear-gradient(180deg,#e8f5e9 0%,#ffffff 60%);border-right:1px solid #c8e6c9;}
+.admin-sidebar .logo-details{padding:0 1rem 1rem 1rem;}
+.admin-sidebar .logo-details .icon{color:#2e7d32;}
+.admin-sidebar .logo-details .logo_name{color:#1b5e20;font-weight:600;}
+.admin-sidebar .nav-list{padding-bottom:.75rem;}
+.admin-sidebar .nav-item a{border-radius:10px;margin:2px 12px; padding:10px 14px; font-size:.9rem; font-weight:500;}
+.admin-sidebar .nav-item a .icon{color:#2e7d32;transition:.2s;font-size:1.1rem;}
+.admin-sidebar .nav-item a:hover{background:#c8e6c9;color:#1b5e20;}
+.admin-sidebar .nav-item a:hover .icon{color:#1b5e20;}
+.admin-sidebar .nav-item.active > a{background:#2e7d32;color:#fff;box-shadow:0 2px 4px rgba(0,0,0,.15);} 
+.admin-sidebar .nav-item.active > a .icon{color:#fff;}
+.admin-sidebar .nav-item.active > a::before{background:#66bb6a;}
+.admin-sidebar .dropdown > a{display:flex;align-items:center;gap:.55rem;margin:4px 12px;padding:10px 14px;border-radius:10px;}
+.admin-sidebar .dropdown.active > a{background:rgba(46,125,50,.12);color:#1b5e20;font-weight:600;}
+.admin-sidebar .submenu-link{display:flex;align-items:center;padding:.4rem .75rem .4rem 2.1rem;margin:2px 0;border-radius:8px;font-size:.8rem;}
+.admin-sidebar .submenu-link.active{background:rgba(76,175,80,.18);font-weight:600;color:#1b5e20;}
+.admin-sidebar .submenu-link:hover{background:rgba(129,199,132,.35);color:#1b5e20;}
+.admin-sidebar .submenu-link .bi{width:1.05rem;text-align:center;font-size:.9rem;}
+.admin-sidebar .nav-item.logout a.logout-link{background:#ffebee;color:#c62828;border:1px solid #ffcdd2;margin:4px 12px 6px;padding:10px 14px;border-radius:10px;font-weight:600;display:flex;align-items:center;}
+.admin-sidebar .nav-item.logout a.logout-link:hover{background:#ffcdd2;color:#b71c1c;}
+@media (max-width:768px){.admin-sidebar .nav-item a{margin:2px 8px;} .admin-sidebar .dropdown > a{margin:4px 8px;} .admin-sidebar .nav-item.logout a.logout-link{margin:6px 8px 8px;}}
 </style>
