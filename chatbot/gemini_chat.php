@@ -1,138 +1,118 @@
 <?php
-// gemini_chat.php
+// gemini_chat.php (dynamic model selection)
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');  // adjust if you want strict origin control
+header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Headers: Content-Type');
 
-// Enable error logging for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/chatbot_errors.log');
 
-$API_KEY = 'AIzaSyCU7iNNvWUQv9-dBflcV-VlpIpBeTiB5dI';
+$API_KEY = 'AIzaSyCLuUUm8C8X3o_qCx3NaGd8NsmSRJXMDGo';
+if(!$API_KEY){ http_response_code(500); echo json_encode(['error'=>'API key missing']); exit; }
 
-// Read JSON POST data
-$input = json_decode(file_get_contents('php://input'), true);
-$userMessage = trim($input['message'] ?? '');
-
-if ($userMessage === '') {
-  http_response_code(400);
-  echo json_encode(['error' => 'Empty message']);
-  exit;
+// Health / list diag
+if(isset($_GET['diag'])){
+  $versions=['v1','v1beta']; $out=[];
+  foreach($versions as $ver){
+    $u='https://generativelanguage.googleapis.com/'.$ver.'/models?key='.urlencode($API_KEY);
+    $ch=curl_init($u); curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>20,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2]);
+    $r=curl_exec($ch); $c=curl_getinfo($ch,CURLINFO_HTTP_CODE); $e=curl_error($ch); curl_close($ch);
+    $parsed=json_decode($r,true); $names=[]; if(!$e && $c===200 && isset($parsed['models'])){ foreach($parsed['models'] as $m){ if(isset($m['name'])) $names[]=$m['name']; } }
+    $out[]=['version'=>$ver,'http_code'=>$c,'error'=>$e?:($parsed['error']['message']??null),'models'=>$names];
+  }
+  echo json_encode(['diagnostic'=>true,'list'=>$out]); exit;
 }
 
-// Gemini REST endpoint (Flash = cheaper/faster; Pro = smarter)
-$url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' . urlencode($API_KEY);
+$raw=file_get_contents('php://input');
+$in=json_decode($raw,true);
+$userMessage=trim($in['message']??'');
+if($userMessage===''){ http_response_code(400); echo json_encode(['error'=>'Empty message']); exit; }
 
-// Build prompt with a system-style instruction + user message
-$payload = [
-    'contents' => [[
-        'role' => 'user',
-        'parts' => [[
-            'text' =>
-                    "You are EducAid Assistant, the official AI helper for the EducAid scholarship program in General Trias City, Cavite. " .
-                    "Your role is to provide accurate, helpful, and friendly assistance to students and families seeking information about educational financial assistance.\n\n" .
+$prompt = "You are EducAid Assistant, the official AI helper for the EducAid scholarship program in General Trias City, Cavite. " .
+  "Provide accurate, concise assistance about eligibility, required documents, process steps, deadlines (remind they change), and contact details. Maintain privacy (RA 10173). If unsure, advise verifying on the official portal.\n\n" .
+  "USER MESSAGE: " . $userMessage;
 
-                    "**CORE GUIDELINES:**\n" .
-                    "- Be conversational, warm, and encouraging\n" .
-                    "- Keep responses concise but comprehensive\n" .
-                    "- Always respect data privacy (RA 10173)\n" .
-                    "- Direct users to official channels for sensitive matters\n" .
-                    "- Remind users to verify information on the official EducAid portal\n\n" .
-
-                    "**SCHOLARSHIP ELIGIBILITY REQUIREMENTS:**\n" .
-                    "When asked about eligibility, clearly explain:\n" .
-                    "1. **Residency**: Must be a bonafide resident of General Trias City, Cavite\n" .
-                    "2. **Academic Performance**: Minimum average grade of 75% or higher (GPA ≤ 3.00)\n" .
-                    "3. **Family Limit**: Only one beneficiary per family\n" .
-                    "4. **Enrollment**: Must be enrolled or planning to enroll in an accredited educational institution\n\n" .
-
-                    "**REQUIRED DOCUMENTS:**\n" .
-                    "When asked about documents, format the response clearly:\n" .
-                    "**📋 Required Documents for EducAid Application:**\n\n" .
-                    "• **Valid Government ID** – Clear photo/scan of student ID, PhilHealth ID, postal ID, etc.\n" .
-                    "• **Proof of Residency** – Recent utility bill, barangay certificate, or lease agreement\n" .
-                    "• **Academic Records** – Form 137/138, transcript, or latest report card showing grades ≥75%\n" .
-                    "• **Birth Certificate** – PSA-issued certified true copy\n" .
-                    "• **Income Documentation** – Family ITR, certificate of income, or employment records\n" .
-                    "• **Enrollment Certificate** – Proof of current or planned enrollment\n\n" .
-
-                    "**COMMON TOPICS TO ADDRESS:**\n" .
-                    "- Application deadlines and slot availability\n" .
-                    "- Step-by-step application process\n" .
-                    "- Contact information for EducAid office\n" .
-                    "- Scholarship coverage and benefits\n" .
-                    "- Appeal or reapplication procedures\n\n" .
-
-                    "**RESPONSE STYLE:**\n" .
-                    "- Start with a friendly acknowledgment\n" .
-                    "- Use bullet points and headers for clarity\n" .
-                    "- End with next steps or helpful suggestions\n" .
-                    "- Include relevant contact info when appropriate\n\n" .
-
-                    "**CONTACT INFORMATION TO SHARE:**\n" .
-                    "- Email: educaid@generaltrias.gov.ph\n" .
-                    "- Phone: (046) 509-5555\n" .
-                    "- Office: General Trias City Hall\n\n" .
-
-                    "USER MESSAGE: " . $userMessage
-        ]]
-    ]],
+// Preferred logical ordering (fast flash > flash lite > pro)
+$preference = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-flash-latest',
+  'gemini-2.0-flash-001',
+  'gemini-2.0-flash-lite',
+  'gemini-2.0-flash-lite-001',
+  'gemini-2.5-pro',
+  'gemini-pro-latest'
 ];
 
-$ch = curl_init($url);
-curl_setopt_array($ch, [
-  CURLOPT_POST => true,
-  CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-  CURLOPT_POSTFIELDS => json_encode($payload),
-  CURLOPT_RETURNTRANSFER => true,
-  CURLOPT_TIMEOUT => 30,
-  CURLOPT_SSL_VERIFYPEER => false,  // Add this for SSL issues
-  CURLOPT_SSL_VERIFYHOST => false,  // Add this for SSL issues
+$versions = ['v1','v1beta'];
+$modelInventory = []; // version => [models]
+foreach($versions as $ver){
+  $u='https://generativelanguage.googleapis.com/'.$ver.'/models?key='.urlencode($API_KEY);
+  $ch=curl_init($u); curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>10,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2]);
+  $r=curl_exec($ch); $c=curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+  if($c===200){ $d=json_decode($r,true); if(isset($d['models'])){ foreach($d['models'] as $m){ if(isset($m['name'])) $modelInventory[$ver][] = str_replace('models/','',$m['name']); } } }
+}
+
+// Build ordered candidate list (version + model) preserving preference
+$attempts = [];
+foreach($preference as $candidate){
+  foreach($versions as $ver){
+    if(!empty($modelInventory[$ver]) && in_array($candidate,$modelInventory[$ver])){
+      $attempts[] = [$ver,$candidate];
+      break; // do not add duplicate for other versions
+    }
+  }
+}
+// Fallback: if list empty (listing failed) just brute-force with preference across versions
+if(empty($attempts)){
+  foreach($versions as $ver){ foreach($preference as $cand){ $attempts[] = [$ver,$cand]; } }
+}
+
+$payload = [ 'contents' => [[ 'role'=>'user','parts'=>[[ 'text'=>$prompt ]] ]] ];
+
+$reply = null; $used = null; $apiVer = null; $lastError = null; $rawResponse = null; $httpCode = null;
+foreach($attempts as [$ver,$model]){
+  $endpoint='https://generativelanguage.googleapis.com/'.$ver.'/models/'.rawurlencode($model).':generateContent?key='.urlencode($API_KEY);
+  $ch=curl_init($endpoint);
+  curl_setopt_array($ch,[
+    CURLOPT_POST=>true,
+    CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
+    CURLOPT_POSTFIELDS=>json_encode($payload),
+    CURLOPT_RETURNTRANSFER=>true,
+    CURLOPT_TIMEOUT=>30,
+    CURLOPT_SSL_VERIFYPEER=>true,
+    CURLOPT_SSL_VERIFYHOST=>2,
+  ]);
+  $resp=curl_exec($ch); $httpCode=curl_getinfo($ch,CURLINFO_HTTP_CODE); $err=curl_error($ch); curl_close($ch);
+  error_log("Attempt model=$model ver=$ver code=$httpCode err=$err");
+  if($err){ $lastError='Curl: '.$err; continue; }
+  if($httpCode!==200){ $lastError='HTTP '.$httpCode; $rawResponse=$resp; continue; }
+  $decoded=json_decode($resp,true);
+  if(!$decoded){ $lastError='JSON decode failure'; continue; }
+  if(isset($decoded['error'])){ $lastError='API '.$decoded['error']['message']; $rawResponse=json_encode($decoded['error']); continue; }
+  $text=$decoded['candidates'][0]['content']['parts'][0]['text'] ?? null;
+  if(!$text){ $lastError='No text in response'; continue; }
+  $reply=$text; $used=$model; $apiVer=$ver; break;
+}
+
+if($reply===null){
+  http_response_code(502);
+  echo json_encode([
+    'error'=>'Chatbot unavailable',
+    'detail'=>$lastError,
+    'http_code'=>$httpCode,
+    'last_body'=>($rawResponse && strlen($rawResponse)<1200)?$rawResponse:substr((string)$rawResponse,0,1200),
+    'attempted_models'=>array_map(function($t){return $t[0].':'.$t[1];}, $attempts),
+    'available_models'=>$modelInventory
+  ]);
+  exit;
+}
+
+echo json_encode([
+  'reply'=>$reply,
+  'model_used'=>$used,
+  'api_version'=>$apiVer
 ]);
-
-$response = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$err = curl_error($ch);
-curl_close($ch);
-
-// Log the raw response for debugging
-error_log("HTTP Code: " . $httpCode);
-error_log("Raw Response: " . $response);
-
-if ($err) {
-  error_log("CURL Error: " . $err);
-  http_response_code(500);
-  echo json_encode(['error' => 'Connection error: '.$err]);
-  exit;
-}
-
-if ($httpCode !== 200) {
-  error_log("HTTP Error: " . $httpCode . " - Response: " . $response);
-  http_response_code(500);
-  echo json_encode(['error' => 'API Error: HTTP ' . $httpCode]);
-  exit;
-}
-
-$data = json_decode($response, true);
-
-if (!$data) {
-  error_log("JSON Decode Error: " . json_last_error_msg());
-  http_response_code(500);
-  echo json_encode(['error' => 'Invalid response format']);
-  exit;
-}
-
-// Check for API errors in response
-if (isset($data['error'])) {
-  error_log("API Error: " . json_encode($data['error']));
-  http_response_code(500);
-  echo json_encode(['error' => 'API Error: ' . ($data['error']['message'] ?? 'Unknown error')]);
-  exit;
-}
-
-// Parse Gemini text
-$text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '(No response)';
-
-echo json_encode(['reply' => $text]);

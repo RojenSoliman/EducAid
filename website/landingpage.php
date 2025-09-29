@@ -25,6 +25,24 @@ if (time() - $verificationTime > $expirationTime) {
 
 // Include reCAPTCHA v2 configuration
 require_once '../config/recaptcha_v2_config.php';
+// Bring in database for dynamic announcements preview
+require_once '../config/database.php';
+
+// Fetch latest 3 announcements for landing page preview
+$landing_announcements = [];
+$ann_res = @pg_query($connection, "SELECT announcement_id, title, remarks, posted_at, event_date, event_time, location, image_path, is_active FROM announcements ORDER BY posted_at DESC LIMIT 3");
+if ($ann_res) {
+  while($row = pg_fetch_assoc($ann_res)) { $landing_announcements[] = $row; }
+  pg_free_result($ann_res);
+}
+function lp_truncate($text, $limit = 140){ $text = trim($text); return mb_strlen($text) > $limit ? mb_substr($text,0,$limit).'…' : $text; }
+function lp_event_line($row){
+  $parts = [];
+  if (!empty($row['event_date'])) { $d = DateTime::createFromFormat('Y-m-d',$row['event_date']); if($d) $parts[] = $d->format('M d, Y'); }
+  if (!empty($row['event_time'])) { $t = DateTime::createFromFormat('H:i:s',$row['event_time']); if($t) $parts[] = $t->format('g:i A'); }
+  return implode(' • ',$parts);
+}
+function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -42,6 +60,35 @@ require_once '../config/recaptcha_v2_config.php';
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
   <link href="../assets/css/website/recaptcha_v2.css" rel="stylesheet" />
+  <style>
+    /* Skeleton loader styles for announcements */
+    .ann-skeleton { position:relative; overflow:hidden; background:#fff; border:1px solid #e5e7eb; border-radius:1rem; }
+    .ann-skel-img { background:#e2e8f0; aspect-ratio:16/9; border-top-left-radius:1rem; border-top-right-radius:1rem; }
+    .ann-skel-body { padding:.9rem .95rem 1.1rem; }
+    .skel-line { height:10px; background:#e2e8f0; border-radius:4px; margin-bottom:8px; }
+    .skel-line.short { width:55%; }
+    .skel-line.medium { width:75%; }
+    .skel-line.long { width:95%; }
+    .skeleton-shimmer:before { content:""; position:absolute; inset:0; background:linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.55) 50%, rgba(255,255,255,0) 100%); transform:translateX(-100%); animation:shimmer 1.4s infinite; }
+    @keyframes shimmer { 100% { transform:translateX(100%); } }
+    .ann-card.fade-in { opacity:0; transition:opacity .4s ease; }
+    .ann-card.visible { opacity:1; }
+    /* Compact announcement preview styles */
+    .ann-compact-grid > [class*='col'] { display:flex; }
+    .ann-compact-card { position:relative; background:#fff; border:1px solid #e2e8f0; border-radius:.85rem; overflow:hidden; display:flex; flex-direction:column; width:100%; box-shadow:0 4px 14px -6px rgba(0,0,0,.06); transition:box-shadow .25s, transform .25s, border-color .25s; }
+    .ann-compact-card:hover { box-shadow:0 8px 24px -8px rgba(0,0,0,.12); transform:translateY(-3px); border-color:#bfdbfe; }
+    .ann-compact-thumb { width:100%; aspect-ratio:16/9; object-fit:cover; background:#f1f5f9; max-height:135px; }
+    .ann-compact-body { padding:.65rem .75rem .7rem; display:flex; flex-direction:column; gap:.35rem; flex:1; }
+    .ann-compact-meta { font-size:.58rem; font-weight:600; letter-spacing:.5px; text-transform:uppercase; color:#2563eb; display:flex; flex-wrap:wrap; gap:.4rem; }
+  .ann-compact-title { font-size:.82rem; font-weight:600; line-height:1.18; margin:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-clamp:2; }
+    .ann-compact-location { font-size:.6rem; color:#64748b; display:flex; align-items:center; gap:.25rem; }
+  .ann-compact-remarks { font-size:.63rem; color:#475569; line-height:1.25; margin:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-clamp:2; }
+    .ann-compact-link { margin-top:auto; font-size:.6rem; font-weight:600; text-decoration:none; color:#2563eb; display:inline-flex; align-items:center; gap:.15rem; }
+    .ann-compact-link:hover { text-decoration:underline; }
+    .ann-compact-badge { position:absolute; top:.45rem; left:.45rem; font-size:.55rem; }
+    @media (min-width: 992px){ .ann-compact-thumb { max-height:125px; } }
+    @media (max-width: 576px){ .ann-compact-thumb { aspect-ratio:16/10; } }
+  </style>
   
   <!-- Google reCAPTCHA v2 -->
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
@@ -53,12 +100,12 @@ require_once '../config/recaptcha_v2_config.php';
   
   // Custom navigation for landing page
   $custom_nav_links = [
-    ['href' => '#home', 'label' => 'Home', 'active' => true],
+    ['href' => 'landingpage.php#home', 'label' => 'Home', 'active' => true],
     ['href' => 'about.php', 'label' => 'About', 'active' => false],
     ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => false],
-    ['href' => '#announcements', 'label' => 'Announcements', 'active' => false],
     ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
-    ['href' => '#contact', 'label' => 'Contact', 'active' => false]
+    ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => false],
+    ['href' => 'landingpage.php#contact', 'label' => 'Contact', 'active' => false]
   ];
   
   include '../includes/website/topbar.php';
@@ -96,7 +143,7 @@ require_once '../config/recaptcha_v2_config.php';
     <div class="container">
       <div class="row g-3 g-md-4">
         <div class="col-6 col-lg">
-          <a class="ql-card" href="#announcements"><span class="ql-icon"><i class="bi bi-megaphone"></i></span><span>Latest Announcements</span></a>
+          <a class="ql-card" href="announcements.php"><span class="ql-icon"><i class="bi bi-megaphone"></i></span><span>Latest Announcements</span></a>
         </div>
         <div class="col-6 col-lg">
           <a class="ql-card" href="requirements.php"><span class="ql-icon"><i class="bi bi-list-check"></i></span><span>Requirements</span></a>
@@ -230,46 +277,46 @@ require_once '../config/recaptcha_v2_config.php';
   <!-- Announcements -->
   <section id="announcements" class="bg-body-tertiary fade-in">
     <div class="container">
-      <div class="row mb-4">
-        <div class="col-lg-8 fade-in-left">
-          <h2 class="section-title">Latest Announcements</h2>
-          <p class="section-lead">Stay updated with the latest news and information.</p>
+      <div class="d-flex flex-wrap align-items-end justify-content-between mb-2 gap-2">
+        <div class="fade-in-left">
+          <h2 class="section-title mb-1" style="font-size:1.45rem;">Latest Announcements</h2>
+          <p class="section-lead mb-0 small text-body-secondary">Recent official updates & schedules</p>
+        </div>
+        <div>
+          <a href="announcements.php" class="btn btn-sm btn-outline-primary"><i class="bi bi-view-list me-1"></i>All</a>
         </div>
       </div>
-      <div class="row g-3 g-lg-4 fade-in-stagger">
-        <div class="col-md-6 col-lg-4">
-          <div class="soft-card h-100 ann-card">
-            <img src="https://images.unsplash.com/photo-1606761568499-6d2451b23c56?q=80&w=1200&auto=format&fit=crop" alt="Announcement" class="img-fluid" />
-            <div class="p-3">
-              <div class="ann-date mb-1">Sep 12, 2025 • Plaza Rizal</div>
-              <h6 class="fw-bold mb-1">Distribution Day – Batch 1</h6>
-              <p class="small text-body-secondary mb-2">Bring a valid school ID and your QR code. Gates open at 7:30 AM.</p>
-              <a class="link-primary small" href="#">Read details</a>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-6 col-lg-4">
-          <div class="soft-card h-100 ann-card">
-            <img src="https://images.unsplash.com/photo-1543269865-cbf427effbad?q=80&w=1200&auto=format&fit=crop" alt="Announcement" class="img-fluid" />
-            <div class="p-3">
-              <div class="ann-date mb-1">Sep 20, 2025 • City Gym</div>
-              <h6 class="fw-bold mb-1">Orientation for New Applicants</h6>
-              <p class="small text-body-secondary mb-2">Learn about eligibility, deadlines, and document standards.</p>
-              <a class="link-primary small" href="#">Read details</a>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-6 col-lg-4">
-          <div class="soft-card h-100 ann-card">
-            <img src="https://images.unsplash.com/photo-1544383835-bda2bc66a55d?q=80&w=1200&auto=format&fit=crop" alt="Announcement" class="img-fluid" />
-            <div class="p-3">
-              <div class="ann-date mb-1">Oct 01, 2025 • Online</div>
-              <h6 class="fw-bold mb-1">System Maintenance Window</h6>
-              <p class="small text-body-secondary mb-2">Portal will be unavailable from 12:00 AM – 2:00 AM for updates.</p>
-              <a class="link-primary small" href="#">Read details</a>
-            </div>
-          </div>
-        </div>
+      <div class="row g-2 g-lg-3 ann-compact-grid fade-in-stagger" id="annPreviewRow">
+        <?php
+          $preview_rows = [];
+          $resPrev = @pg_query($connection, "SELECT announcement_id, title, remarks, posted_at, event_date, event_time, location, image_path, is_active FROM announcements ORDER BY is_active DESC, posted_at DESC LIMIT 3");
+          if($resPrev){ while($r = pg_fetch_assoc($resPrev)){ $preview_rows[] = $r; } pg_free_result($resPrev); }
+          if(empty($preview_rows)){
+            echo '<div class="col-12"><div class="soft-card p-4 text-center"><h6 class="fw-bold mb-1">No announcements yet</h6><p class="small text-body-secondary mb-2">Official updates will appear here once posted.</p><a href="announcements.php" class="small link-primary">See full page</a></div></div>';
+          } else {
+            foreach($preview_rows as $a){
+              $aid = (int)$a['announcement_id'];
+              $title = lp_esc($a['title']);
+              $posted = date('M d', strtotime($a['posted_at']));
+              $remarks = lp_truncate($a['remarks'] ?? '', 110);
+              $img = !empty($a['image_path']) ? '../'.lp_esc($a['image_path']) : 'https://images.unsplash.com/photo-1543269865-cbf427effbad?q=80&w=800&auto=format&fit=crop';
+              $eventLine = lp_event_line($a);
+              if(strlen($eventLine) > 26){ $eventLine = substr($eventLine,0,24).'…'; }
+              $locLine = !empty($a['location']) ? lp_esc($a['location']) : '';
+              echo '<div class="col-12 col-md-4 fade-in">';
+              echo '<div class="ann-compact-card">';
+              if($a['is_active'] === 't' || $a['is_active'] === true){ echo '<span class="badge bg-success ann-compact-badge">Active</span>'; }
+              echo '<img src="'.$img.'" alt="Announcement image" class="ann-compact-thumb" />';
+              echo '<div class="ann-compact-body">';
+              echo '<div class="ann-compact-meta">'.$posted.($eventLine? ' • '.lp_esc($eventLine):'').'</div>';
+              echo '<h6 class="ann-compact-title">'.$title.'</h6>';
+              if($locLine){ echo '<div class="ann-compact-location"><i class="bi bi-geo-alt"></i><span>'.$locLine.'</span></div>'; }
+              echo '<p class="ann-compact-remarks">'.lp_esc($remarks).'</p>';
+              echo '<a class="ann-compact-link" href="announcements.php?id='.$aid.'">Full details <i class="bi bi-arrow-right-short"></i></a>';
+              echo '</div></div></div>';
+            }
+          }
+        ?>
       </div>
     </div>
   </section>
@@ -725,6 +772,7 @@ document.addEventListener('DOMContentLoaded', () => {
   new ScrollAnimations();
 });
 </script>
+
 
 </body>
 </html>

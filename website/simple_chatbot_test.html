@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Chatbot Test</title>
+</head>
+<body>
+    <h1>Simple Chatbot Test</h1>
+    <button onclick="testBot()">Test Chatbot</button>
+    <div id="output"></div>
+    
+    <script>
+    async function testBot() {
+        const output = document.getElementById('output');
+        output.innerHTML = 'Testing...';
+        
+        try {
+            console.log('Sending request to: ../chatbot/test_simple.php');
+            
+            const response = await fetch('../chatbot/test_simple.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: 'hello'
+                })
+            });
+            
+            console.log('Response status:', response.status);
+            console.log('Response headers:', [...response.headers.entries()]);
+            
+            const text = await response.text();
+            console.log('Raw response:', text);
+            
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error('Invalid JSON: ' + text);
+            }
+            
+            output.innerHTML = `
+                <h3>Status: ${response.status}</h3>
+                <h4>Response:</h4>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+            
+        } catch (error) {
+            console.error('Error:', error);
+            output.innerHTML = `<h3>Error: ${error.message}</h3>`;
+        }
+    }
+    </script>
+</body>
+</html>

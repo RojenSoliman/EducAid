@@ -1,5 +1,7 @@
 <?php
 include_once '../../config/database.php';
+// Include reCAPTCHA v3 configuration (site key + secret key constants)
+include_once __DIR__ . '/../../config/recaptcha_config.php';
 session_start();
 
 // Start output buffering to prevent any early HTML from leaking into JSON responses
@@ -20,6 +22,44 @@ if (!function_exists('json_response')) {
         echo json_encode($payload);
         flush();
         exit;
+    }
+}
+
+// Lightweight reusable reCAPTCHA v3 verifier (avoid duplicating logic per branch)
+if (!function_exists('verify_recaptcha_v3')) {
+    /**
+     * @return array{ok:bool,score:float,reason?:string}
+     */
+    function verify_recaptcha_v3(string $token = null, string $expectedAction = '', float $minScore = 0.5): array {
+        if (!defined('RECAPTCHA_SECRET_KEY')) {
+            return ['ok'=>false,'score'=>0.0,'reason'=>'missing_keys'];
+        }
+        $token = $token ?? '';
+        if ($token === '') { return ['ok'=>false,'score'=>0.0,'reason'=>'missing_token']; }
+        $payload = http_build_query([
+            'secret' => RECAPTCHA_SECRET_KEY,
+            'response' => $token,
+            'remoteip' => $_SERVER['REMOTE_ADDR'] ?? ''
+        ]);
+        $ctx = stream_context_create(['http'=>[
+            'method'=>'POST',
+            'header'=>'Content-type: application/x-www-form-urlencoded',
+            'content'=>$payload,
+            'timeout'=>4
+        ]]);
+        $raw = @file_get_contents(RECAPTCHA_VERIFY_URL, false, $ctx);
+        if ($raw === false) { return ['ok'=>false,'score'=>0.0,'reason'=>'no_response']; }
+        $json = @json_decode($raw, true);
+        if (!is_array($json) || empty($json['success'])) { return ['ok'=>false,'score'=>0.0,'reason'=>'api_fail']; }
+        $score = (float)($json['score'] ?? 0);
+        $action = $json['action'] ?? '';
+        if ($expectedAction !== '' && $action !== $expectedAction) {
+            return ['ok'=>false,'score'=>$score,'reason'=>'action_mismatch'];
+        }
+        if ($score < $minScore) {
+            return ['ok'=>false,'score'=>$score,'reason'=>'low_score'];
+        }
+        return ['ok'=>true,'score'=>$score];
     }
 }
 
@@ -80,7 +120,29 @@ if (!$isAjaxRequest) {
             font-size: 0.85em;
             font-style: italic;
         }
-    </style>
+        </style>
+        <!-- reCAPTCHA v3 -->
+        <script src="https://www.google.com/recaptcha/api.js?render=<?php echo RECAPTCHA_SITE_KEY; ?>"></script>
+        <script>window.RECAPTCHA_SITE_KEY = '<?php echo RECAPTCHA_SITE_KEY; ?>';</script>
+        <script>
+            // Acquire token as early as possible and refresh periodically (v3 tokens expire quickly)
+            let recaptchaToken = '';
+            function executeRecaptcha(){
+                if (typeof grecaptcha === 'undefined') return;
+                grecaptcha.execute('<?php echo RECAPTCHA_SITE_KEY; ?>', {action: 'register'}).then(function(token){
+                    recaptchaToken = token;
+                    const hidden = document.getElementById('g-recaptcha-response');
+                    if (hidden) hidden.value = token;
+                });
+            }
+            window.addEventListener('DOMContentLoaded', function(){
+                grecaptcha.ready(function(){
+                    executeRecaptcha();
+                    // refresh token every 90 seconds
+                    setInterval(executeRecaptcha, 90000);
+                });
+            });
+        </script>
 </head>
 <body class="registration-page">
     <!-- Top Info Bar -->
@@ -123,6 +185,10 @@ if (!$isAjaxRequest) {
     ];
     $simple_nav_style = true;
     include '../../includes/website/navbar.php'; 
+    // Hidden input to store the reCAPTCHA v3 token for final submission (non-AJAX form posts)
+    ?>
+    <input type="hidden" id="g-recaptcha-response" name="g-recaptcha-response" form="finalRegistrationForm" />
+    <?php
     ?>
 
 <?php
@@ -288,6 +354,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['check_existing'])) {
 
 // --- OTP send ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
+    $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'send_otp');
+    if (!$captcha['ok']) {
+        json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
+    }
     $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -309,14 +379,22 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
 
     try {
         $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com';
+        // SMTP settings from environment
+        $mail->Host       = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'dilucayaka02@gmail.com'; // CHANGE for production
-        $mail->Password   = 'jlld eygl hksj flvg';    // CHANGE for production
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
+        $mail->Username   = getenv('SMTP_USERNAME') ?: 'example@email.test';
+        $mail->Password   = getenv('SMTP_PASSWORD') ?: ''; // Ensure this is set in .env on production
+        $encryption       = getenv('SMTP_ENCRYPTION') ?: 'tls';
+        if (strtolower($encryption) === 'ssl') {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        } else {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        }
+        $mail->Port       = (int)(getenv('SMTP_PORT') ?: 587);
 
-        $mail->setFrom('dilucayaka02@gmail.com', 'EducAid');
+        $fromEmail = getenv('SMTP_FROM_EMAIL') ?: ($mail->Username ?: 'no-reply@educaid.local');
+        $fromName  = getenv('SMTP_FROM_NAME')  ?: 'EducAid';
+        $mail->setFrom($fromEmail, $fromName);
         $mail->addAddress($email);
 
     $mail->isHTML(true);
@@ -334,6 +412,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
 
 // --- OTP verify ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
+    $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'verify_otp');
+    if (!$captcha['ok']) {
+        json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
+    }
     $enteredOtp = filter_var($_POST['otp'], FILTER_SANITIZE_NUMBER_INT);
     $email_for_otp = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
 
@@ -369,6 +451,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
 
 // --- Document OCR Processing ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
+    $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_ocr');
+    if (!$captcha['ok']) {
+        json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
+    }
     if (!isset($_FILES['enrollment_form']) || $_FILES['enrollment_form']['error'] !== UPLOAD_ERR_OK) {
         json_response(['status' => 'error', 'message' => 'No file uploaded or upload error.']);
     }
@@ -757,6 +843,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
 
 // --- Letter to Mayor OCR Processing ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) {
+    $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_letter_ocr');
+    if (!$captcha['ok']) { json_response(['status'=>'error','message'=>'Security verification failed (captcha).']); }
     if (!isset($_FILES['letter_to_mayor']) || $_FILES['letter_to_mayor']['error'] !== UPLOAD_ERR_OK) {
         json_response(['status' => 'error', 'message' => 'No letter file uploaded or upload error.']);
     }
@@ -1059,6 +1147,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
 
 // --- Certificate of Indigency OCR Processing ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr'])) {
+    $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_certificate_ocr');
+    if (!$captcha['ok']) { json_response(['status'=>'error','message'=>'Security verification failed (captcha).']); }
     if (!isset($_FILES['certificate_of_indigency']) || $_FILES['certificate_of_indigency']['error'] !== UPLOAD_ERR_OK) {
         json_response(['status' => 'error', 'message' => 'No certificate file uploaded or upload error.']);
     }
@@ -1442,6 +1532,32 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                  ", pass: " . ($pass ? 'OK' : 'MISSING') . 
                  ", confirm: " . ($confirm ? 'OK' : 'MISSING'));
         echo "<script>alert('Please fill in all required fields.'); history.back();</script>";
+        exit;
+    }
+
+    // --- reCAPTCHA v3 server-side verification (registration action) ---
+    $recaptchaResponse = $_POST['g-recaptcha-response'] ?? '';
+    $captchaValid = false; $captchaScore = 0;
+    if (!empty($recaptchaResponse)) {
+        $verifyData = [
+            'secret' => RECAPTCHA_SECRET_KEY,
+            'response' => $recaptchaResponse,
+            'remoteip' => $_SERVER['REMOTE_ADDR']
+        ];
+        $opts = [ 'http' => [ 'header' => "Content-type: application/x-www-form-urlencoded\r\n", 'method' => 'POST', 'content' => http_build_query($verifyData) ] ];
+        $ctx = stream_context_create($opts);
+        $verifyResult = @file_get_contents(RECAPTCHA_VERIFY_URL, false, $ctx);
+        if ($verifyResult !== false) {
+            $verifyJson = json_decode($verifyResult, true);
+            if (!empty($verifyJson['success']) && ($verifyJson['action'] ?? '') === 'register') {
+                $captchaScore = (float)($verifyJson['score'] ?? 0);
+                if ($captchaScore >= 0.5) { $captchaValid = true; }
+            }
+        }
+    }
+    if (!$captchaValid) {
+        error_log('Registration blocked by reCAPTCHA v3. Score=' . $captchaScore);
+        echo "<script>alert('Security verification failed. Please refresh the page and try again.'); history.back();</script>";
         exit;
     }
 
@@ -2218,7 +2334,7 @@ if (!$isAjaxRequest) {
     });
 
     // Letter to Mayor OCR Processing
-    document.getElementById('processLetterOcrBtn').addEventListener('click', function() {
+    document.getElementById('processLetterOcrBtn').addEventListener('click', async function() {
         const formData = new FormData();
         const fileInput = document.getElementById('letterToMayorForm');
         const file = fileInput.files[0];
@@ -2234,6 +2350,17 @@ if (!$isAjaxRequest) {
         formData.append('first_name', document.querySelector('input[name="first_name"]').value);
         formData.append('last_name', document.querySelector('input[name="last_name"]').value);
         formData.append('barangay_id', document.querySelector('select[name="barangay_id"]').value);
+
+        // Add reCAPTCHA token
+        if (typeof grecaptcha !== 'undefined' && window.RECAPTCHA_SITE_KEY) {
+            try {
+                const token = await new Promise(res => grecaptcha.ready(() => {
+                    grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'process_letter_ocr'})
+                        .then(t => res(t)).catch(() => res(''));
+                }));
+                if (token) formData.append('g-recaptcha-response', token);
+            } catch(e) { /* ignore */ }
+        }
 
         // Show processing state
         this.disabled = true;
@@ -2416,7 +2543,7 @@ if (!$isAjaxRequest) {
     });
 
     // Certificate OCR Processing
-    document.getElementById('processCertificateOcrBtn').addEventListener('click', function() {
+    document.getElementById('processCertificateOcrBtn').addEventListener('click', async function() {
         const formData = new FormData();
         const fileInput = document.getElementById('certificateForm');
         const file = fileInput.files[0];
@@ -2432,6 +2559,17 @@ if (!$isAjaxRequest) {
         formData.append('first_name', document.querySelector('input[name="first_name"]').value);
         formData.append('last_name', document.querySelector('input[name="last_name"]').value);
         formData.append('barangay_id', document.querySelector('select[name="barangay_id"]').value);
+
+        // Add reCAPTCHA token
+        if (typeof grecaptcha !== 'undefined' && window.RECAPTCHA_SITE_KEY) {
+            try {
+                const token = await new Promise(res => grecaptcha.ready(() => {
+                    grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'process_certificate_ocr'})
+                        .then(t => res(t)).catch(() => res(''));
+                }));
+                if (token) formData.append('g-recaptcha-response', token);
+            } catch(e) { /* ignore */ }
+        }
 
         // Show processing state
         this.disabled = true;

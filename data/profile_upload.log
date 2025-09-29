@@ -1,0 +1,14 @@
+[2025-09-29T12:10:32+02:00] student=2025-0-773266 --- BEGIN UPLOAD HANDLER ---
+[2025-09-29T12:10:32+02:00] student=2025-0-773266 Incoming FILES keys: profile_picture
+[2025-09-29T12:10:32+02:00] student=2025-0-773266 profile_picture received: name=profile_picture.png size=46933 tmp=C:\xampp\tmp\php2B79.tmp
+[2025-09-29T12:10:32+02:00] student=2025-0-773266 Detected mime=image/png raw_size=46933
+[2025-09-29T12:10:32+02:00] student=2025-0-773266 Encryption exception: Media encryption not configured
+[2025-09-29T12:10:32+02:00] student=2025-0-773266 --- END UPLOAD HANDLER ---
+[2025-09-29T12:13:25+02:00] student=2025-0-773266 --- BEGIN UPLOAD HANDLER ---
+[2025-09-29T12:13:25+02:00] student=2025-0-773266 Incoming FILES keys: profile_picture
+[2025-09-29T12:13:25+02:00] student=2025-0-773266 profile_picture received: name=profile_picture.png size=316543 tmp=C:\xampp\tmp\phpD06B.tmp
+[2025-09-29T12:13:25+02:00] student=2025-0-773266 Detected mime=image/png raw_size=316543
+[2025-09-29T12:13:25+02:00] student=2025-0-773266 Attempting write (plaintext mode) fileName=2025-0-773266_1759140805.png target=../../assets/uploads/student_pictures/2025-0-773266_1759140805.png size=316543
+[2025-09-29T12:13:25+02:00] student=2025-0-773266 Deleted old picture: assets/uploads/student_pictures/2025-0-773266_1759139600.png
+[2025-09-29T12:13:25+02:00] student=2025-0-773266 DB update OK affected_rows=1 new_path=assets/uploads/student_pictures/2025-0-773266_1759140805.png
+[2025-09-29T12:13:25+02:00] student=2025-0-773266 --- END UPLOAD HANDLER ---

@@ -1,3 +1,9 @@
+/.env
+# Ignore real layered env files (examples stay versioned)
+config/env.d/*.env
+# Allow example env fragments
+!config/env.d/*.env.example
+
 assets/uploads/enrollment_forms/30_SOLIMAN_ROJEN_EAF.png
 assets/uploads/students/Rojen Soliman/Bermido_Gabriel_EAF.png
 assets/uploads/students/Rojen Soliman/grades/grades_1757837736_68c679a85d0f9.png

@@ -709,12 +709,27 @@ document.getElementById("sendOtpBtn").addEventListener("click", function() {
     formData.append('sendOtp', 'true');
     formData.append('email', email);
 
-    fetch('student_register.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
+    // If reCAPTCHA available, execute for send_otp action first
+    if (typeof grecaptcha !== 'undefined' && window.RECAPTCHA_SITE_KEY) {
+        grecaptcha.ready(function(){
+            grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'send_otp'}).then(function(token){
+                formData.append('g-recaptcha-response', token);
+                fetch('student_register.php', { method: 'POST', body: formData })
+                    .then(r=>r.json())
+                    .then(handleSendOtpResponse)
+                    .catch(handleSendOtpError);
+            });
+        });
+    } else {
+        fetch('student_register.php', { method: 'POST', body: formData })
+            .then(r=>r.json())
+            .then(handleSendOtpResponse)
+            .catch(handleSendOtpError);
+    }
+});
+
+function handleSendOtpResponse(data){
+    const sendOtpBtn = document.getElementById('sendOtpBtn');
         if (data.status === 'success') {
             triggerMobileVibration('success');
             showNotifier(data.message, 'success');
@@ -729,16 +744,16 @@ document.getElementById("sendOtpBtn").addEventListener("click", function() {
             sendOtpBtn.textContent = "Send OTP (Email)";
             document.getElementById("resendOtpBtn").disabled = true;
         }
-    })
-    .catch(error => {
-        console.error('Error sending OTP:', error);
-        triggerMobileVibration('error');
-        showNotifier('Failed to send OTP. Please try again.', 'error');
-        sendOtpBtn.disabled = false;
-        sendOtpBtn.textContent = "Send OTP (Email)";
-        document.getElementById("resendOtpBtn").disabled = true;
-    });
-});
+}
+function handleSendOtpError(error){
+    console.error('Error sending OTP:', error);
+    const sendOtpBtn = document.getElementById('sendOtpBtn');
+    triggerMobileVibration('error');
+    showNotifier('Failed to send OTP. Please try again.', 'error');
+    sendOtpBtn.disabled = false;
+    sendOtpBtn.textContent = "Send OTP (Email)";
+    document.getElementById("resendOtpBtn").disabled = true;
+}
 
 document.getElementById("resendOtpBtn").addEventListener("click", function() {
     const emailInput = document.getElementById('emailInput');
@@ -756,30 +771,56 @@ document.getElementById("resendOtpBtn").addEventListener("click", function() {
     formData.append('sendOtp', 'true');
     formData.append('email', email);
 
-    fetch('student_register.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            triggerMobileVibration('success');
-            showNotifier(data.message, 'success');
-            startOtpTimer();
-        } else {
-            triggerMobileVibration('error');
-            showNotifier(data.message, 'error');
-            resendOtpBtn.disabled = false;
-            resendOtpBtn.textContent = "Resend OTP";
-        }
-    })
-    .catch(error => {
-        console.error('Error sending OTP:', error);
-        triggerMobileVibration('error');
-        showNotifier('Failed to send OTP. Please try again.', 'error');
-        resendOtpBtn.disabled = false;
-        resendOtpBtn.textContent = "Resend OTP";
-    });
+    if (typeof grecaptcha !== 'undefined' && window.RECAPTCHA_SITE_KEY) {
+        grecaptcha.ready(function(){
+            grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'send_otp'}).then(function(token){
+                formData.append('g-recaptcha-response', token);
+                fetch('student_register.php', { method:'POST', body: formData })
+                  .then(r=>r.json())
+                  .then(data => {
+                      if (data.status === 'success') {
+                          triggerMobileVibration('success');
+                          showNotifier(data.message, 'success');
+                          startOtpTimer();
+                      } else {
+                          triggerMobileVibration('error');
+                          showNotifier(data.message, 'error');
+                          resendOtpBtn.disabled = false;
+                          resendOtpBtn.textContent = "Resend OTP";
+                      }
+                  })
+                  .catch(error => {
+                      console.error('Error sending OTP:', error);
+                      triggerMobileVibration('error');
+                      showNotifier('Failed to send OTP. Please try again.', 'error');
+                      resendOtpBtn.disabled = false;
+                      resendOtpBtn.textContent = "Resend OTP";
+                  });
+            });
+        });
+    } else {
+        fetch('student_register.php', { method: 'POST', body: formData })
+            .then(r=>r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    triggerMobileVibration('success');
+                    showNotifier(data.message, 'success');
+                    startOtpTimer();
+                } else {
+                    triggerMobileVibration('error');
+                    showNotifier(data.message, 'error');
+                    resendOtpBtn.disabled = false;
+                    resendOtpBtn.textContent = "Resend OTP";
+                }
+            })
+            .catch(error => {
+                console.error('Error sending OTP:', error);
+                triggerMobileVibration('error');
+                showNotifier('Failed to send OTP. Please try again.', 'error');
+                resendOtpBtn.disabled = false;
+                resendOtpBtn.textContent = "Resend OTP";
+            });
+    }
 });
 
 document.getElementById("verifyOtpBtn").addEventListener("click", function() {
@@ -801,12 +842,26 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
     formData.append('otp', enteredOtp);
     formData.append('email', emailForOtpVerification);
 
-    fetch('student_register.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
+    if (typeof grecaptcha !== 'undefined' && window.RECAPTCHA_SITE_KEY) {
+        grecaptcha.ready(function(){
+            grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'verify_otp'}).then(function(token){
+                formData.append('g-recaptcha-response', token);
+                fetch('student_register.php', { method:'POST', body: formData })
+                  .then(r=>r.json())
+                  .then(handleVerifyOtpResponse)
+                  .catch(handleVerifyOtpError);
+            });
+        });
+    } else {
+        fetch('student_register.php', { method: 'POST', body: formData })
+            .then(r=>r.json())
+            .then(handleVerifyOtpResponse)
+            .catch(handleVerifyOtpError);
+    }
+});
+
+function handleVerifyOtpResponse(data){
+    const verifyOtpBtn = document.getElementById('verifyOtpBtn');
         console.log('OTP verification response:', data); // Debug log
         if (data.status === 'success') {
             triggerMobileVibration('success');
@@ -849,16 +904,16 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
             verifyOtpBtn.textContent = "Verify OTP";
             otpVerified = false;
         }
-    })
-    .catch(error => {
-        console.error('Error verifying OTP:', error);
-        triggerMobileVibration('error');
-        showNotifier('Failed to verify OTP. Please try again.', 'error');
-        verifyOtpBtn.disabled = false;
-        verifyOtpBtn.textContent = "Verify OTP";
-        otpVerified = false;
-    });
-});
+}
+function handleVerifyOtpError(error){
+    console.error('Error verifying OTP:', error);
+    const verifyOtpBtn = document.getElementById('verifyOtpBtn');
+    triggerMobileVibration('error');
+    showNotifier('Failed to verify OTP. Please try again.', 'error');
+    verifyOtpBtn.disabled = false;
+    verifyOtpBtn.textContent = "Verify OTP";
+    otpVerified = false;
+}
 
 function startOtpTimer() {
     let timeLeft = 300;
@@ -1290,12 +1345,26 @@ document.getElementById('processOcrBtn').addEventListener('click', function() {
     formData.append('university_id', document.querySelector('select[name="university_id"]').value);
     formData.append('year_level_id', document.querySelector('select[name="year_level_id"]').value);
 
-    fetch('student_register.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
+    if (typeof grecaptcha !== 'undefined' && window.RECAPTCHA_SITE_KEY) {
+        grecaptcha.ready(function(){
+            grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'process_ocr'}).then(function(token){
+                formData.append('g-recaptcha-response', token);
+                fetch('student_register.php', { method:'POST', body: formData })
+                  .then(r=>r.json())
+                  .then(handleProcessOcrResponse)
+                  .catch(handleProcessOcrError);
+            });
+        });
+    } else {
+        fetch('student_register.php', { method: 'POST', body: formData })
+            .then(r=>r.json())
+            .then(handleProcessOcrResponse)
+            .catch(handleProcessOcrError);
+    }
+});
+
+function handleProcessOcrResponse(data){
+    const processBtn = document.getElementById('processOcrBtn');
         processBtn.disabled = false;
         processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
 
@@ -1332,15 +1401,15 @@ document.getElementById('processOcrBtn').addEventListener('click', function() {
                 feedbackContainer.innerHTML = suggestionHTML;
             }
         }
-    })
-    .catch(error => {
-        console.error('Error processing OCR:', error);
-        triggerMobileVibration('error');
-        showNotifier('Failed to process document. Please try again.', 'error');
-        processBtn.disabled = false;
-        processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
-    });
-});
+}
+function handleProcessOcrError(error){
+    console.error('Error processing OCR:', error);
+    const processBtn = document.getElementById('processOcrBtn');
+    triggerMobileVibration('error');
+    showNotifier('Failed to process document. Please try again.', 'error');
+    processBtn.disabled = false;
+    processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
+}
 
 function displayVerificationResults(verification) {
     const resultsContainer = document.getElementById('ocrResults');

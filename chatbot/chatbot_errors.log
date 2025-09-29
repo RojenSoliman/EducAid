@@ -72,3 +72,208 @@
   "responseId": "UL3QaPjLHu3Uz7IP2NS36Qg"
 }
 
+[29-Sep-2025 12:17:46 Europe/Berlin] HTTP Code: 404
+[29-Sep-2025 12:17:46 Europe/Berlin] Raw Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+[29-Sep-2025 12:17:46 Europe/Berlin] HTTP Error: 404 - Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+[29-Sep-2025 12:21:24 Europe/Berlin] Model Attempt: gemini-1.5-flash HTTP 404
+[29-Sep-2025 12:21:24 Europe/Berlin] Model Attempt: gemini-1.5-flash-latest HTTP 404
+[29-Sep-2025 12:21:25 Europe/Berlin] Model Attempt: gemini-1.5-pro HTTP 404
+[29-Sep-2025 12:21:25 Europe/Berlin] Model Attempt: gemini-pro HTTP 404
+[29-Sep-2025 12:22:32 Europe/Berlin] Model Attempt: gemini-1.5-flash HTTP 404
+[29-Sep-2025 12:22:32 Europe/Berlin] Model Attempt: gemini-1.5-flash-latest HTTP 404
+[29-Sep-2025 12:22:33 Europe/Berlin] Model Attempt: gemini-1.5-pro HTTP 404
+[29-Sep-2025 12:22:33 Europe/Berlin] Model Attempt: gemini-pro HTTP 404
+[29-Sep-2025 12:23:39 Europe/Berlin] Model Attempt: gemini-1.5-flash-latest HTTP 404
+[29-Sep-2025 12:23:39 Europe/Berlin] Model Attempt: gemini-1.5-flash HTTP 503
+[29-Sep-2025 12:23:40 Europe/Berlin] Model Attempt: gemini-1.5-pro-latest HTTP 404
+[29-Sep-2025 12:23:40 Europe/Berlin] Model Attempt: gemini-1.5-pro HTTP 503
+[29-Sep-2025 12:23:41 Europe/Berlin] Model Attempt: gemini-pro HTTP 404
+[29-Sep-2025 15:51:36 Europe/Berlin] HTTP Code: 404
+[29-Sep-2025 15:51:36 Europe/Berlin] Raw Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+[29-Sep-2025 15:54:00 Europe/Berlin] Attempt ver=v1 model=gemini-1.5-flash-latest code=404 err=
+[29-Sep-2025 15:54:30 Europe/Berlin] Attempt ver=v1 model=gemini-1.5-flash code=0 err=Connection timed out after 30003 milliseconds
+[29-Sep-2025 15:54:31 Europe/Berlin] Attempt ver=v1 model=gemini-1.5-pro-latest code=404 err=
+[29-Sep-2025 15:54:31 Europe/Berlin] Attempt ver=v1 model=gemini-1.5-pro code=404 err=
+[29-Sep-2025 15:54:32 Europe/Berlin] Attempt ver=v1 model=gemini-pro code=404 err=
+[29-Sep-2025 15:54:33 Europe/Berlin] Attempt ver=v1beta model=gemini-1.5-flash-latest code=404 err=
+[29-Sep-2025 15:54:33 Europe/Berlin] Attempt ver=v1beta model=gemini-1.5-flash code=404 err=
+[29-Sep-2025 15:54:34 Europe/Berlin] Attempt ver=v1beta model=gemini-1.5-pro-latest code=404 err=
+[29-Sep-2025 15:54:34 Europe/Berlin] Attempt ver=v1beta model=gemini-1.5-pro code=404 err=
+[29-Sep-2025 15:54:36 Europe/Berlin] Attempt ver=v1beta model=gemini-pro code=404 err=
+[29-Sep-2025 15:57:20 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.5-flash code=400 err=
+[29-Sep-2025 15:57:22 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash code=400 err=
+[29-Sep-2025 15:57:22 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash-001 code=400 err=
+[29-Sep-2025 15:57:23 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash-lite-001 code=400 err=
+[29-Sep-2025 15:57:24 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash-lite code=400 err=
+[29-Sep-2025 15:57:25 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash-preview-image-generation code=400 err=
+[29-Sep-2025 15:57:26 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.5-flash-lite code=400 err=
+[29-Sep-2025 15:57:26 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.5-pro code=400 err=
+[29-Sep-2025 15:57:28 Europe/Berlin] Attempt ver=v1 model=models/embedding-001 code=400 err=
+[29-Sep-2025 15:57:29 Europe/Berlin] Attempt ver=v1 model=models/text-embedding-004 code=400 err=
+[29-Sep-2025 15:57:29 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-preview-05-20 code=400 err=
+[29-Sep-2025 15:57:31 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash code=400 err=
+[29-Sep-2025 15:57:32 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-lite-preview-06-17 code=400 err=
+[29-Sep-2025 15:57:33 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-exp code=400 err=
+[29-Sep-2025 15:57:34 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash code=400 err=
+[29-Sep-2025 15:57:34 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-001 code=400 err=
+[29-Sep-2025 15:57:35 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-exp-image-generation code=400 err=
+[29-Sep-2025 15:57:37 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-lite-001 code=400 err=
+[29-Sep-2025 15:57:37 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-lite code=400 err=
+[29-Sep-2025 15:57:39 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-preview-image-generation code=400 err=
+[29-Sep-2025 15:57:40 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-lite-preview-02-05 code=400 err=
+[29-Sep-2025 15:57:42 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-lite-preview code=400 err=
+[29-Sep-2025 15:57:43 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-thinking-exp-01-21 code=400 err=
+[29-Sep-2025 15:57:44 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-thinking-exp code=400 err=
+[29-Sep-2025 15:57:45 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-thinking-exp-1219 code=400 err=
+[29-Sep-2025 15:57:47 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-preview-tts code=400 err=
+[29-Sep-2025 15:57:48 Europe/Berlin] Attempt ver=v1beta model=models/learnlm-2.0-flash-experimental code=400 err=
+[29-Sep-2025 15:57:50 Europe/Berlin] Attempt ver=v1beta model=models/gemini-flash-latest code=400 err=
+[29-Sep-2025 15:57:51 Europe/Berlin] Attempt ver=v1beta model=models/gemini-flash-lite-latest code=400 err=
+[29-Sep-2025 15:57:52 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-lite code=400 err=
+[29-Sep-2025 15:57:53 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-image-preview code=400 err=
+[29-Sep-2025 15:57:54 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-preview-09-2025 code=400 err=
+[29-Sep-2025 15:57:55 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-lite-preview-09-2025 code=400 err=
+[29-Sep-2025 15:57:56 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro-preview-03-25 code=400 err=
+[29-Sep-2025 15:57:58 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro-preview-05-06 code=400 err=
+[29-Sep-2025 15:57:59 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro-preview-06-05 code=400 err=
+[29-Sep-2025 15:58:01 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro code=400 err=
+[29-Sep-2025 15:58:02 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-pro-exp code=400 err=
+[29-Sep-2025 15:58:04 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-pro-exp-02-05 code=400 err=
+[29-Sep-2025 15:58:05 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro-preview-tts code=400 err=
+[29-Sep-2025 15:58:07 Europe/Berlin] Attempt ver=v1beta model=models/gemini-pro-latest code=400 err=
+[29-Sep-2025 15:58:07 Europe/Berlin] Attempt ver=v1beta model=models/embedding-gecko-001 code=400 err=
+[29-Sep-2025 15:58:09 Europe/Berlin] Attempt ver=v1beta model=models/gemini-exp-1206 code=400 err=
+[29-Sep-2025 15:58:10 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3-1b-it code=400 err=
+[29-Sep-2025 15:58:12 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3-4b-it code=400 err=
+[29-Sep-2025 15:58:13 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3-12b-it code=400 err=
+[29-Sep-2025 15:58:14 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3-27b-it code=400 err=
+[29-Sep-2025 15:58:14 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3n-e4b-it code=400 err=
+[29-Sep-2025 15:58:16 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3n-e2b-it code=400 err=
+[29-Sep-2025 15:58:17 Europe/Berlin] Attempt ver=v1beta model=models/gemini-robotics-er-1.5-preview code=400 err=
+[29-Sep-2025 15:58:19 Europe/Berlin] Attempt ver=v1beta model=models/embedding-001 code=400 err=
+[29-Sep-2025 15:58:20 Europe/Berlin] Attempt ver=v1beta model=models/text-embedding-004 code=400 err=
+[29-Sep-2025 15:58:21 Europe/Berlin] Attempt ver=v1beta model=models/gemini-embedding-exp-03-07 code=400 err=
+[29-Sep-2025 15:58:22 Europe/Berlin] Attempt ver=v1beta model=models/gemini-embedding-exp code=400 err=
+[29-Sep-2025 15:58:24 Europe/Berlin] Attempt ver=v1beta model=models/gemini-embedding-001 code=400 err=
+[29-Sep-2025 15:58:25 Europe/Berlin] Attempt ver=v1beta model=models/aqa code=400 err=
+[29-Sep-2025 15:58:27 Europe/Berlin] Attempt ver=v1beta model=models/imagen-3.0-generate-002 code=400 err=
+[29-Sep-2025 15:58:28 Europe/Berlin] Attempt ver=v1beta model=models/imagen-4.0-generate-preview-06-06 code=400 err=
+[29-Sep-2025 15:58:30 Europe/Berlin] Attempt ver=v1beta model=models/imagen-4.0-ultra-generate-preview-06-06 code=400 err=
+[29-Sep-2025 15:58:31 Europe/Berlin] Attempt ver=v1beta model=models/imagen-4.0-generate-001 code=400 err=
+[29-Sep-2025 15:58:39 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.5-flash code=400 err=
+[29-Sep-2025 15:58:41 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash code=400 err=
+[29-Sep-2025 15:58:42 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash-001 code=400 err=
+[29-Sep-2025 15:58:44 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash-lite-001 code=400 err=
+[29-Sep-2025 15:58:44 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash-lite code=400 err=
+[29-Sep-2025 15:58:45 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.0-flash-preview-image-generation code=400 err=
+[29-Sep-2025 15:58:46 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.5-flash-lite code=400 err=
+[29-Sep-2025 15:58:48 Europe/Berlin] Attempt ver=v1 model=models/gemini-2.5-pro code=400 err=
+[29-Sep-2025 15:58:49 Europe/Berlin] Attempt ver=v1 model=models/embedding-001 code=400 err=
+[29-Sep-2025 15:58:49 Europe/Berlin] Attempt ver=v1 model=models/text-embedding-004 code=400 err=
+[29-Sep-2025 15:58:51 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-preview-05-20 code=400 err=
+[29-Sep-2025 15:58:52 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash code=400 err=
+[29-Sep-2025 15:58:54 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-lite-preview-06-17 code=400 err=
+[29-Sep-2025 15:58:55 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-exp code=400 err=
+[29-Sep-2025 15:58:56 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash code=400 err=
+[29-Sep-2025 15:58:57 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-001 code=400 err=
+[29-Sep-2025 15:58:58 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-exp-image-generation code=400 err=
+[29-Sep-2025 15:58:59 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-lite-001 code=400 err=
+[29-Sep-2025 15:59:01 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-lite code=400 err=
+[29-Sep-2025 15:59:02 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-preview-image-generation code=400 err=
+[29-Sep-2025 15:59:04 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-lite-preview-02-05 code=400 err=
+[29-Sep-2025 15:59:05 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-lite-preview code=400 err=
+[29-Sep-2025 15:59:07 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-thinking-exp-01-21 code=400 err=
+[29-Sep-2025 15:59:08 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-thinking-exp code=400 err=
+[29-Sep-2025 15:59:10 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-flash-thinking-exp-1219 code=400 err=
+[29-Sep-2025 15:59:11 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-preview-tts code=400 err=
+[29-Sep-2025 15:59:12 Europe/Berlin] Attempt ver=v1beta model=models/learnlm-2.0-flash-experimental code=400 err=
+[29-Sep-2025 15:59:13 Europe/Berlin] Attempt ver=v1beta model=models/gemini-flash-latest code=400 err=
+[29-Sep-2025 15:59:14 Europe/Berlin] Attempt ver=v1beta model=models/gemini-flash-lite-latest code=400 err=
+[29-Sep-2025 15:59:15 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-lite code=400 err=
+[29-Sep-2025 15:59:16 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-image-preview code=400 err=
+[29-Sep-2025 15:59:17 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-preview-09-2025 code=400 err=
+[29-Sep-2025 15:59:18 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-flash-lite-preview-09-2025 code=400 err=
+[29-Sep-2025 15:59:20 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro-preview-03-25 code=400 err=
+[29-Sep-2025 15:59:21 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro-preview-05-06 code=400 err=
+[29-Sep-2025 15:59:22 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro-preview-06-05 code=400 err=
+[29-Sep-2025 15:59:23 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro code=400 err=
+[29-Sep-2025 15:59:25 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-pro-exp code=400 err=
+[29-Sep-2025 15:59:26 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.0-pro-exp-02-05 code=400 err=
+[29-Sep-2025 15:59:28 Europe/Berlin] Attempt ver=v1beta model=models/gemini-2.5-pro-preview-tts code=400 err=
+[29-Sep-2025 15:59:28 Europe/Berlin] Attempt ver=v1beta model=models/gemini-pro-latest code=400 err=
+[29-Sep-2025 15:59:29 Europe/Berlin] Attempt ver=v1beta model=models/embedding-gecko-001 code=400 err=
+[29-Sep-2025 15:59:30 Europe/Berlin] Attempt ver=v1beta model=models/gemini-exp-1206 code=400 err=
+[29-Sep-2025 15:59:30 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3-1b-it code=400 err=
+[29-Sep-2025 15:59:32 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3-4b-it code=400 err=
+[29-Sep-2025 15:59:33 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3-12b-it code=400 err=
+[29-Sep-2025 15:59:35 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3-27b-it code=400 err=
+[29-Sep-2025 15:59:36 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3n-e4b-it code=400 err=
+[29-Sep-2025 15:59:38 Europe/Berlin] Attempt ver=v1beta model=models/gemma-3n-e2b-it code=400 err=
+[29-Sep-2025 15:59:39 Europe/Berlin] Attempt ver=v1beta model=models/gemini-robotics-er-1.5-preview code=400 err=
+[29-Sep-2025 15:59:39 Europe/Berlin] HTTP Code: 404
+[29-Sep-2025 15:59:39 Europe/Berlin] Raw Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+[29-Sep-2025 15:59:39 Europe/Berlin] HTTP Error: 404 - Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+[29-Sep-2025 15:59:41 Europe/Berlin] Attempt ver=v1beta model=models/embedding-001 code=400 err=
+[29-Sep-2025 15:59:42 Europe/Berlin] Attempt ver=v1beta model=models/text-embedding-004 code=400 err=
+[29-Sep-2025 15:59:44 Europe/Berlin] Attempt ver=v1beta model=models/gemini-embedding-exp-03-07 code=400 err=
+[29-Sep-2025 15:59:45 Europe/Berlin] Attempt ver=v1beta model=models/gemini-embedding-exp code=400 err=
+[29-Sep-2025 15:59:46 Europe/Berlin] Attempt ver=v1beta model=models/gemini-embedding-001 code=400 err=
+[29-Sep-2025 15:59:47 Europe/Berlin] Attempt ver=v1beta model=models/aqa code=400 err=
+[29-Sep-2025 15:59:47 Europe/Berlin] Attempt ver=v1beta model=models/imagen-3.0-generate-002 code=400 err=
+[29-Sep-2025 15:59:49 Europe/Berlin] Attempt ver=v1beta model=models/imagen-4.0-generate-preview-06-06 code=400 err=
+[29-Sep-2025 15:59:50 Europe/Berlin] Attempt ver=v1beta model=models/imagen-4.0-ultra-generate-preview-06-06 code=400 err=
+[29-Sep-2025 15:59:51 Europe/Berlin] Attempt ver=v1beta model=models/imagen-4.0-generate-001 code=400 err=
+[29-Sep-2025 16:00:56 Europe/Berlin] HTTP Code: 404
+[29-Sep-2025 16:00:56 Europe/Berlin] Raw Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+[29-Sep-2025 16:00:56 Europe/Berlin] HTTP Error: 404 - Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+[29-Sep-2025 16:05:15 Europe/Berlin] Attempt model=gemini-2.5-flash ver=v1 code=200 err=
+[29-Sep-2025 16:05:35 Europe/Berlin] Attempt model=gemini-2.5-flash ver=v1 code=200 err=

@@ -22,7 +22,7 @@
     ['href' => 'about.php', 'label' => 'About', 'active' => false],
     ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => true],
     ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
-    ['href' => 'landingpage.php#announcements', 'label' => 'Announcements', 'active' => false],
+    ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => false],
     ['href' => 'landingpage.php#contact', 'label' => 'Contact', 'active' => false]
   ];
   

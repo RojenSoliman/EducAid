@@ -270,8 +270,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_password'])) {
     exit;
 }
 
-// Fetch student data
-$stuRes = pg_query($connection, "SELECT first_name, middle_name, last_name, bdate, email, mobile FROM students WHERE student_id = '" . pg_escape_string($connection, $student_id) . "'");
+// --------- Handle Profile Picture Upload (Encrypted) ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_picture'])) {
+  // Debug logger helper
+  $uploadDebugLog = __DIR__ . '/../../data/profile_upload.log';
+  $log = function(string $m) use ($uploadDebugLog, $student_id) { @file_put_contents($uploadDebugLog, '['.date('c')."] student={$student_id} ".$m."\n", FILE_APPEND); };
+  $log('--- BEGIN UPLOAD HANDLER ---');
+  $log('Incoming FILES keys: '.implode(',', array_keys($_FILES)));  
+  if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
+    $log('profile_picture received: name='.$_FILES['profile_picture']['name'].' size='.$_FILES['profile_picture']['size'].' tmp='.$_FILES['profile_picture']['tmp_name']);
+    $uploadDir = '../../assets/uploads/student_pictures/';
+    if (!is_dir($uploadDir)) {
+      mkdir($uploadDir, 0755, true);
+      $log('Created upload directory '.$uploadDir);
+    }
+    $fileInfo = pathinfo($_FILES['profile_picture']['name']);
+    $fileExtension = strtolower($fileInfo['extension'] ?? 'png');
+    $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
+    if (in_array($fileExtension, $allowedExtensions)) {
+      if ($_FILES['profile_picture']['size'] <= 5 * 1024 * 1024) {
+        // Load raw image data
+        $rawData = file_get_contents($_FILES['profile_picture']['tmp_name']);
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($finfo, $_FILES['profile_picture']['tmp_name']);
+        finfo_close($finfo);
+        if (!in_array($mime, ['image/jpeg','image/png','image/gif'])) {
+          $mime = 'image/png';
+        }
+        $log('Detected mime='.$mime.' raw_size='.strlen($rawData));
+        // ENCRYPTION REMOVED: store plaintext image directly
+        try {
+          $fileName = $student_id . '_' . time() . '.' . $fileExtension;
+          $uploadPath = $uploadDir . $fileName;
+          $log('Attempting write (plaintext mode) fileName='.$fileName.' target='.$uploadPath.' size='.strlen($rawData));
+          if (file_put_contents($uploadPath, $rawData) !== false) {
+          // Delete old picture if exists
+          $oldPictureQuery = pg_query_params($connection, "SELECT student_picture FROM students WHERE student_id = $1", [$student_id]);
+          $oldPicture = pg_fetch_assoc($oldPictureQuery);
+          if ($oldPicture && $oldPicture['student_picture'] && file_exists('../../' . $oldPicture['student_picture'])) {
+            @unlink('../../' . $oldPicture['student_picture']);
+              $log('Deleted old picture: '.$oldPicture['student_picture']);
+          }
+          $relativePath = 'assets/uploads/student_pictures/' . $fileName;
+          $resUpd = pg_query_params($connection, "UPDATE students SET student_picture = $1 WHERE student_id = $2", [$relativePath, $student_id]);
+          if ($resUpd === false) {
+            $log('DB update FAILED: '.pg_last_error($connection));
+          } else {
+            $aff = pg_affected_rows($resUpd);
+            $log('DB update OK affected_rows='.$aff.' new_path='.$relativePath);
+          }
+            $_SESSION['profile_flash'] = 'Profile picture updated successfully.';
+          $_SESSION['profile_flash_type'] = 'success';
+          // cache bust token
+          $_SESSION['profile_pic_cache_bust'] = time();
+        } else {
+            $_SESSION['profile_flash'] = 'Failed to store picture.';
+          $_SESSION['profile_flash_type'] = 'error';
+            $log('FAILED writing file to disk');
+        }
+        } catch (Throwable $e) {
+          $_SESSION['profile_flash'] = 'Upload failure: ' . htmlspecialchars($e->getMessage());
+          $_SESSION['profile_flash_type'] = 'error';
+          $log('Upload exception: '.$e->getMessage());
+        }
+      } else {
+        $_SESSION['profile_flash'] = 'Picture size must be less than 5MB.';
+        $_SESSION['profile_flash_type'] = 'error';
+        $log('Rejected: file too large size='.$_FILES['profile_picture']['size']);
+      }
+    } else {
+      $_SESSION['profile_flash'] = 'Only JPG, JPEG, PNG, and GIF files are allowed.';
+      $_SESSION['profile_flash_type'] = 'error';
+      $log('Rejected: invalid extension='.$fileExtension);
+    }
+  } else {
+    $_SESSION['profile_flash'] = 'Please select a picture to upload.';
+    $_SESSION['profile_flash_type'] = 'error';
+    $log('No file or upload error code='.($_FILES['profile_picture']['error'] ?? 'missing'));    
+  }
+  $log('--- END UPLOAD HANDLER ---');
+  header("Location: student_profile.php");
+  exit;
+}
+
+// Fetch student data including profile picture
+$stuRes = pg_query($connection, "SELECT first_name, middle_name, last_name, bdate, email, mobile, student_picture FROM students WHERE student_id = '" . pg_escape_string($connection, $student_id) . "'");
 $student = pg_fetch_assoc($stuRes);
 
 // Get student info for header dropdown
@@ -302,6 +385,251 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
     /* Ensure header is flush under topbar like other pages */
     .home-section { padding-top: 0 !important; }
     .home-section > .main-header:first-child { margin-top: 0 !important; }
+    
+    /* Minimal, soft profile header (low contrast, neutral) */
+    .profile-header {
+      background: linear-gradient(145deg, #f5f7fa 0%, #eef1f4 100%);
+      border: 1px solid #e3e7ec;
+      border-radius: 16px;
+      color: #2f3a49;
+      padding: 2.5rem 1.75rem 2rem 1.75rem;
+      margin-bottom: 2rem;
+      position: relative;
+      overflow: hidden;
+      text-align: center;
+    }
+
+    .profile-header::before,
+    .profile-header::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, rgba(0,0,0,0.04), transparent 70%);
+      opacity: 0.6;
+      pointer-events: none;
+    }
+    .profile-header::before { width: 220px; height: 220px; top: -60px; right: -40px; }
+    .profile-header::after { width: 160px; height: 160px; bottom: -50px; left: -30px; }
+
+    .profile-avatar {
+      width: 160px;
+      height: 160px;
+      background: linear-gradient(145deg,#ffffff,#f1f3f5);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3.25rem;
+      margin: 0 auto 1.25rem auto;
+      border: 1px solid #dcdfe3;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.06) inset;
+      position: relative;
+      z-index: 2;
+      transition: box-shadow .25s ease, transform .25s ease;
+    }
+    .profile-avatar:hover {
+      box-shadow: 0 6px 14px rgba(0,0,0,0.08), 0 0 0 4px rgba(0,0,0,0.03) inset;
+      transform: translateY(-2px);
+    }
+    .profile-avatar img.profile-image { border-radius: 50%; width: 100%; height: 100%; object-fit: cover; }
+    .profile-avatar .bi-person-fill { color: #9aa4b1; }
+    .profile-avatar .change-picture-btn {
+      background: #ffffff;
+      border: 1px solid #cfd5db;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+      transition: background .2s ease, border-color .2s ease;
+    }
+    .profile-avatar .change-picture-btn:hover {
+      background: #f4f6f8;
+      border-color: #b8c0c7;
+    }
+    
+    .profile-info { position: relative; z-index: 2; }
+    .profile-info h2 {
+      margin: 0 0 .35rem 0;
+      font-weight: 600;
+      font-size: 1.95rem;
+      letter-spacing: -.5px;
+      color: #303a44;
+    }
+    .profile-info p {
+      margin: 0;
+      font-size: .95rem;
+      color: #5c6773;
+      font-weight: 500;
+    }
+    
+    .info-card {
+      background: linear-gradient(180deg,#ffffff 0%,#fafbfc 100%);
+      border-radius: 14px;
+      border: 1px solid #e2e6ea;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+      transition: border-color .25s ease, box-shadow .25s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+    }
+    .info-card:hover { border-color:#d5dae0; box-shadow:0 4px 14px rgba(0,0,0,0.06); }
+    .info-card-header {
+      background:#f5f7f9;
+      padding:1.1rem 1.35rem;
+      border-bottom:1px solid #e3e7eb;
+      display:flex; align-items:center; gap:.75rem;
+    }
+    .info-card-header h5 { margin:0; color:#313b44; font-weight:600; font-size:1.02rem; letter-spacing:.25px; }
+    .info-card-header .bi { color:#7c8792; font-size:1.15rem; }
+    .info-card-body { padding:1.35rem 1.4rem 1.25rem 1.4rem; }
+    .info-item { display:flex; align-items:flex-start; justify-content:space-between; padding:.65rem 0; border-top:1px dashed #e4e8ec; gap:1rem; }
+    .info-item:first-of-type { border-top:none; }
+    .info-item:last-child { padding-bottom:.2rem; }
+    .info-label { font-weight:600; color:#46515c; font-size:.78rem; text-transform:uppercase; letter-spacing:.5px; min-width:140px; }
+    .info-value { flex:1; color:#303a44; margin:0 .75rem; font-weight:500; }
+    .info-actions { display:flex; gap:.5rem; align-items:center; }
+    .settings-icon-btn { background:#ffffff; border:1px solid #d5dadf; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%; transition:background .2s ease, border-color .2s ease, box-shadow .2s ease; color:#5e6974; }
+    .settings-icon-btn:hover { background:#f3f5f7; border-color:#c5cbd1; box-shadow:0 2px 6px rgba(0,0,0,0.05); }
+    .avatar-initials { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:2.9rem; font-weight:600; color:#5c6773; user-select:none; }
+
+    /* Municipality palette section */
+    .municipality-colors {
+      margin-top: 1.25rem;
+      padding: .9rem 1rem .85rem 1rem;
+      border: 1px solid #e2e6ea;
+      border-radius: 10px;
+      background: linear-gradient(180deg,#f9fafb 0%, #f2f4f6 100%);
+    }
+    .municipality-colors-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:.55rem; }
+    .municipality-colors-header .label { font-size:.72rem; letter-spacing:.7px; font-weight:600; text-transform:uppercase; color:#56616b; display:flex; align-items:center; gap:.4rem; }
+    .color-chips { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+    .color-chip { width:42px; height:32px; border-radius:8px; position:relative; overflow:hidden; border:1px solid rgba(0,0,0,0.06); box-shadow:0 1px 2px rgba(0,0,0,0.04); display:flex; align-items:center; justify-content:center; font-size:.6rem; font-weight:600; color:#1f2429; mix-blend-mode:luminosity; }
+    .color-chip[data-on-dark="true"] { color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,0.35); mix-blend-mode:normal; }
+    .color-chip span { position:absolute; inset:0; }
+    .color-chip .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
+    .color-bar { display:flex; width:100%; height:100%; }
+    .color-bar div { flex:1; }
+    /* Accessibility focus */
+    .color-chip:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+    
+    .btn-edit {
+      background: #667eea;
+      border-color: #667eea;
+      color: white;
+      padding: 0.375rem 1rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    
+    .btn-edit:hover {
+      background: #5a67d8;
+      border-color: #5a67d8;
+      color: white;
+      transform: translateY(-1px);
+    }
+    
+    .btn-change-pwd {
+      background: #ed8936;
+      border-color: #ed8936;
+      color: white;
+      padding: 0.375rem 1rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    
+    .btn-change-pwd:hover {
+      background: #dd7724;
+      border-color: #dd7724;
+      color: white;
+      transform: translateY(-1px);
+    }
+    
+    /* Modal Improvements */
+    .modal-content {
+      border-radius: 12px;
+      border: none;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+    }
+    
+    .modal-header {
+      background: #f8f9fa;
+      border-bottom: 1px solid #e9ecef;
+      border-radius: 12px 12px 0 0;
+      padding: 1.5rem;
+    }
+    
+    .modal-title {
+      font-weight: 600;
+      color: #495057;
+    }
+    
+    .modal-body {
+      padding: 1.5rem;
+    }
+    
+    .modal-footer {
+      border-top: 1px solid #e9ecef;
+      padding: 1.5rem;
+      background: #f8f9fa;
+      border-radius: 0 0 12px 12px;
+    }
+    
+    /* Form Controls */
+    .form-control {
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+    }
+    
+    .form-control:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .form-label {
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 0.5rem;
+    }
+    
+    /* Flash Messages */
+    .alert {
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+      border: none;
+    }
+    
+    .alert-success {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    
+    .alert-danger {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .profile-header {
+        padding: 1.5rem;
+        text-align: center;
+      }
+      
+      .info-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+      }
+      
+      .info-actions {
+        width: 100%;
+        justify-content: center;
+      }
+    }
   </style>
 </head>
 <body>
@@ -317,116 +645,500 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
         <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
         
   <div class="container-fluid py-4 px-4">
-          <div class="card mb-4 p-4">
-            <h4>Profile Information</h4>
-            <table class="table borderless">
-              <tr><th>Full Name</th><td><?php echo htmlspecialchars($student['last_name'] . ', ' . $student['first_name'] . ' ' . $student['middle_name']); ?></td></tr>
-              <tr><th>Date of Birth</th><td><?php echo htmlspecialchars($student['bdate']); ?></td></tr>
-              <tr>
-                <th>Email</th>
-                <td>
-                  <?php echo htmlspecialchars($student['email']); ?>
-                  <button class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#emailModal">Edit</button>
-                </td>
-              </tr>
-              <tr><th>Mobile</th><td><?php echo htmlspecialchars($student['mobile']); ?> <button class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#mobileModal">Edit</button></td></tr>
-              <tr>
-                <th>Password</th>
-                <td>
-                  ************
-                  <button class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#passwordModal">Change Password</button>
-                </td>
-              </tr>
-            </table>
-          </div>
-          <!-- Email Modal with OTP -->
-          <div class="modal fade" id="emailModal" tabindex="-1">
-            <div class="modal-dialog">
-              <form id="emailUpdateForm" method="POST" class="modal-content">
-                <div class="modal-header">
-                  <h5>Edit Email</h5>
-                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                  <div class="mb-3 position-relative">
-                    <label>New Email Address</label>
-                    <input type="email" name="new_email" id="newEmailInput" class="form-control" required>
-                    <span id="emailOtpStatus" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                  </div>
-                  <div id="otpSection" style="display:none;">
-                    <div class="mb-3 position-relative">
-                      <label>Enter OTP</label>
-                      <input type="text" id="otpInput" class="form-control" maxlength="6" autocomplete="off">
-                      <span id="otpInputError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                    </div>
-                    <button type="button" class="btn btn-info w-100 mb-2" id="verifyOtpBtn">Verify OTP</button>
-                    <div id="otpTimer" class="text-danger mt-2"></div>
-                    <button type="button" class="btn btn-link" id="resendOtpBtn" style="display:none;">Resend OTP</button>
-                  </div>
-                </div>
-                <div class="modal-footer">
-                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                  <button type="button" id="sendOtpBtn" class="btn btn-primary">Send OTP</button>
-                  <button type="submit" name="update_email" id="saveEmailBtn" class="btn btn-success" style="display:none;">Save</button>
-                </div>
-              </form>
+    <!-- Flash Messages -->
+    <?php if ($flash): ?>
+      <div class="alert alert-<?php echo $flash_type === 'success' ? 'success' : 'danger'; ?> alert-dismissible fade show" role="alert">
+        <i class="bi bi-<?php echo $flash_type === 'success' ? 'check-circle' : 'exclamation-triangle'; ?> me-2"></i>
+        <?php echo htmlspecialchars($flash); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    <?php endif; ?>
+
+    <!-- Profile Header -->
+    <div class="profile-header">
+      <div class="profile-avatar position-relative">
+        <?php
+        // Display student profile picture
+    if ($student['student_picture']) {
+      // Serve through secure endpoint to decrypt
+  $cacheBust = isset($_SESSION['profile_pic_cache_bust']) ? '&v=' . urlencode($_SESSION['profile_pic_cache_bust']) : '';
+  echo '<img src="serve_profile_image.php?sid=' . urlencode($student_id) . $cacheBust . '" alt="Profile Picture" class="profile-image rounded-circle" style="width: 140px; height: 140px; object-fit: cover;">';
+        } else {
+            echo '<i class="bi bi-person-fill"></i>';
+        }
+        ?>
+  <button class="change-picture-btn btn btn-sm position-absolute rounded-circle" 
+    data-bs-toggle="modal" data-bs-target="#profilePictureModal" 
+    title="Change Profile Picture"
+    style="bottom: 8px; right: 8px; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;">
+    <i class="bi bi-camera" style="font-size: 1rem; color: #5c6773;"></i>
+  </button>
+      </div>
+      
+      <div class="profile-info">
+        <h2><?php echo htmlspecialchars($student['first_name'] . ' ' . $student['last_name']); ?></h2>
+        <p><i class="bi bi-person-badge me-2"></i>Student ID: <?php echo htmlspecialchars($student_id); ?></p>
+      </div>
+    </div>
+
+    <!-- Personal & Contact Information Card -->
+    <div class="info-card">
+      <div class="info-card-header d-flex justify-content-between align-items-center">
+        <div>
+          <i class="bi bi-person-lines-fill"></i>
+          <h5 class="d-inline mb-0">Personal & Contact Information</h5>
+        </div>
+        <a href="student_settings.php" class="settings-icon-btn text-decoration-none" title="Settings">
+          <i class="bi bi-gear" style="font-size:1.05rem;"></i>
+        </a>
+      </div>
+      <div class="info-card-body">
+        <!-- Personal Information Section -->
+        <div class="mb-4">
+          <h6 class="text-muted mb-3 fw-bold">
+            <i class="bi bi-person-fill me-2"></i>Personal Information
+          </h6>
+          <div class="info-item">
+            <div class="info-label">Full Name</div>
+            <div class="info-value"><?php echo htmlspecialchars($student['last_name'] . ', ' . $student['first_name'] . ' ' . $student['middle_name']); ?></div>
+            <div class="info-actions">
+              <span class="text-muted small">Read-only</span>
             </div>
           </div>
-          <!-- Mobile Modal -->
-          <div class="modal fade" id="mobileModal" tabindex="-1"><div class="modal-dialog"><form method="POST" class="modal-content">
-            <div class="modal-header"><h5>Edit Mobile</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body"><input type="text" name="new_mobile" class="form-control" value="<?php echo htmlspecialchars($student['mobile']); ?>" required></div>
-            <div class="modal-footer"><button type="submit" name="update_mobile" class="btn btn-primary" onclick="return confirm('Change mobile number?');">Save</button></div>
-          </form></div></div>
-          <!-- Change Password Modal with OTP -->
-          <div class="modal fade" id="passwordModal" tabindex="-1">
-            <div class="modal-dialog">
-              <form id="passwordUpdateForm" method="POST" class="modal-content" autocomplete="off">
-                <div class="modal-header">
-                  <h5>Change Password</h5>
-                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                  <div class="mb-3 position-relative">
-                    <label>Current Password</label>
-                    <input type="password" name="current_password" id="currentPwdInput" class="form-control" required minlength="8">
-                    <span id="currentPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                  </div>
-                  <div class="mb-3 position-relative">
-                    <label>New Password</label>
-                    <input type="password" name="new_password" id="newPwdInput" class="form-control" required minlength="12">
-                    <span id="newPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                  </div>
-                  <div class="mb-3 position-relative">
-                    <label>Confirm New Password</label>
-                    <input type="password" name="confirm_password" id="confirmPwdInput" class="form-control" required minlength="12">
-                    <span id="confirmPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                  </div>
-                  <div id="otpPwdSection" style="display:none;">
-                    <div class="mb-3 position-relative">
-                      <label>Enter OTP</label>
-                      <input type="text" id="otpPwdInput" class="form-control" maxlength="6" autocomplete="off">
-                      <span id="otpPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
-                    </div>
-                    <button type="button" class="btn btn-info w-100 mb-2" id="verifyOtpPwdBtn">Verify OTP</button>
-                    <div id="otpPwdTimer" class="text-danger mt-2"></div>
-                    <button type="button" class="btn btn-link" id="resendOtpPwdBtn" style="display:none;">Resend OTP</button>
-                  </div>
-                </div>
-                <div class="modal-footer">
-                  <span id="otpPwdStatus" class="ms-2"></span>
-                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                  <button type="button" id="sendOtpPwdBtn" class="btn btn-primary">Send OTP</button>
-                  <button type="submit" name="update_password" id="savePwdBtn" class="btn btn-success" style="display:none;">Save</button>
-                </div>
-              </form>
+          <div class="info-item">
+            <div class="info-label">Date of Birth</div>
+            <div class="info-value"><?php echo htmlspecialchars(date('F j, Y', strtotime($student['bdate']))); ?></div>
+            <div class="info-actions">
+              <span class="text-muted small">Read-only</span>
             </div>
           </div>
         </div>
+        
+        <!-- Contact Information Section -->
+        <div class="mb-0">
+          <h6 class="text-muted mb-3 fw-bold">
+            <i class="bi bi-envelope-fill me-2"></i>Contact Information
+          </h6>
+          <div class="info-item">
+            <div class="info-label">Email Address</div>
+            <div class="info-value"><?php echo htmlspecialchars($student['email']); ?></div>
+            <div class="info-actions">
+              <span class="text-muted small">Editable in settings</span>
+            </div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Mobile Number</div>
+            <div class="info-value"><?php echo htmlspecialchars($student['mobile']); ?></div>
+            <div class="info-actions">
+              <span class="text-muted small">Editable in settings</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Municipality Colors (General Trias) -->
+        <div class="municipality-colors" aria-labelledby="municipalityColorsLabel">
+          <div class="municipality-colors-header">
+            <div class="label" id="municipalityColorsLabel">
+              <i class="bi bi-palette2"></i> Municipality Palette
+            </div>
+          </div>
+          <div class="color-chips" role="list">
+            <!-- Approximate palette: Green, Gold, White, Deep Green accent, Neutral base -->
+            <div class="color-chip" role="listitem" tabindex="0" title="#2f6f3a" data-on-dark="true" style="background:#2f6f3a;"><span class="sr-only">Primary Green</span></div>
+            <div class="color-chip" role="listitem" tabindex="0" title="#caa431" style="background:#caa431;"><span class="sr-only">Heritage Gold</span></div>
+            <div class="color-chip" role="listitem" tabindex="0" title="#ffffff" style="background:#ffffff;">WHT</div>
+            <div class="color-chip" role="listitem" tabindex="0" title="#0f3d1c" data-on-dark="true" style="background:#0f3d1c;"><span class="sr-only">Deep Accent</span></div>
+            <div class="color-chip" role="listitem" tabindex="0" title="#e3e7eb" style="background:#e3e7eb;">LT</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Enhanced Profile Picture Upload Modal -->
+  <div class="modal fade" id="profilePictureModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-camera me-2"></i>Update Profile Picture
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Step 1: Current Profile and File Selection -->
+          <div id="step1" class="upload-step">
+            <div class="row">
+              <div class="col-md-6">
+                <h6 class="mb-3">Current Profile Picture</h6>
+                <div class="text-center">
+                  <div class="current-profile-preview">
+                    <?php
+                    if ($student['student_picture'] && file_exists('../../' . $student['student_picture'])) {
+                        echo '<img src="../../' . htmlspecialchars($student['student_picture']) . '" alt="Current Profile" class="rounded-circle mb-3" style="width: 150px; height: 150px; object-fit: cover; border: 3px solid #e0e0e0;">';
+                    } else {
+                        echo '<div class="bg-light rounded-circle d-flex align-items-center justify-content-center mb-3" style="width: 150px; height: 150px; margin: 0 auto; border: 3px solid #e0e0e0;"><i class="bi bi-person-fill text-muted" style="font-size: 4rem;"></i></div>';
+                    }
+                    ?>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <h6 class="mb-3">Upload New Picture</h6>
+                <div class="mb-3">
+                  <label class="form-label">Choose New Profile Picture</label>
+                  <input type="file" id="profilePictureInput" class="form-control" accept=".jpg,.jpeg,.png,.gif">
+                  <div class="form-text">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Accepted formats: JPG, JPEG, PNG, GIF. Max size: 5MB
+                  </div>
+                </div>
+                <div class="d-grid">
+                  <button type="button" id="proceedToEdit" class="btn btn-primary" disabled>
+                    <i class="bi bi-arrow-right me-2"></i>Proceed to Edit
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: Image Editor -->
+          <div id="step2" class="upload-step" style="display: none;">
+            <div class="row">
+              <div class="col-md-8">
+                <h6 class="mb-3">Edit Your Picture</h6>
+                <div class="image-editor-container" style="border: 2px solid #e0e0e0; border-radius: 10px; overflow: hidden; background: #f8f9fa;">
+                  <div class="editor-canvas-container" style="position: relative; width: 100%; height: 400px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    <img id="editingImage" style="max-width: 100%; max-height: 100%; transform-origin: center; cursor: grab;">
+                  </div>
+                </div>
+                
+                <!-- Editor Controls -->
+                <div class="editor-controls mt-3">
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label class="form-label small">Zoom</label>
+                      <input type="range" id="zoomSlider" class="form-range" min="0.5" max="3" step="0.1" value="1">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label small">Position</label>
+                      <div class="btn-group w-100">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="centerImage">
+                          <i class="bi bi-arrows-move"></i> Center
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="resetImage">
+                          <i class="bi bi-arrow-clockwise"></i> Reset
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="col-md-4">
+                <h6 class="mb-3">Preview</h6>
+                <div class="text-center">
+                  <div class="preview-container">
+                    <canvas id="previewCanvas" width="200" height="200" style="border-radius: 50%; border: 3px solid #007bff;"></canvas>
+                  </div>
+                  <p class="text-muted small mt-2">This is how your profile picture will appear</p>
+                </div>
+                
+                <div class="mt-4">
+                  <div class="d-grid gap-2">
+                    <button type="button" id="backToStep1" class="btn btn-outline-secondary">
+                      <i class="bi bi-arrow-left me-2"></i>Back to Upload
+                    </button>
+                    <button type="button" id="confirmUpload" class="btn btn-success">
+                      <i class="bi bi-check-circle me-2"></i>Confirm & Upload
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hidden form for actual upload -->
+          <form id="hiddenUploadForm" method="POST" enctype="multipart/form-data" style="display: none;">
+            <input type="file" name="profile_picture" id="hiddenFileInput">
+            <input type="hidden" name="crop_data" id="cropData">
+            <input type="hidden" name="update_picture" value="1">
+          </form>
+        </div>
+        
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <div id="step1Footer">
+            <span class="text-muted">Select an image to continue</span>
+          </div>
+          <div id="step2Footer" style="display: none;">
+            <span class="text-muted">Adjust your image and preview the result</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
       </section>
   </div>
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/homepage.js"></script>
-  <script src="../../assets/js/student/student_profile.js"></script>
+  
+  <script>
+    // Profile Picture Editor JavaScript
+    let currentImage = null;
+    let currentScale = 1;
+    let currentX = 0;
+    let currentY = 0;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+
+    const profileInput = document.getElementById('profilePictureInput');
+    const proceedBtn = document.getElementById('proceedToEdit');
+    const editingImage = document.getElementById('editingImage');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const previewCanvas = document.getElementById('previewCanvas');
+    const previewCtx = previewCanvas.getContext('2d');
+    const step1 = document.getElementById('step1');
+    const step2 = document.getElementById('step2');
+    const step1Footer = document.getElementById('step1Footer');
+    const step2Footer = document.getElementById('step2Footer');
+
+    // File input change handler
+    profileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            // Validate file size
+            if (file.size > 5 * 1024 * 1024) {
+                alert('File size must be less than 5MB');
+                return;
+            }
+            
+            // Validate file type
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+            if (!allowedTypes.includes(file.type)) {
+                alert('Only JPG, JPEG, PNG, and GIF files are allowed');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                currentImage = new Image();
+                currentImage.onload = function() {
+                    proceedBtn.disabled = false;
+                };
+                currentImage.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // Proceed to edit button
+    proceedBtn.addEventListener('click', function() {
+        if (currentImage) {
+            step1.style.display = 'none';
+            step2.style.display = 'block';
+            step1Footer.style.display = 'none';
+            step2Footer.style.display = 'block';
+            
+            editingImage.src = currentImage.src;
+            resetImagePosition();
+            updatePreview();
+        }
+    });
+
+    // Back to step 1 button
+    document.getElementById('backToStep1').addEventListener('click', function() {
+        step2.style.display = 'none';
+        step1.style.display = 'block';
+        step2Footer.style.display = 'none';
+        step1Footer.style.display = 'block';
+    });
+
+    // Zoom slider
+    zoomSlider.addEventListener('input', function() {
+        currentScale = parseFloat(this.value);
+        updateImageTransform();
+        updatePreview();
+    });
+
+    // Center image button
+    document.getElementById('centerImage').addEventListener('click', function() {
+        currentX = 0;
+        currentY = 0;
+        updateImageTransform();
+        updatePreview();
+    });
+
+    // Reset image button
+    document.getElementById('resetImage').addEventListener('click', function() {
+        resetImagePosition();
+        updatePreview();
+    });
+
+    // Mouse events for dragging
+    editingImage.addEventListener('mousedown', function(e) {
+        isDragging = true;
+        dragStartX = e.clientX - currentX;
+        dragStartY = e.clientY - currentY;
+        editingImage.style.cursor = 'grabbing';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (isDragging) {
+            currentX = e.clientX - dragStartX;
+            currentY = e.clientY - dragStartY;
+            updateImageTransform();
+            updatePreview();
+        }
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (isDragging) {
+            isDragging = false;
+            editingImage.style.cursor = 'grab';
+        }
+    });
+
+    // Touch events for mobile
+    editingImage.addEventListener('touchstart', function(e) {
+        isDragging = true;
+        const touch = e.touches[0];
+        dragStartX = touch.clientX - currentX;
+        dragStartY = touch.clientY - currentY;
+        e.preventDefault();
+    });
+
+    document.addEventListener('touchmove', function(e) {
+        if (isDragging) {
+            const touch = e.touches[0];
+            currentX = touch.clientX - dragStartX;
+            currentY = touch.clientY - dragStartY;
+            updateImageTransform();
+            updatePreview();
+            e.preventDefault();
+        }
+    });
+
+    document.addEventListener('touchend', function() {
+        isDragging = false;
+    });
+
+    // Confirm upload button
+    document.getElementById('confirmUpload').addEventListener('click', function() {
+        if (currentImage) {
+            // Create a canvas to crop the image
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 400;
+            canvas.height = 400;
+
+            // Calculate the cropping area
+            const containerWidth = 400;
+            const containerHeight = 400;
+            const imageAspect = currentImage.width / currentImage.height;
+            
+            let drawWidth, drawHeight, drawX, drawY;
+            
+            if (imageAspect > 1) {
+                drawHeight = containerHeight * currentScale;
+                drawWidth = drawHeight * imageAspect;
+            } else {
+                drawWidth = containerWidth * currentScale;
+                drawHeight = drawWidth / imageAspect;
+            }
+            
+            drawX = (containerWidth - drawWidth) / 2 + currentX;
+            drawY = (containerHeight - drawHeight) / 2 + currentY;
+
+            // Draw the image on canvas
+            ctx.drawImage(currentImage, drawX, drawY, drawWidth, drawHeight);
+
+            // Convert canvas to blob
+            canvas.toBlob(function(blob) {
+                const formData = new FormData();
+                formData.append('profile_picture', blob, 'profile_picture.png');
+                formData.append('update_picture', '1');
+
+                // Submit the form
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                }).then(response => {
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Error uploading image. Please try again.');
+                    }
+                }).catch(error => {
+                    alert('Error uploading image. Please try again.');
+                });
+            }, 'image/png', 0.9);
+        }
+    });
+
+    function updateImageTransform() {
+        editingImage.style.transform = `translate(${currentX}px, ${currentY}px) scale(${currentScale})`;
+    }
+
+    function resetImagePosition() {
+        currentScale = 1;
+        currentX = 0;
+        currentY = 0;
+        zoomSlider.value = 1;
+        updateImageTransform();
+    }
+
+    function updatePreview() {
+        if (!currentImage) return;
+
+        const canvas = previewCanvas;
+        const ctx = previewCtx;
+        const size = 200;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, size, size);
+
+        // Create circular clipping path
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Calculate image dimensions and position
+        const imageAspect = currentImage.width / currentImage.height;
+        let drawWidth, drawHeight, drawX, drawY;
+        
+        if (imageAspect > 1) {
+            drawHeight = size * currentScale;
+            drawWidth = drawHeight * imageAspect;
+        } else {
+            drawWidth = size * currentScale;
+            drawHeight = drawWidth / imageAspect;
+        }
+        
+        drawX = (size - drawWidth) / 2 + (currentX * size / 400);
+        drawY = (size - drawHeight) / 2 + (currentY * size / 400);
+
+        // Draw image
+        ctx.drawImage(currentImage, drawX, drawY, drawWidth, drawHeight);
+        ctx.restore();
+    }
+
+    // Reset modal when closed
+    document.getElementById('profilePictureModal').addEventListener('hidden.bs.modal', function() {
+        step1.style.display = 'block';
+        step2.style.display = 'none';
+        step1Footer.style.display = 'block';
+        step2Footer.style.display = 'none';
+        profileInput.value = '';
+        proceedBtn.disabled = true;
+        currentImage = null;
+        resetImagePosition();
+    });
+  </script>
 </body>
 </html>
