@@ -22,4 +22,7 @@ if (!isset($page_title) || trim($page_title) === '') {
 <?php if (!empty($extra_css) && is_array($extra_css)): foreach ($extra_css as $cssFile): ?>
   <link rel="stylesheet" href="<?= htmlspecialchars($cssFile) ?>" />
 <?php endforeach; endif; ?>
+  <!-- Admin JavaScript -->
+  <script src="../../assets/js/admin/sidebar.js"></script>
+  <script src="../../assets/js/admin/notification_bell.js"></script>
 </head>

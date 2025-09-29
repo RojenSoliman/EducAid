@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification Test</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h2>Notification Bell Test</h2>
+        <div class="mb-4">
+            <button type="button" class="btn btn-primary position-relative admin-icon-btn" title="Notifications">
+                <i class="bi bi-bell fs-5"></i>
+                <span class="badge rounded-pill bg-danger" style="font-size: .55rem; position: absolute; top: -6px; right: -6px;">4</span>
+            </button>
+        </div>
+        
+        <div class="alert alert-info">
+            <p><strong>Test Status:</strong></p>
+            <ul id="test-results">
+                <li>Loading tests...</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="../../assets/js/admin/notification_bell.js"></script>
+    <script>
+        // Test API directly
+        document.addEventListener('DOMContentLoaded', function() {
+            const results = document.getElementById('test-results');
+            results.innerHTML = '';
+            
+            // Test 1: Get count
+            fetch('notifications_api.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=get_count'
+            })
+            .then(response => response.json())
+            .then(data => {
+                const li = document.createElement('li');
+                li.textContent = `Get Count API: ${data.success ? '✓ SUCCESS' : '✗ FAILED'} - Count: ${data.count || 'N/A'}`;
+                li.className = data.success ? 'text-success' : 'text-danger';
+                results.appendChild(li);
+            })
+            .catch(error => {
+                const li = document.createElement('li');
+                li.textContent = `Get Count API: ✗ ERROR - ${error.message}`;
+                li.className = 'text-danger';
+                results.appendChild(li);
+            });
+            
+            // Test 2: Check notification bell update
+            setTimeout(() => {
+                const li = document.createElement('li');
+                const badge = document.querySelector('.badge');
+                if (badge && badge.textContent.trim() !== '4') {
+                    li.textContent = `Notification Bell Update: ✓ SUCCESS - Badge updated to: ${badge.textContent}`;
+                    li.className = 'text-success';
+                } else {
+                    li.textContent = `Notification Bell Update: ? PENDING - Badge still shows: ${badge ? badge.textContent : 'none'}`;
+                    li.className = 'text-warning';
+                }
+                results.appendChild(li);
+            }, 2000);
+        });
+    </script>
+</body>
+</html>

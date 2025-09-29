@@ -11,24 +11,36 @@ $page = isset($_GET['page']) && is_numeric($_GET['page']) && $_GET['page'] > 0 ?
 $limit = 20;
 $offset = ($page - 1) * $limit;
 
-// Notification query
+// Notification query - Updated to handle read/unread status
+$filterType = isset($_GET['filter']) ? $_GET['filter'] : 'all'; // Default to 'all' instead of 'unread'
+
+$baseWhere = "";
+if ($filterType === 'unread') {
+    $baseWhere = "WHERE (is_read = FALSE OR is_read IS NULL)";
+} elseif ($filterType === 'read') {
+    $baseWhere = "WHERE is_read = TRUE";
+}
+// 'all' filter has no WHERE clause, shows everything
+
 $baseSql = "
-  SELECT 'Announcement' as type, 'Announcement: ' || title AS message, posted_at AS created_at FROM announcements
-  UNION ALL
-  SELECT 'Slot' as type, 'Slot released: ' || slot_count || ' slots for ' || semester || ' ' || academic_year AS message, created_at FROM signup_slots
-  UNION ALL
-  SELECT 'Schedule' as type, 'Schedule created for student ' || student_id || ' on ' || distribution_date::text AS message, created_at FROM schedules
-  UNION ALL
-  SELECT 'System' as type, 'Admin Event: ' || message AS message, created_at FROM admin_notifications
+  SELECT 'System' as type, message AS message, created_at, admin_notification_id::text as notification_id, 
+         COALESCE(is_read, FALSE) as is_read 
+  FROM admin_notifications
 ";
-$countSql = "SELECT COUNT(*) AS total FROM ($baseSql) AS sub";
+
+$countSql = "SELECT COUNT(*) AS total FROM ($baseSql) AS sub $baseWhere";
 $countRes = pg_query($connection, $countSql);
 $total = $countRes ? (int)pg_fetch_assoc($countRes)['total'] : 0;
 $lastPage = (int)ceil($total / $limit);
 
-$adminNotifSql = $baseSql . " ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
+$adminNotifSql = "SELECT * FROM ($baseSql) AS combined $baseWhere ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
 $adminNotifRes = @pg_query($connection, $adminNotifSql);
 $adminNotifs = $adminNotifRes ? pg_fetch_all($adminNotifRes) : [];
+
+// Get total unread count for badge
+$unreadCountSql = "SELECT COUNT(*) AS unread_count FROM ($baseSql) AS sub WHERE (is_read = FALSE OR is_read IS NULL)";
+$unreadCountRes = pg_query($connection, $unreadCountSql);
+$unreadCount = $unreadCountRes ? (int)pg_fetch_assoc($unreadCountRes)['unread_count'] : 0;
 
 // Function to get notification icon based on type
 function getNotificationIcon($type) {
@@ -59,15 +71,22 @@ function getNotificationIcon($type) {
   <div class="container-fluid py-4 px-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h3 class="fw-bold mb-0"><i class="bi bi-bell-fill me-2 text-warning"></i>Notifications
-            <span class="badge bg-danger" id="unread-count">0</span>
+            <span class="badge bg-danger" id="unread-count"><?= $unreadCount ?></span>
           </h3>
         </div>
 
         <!-- Filter Controls -->
         <div class="notification-actions-desktop d-none d-md-flex justify-content-between align-items-center mb-4">
           <div class="btn-group" role="group">
-            <button class="btn btn-outline-primary active">Unread</button>
-            <button class="btn btn-outline-secondary">Read</button>
+            <a href="?filter=unread&page=1" class="btn btn-outline-primary <?= $filterType === 'unread' ? 'active' : '' ?>">
+              Unread (<?= $unreadCount ?>)
+            </a>
+            <a href="?filter=read&page=1" class="btn btn-outline-secondary <?= $filterType === 'read' ? 'active' : '' ?>">
+              Read
+            </a>
+            <a href="?filter=all&page=1" class="btn btn-outline-info <?= $filterType === 'all' ? 'active' : '' ?>">
+              All
+            </a>
           </div>
           <button id="mark-all-read" class="btn btn-outline-success">
             <i class="bi bi-envelope-open"></i> Mark All as Read
@@ -75,8 +94,15 @@ function getNotificationIcon($type) {
         </div>
 
         <div class="notification-actions-mobile d-flex d-md-none mb-3">
-          <button class="btn btn-outline-primary flex-fill me-1">Unread</button>
-          <button class="btn btn-outline-secondary flex-fill mx-1">Read</button>
+          <a href="?filter=unread&page=1" class="btn btn-outline-primary flex-fill me-1 <?= $filterType === 'unread' ? 'active' : '' ?>">
+            Unread
+          </a>
+          <a href="?filter=read&page=1" class="btn btn-outline-secondary flex-fill mx-1 <?= $filterType === 'read' ? 'active' : '' ?>">
+            Read
+          </a>
+          <a href="?filter=all&page=1" class="btn btn-outline-info flex-fill me-1 <?= $filterType === 'all' ? 'active' : '' ?>">
+            All
+          </a>
           <button class="btn btn-outline-success flex-fill ms-1" id="mark-all-read">
             <i class="bi bi-envelope-open"></i>
           </button>
@@ -88,7 +114,9 @@ function getNotificationIcon($type) {
             <div id="empty-state">No notifications available.</div>
           <?php else: ?>
             <?php foreach ($adminNotifs as $note): ?>
-              <div class="notification-card unread">
+              <div class="notification-card <?= $note['is_read'] === 't' || $note['is_read'] === true ? 'read' : 'unread' ?>" 
+                   data-notification-id="<?= $note['notification_id'] ?>" 
+                   data-notification-type="<?= htmlspecialchars($note['type']) ?>">
                 <div class="d-flex justify-content-between align-items-center notification-header">
                   <div>
                     <span class="icon-box text-primary bg-light me-3">
@@ -97,8 +125,14 @@ function getNotificationIcon($type) {
                     <?php echo htmlspecialchars($note['message']); ?>
                   </div>
                   <div class="action-buttons">
-                    <i class="bi bi-envelope" role="button" title="Mark as Read"></i>
-                    <i class="bi bi-trash text-danger" role="button" title="Delete"></i>
+                    <?php if ($note['is_read'] === 'f' || $note['is_read'] === false): ?>
+                      <i class="bi bi-envelope mark-read-btn" role="button" title="Mark as Read" 
+                         data-notification-id="<?= $note['notification_id'] ?>"></i>
+                    <?php else: ?>
+                      <i class="bi bi-envelope-open text-success" title="Already Read"></i>
+                    <?php endif; ?>
+                    <i class="bi bi-trash text-danger delete-btn" role="button" title="Delete"
+                       data-notification-id="<?= $note['notification_id'] ?>"></i>
                   </div>
                 </div>
                 <div class="text-muted small ms-5 mt-1">Posted: <?= date("F j, Y, g:i a", strtotime($note['created_at'])) ?></div>
@@ -111,10 +145,23 @@ function getNotificationIcon($type) {
         <nav class="mt-4 d-flex justify-content-center">
           <ul class="pagination mb-0">
             <?php if ($page > 1): ?>
-              <li class="page-item"><a class="page-link" href="?page=<?= $page - 1 ?>"><i class="bi bi-chevron-left"></i></a></li>
+              <li class="page-item">
+                <a class="page-link" href="?filter=<?= $filterType ?>&page=<?= $page - 1 ?>">
+                  <i class="bi bi-chevron-left"></i>
+                </a>
+              </li>
             <?php endif; ?>
+            <?php for ($i = max(1, $page - 2); $i <= min($lastPage, $page + 2); $i++): ?>
+              <li class="page-item <?= $i === $page ? 'active' : '' ?>">
+                <a class="page-link" href="?filter=<?= $filterType ?>&page=<?= $i ?>"><?= $i ?></a>
+              </li>
+            <?php endfor; ?>
             <?php if ($page < $lastPage): ?>
-              <li class="page-item"><a class="page-link" href="?page=<?= $page + 1 ?>"><i class="bi bi-chevron-right"></i></a></li>
+              <li class="page-item">
+                <a class="page-link" href="?filter=<?= $filterType ?>&page=<?= $page + 1 ?>">
+                  <i class="bi bi-chevron-right"></i>
+                </a>
+              </li>
             <?php endif; ?>
           </ul>
         </nav>
