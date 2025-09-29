@@ -1215,13 +1215,29 @@ document.getElementById('multiStepForm').addEventListener('submit', async functi
     
     triggerMobileVibration('success'); // Success vibration on form submission
     
-    // Create a new form and submit it to bypass any event listeners
+    // Ensure we have a *fresh* reCAPTCHA v3 token for the final POST (tokens expire quickly & action must be register)
+    let captchaToken = '';
+    if (typeof grecaptcha !== 'undefined') {
+        try {
+            console.log('🔐 Executing grecaptcha for final submission...');
+            captchaToken = await grecaptcha.execute(window.RECAPTCHA_SITE_KEY, { action: 'register' });
+            if (!captchaToken) {
+                console.warn('⚠️ grecaptcha returned empty token');
+            }
+        } catch (err) {
+            console.error('reCAPTCHA execution failed:', err);
+        }
+    } else {
+        console.warn('grecaptcha not loaded; proceeding without refreshed token');
+    }
+
+    // Create a new form and submit it to bypass any lingering listeners
     console.log('⚡ Creating new form element for submission...');
     const newForm = document.createElement('form');
     newForm.method = 'POST';
     newForm.action = window.location.href;
-    
-    // Copy all form data
+
+    // Copy all existing form data
     const formData = new FormData(this);
     for (const [key, value] of formData.entries()) {
         const input = document.createElement('input');
@@ -1230,16 +1246,30 @@ document.getElementById('multiStepForm').addEventListener('submit', async functi
         input.value = value;
         newForm.appendChild(input);
     }
-    
-    // Add the register field
+
+    // Overwrite / add the (possibly refreshed) reCAPTCHA token explicitly
+    if (captchaToken) {
+        const existing = Array.from(newForm.querySelectorAll('input[name="g-recaptcha-response"]'))[0];
+        if (existing) {
+            existing.value = captchaToken;
+        } else {
+            const recaptchaHidden = document.createElement('input');
+            recaptchaHidden.type = 'hidden';
+            recaptchaHidden.name = 'g-recaptcha-response';
+            recaptchaHidden.value = captchaToken;
+            newForm.appendChild(recaptchaHidden);
+        }
+    }
+
+    // Add the register field (flag for server)
     const registerInput = document.createElement('input');
     registerInput.type = 'hidden';
     registerInput.name = 'register';
     registerInput.value = '1';
     newForm.appendChild(registerInput);
-    
+
     document.body.appendChild(newForm);
-    console.log('🎯 Submitting new form...');
+    console.log('🎯 Submitting new form with reCAPTCHA token length:', captchaToken ? captchaToken.length : 0);
     newForm.submit();
 });
 
