@@ -120,6 +120,9 @@ $barangays = pg_fetch_all($barangaysResult) ?: [];
 $yearLevelsQuery = "SELECT * FROM year_levels ORDER BY sort_order";
 $yearLevelsResult = pg_query($connection, $yearLevelsQuery);
 $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
+
+// Page title for shared admin header/topbar components
+$page_title = 'System Data Management';
 ?>
 
 <!DOCTYPE html>
@@ -138,13 +141,16 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
 <div id="wrapper">
     <?php include '../../includes/admin/admin_sidebar.php'; ?>
     <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
-    
+    <?php // Topbar / header (adds consistency with other admin pages)
+          if (file_exists(__DIR__ . '/../../includes/admin/admin_topbar.php')) {
+              include __DIR__ . '/../../includes/admin/admin_topbar.php';
+          }
+          if (file_exists(__DIR__ . '/../../includes/admin/admin_header.php')) {
+              include __DIR__ . '/../../includes/admin/admin_header.php';
+          }
+    ?>
     <section class="home-section" id="mainContent">
-        <nav>
-            <div class="sidebar-toggle px-4 py-3">
-                <i class="bi bi-list" id="menu-toggle"></i>
-            </div>
-        </nav>
+        <!-- Removed duplicate burger menu nav (already provided by topbar/header includes) -->
         
         <div class="container-fluid py-4 px-4">
             <h4 class="fw-bold mb-4"><i class="bi bi-database me-2 text-primary"></i>System Data Management</h4>
@@ -154,16 +160,9 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
             <?php endif; ?>
             <?php if (isset($error)): ?>
                 <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
-            <?php $page_title='System Data'; include '../../includes/admin/admin_head.php'; ?>
-            <body>
-            <?php include '../../includes/admin/admin_topbar.php'; ?>
-            <div id="wrapper" class="admin-wrapper">
-                <?php include '../../includes/admin/admin_sidebar.php'; ?>
-                <?php include '../../includes/admin/admin_header.php'; ?>
-                <section class="home-section" id="mainContent">
-                    <div class="container-fluid py-4 px-4">
-                    
-                    <!-- Universities List -->
+            <?php endif; ?>
+
+            <!-- Universities List -->
                     <div class="table-responsive">
                         <table class="table table-striped" id="universitiesTable">
                             <thead>
@@ -216,10 +215,8 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
                             </nav>
                         </div>
                     </div>
-                </div>
-            </div>
-            
-            <!-- Barangays Management -->
+
+            <!-- Barangays Management (now inside same container to align with Universities) -->
             <div class="card mb-4">
                 <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-geo-alt me-2"></i>Barangays Management</h5>
@@ -294,7 +291,7 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
             </div>
             
             <!-- Year Levels (Read-only) -->
-            <div class="card">
+            <div class="card mt-5">
                 <div class="card-header bg-info text-white">
                     <h5 class="mb-0"><i class="bi bi-layers me-2"></i>Year Levels (System Defined)</h5>
                 </div>
@@ -322,7 +319,7 @@ $yearLevels = pg_fetch_all($yearLevelsResult) ?: [];
                     <small class="text-muted">Year levels are system-defined and cannot be modified to maintain data integrity.</small>
                 </div>
             </div>
-        </div>
+        </div><!-- /.container-fluid -->
     </section>
 </div>
 
