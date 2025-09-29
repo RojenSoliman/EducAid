@@ -166,15 +166,38 @@ function showStep(stepNumber) {
 }
 
 function showNotifier(message, type = 'error') {
-    const notifier = document.getElementById('notifier');
-    notifier.textContent = message;
-    notifier.classList.remove('success', 'error');
-    notifier.classList.add(type);
-    notifier.style.display = 'block';
+    const el = document.getElementById('notifier');
+    if (!el) return;
 
-    setTimeout(() => {
-        notifier.style.display = 'none';
-    }, 3000);
+    // Remove prior state classes
+    el.classList.remove('success','error','warning');
+    el.classList.add(type);
+    el.textContent = message;
+
+    // Dynamic vertical offset: ensure it's always above any fixed top bars
+    let offset = 12;
+    const topbar = document.querySelector('.topbar, #topbar');
+    const navbar = document.querySelector('.navbar, .site-navbar, #navbar');
+    [topbar, navbar].forEach(node => {
+        if (node) {
+            const styles = window.getComputedStyle(node);
+            if (styles.position === 'fixed' || styles.position === 'sticky') {
+                offset += node.offsetHeight;
+            }
+        }
+    });
+    el.style.top = offset + 'px';
+
+    // Show with animation
+    el.style.display = 'block';
+    el.style.opacity = '1';
+
+    // Auto-hide after timeout
+    clearTimeout(window.__notifierHideTimer);
+    window.__notifierHideTimer = setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => { el.style.display = 'none'; }, 300);
+    }, 3500);
 }
 
 // ========================================

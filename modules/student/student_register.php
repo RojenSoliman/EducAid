@@ -102,11 +102,18 @@ if (!$isAjaxRequest) {
         }
         .step.active { background-color: #007bff; color: white; }
         .notifier {
-            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-            padding: 15px 30px; background-color: #f8d7da; color: #721c24;
-            border-radius: 5px; display: none; box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            z-index: 1000;
+            position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+            max-width: 640px; width: calc(100% - 32px);
+            padding: 14px 24px; background-color: #f8d7da; color: #721c24;
+            border-radius: 8px; display: none; box-shadow: 0 6px 16px -4px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.18);
+            z-index: 5000; /* Above nav/topbar and modals backdrop (Bootstrap modal backdrop is 1040, modal 1050) */
+            font-weight: 500; letter-spacing: .25px; backdrop-filter: blur(6px);
+            animation: notifierSlide .35s ease-out;
         }
+        @keyframes notifierSlide { from { opacity: 0; transform: translate(-50%, -10px);} to { opacity: 1; transform: translate(-50%, 0);} }
+        .notifier.success { background-color: #d4edda; color: #155724; }
+        .notifier.error { background-color: #f8d7da; color: #721c24; }
+        .notifier.warning { background-color: #fff3cd; color: #856404; }
         .notifier.success { background-color: #d4edda; color: #155724; }
         .verified-email { background-color: #e9f7e9; color: #28a745; }
         
@@ -2285,7 +2292,7 @@ if (!$isAjaxRequest) {
         </div>
     </div>
     
-    <div id="notifier" class="notifier"></div>
+    <div id="notifier" class="notifier" role="alert" aria-live="polite"></div>
     <!-- Make sure this is included BEFORE your custom JavaScript -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
