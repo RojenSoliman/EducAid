@@ -1043,24 +1043,42 @@ confirmPasswordInput.addEventListener('input', function() {
 });
 
 // ----- FIX FOR REQUIRED FIELD ERROR -----
+let isSubmitting = false; // Flag to prevent multiple submissions
+
 document.getElementById('multiStepForm').addEventListener('submit', async function(e) {
+    console.log('=== FORM SUBMISSION DEBUG ===');
+    console.log('Current step:', currentStep);
+    console.log('Is submitting:', isSubmitting);
+    
     if (currentStep !== 8) {
+        console.log('❌ Not on step 8, preventing submission');
         e.preventDefault();
         triggerMobileVibration('error');
         showNotifier('Please complete all steps first.', 'error');
         return;
     }
     
-    // Prevent default to allow for validation
+    // If already in the process of submitting, let it proceed
+    if (isSubmitting) {
+        console.log('✅ Already submitting, allowing natural submission');
+        return true;
+    }
+    
+    console.log('🛑 Preventing default to run validation');
+    // Prevent default submission for validation
     e.preventDefault();
     
     // Check for duplicates before final submission
+    console.log('🔍 Validating account details...');
     const isValid = await validateAccountDetails();
     if (!isValid) {
+        console.log('❌ Account validation failed');
         return false;
     }
+    console.log('✅ Account validation passed');
     
     // Show final confirmation
+    console.log('📋 Showing confirmation dialog...');
     const confirmSubmit = confirm(
         'Are you sure you want to submit your registration?\n\n' +
         'Please review:\n' +
@@ -1072,26 +1090,79 @@ document.getElementById('multiStepForm').addEventListener('submit', async functi
     );
     
     if (!confirmSubmit) {
+        console.log('❌ User cancelled submission');
         return false;
     }
+    console.log('✅ User confirmed submission');
+    
+    // Set flag to indicate submission in progress
+    isSubmitting = true;
+    console.log('🚀 Setting isSubmitting = true');
     
     // Mark form as submitted to prevent cleanup warning
     formSubmitted = true;
     registrationInProgress = false;
     
-    // Show all panels and enable all fields for browser validation
+    // Show all panels and enable all fields for proper form submission
+    console.log('🔧 Enabling all form fields...');
     document.querySelectorAll('.step-panel').forEach(panel => {
         panel.classList.remove('d-none');
         panel.style.display = '';
     });
+    
+    let enabledCount = 0;
     document.querySelectorAll('input, select, textarea').forEach(el => {
-        el.disabled = false;
+        if (el.disabled) {
+            el.disabled = false;
+            enabledCount++;
+        }
+    });
+    console.log(`✅ Enabled ${enabledCount} form fields`);
+    
+    // Validate all required fields are filled
+    const requiredFields = this.querySelectorAll('input[required], select[required], textarea[required]');
+    const emptyRequired = [];
+    requiredFields.forEach(field => {
+        if (!field.value.trim()) {
+            emptyRequired.push(field.name || field.id);
+        }
     });
     
-    // Submit the form
-    this.submit();
+    if (emptyRequired.length > 0) {
+        console.log('❌ Required fields missing:', emptyRequired);
+        showNotifier(`Missing required fields: ${emptyRequired.join(', ')}`, 'error');
+        isSubmitting = false;
+        return false;
+    }
     
     triggerMobileVibration('success'); // Success vibration on form submission
+    
+    // Create a new form and submit it to bypass any event listeners
+    console.log('⚡ Creating new form element for submission...');
+    const newForm = document.createElement('form');
+    newForm.method = 'POST';
+    newForm.action = window.location.href;
+    
+    // Copy all form data
+    const formData = new FormData(this);
+    for (const [key, value] of formData.entries()) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = value;
+        newForm.appendChild(input);
+    }
+    
+    // Add the register field
+    const registerInput = document.createElement('input');
+    registerInput.type = 'hidden';
+    registerInput.name = 'register';
+    registerInput.value = '1';
+    newForm.appendChild(registerInput);
+    
+    document.body.appendChild(newForm);
+    console.log('🎯 Submitting new form...');
+    newForm.submit();
 });
 
 // ----- DOCUMENT UPLOAD AND OCR FUNCTIONALITY -----
