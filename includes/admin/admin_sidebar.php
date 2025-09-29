@@ -168,8 +168,7 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
       <?= menu_link('manage_announcements.php', 'bi bi-megaphone', 'Announcements', is_active('manage_announcements.php', $current)); ?>
     <?php endif; ?>
 
-    <!-- Notifications -->
-    <?= menu_link('admin_notifications.php', 'bi bi-bell', 'Notifications', is_active('admin_notifications.php', $current)); ?>
+  
 
     <!-- Filler flex spacer -->
     <li class="mt-auto p-0 m-0"></li>
