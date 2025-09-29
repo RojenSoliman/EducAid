@@ -28,6 +28,7 @@ if (!function_exists('json_response')) {
 // Lightweight reusable reCAPTCHA v3 verifier (avoid duplicating logic per branch)
 if (!function_exists('verify_recaptcha_v3')) {
     /**
+     * Verify a reCAPTCHA v3 token.
      * @return array{ok:bool,score:float,reason?:string}
      */
     function verify_recaptcha_v3(string $token = null, string $expectedAction = '', float $minScore = 0.5): array {
@@ -48,18 +49,42 @@ if (!function_exists('verify_recaptcha_v3')) {
             'timeout'=>4
         ]]);
         $raw = @file_get_contents(RECAPTCHA_VERIFY_URL, false, $ctx);
-        if ($raw === false) { return ['ok'=>false,'score'=>0.0,'reason'=>'no_response']; }
-        $json = @json_decode($raw, true);
-        if (!is_array($json) || empty($json['success'])) { return ['ok'=>false,'score'=>0.0,'reason'=>'api_fail']; }
-        $score = (float)($json['score'] ?? 0);
-        $action = $json['action'] ?? '';
-        if ($expectedAction !== '' && $action !== $expectedAction) {
-            return ['ok'=>false,'score'=>$score,'reason'=>'action_mismatch'];
+        if ($raw === false) { 
+            $result = ['ok'=>false,'score'=>0.0,'reason'=>'no_response'];
+        } else {
+            $json = @json_decode($raw, true);
+            if (!is_array($json) || empty($json['success'])) { 
+                $result = ['ok'=>false,'score'=>0.0,'reason'=>'api_fail'];
+            } else {
+                $score = (float)($json['score'] ?? 0);
+                $action = $json['action'] ?? '';
+                if ($expectedAction !== '' && $action !== $expectedAction) {
+                    $result = ['ok'=>false,'score'=>$score,'reason'=>'action_mismatch'];
+                } elseif ($score < $minScore) {
+                    $result = ['ok'=>false,'score'=>$score,'reason'=>'low_score'];
+                } else {
+                    $result = ['ok'=>true,'score'=>$score];
+                }
+            }
         }
-        if ($score < $minScore) {
-            return ['ok'=>false,'score'=>$score,'reason'=>'low_score'];
-        }
-        return ['ok'=>true,'score'=>$score];
+        // Append audit log entry (JSON lines) for observability
+        try {
+            if ($expectedAction !== '') {
+                $logFile = __DIR__ . '/../../data/security_verifications.log';
+                $entry = [
+                    'ts' => date('c'),
+                    'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+                    'ua' => substr($_SERVER['HTTP_USER_AGENT'] ?? '',0,160),
+                    'action' => $expectedAction,
+                    'result' => $result['ok'] ? 'ok' : 'fail',
+                    'score' => $result['score'] ?? 0,
+                    'reason' => $result['ok'] ? null : ($result['reason'] ?? null),
+                    'session' => substr(session_id(),0,16)
+                ];
+                @file_put_contents($logFile, json_encode($entry, JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND | LOCK_EX);
+            }
+        } catch (Throwable $e) { /* ignore logging errors */ }
+        return $result;
     }
 }
 
@@ -1542,31 +1567,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         exit;
     }
 
-    // --- reCAPTCHA v3 server-side verification (registration action) ---
-    $recaptchaResponse = $_POST['g-recaptcha-response'] ?? '';
-    $captchaValid = false; $captchaScore = 0;
-    if (!empty($recaptchaResponse)) {
-        $verifyData = [
-            'secret' => RECAPTCHA_SECRET_KEY,
-            'response' => $recaptchaResponse,
-            'remoteip' => $_SERVER['REMOTE_ADDR']
-        ];
-        $opts = [ 'http' => [ 'header' => "Content-type: application/x-www-form-urlencoded\r\n", 'method' => 'POST', 'content' => http_build_query($verifyData) ] ];
-        $ctx = stream_context_create($opts);
-        $verifyResult = @file_get_contents(RECAPTCHA_VERIFY_URL, false, $ctx);
-        if ($verifyResult !== false) {
-            $verifyJson = json_decode($verifyResult, true);
-            if (!empty($verifyJson['success']) && ($verifyJson['action'] ?? '') === 'register') {
-                $captchaScore = (float)($verifyJson['score'] ?? 0);
-                if ($captchaScore >= 0.5) { $captchaValid = true; }
-            }
-        }
-    }
-    if (!$captchaValid) {
-        error_log('Registration blocked by reCAPTCHA v3. Score=' . $captchaScore);
-        echo "<script>alert('Security verification failed. Please refresh the page and try again.'); history.back();</script>";
+    // --- reCAPTCHA v3 server-side verification (central helper + logging) ---
+    $captchaResult = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'register', 0.5);
+    if (!$captchaResult['ok']) {
+        error_log('Registration blocked by reCAPTCHA v3. Score=' . ($captchaResult['score'] ?? 0) . ' Reason=' . ($captchaResult['reason'] ?? 'n/a'));
+        echo "<script>alert('Security verification failed (captcha). Please refresh the page and try again.'); history.back();</script>";
         exit;
     }
+    $captchaScore = $captchaResult['score'];
 
     if (strlen($pass) < 12) {
         echo "<script>alert('Password must be at least 12 characters.'); history.back();</script>";
