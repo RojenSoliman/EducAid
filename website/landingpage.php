@@ -105,7 +105,7 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
     ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => false],
     ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
     ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => false],
-    ['href' => 'landingpage.php#contact', 'label' => 'Contact', 'active' => false]
+    ['href' => 'contact.php', 'label' => 'Contact', 'active' => false]
   ];
   
   include '../includes/website/topbar.php';
@@ -409,7 +409,8 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
             </ul>
             <div class="d-flex gap-2 mt-3">
               <a href="<?php echo $base_path; ?>register.php" class="btn btn-green cta-btn"><i class="bi bi-journal-text me-2"></i>Start Application</a>
-              <a href="#announcements" class="btn btn-outline-custom cta-btn">See Announcements</a>
+              <a href="announcements.php" class="btn btn-outline-custom cta-btn">See Announcements</a>
+              <a href="contact.php" class="btn btn-primary cta-btn"><i class="bi bi-chat-dots me-1"></i>Full Contact Page</a>
             </div>
           </div>
         </div>
