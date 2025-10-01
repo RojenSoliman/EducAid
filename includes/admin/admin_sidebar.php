@@ -10,13 +10,42 @@ include_once __DIR__ . '/../permissions.php';
 include_once __DIR__ . '/../workflow_control.php';
 
 $admin_role = 'super_admin'; // fallback
+$admin_name = 'Administrator';
 $workflow_status = ['can_schedule' => false, 'can_scan_qr' => false];
 
 if (isset($_SESSION['admin_id'])) {
     include_once __DIR__ . '/../../config/database.php';
     $admin_role = getCurrentAdminRole($connection);
     $workflow_status = getWorkflowStatus($connection);
+    // Fetch admin name (compose from first + last) – no full_name column assumed
+    $nameRes = pg_query_params(
+        $connection,
+        "SELECT TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS display_name FROM admins WHERE admin_id = $1 LIMIT 1",
+        [$_SESSION['admin_id']]
+    );
+    if ($nameRes && ($nameRow = pg_fetch_assoc($nameRes))) {
+        $candidate = trim($nameRow['display_name'] ?? '');
+        if ($candidate !== '') { $admin_name = $candidate; }
+    } elseif (!empty($_SESSION['admin_username'])) {
+        $admin_name = $_SESSION['admin_username'];
+    }
+    
+  // Fetch theme settings for sidebar colors if table exists
+  $sidebarThemeSettings = [];
+  $tableExists = pg_query($connection, "SELECT 1 FROM information_schema.tables WHERE table_name='sidebar_theme_settings' LIMIT 1");
+  if ($tableExists && pg_fetch_row($tableExists)) {
+    $sidebarThemeQuery = pg_query_params($connection, "SELECT * FROM sidebar_theme_settings WHERE municipality_id = $1 LIMIT 1", [1]);
+    if ($sidebarThemeQuery && ($sidebarThemeRow = pg_fetch_assoc($sidebarThemeQuery))) {
+      $sidebarThemeSettings = $sidebarThemeRow;
+    }
+  }
 }
+
+$role_label = match($admin_role) {
+  'super_admin' => 'Super Admin',
+  'sub_admin', 'admin' => 'Administrator',
+  default => ucfirst(str_replace('_',' ', $admin_role))
+};
 
 $current = basename($_SERVER['PHP_SELF']);
 $canSchedule = (bool)($workflow_status['can_schedule'] ?? false);
@@ -59,15 +88,22 @@ $sysControlsFiles = [
     'admin_management.php',
     'system_data.php',
     'settings.php',
+    'topbar_settings.php',
+    'sidebar_settings.php',
 ];
 $isSysControlsActive = in_array($current, $sysControlsFiles, true);
 ?>
 
 <!-- admin_sidebar.php -->
 <div class="sidebar admin-sidebar" id="sidebar">
-  <div class="logo-details">
-    <i class="bi bi-speedometer2 icon" aria-hidden="true"></i>
-    <span class="logo_name">Admin Panel</span>
+  <div class="sidebar-profile" role="region" aria-label="Signed in user">
+    <div class="avatar-circle" aria-hidden="true" title="<?= htmlspecialchars($admin_name) ?>">
+      <?php $initials = strtoupper(mb_substr($admin_name,0,1)); echo htmlspecialchars($initials); ?>
+    </div>
+    <div class="profile-text">
+      <span class="name" title="<?= htmlspecialchars($admin_name) ?>"><?= htmlspecialchars($admin_name) ?></span>
+      <span class="role" title="<?= htmlspecialchars($role_label) ?>"><?= htmlspecialchars($role_label) ?></span>
+    </div>
   </div>
 
   <ul class="nav-list flex-grow-1 d-flex flex-column">
@@ -159,6 +195,16 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
               <i class="bi bi-gear me-2"></i> Settings
             </a>
           </li>
+          <li>
+            <a class="submenu-link <?= is_active('topbar_settings.php', $current) ? 'active' : '' ?>" href="topbar_settings.php">
+              <i class="bi bi-layout-text-window-reverse me-2"></i> Topbar Settings
+            </a>
+          </li>
+          <li>
+            <a class="submenu-link <?= is_active('sidebar_settings.php', $current) ? 'active' : '' ?>" href="sidebar_settings.php">
+              <i class="bi bi-layout-sidebar me-2"></i> Sidebar Settings
+            </a>
+          </li>
         </ul>
       </li>
     <?php endif; ?>
@@ -192,31 +238,176 @@ function confirmLogout() {
 </script>
 
 <style>
-.admin-sidebar {background:linear-gradient(180deg,#e8f5e9 0%,#ffffff 60%);border-right:1px solid #c8e6c9;}
-.admin-sidebar .logo-details{padding:0 1rem 1rem 1rem;}
-.admin-sidebar .logo-details .icon{color:#2e7d32;}
-.admin-sidebar .logo-details .logo_name{color:#1b5e20;font-weight:600;}
-.admin-sidebar .nav-list{padding-bottom:.75rem;}
-.admin-sidebar .nav-item a{border-radius:10px;margin:2px 12px; padding:10px 14px; font-size:.9rem; font-weight:500;}
-.admin-sidebar .nav-item a .icon{color:#2e7d32;transition:.2s;font-size:1.1rem;}
-.admin-sidebar .nav-item a:hover{background:#c8e6c9;color:#1b5e20;}
-.admin-sidebar .nav-item a:hover .icon{color:#1b5e20;}
-.admin-sidebar .nav-item.active > a{background:#2e7d32;color:#fff;box-shadow:0 2px 4px rgba(0,0,0,.15);} 
-.admin-sidebar .nav-item.active > a .icon{color:#fff;}
-.admin-sidebar .nav-item.active > a::before{background:#66bb6a;}
-.admin-sidebar .dropdown > a{display:flex;align-items:center;gap:.55rem;margin:4px 12px;padding:10px 14px;border-radius:10px;}
-/* Removed parent highlight; parent stays neutral so only submenu item shows active state */
-.admin-sidebar .submenu-link{display:flex;align-items:center;padding:.4rem .75rem .4rem 2.1rem;margin:2px 0;border-radius:8px;font-size:.8rem;}
-.admin-sidebar .submenu-link.active{background:rgba(76,175,80,.18);font-weight:600;color:#1b5e20;}
-.admin-sidebar .submenu-link:hover{background:rgba(129,199,132,.35);color:#1b5e20;}
-.admin-sidebar .submenu-link .bi{width:1.05rem;text-align:center;font-size:.9rem;}
-.admin-sidebar .nav-item.logout a.logout-link{background:#ffebee;color:#c62828;border:1px solid #ffcdd2;margin:4px 12px 6px;padding:10px 14px;border-radius:10px;font-weight:600;display:flex;align-items:center;}
-.admin-sidebar .nav-item.logout a.logout-link:hover{background:#ffcdd2;color:#b71c1c;}
-@media (max-width:768px){.admin-sidebar .nav-item a{margin:2px 8px;} .admin-sidebar .dropdown > a{margin:4px 8px;} .admin-sidebar .nav-item.logout a.logout-link{margin:6px 8px 8px;}}
+<?php
+// Dynamic sidebar theming using dedicated sidebar theme settings
+$sidebarBgStart = $sidebarThemeSettings['sidebar_bg_start'] ?? '#f8f9fa';
+$sidebarBgEnd = $sidebarThemeSettings['sidebar_bg_end'] ?? '#ffffff';
+$sidebarBorder = $sidebarThemeSettings['sidebar_border_color'] ?? '#dee2e6';
+$navTextColor = $sidebarThemeSettings['nav_text_color'] ?? '#212529';
+$navIconColor = $sidebarThemeSettings['nav_icon_color'] ?? '#6c757d';
+$navHoverBg = $sidebarThemeSettings['nav_hover_bg'] ?? '#e9ecef';
+$navHoverText = $sidebarThemeSettings['nav_hover_text'] ?? '#212529';
+$navActiveBg = $sidebarThemeSettings['nav_active_bg'] ?? '#0d6efd';
+$navActiveText = $sidebarThemeSettings['nav_active_text'] ?? '#ffffff';
+$profileAvatarStart = $sidebarThemeSettings['profile_avatar_bg_start'] ?? '#0d6efd';
+$profileAvatarEnd = $sidebarThemeSettings['profile_avatar_bg_end'] ?? '#0b5ed7';
+$profileNameColor = $sidebarThemeSettings['profile_name_color'] ?? '#212529';
+$profileRoleColor = $sidebarThemeSettings['profile_role_color'] ?? '#6c757d';
+$profileBorderColor = $sidebarThemeSettings['profile_border_color'] ?? '#dee2e6';
+$submenuBg = $sidebarThemeSettings['submenu_bg'] ?? '#f8f9fa';
+$submenuTextColor = $sidebarThemeSettings['submenu_text_color'] ?? '#495057';
+$submenuHoverBg = $sidebarThemeSettings['submenu_hover_bg'] ?? '#e9ecef';
+$submenuActiveBg = $sidebarThemeSettings['submenu_active_bg'] ?? '#e7f3ff';
+$submenuActiveText = $sidebarThemeSettings['submenu_active_text'] ?? '#0d6efd';
+
+// Function to adjust color opacity for subtle effects
+function adjustColorOpacity($color, $opacity = 0.3) {
+    $color = str_replace('#', '', $color);
+    if (strlen($color) === 3) {
+        $color = $color[0].$color[0].$color[1].$color[1].$color[2].$color[2];
+    }
+    $r = hexdec(substr($color, 0, 2));
+    $g = hexdec(substr($color, 2, 2));
+    $b = hexdec(substr($color, 4, 2));
+    return "rgba($r, $g, $b, $opacity)";
+}
+?>
+.admin-sidebar {
+    background: linear-gradient(180deg, <?= htmlspecialchars($sidebarBgStart) ?> 0%, <?= htmlspecialchars($sidebarBgEnd) ?> 100%);
+    border-right: 1px solid <?= htmlspecialchars($sidebarBorder) ?>;
+}
+.admin-sidebar .nav-item a {
+    border-radius: 10px;
+    margin: 2px 12px;
+    padding: 10px 14px;
+    font-size: .9rem;
+    font-weight: 500;
+    color: <?= htmlspecialchars($navTextColor) ?>;
+}
+.admin-sidebar .nav-item a .icon {
+    color: <?= htmlspecialchars($navIconColor) ?>;
+    transition: .2s;
+    font-size: 1.1rem;
+}
+.admin-sidebar .nav-item a:hover {
+    background: <?= htmlspecialchars($navHoverBg) ?>;
+    color: <?= htmlspecialchars($navHoverText) ?>;
+}
+.admin-sidebar .nav-item a:hover .icon {
+    color: <?= htmlspecialchars($navHoverText) ?>;
+}
+.admin-sidebar .nav-item.active > a {
+    background: <?= htmlspecialchars($navActiveBg) ?>;
+    color: <?= htmlspecialchars($navActiveText) ?>;
+    box-shadow: 0 2px 4px rgba(0,0,0,.15);
+}
+.admin-sidebar .nav-item.active > a .icon {
+    color: <?= htmlspecialchars($navActiveText) ?>;
+}
+.admin-sidebar .nav-item.active > a::before {
+    background: <?= htmlspecialchars($navActiveBg) ?>;
+}
+.admin-sidebar .dropdown > a {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    margin: 4px 12px;
+    padding: 10px 14px;
+    border-radius: 10px;
+}
+.admin-sidebar .submenu-link {
+    display: flex;
+    align-items: center;
+    padding: .4rem .75rem .4rem 2.1rem;
+    margin: 2px 0;
+    border-radius: 8px;
+    font-size: .8rem;
+    color: <?= htmlspecialchars($submenuTextColor) ?>;
+}
+.admin-sidebar .submenu-link.active {
+    background: <?= htmlspecialchars($submenuActiveBg) ?>;
+    font-weight: 600;
+    color: <?= htmlspecialchars($submenuActiveText) ?>;
+}
+.admin-sidebar .submenu-link:hover {
+    background: <?= htmlspecialchars($submenuHoverBg) ?>;
+    color: <?= htmlspecialchars($submenuTextColor) ?>;
+}
+.admin-sidebar .submenu-link .bi {
+    width: 1.05rem;
+    text-align: center;
+    font-size: .9rem;
+}
+.admin-sidebar .nav-item.logout a.logout-link {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ffcdd2;
+    margin: 4px 12px 6px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+}
+.admin-sidebar .nav-item.logout a.logout-link:hover {
+    background: #ffcdd2;
+    color: #b71c1c;
+}
+@media (max-width:768px) {
+    .admin-sidebar .nav-item a { margin: 2px 8px; }
+    .admin-sidebar .dropdown > a { margin: 4px 8px; }
+    .admin-sidebar .nav-item.logout a.logout-link { margin: 6px 8px 8px; }
+}
 /* Collapse behavior for system controls submenu when sidebar collapsed */
-.admin-sidebar.close #submenu-sys {display:none !important;}
-.admin-sidebar.close .dropdown > a {background:transparent;}
-.admin-sidebar.close .dropdown > a .bi-chevron-down{display:none;}
+.admin-sidebar.close #submenu-sys { display: none !important; }
+.admin-sidebar.close .dropdown > a { background: transparent; }
+.admin-sidebar.close .dropdown > a .bi-chevron-down { display: none; }
+/* Profile block */
+.admin-sidebar .sidebar-profile {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: 0 1rem 1rem 1rem;
+    margin-bottom: .35rem;
+    border-bottom: 1px solid <?= adjustColorOpacity($profileBorderColor, 0.4) ?>;
+}
+.admin-sidebar.close .sidebar-profile .profile-text { display: none; }
+.admin-sidebar .sidebar-profile .avatar-circle {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, <?= htmlspecialchars($profileAvatarStart) ?>, <?= htmlspecialchars($profileAvatarEnd) ?>);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 1rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,.15);
+}
+.admin-sidebar .sidebar-profile .profile-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+    min-width: 0;
+}
+.admin-sidebar .sidebar-profile .profile-text .name {
+    font-size: .9rem;
+    font-weight: 600;
+    color: <?= htmlspecialchars($profileNameColor) ?>;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+.admin-sidebar .sidebar-profile .profile-text .role {
+    font-size: .6rem;
+    letter-spacing: .75px;
+    text-transform: uppercase;
+    color: <?= htmlspecialchars($profileRoleColor) ?>;
+    font-weight: 600;
+    opacity: .85;
+}
 </style>
 
 <script>

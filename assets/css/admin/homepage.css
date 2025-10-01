@@ -2,7 +2,8 @@
 
 :root {
   --admin-topbar-h: 44px;
-  --admin-header-h: 60px; /* approximate header height */
+  /* Actual header height refined (44px topbar + ~56px header used in layout calc) */
+  --admin-header-h: 56px; /* sync with .admin-main-header padding & content */
 }
 
 body {
@@ -28,7 +29,8 @@ body {
 }
 
 /* Ensure main content clears fixed header (44px topbar + header height) */
-.home-section, #mainContent { padding-top: calc(var(--admin-header-h) + 44px); }
+/* Remove standalone extra padding-top (full padding managed in block below) */
+.home-section, #mainContent { padding-top: 0; }
 
 /* ===== Sidebar ===== */
 
@@ -40,7 +42,7 @@ body {
   margin-left:250px; 
   width:calc(100% - 250px);
   min-height:calc(100vh - var(--admin-topbar-h)); 
-  padding: calc(var(--admin-header-h) + 44px) 20px 40px 20px; /* increased further for more space */
+  padding: calc(var(--admin-topbar-h) + var(--admin-header-h) + 10px) 20px 40px 20px; /* unified vertical offset */
   background:#f5f5f5; 
   position:relative; 
   z-index:1; 

@@ -1,5 +1,5 @@
 <?php
-// Admin Header (green themed) similar to student header
+// Admin Header with dynamic theming
 // Requires: $_SESSION['admin_username']
 $adminDisplay = htmlspecialchars($_SESSION['admin_username'] ?? 'Admin');
 
@@ -124,17 +124,41 @@ if (!function_exists('truncateMessage')) {
       </div>
     </div>
   </div>
-</div>
+</div><!-- /admin-main-header (added closing wrapper to prevent layout trapping) -->
+<?php
+// Pull header theme settings (gracefully fallback)
+if (!function_exists('educaid_get_header_theme')) {
+  function educaid_get_header_theme($connection) {
+    $defaults = [
+      'header_bg_color' => '#ffffff',
+      'header_border_color' => '#e1e7e3',
+      'header_text_color' => '#2e7d32',
+      'header_icon_color' => '#2e7d32',
+      'header_hover_bg' => '#e9f5e9',
+      'header_hover_icon_color' => '#1b5e20'
+    ];
+    $check = @pg_query_params($connection, "SELECT 1 FROM information_schema.tables WHERE table_name=$1", ['header_theme_settings']);
+    if (!$check || !pg_fetch_row($check)) return $defaults;
+    $res = @pg_query($connection, "SELECT header_bg_color, header_border_color, header_text_color, header_icon_color, header_hover_bg, header_hover_icon_color FROM header_theme_settings WHERE municipality_id=1 LIMIT 1");
+    if ($res && ($row = pg_fetch_assoc($res))) {
+      return array_merge($defaults, array_filter($row));
+    }
+    return $defaults;
+  }
+}
+$__hdr = educaid_get_header_theme($connection ?? null);
+?>
 <style>
-.admin-main-header {background:#ffffff;border-bottom:1px solid #e1e7e3;box-shadow:0 2px 4px rgba(0,0,0,.06);padding:.55rem 0;z-index:1030;margin-top:0;}
+.admin-main-header {background: <?= htmlspecialchars($__hdr['header_bg_color']) ?>;border-bottom:1px solid <?= htmlspecialchars($__hdr['header_border_color']) ?>;box-shadow:0 2px 4px rgba(0,0,0,.06);padding:.55rem 0;z-index:1030;margin-top:0;color:<?= htmlspecialchars($__hdr['header_text_color']) ?>;}
 .admin-main-header .container-fluid{height:100%;}
 .admin-header-content{display:flex;align-items:center;justify-content:space-between;}
 .admin-header-actions{display:flex;align-items:center;gap:1rem;}
-.admin-icon-btn{background:#f8fbf8;border:1px solid #d9e4d8;border-radius:10px;padding:.55rem .65rem;position:relative;cursor:pointer;transition:.2s;color:#2e7d32;}
+.admin-icon-btn{background:#f8fbf8;border:1px solid #d9e4d8;border-radius:10px;padding:.55rem .65rem;position:relative;cursor:pointer;transition:.2s;color:<?= htmlspecialchars($__hdr['header_icon_color']) ?>;}
 .admin-icon-btn .bi{font-size:1.05rem;}
-.admin-icon-btn:hover{background:#e9f5e9;border-color:#43a047;color:#1b5e20;}
+.admin-icon-btn:hover{background:<?= htmlspecialchars($__hdr['header_hover_bg']) ?>;border-color:<?= htmlspecialchars($__hdr['header_hover_bg']) ?>;color:<?= htmlspecialchars($__hdr['header_hover_icon_color']) ?>;}
 .admin-icon-btn .badge{position:absolute;top:-6px;right:-6px;font-size:.55rem;}
-#menu-toggle{font-size:30px;cursor:pointer;color:#2e7d32;border-radius:8px;padding:4px 8px;transition:.2s;}#menu-toggle:hover{background:#e9f5e9;color:#1b5e20;}
+#menu-toggle{font-size:30px;cursor:pointer;color:<?= htmlspecialchars($__hdr['header_icon_color']) ?>;border-radius:8px;padding:4px 8px;transition:.2s;}#menu-toggle:hover{background:<?= htmlspecialchars($__hdr['header_hover_bg']) ?>;color:<?= htmlspecialchars($__hdr['header_hover_icon_color']) ?>;}
+.admin-main-header h5, .admin-main-header .dropdown-menu, .admin-main-header .admin-header-left span { color: <?= htmlspecialchars($__hdr['header_text_color']) ?>; }
 
 /* Enhanced notification dropdown styling */
 .admin-header-actions .dropdown-menu {min-width: 320px; max-width: 400px;}
@@ -159,6 +183,16 @@ document.addEventListener('DOMContentLoaded', function(){
         b.style.display='none';
       }
     });
+  }
+  // Dynamically sync CSS variable for header height (prevents overlap/gaps if style changes)
+  const hdr = document.querySelector('.admin-main-header');
+  if(hdr){
+    const setVar = () => {
+      const h = hdr.getBoundingClientRect().height;
+      document.documentElement.style.setProperty('--admin-header-h', h + 'px');
+    };
+    setVar();
+    window.addEventListener('resize', setVar);
   }
 });
 </script>
