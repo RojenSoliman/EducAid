@@ -1,12 +1,12 @@
 <?php
 // Default navigation links for website
 $nav_links = [
-  ['href' => '#home', 'label' => 'Home', 'active' => true],
-  ['href' => '#about', 'label' => 'About', 'active' => false],
-  ['href' => '#how', 'label' => 'How it works', 'active' => false],
-  ['href' => '#announcements', 'label' => 'Announcements', 'active' => false],
-  ['href' => '#requirements', 'label' => 'Requirements', 'active' => false],
-  ['href' => '#contact', 'label' => 'Contact', 'active' => false]
+  ['href' => 'landingpage.php#home', 'label' => 'Home', 'active' => true],
+  ['href' => 'about.php', 'label' => 'About', 'active' => false],
+  ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => false],
+  ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
+  ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => false],
+  ['href' => 'contact.php', 'label' => 'Contact', 'active' => false]
 ];
 
 // Override nav_links if custom ones are provided

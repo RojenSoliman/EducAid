@@ -45,7 +45,7 @@ $custom_nav_links = [
   ['href'=>'announcements.php','label'=>'Announcements','active'=>true],
   ['href'=>'requirements.php','label'=>'Requirements','active'=>false],
   ['href'=>'how-it-works.php','label'=>'How it works','active'=>false],
-  ['href'=>'landingpage.php#contact','label'=>'Contact','active'=>false]
+  ['href'=>'contact.php','label'=>'Contact','active'=>false]
 ];
 ?>
 <!DOCTYPE html>
@@ -96,14 +96,14 @@ $custom_nav_links = [
  <body>
 <?php
 
-  // Custom navigation for requirements page
+  // Custom navigation for announcements page
   $custom_nav_links = [
     ['href' => 'landingpage.php', 'label' => 'Home', 'active' => false],
     ['href' => 'about.php', 'label' => 'About', 'active' => false],
     ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => false],
     ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
     ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => true],
-    ['href' => 'landingpage.php#contact', 'label' => 'Contact', 'active' => false]
+    ['href' => 'contact.php', 'label' => 'Contact', 'active' => false]
   ];
   // Modular includes placed inside body to mirror landing page structure
   include '../includes/website/topbar.php';
@@ -212,7 +212,7 @@ $custom_nav_links = [
             <ul class="list-unstyled small">
               <li><a href="requirements.php">Requirements</a></li>
               <li><a href="landingpage.php#faq">FAQs</a></li>
-              <li><a href="landingpage.php#contact">Contact</a></li>
+              <li><a href="contact.php">Contact</a></li>
             </ul>
           </div>
           <div class="col-12 col-md-4 mt-3 mt-md-0">

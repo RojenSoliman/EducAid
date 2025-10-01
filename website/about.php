@@ -23,7 +23,7 @@
     ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => false],
     ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
     ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => false],
-    ['href' => 'landingpage.php#contact', 'label' => 'Contact', 'active' => false]
+    ['href' => 'contact.php', 'label' => 'Contact', 'active' => false]
   ];
   
   include '../includes/website/topbar.php';
@@ -293,7 +293,7 @@
               </div>
             </div>
             <div class="mt-3 pt-3 border-top">
-              <a href="landingpage.php#contact" class="btn btn-primary me-2">Get Support</a>
+              <a href="contact.php" class="btn btn-primary me-2">Get Support</a>
               <a href="how-it-works.php" class="btn btn-outline-primary">Learn How It Works</a>
             </div>
           </div>
@@ -330,7 +330,7 @@
               <ul class="list-unstyled small">
                 <li><a href="requirements.php">Requirements</a></li>
                 <li><a href="landingpage.php#faq">FAQs</a></li>
-                <li><a href="landingpage.php#contact">Contact</a></li>
+                <li><a href="contact.php">Contact</a></li>
               </ul>
             </div>
             <div class="col-12 col-md-4 mt-3 mt-md-0">

@@ -23,7 +23,7 @@
     ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => true],
     ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
     ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => false],
-    ['href' => 'landingpage.php#contact', 'label' => 'Contact', 'active' => false]
+    ['href' => 'contact.php', 'label' => 'Contact', 'active' => false]
   ];
   
   include '../includes/website/topbar.php';
@@ -49,7 +49,7 @@
     <div class="container">
       <div class="text-center mb-5">
         <h2 class="section-title">Simple 4-Step Process</h2>
-        <p class="section-lead">From registration to claiming your assistance</p>
+        <p class="section-lead mx-auto" style="max-width: 700px;">From registration to claiming your assistance</p>
       </div>
       <div class="row g-4">
         <div class="col-md-6 col-lg-3">
@@ -375,7 +375,7 @@
     <div class="container">
       <div class="text-center mb-5">
         <h2 class="section-title">Tips for Success</h2>
-        <p class="section-lead">Best practices to ensure smooth application processing</p>
+        <p class="section-lead mx-auto" style="max-width: 700px;">Best practices to ensure smooth application processing</p>
       </div>
       <div class="row g-4">
         <div class="col-md-6 col-lg-4">
@@ -469,7 +469,7 @@
               <ul class="list-unstyled small">
                 <li><a href="requirements.php">Requirements</a></li>
                 <li><a href="landingpage.php#faq">FAQs</a></li>
-                <li><a href="landingpage.php#contact">Contact</a></li>
+                <li><a href="contact.php">Contact</a></li>
               </ul>
             </div>
             <div class="col-12 col-md-4 mt-3 mt-md-0">

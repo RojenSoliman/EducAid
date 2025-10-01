@@ -416,7 +416,7 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
         </div>
         <div class="col-lg-6">
           <div class="soft-card h-100 overflow-hidden">
-            <iframe title="Map" width="100%" height="100%" style="min-height:300px;border:0" loading="lazy" allowfullscreen src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d30959.86166204313!2d120.879!3d14.384!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3397d4126e2c2d1d%3A0x4b3f6b4df55c9a47!2sGeneral%20Trias%2C%20Cavite!5e0!3m2!1sen!2sph!4v1687412345678"></iframe>
+            <iframe title="General Trias City Hall Location" width="100%" height="100%" style="min-height:300px;border:0" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade" src="https://www.google.com/maps?q=9VPJ+F9Q,+General+Trias,+Cavite&output=embed&z=17"></iframe>
           </div>
         </div>
       </div>
