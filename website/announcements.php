@@ -7,6 +7,15 @@ if (!isset($_SESSION['captcha_verified']) || $_SESSION['captcha_verified'] !== t
 
 require_once '../config/database.php';
 
+// Edit mode support (super admin only)
+$edit_mode = false;
+if (isset($_SESSION['user_id']) && $_SESSION['role'] === 'super_admin') {
+  if (isset($_GET['edit']) && ($_GET['edit'] === 'true' || $_GET['edit'] == '1')) { $edit_mode = true; }
+}
+
+// Load announcements content helper
+require_once '../includes/website/announcements_content_helper.php';
+
 // Optional deep-link id
 $requested_id = isset($_GET['id']) && ctype_digit($_GET['id']) ? (int)$_GET['id'] : null;
 
@@ -93,7 +102,31 @@ $custom_nav_links = [
   @media (max-width: 576px){ .featured-card .featured-img { aspect-ratio:16/10; } }
 </style>
  </head>
- <body>
+ <body<?php if($edit_mode) echo ' class="edit-mode"'; ?>>
+
+<!-- Edit toolbar (admin only) -->
+<?php if ($edit_mode): ?>
+<div id="editToolbar" class="edit-toolbar">
+  <div class="toolbar-content">
+    <div class="toolbar-brand">
+      <i class="bi bi-pencil-square"></i>
+      <span>Editing Announcements Page</span>
+    </div>
+    <div class="toolbar-actions">
+      <button id="resetAllBtn" class="btn btn-sm btn-outline-light">
+        <i class="bi bi-arrow-counterclockwise"></i> Reset All
+      </button>
+      <button id="saveBtn" class="btn btn-sm btn-light">
+        <i class="bi bi-check-lg"></i> Save Changes
+      </button>
+      <a href="announcements.php" class="btn btn-sm btn-outline-light">
+        <i class="bi bi-x-lg"></i> Exit Editor
+      </a>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
 <?php
 
   // Custom navigation for announcements page
@@ -111,15 +144,15 @@ $custom_nav_links = [
 ?>
 
 <!-- Hero (mirrors landing page hero pattern) -->
-<header class="hero" id="announcements-hero">
+<header class="hero" id="announcements-hero"<?php echo ann_block_style('hero-bg'); ?>>
   <div class="container">
     <div class="row align-items-center justify-content-center">
       <div class="col-12 col-lg-10">
         <div class="hero-card text-center">
           <div class="d-flex flex-column align-items-center gap-3">
-            <span class="badge text-bg-primary-subtle text-primary rounded-pill"><i class="bi bi-megaphone me-1"></i>Official Updates</span>
-            <h1 class="display-5 mb-2">Announcements & Notices</h1>
-            <p class="mb-0 lead" style="max-width:760px;">Program-wide schedules, orientations, distribution reminders, and important administrative advisories.</p>
+            <span class="badge text-bg-primary-subtle text-primary rounded-pill"<?php echo ann_block_style('hero-badge'); ?> data-lp-key="hero-badge" contenteditable="<?php echo $edit_mode ? 'true' : 'false'; ?>"><?php echo ann_block('hero-badge', '<i class="bi bi-megaphone me-1"></i>Official Updates'); ?></span>
+            <h1 class="display-5 mb-2"<?php echo ann_block_style('hero-title'); ?> data-lp-key="hero-title" contenteditable="<?php echo $edit_mode ? 'true' : 'false'; ?>"><?php echo ann_block('hero-title', 'Announcements &amp; Notices'); ?></h1>
+            <p class="mb-0 lead" style="max-width:760px;"<?php echo ann_block_style('hero-description'); ?> data-lp-key="hero-description" contenteditable="<?php echo $edit_mode ? 'true' : 'false'; ?>"><?php echo ann_block('hero-description', 'Program-wide schedules, orientations, distribution reminders, and important administrative advisories.'); ?></p>
           </div>
         </div>
       </div>
@@ -162,12 +195,12 @@ $custom_nav_links = [
   </div>
 </section>
 
-<section class="past-section bg-body-tertiary">
+<section class="past-section bg-body-tertiary"<?php echo ann_block_style('past-section-bg'); ?>>
   <div class="container">
     <div class="d-flex justify-content-between align-items-end flex-wrap mb-3 gap-2">
       <div>
-        <h2 class="h5 fw-bold mb-1"><i class="bi bi-archive me-2 text-primary"></i>Past Announcements</h2>
-        <p class="small text-body-secondary mb-0">Historical updates & previous schedules</p>
+        <h2 class="h5 fw-bold mb-1"<?php echo ann_block_style('past-title'); ?> data-lp-key="past-title" contenteditable="<?php echo $edit_mode ? 'true' : 'false'; ?>"><?php echo ann_block('past-title', '<i class="bi bi-archive me-2 text-primary"></i>Past Announcements'); ?></h2>
+        <p class="small text-body-secondary mb-0"<?php echo ann_block_style('past-subtitle'); ?> data-lp-key="past-subtitle" contenteditable="<?php echo $edit_mode ? 'true' : 'false'; ?>"><?php echo ann_block('past-subtitle', 'Historical updates &amp; previous schedules'); ?></p>
       </div>
       <div class="small text-body-secondary">Total: <?php echo count($past); ?></div>
     </div>
@@ -431,5 +464,24 @@ $custom_nav_links = [
     });
   })();
 </script>
+
+<?php if ($edit_mode): ?>
+<!-- Editor CSS -->
+<link rel="stylesheet" href="../assets/css/content_editor.css" />
+<script src="../assets/js/content_editor.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  ContentEditor.init({
+    saveEndpoint: 'ajax_save_ann_content.php',
+    getBlocksEndpoint: 'ajax_get_ann_blocks.php',
+    resetEndpoint: 'ajax_reset_ann_content.php',
+    historyEndpoint: 'ajax_get_ann_history.php',
+    rollbackEndpoint: 'ajax_rollback_ann_block.php',
+    onRefresh: () => { window.location.href = 'announcements.php?edit=true'; }
+  });
+});
+</script>
+<?php endif; ?>
+
 </body>
 </html>

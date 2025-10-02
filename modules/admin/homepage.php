@@ -314,6 +314,238 @@ if ($DEMO_MODE) {
           </div>
         </div>
 
+        <!-- Website Content Management (Super Admin Only) -->
+        <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin'): ?>
+        <div class="row g-4 mt-4">
+          <div class="col-12">
+            <div class="custom-card">
+              <div class="custom-card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <h5><i class="bi bi-pencil-square me-2"></i>Website Content Management</h5>
+                <span class="badge bg-white text-info">Super Admin Access</span>
+              </div>
+              <div class="custom-card-body">
+                <p class="text-muted mb-3">
+                  <i class="bi bi-info-circle me-1"></i>
+                  Edit static content on public website pages. Click "Edit Page" to modify text, colors, and layout.
+                </p>
+                <div class="table-responsive">
+                  <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                      <tr>
+                        <th style="width: 30%;"><i class="bi bi-file-earmark-text me-1"></i>Page</th>
+                        <th style="width: 15%;" class="text-center"><i class="bi bi-puzzle me-1"></i>Blocks</th>
+                        <th style="width: 20%;" class="text-center"><i class="bi bi-clock-history me-1"></i>Last Updated</th>
+                        <th style="width: 20%;" class="text-center"><i class="bi bi-eye me-1"></i>View</th>
+                        <th style="width: 15%;" class="text-center"><i class="bi bi-pencil me-1"></i>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <i class="bi bi-house-door text-primary me-2"></i>
+                          <strong>Landing Page</strong>
+                          <br><small class="text-muted">Homepage with hero, features, FAQs</small>
+                        </td>
+                        <td class="text-center"><span class="badge bg-primary">50+ blocks</span></td>
+                        <td class="text-center text-muted small">
+                          <?php
+                            if (!$DEMO_MODE) {
+                              $lpUpdate = pg_query($connection, "SELECT MAX(updated_at) as last_update FROM landing_content_blocks WHERE municipality_id=1");
+                              if ($lpUpdate && $row = pg_fetch_assoc($lpUpdate)) {
+                                echo $row['last_update'] ? date('M d, Y H:i', strtotime($row['last_update'])) : 'Never';
+                              } else { echo 'Never'; }
+                            } else { echo 'Demo Mode'; }
+                          ?>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/landingpage.php" class="btn btn-sm btn-outline-secondary" target="_blank">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Visit
+                          </a>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/landingpage.php?edit=1" class="btn btn-sm btn-warning">
+                            <i class="bi bi-pencil-fill me-1"></i>Edit Page
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <i class="bi bi-info-circle text-success me-2"></i>
+                          <strong>About Page</strong>
+                          <br><small class="text-muted">Program information & history</small>
+                        </td>
+                        <td class="text-center"><span class="badge bg-success">20+ blocks</span></td>
+                        <td class="text-center text-muted small">
+                          <?php
+                            if (!$DEMO_MODE) {
+                              $aboutUpdate = pg_query($connection, "SELECT MAX(updated_at) as last_update FROM about_content_blocks WHERE municipality_id=1");
+                              if ($aboutUpdate && $row = pg_fetch_assoc($aboutUpdate)) {
+                                echo $row['last_update'] ? date('M d, Y H:i', strtotime($row['last_update'])) : 'Never';
+                              } else { echo 'Never'; }
+                            } else { echo 'Demo Mode'; }
+                          ?>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/about.php" class="btn btn-sm btn-outline-secondary" target="_blank">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Visit
+                          </a>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/about.php?edit=1" class="btn btn-sm btn-warning">
+                            <i class="bi bi-pencil-fill me-1"></i>Edit Page
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <i class="bi bi-diagram-3 text-info me-2"></i>
+                          <strong>How It Works</strong>
+                          <br><small class="text-muted">Application process & steps</small>
+                        </td>
+                        <td class="text-center"><span class="badge bg-info">13 blocks</span></td>
+                        <td class="text-center text-muted small">
+                          <?php
+                            if (!$DEMO_MODE) {
+                              $hiwUpdate = pg_query($connection, "SELECT MAX(updated_at) as last_update FROM how_it_works_content_blocks WHERE municipality_id=1");
+                              if ($hiwUpdate && $row = pg_fetch_assoc($hiwUpdate)) {
+                                echo $row['last_update'] ? date('M d, Y H:i', strtotime($row['last_update'])) : 'Never';
+                              } else { echo 'Never'; }
+                            } else { echo 'Demo Mode'; }
+                          ?>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/how-it-works.php" class="btn btn-sm btn-outline-secondary" target="_blank">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Visit
+                          </a>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/how-it-works.php?edit=1" class="btn btn-sm btn-warning">
+                            <i class="bi bi-pencil-fill me-1"></i>Edit Page
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <i class="bi bi-card-checklist text-warning me-2"></i>
+                          <strong>Requirements</strong>
+                          <br><small class="text-muted">Document requirements & checklist</small>
+                        </td>
+                        <td class="text-center"><span class="badge bg-warning text-dark">52 blocks</span></td>
+                        <td class="text-center text-muted small">
+                          <?php
+                            if (!$DEMO_MODE) {
+                              $reqUpdate = pg_query($connection, "SELECT MAX(updated_at) as last_update FROM requirements_content_blocks WHERE municipality_id=1");
+                              if ($reqUpdate && $row = pg_fetch_assoc($reqUpdate)) {
+                                echo $row['last_update'] ? date('M d, Y H:i', strtotime($row['last_update'])) : 'Never';
+                              } else { echo 'Never'; }
+                            } else { echo 'Demo Mode'; }
+                          ?>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/requirements.php" class="btn btn-sm btn-outline-secondary" target="_blank">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Visit
+                          </a>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/requirements.php?edit=1" class="btn btn-sm btn-warning">
+                            <i class="bi bi-pencil-fill me-1"></i>Edit Page
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <i class="bi bi-megaphone text-danger me-2"></i>
+                          <strong>Announcements</strong>
+                          <br><small class="text-muted">Page headers & descriptions</small>
+                        </td>
+                        <td class="text-center"><span class="badge bg-danger">7 blocks</span></td>
+                        <td class="text-center text-muted small">
+                          <?php
+                            if (!$DEMO_MODE) {
+                              $annUpdate = pg_query($connection, "SELECT MAX(updated_at) as last_update FROM announcements_content_blocks WHERE municipality_id=1");
+                              if ($annUpdate && $row = pg_fetch_assoc($annUpdate)) {
+                                echo $row['last_update'] ? date('M d, Y H:i', strtotime($row['last_update'])) : 'Never';
+                              } else { echo 'Never'; }
+                            } else { echo 'Demo Mode'; }
+                          ?>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/announcements.php" class="btn btn-sm btn-outline-secondary" target="_blank">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Visit
+                          </a>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/announcements.php?edit=1" class="btn btn-sm btn-warning">
+                            <i class="bi bi-pencil-fill me-1"></i>Edit Page
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <div class="d-flex align-items-center">
+                            <div class="page-icon me-2" style="background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);">
+                              <i class="bi bi-envelope-fill"></i>
+                            </div>
+                            <div>
+                              <div class="fw-semibold">Contact</div>
+                              <small class="text-muted">Contact information & inquiry form</small>
+                            </div>
+                          </div>
+                        </td>
+                        <td class="text-center">
+                          <?php
+                          try {
+                            $stmt = $connection->query("SELECT COUNT(*) as count FROM contact_content_blocks WHERE municipality_id = 1");
+                            $count = $stmt->fetch(PDO::FETCH_ASSOC);
+                            echo '<span class="badge bg-secondary">' . ($count['count'] ?? 0) . ' blocks</span>';
+                          } catch (Exception $e) {
+                            echo '<span class="badge bg-danger">Error</span>';
+                          }
+                          ?>
+                        </td>
+                        <td class="text-center">
+                          <?php
+                          try {
+                            $stmt = $connection->query("SELECT MAX(updated_at) as last_updated FROM contact_content_blocks WHERE municipality_id = 1");
+                            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                            if ($result['last_updated']) {
+                              $date = new DateTime($result['last_updated']);
+                              echo '<small class="text-muted">' . $date->format('M d, Y g:i A') . '</small>';
+                            } else {
+                              echo '<small class="text-muted">Never edited</small>';
+                            }
+                          } catch (Exception $e) {
+                            echo '<small class="text-muted">N/A</small>';
+                          }
+                          ?>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/contact.php" class="btn btn-sm btn-outline-secondary" target="_blank">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Visit
+                          </a>
+                        </td>
+                        <td class="text-center">
+                          <a href="../../website/contact.php?edit=1" class="btn btn-sm btn-warning">
+                            <i class="bi bi-pencil-fill me-1"></i>Edit Page
+                          </a>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="alert alert-info d-flex align-items-center mt-3 mb-0">
+                  <i class="bi bi-lightbulb me-2 flex-shrink-0"></i>
+                  <div>
+                    <strong>Tip:</strong> Changes are saved per page and can be rolled back via the history feature in each page editor.
+                    The "Blocks" count represents editable content sections on each page.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Unified Chart with Filters -->
         <div class="row g-4 mt-4">
           <div class="col-12">

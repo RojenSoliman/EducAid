@@ -2,19 +2,41 @@
 // Dedicated Contact & Helpdesk page
 session_start();
 
-// Reuse the same verification gate as landing page (optional - remove if you want it public)
-if (!isset($_SESSION['captcha_verified']) || $_SESSION['captcha_verified'] !== true) {
-    header('Location: security_verification.php');
-    exit;
-}
-$verificationTime = $_SESSION['captcha_verified_time'] ?? 0;
-if (time() - $verificationTime > 24*60*60) { // 24h expiry
-    unset($_SESSION['captcha_verified'], $_SESSION['captcha_verified_time']);
-    header('Location: security_verification.php');
-    exit;
+// Check for Edit Mode (Super Admin only)
+$IS_EDIT_MODE = false;
+$IS_EDIT_SUPER_ADMIN = false;
+
+if (isset($_GET['edit']) && $_GET['edit'] == '1') {
+    // Check if user is logged in as super admin
+    if (isset($_SESSION['admin_id']) && isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin') {
+        $IS_EDIT_MODE = true;
+        $IS_EDIT_SUPER_ADMIN = true;
+    } else {
+        // Not authorized for edit mode
+        header('Location: contact.php');
+        exit;
+    }
 }
 
+// Load content helper for editable blocks
 require_once '../config/database.php';
+require_once '../includes/website/contact_content_helper.php';
+
+// Skip verification gate if in edit mode
+if (!$IS_EDIT_MODE) {
+    // Reuse the same verification gate as landing page (optional - remove if you want it public)
+    if (!isset($_SESSION['captcha_verified']) || $_SESSION['captcha_verified'] !== true) {
+        header('Location: security_verification.php');
+        exit;
+    }
+    $verificationTime = $_SESSION['captcha_verified_time'] ?? 0;
+    if (time() - $verificationTime > 24*60*60) { // 24h expiry
+        unset($_SESSION['captcha_verified'], $_SESSION['captcha_verified_time']);
+        header('Location: security_verification.php');
+        exit;
+    }
+}
+
 // (Optional) Mailer integration could be added later. For now: log inquiries.
 
 $errors = [];
@@ -63,6 +85,9 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
+  <?php if ($IS_EDIT_MODE): ?>
+  <link href="../assets/css/content_editor.css" rel="stylesheet" />
+  <?php endif; ?>
 </head>
 <body>
   <?php
@@ -102,8 +127,8 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     <div class="row align-items-center justify-content-center">
       <div class="col-12 col-lg-8">
         <div class="hero-card text-center fade-in">
-          <h1 class="display-4 fw-bold mb-3">Contact</h1>
-          <p class="lead mb-4">We're here to assist with application issues, document submission, schedules, QR release, and portal access concerns.</p>
+          <?php contact_block('hero_title', 'Contact', 'h1', 'display-4 fw-bold mb-3'); ?>
+          <?php contact_block('hero_subtitle', 'We\'re here to assist with application issues, document submission, schedules, QR release, and portal access concerns.', 'p', 'lead mb-4'); ?>
           <div class="d-flex gap-2 justify-content-center flex-wrap">
             <a href="landingpage.php" class="btn btn-outline-custom cta-btn"><i class="bi bi-house me-2"></i>Back to Home</a>
             <a href="#inquiry" class="btn btn-primary-custom cta-btn"><i class="bi bi-chat-dots me-2"></i>Send Inquiry</a>
@@ -122,25 +147,25 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       <div class="col-md-4">
         <div class="info-card h-100 text-center">
           <div class="mb-3"><i class="bi bi-geo-alt-fill text-primary" style="font-size:2.5rem;"></i></div>
-          <h5 class="fw-bold mb-2">Visit Us</h5>
-          <p class="small mb-2">City Government of General Trias, Cavite</p>
-          <p class="small text-body-secondary mb-0">Mon–Fri • 8:00 AM – 5:00 PM<br/>(excluding holidays)</p>
+          <?php contact_block('visit_title', 'Visit Us', 'h5', 'fw-bold mb-2'); ?>
+          <?php contact_block('visit_address', 'City Government of General Trias, Cavite', 'p', 'small mb-2'); ?>
+          <?php contact_block('visit_hours', 'Mon–Fri • 8:00 AM – 5:00 PM<br/>(excluding holidays)', 'p', 'small text-body-secondary mb-0'); ?>
         </div>
       </div>
       <div class="col-md-4">
         <div class="info-card h-100 text-center">
           <div class="mb-3"><i class="bi bi-telephone-fill text-success" style="font-size:2.5rem;"></i></div>
-          <h5 class="fw-bold mb-2">Call Us</h5>
-          <p class="small mb-1">(046) 886-4454</p>
-          <p class="small text-body-secondary mb-0">(046) 509-5555 (Operator)</p>
+          <?php contact_block('call_title', 'Call Us', 'h5', 'fw-bold mb-2'); ?>
+          <?php contact_block('call_primary', '(046) 886-4454', 'p', 'small mb-1'); ?>
+          <?php contact_block('call_secondary', '(046) 509-5555 (Operator)', 'p', 'small text-body-secondary mb-0'); ?>
         </div>
       </div>
       <div class="col-md-4">
         <div class="info-card h-100 text-center">
           <div class="mb-3"><i class="bi bi-envelope-fill text-danger" style="font-size:2.5rem;"></i></div>
-          <h5 class="fw-bold mb-2">Email Us</h5>
-          <p class="small mb-1">educaid@generaltrias.gov.ph</p>
-          <p class="small text-body-secondary mb-0">support@ (coming soon)</p>
+          <?php contact_block('email_title', 'Email Us', 'h5', 'fw-bold mb-2'); ?>
+          <?php contact_block('email_primary', 'educaid@generaltrias.gov.ph', 'p', 'small mb-1'); ?>
+          <?php contact_block('email_secondary', 'support@ (coming soon)', 'p', 'small text-body-secondary mb-0'); ?>
         </div>
       </div>
     </div>
@@ -164,8 +189,8 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
             <div class="d-flex align-items-center gap-3 mb-3">
               <div><i class="bi bi-chat-dots-fill text-primary" style="font-size:2.5rem;"></i></div>
               <div>
-                <h3 class="fw-bold mb-1">Send an Inquiry</h3>
-                <p class="text-body-secondary small mb-0">Have a question? Fill out the form below and we'll get back to you.</p>
+                <?php contact_block('form_title', 'Send an Inquiry', 'h3', 'fw-bold mb-1'); ?>
+                <?php contact_block('form_subtitle', 'Have a question? Fill out the form below and we\'ll get back to you.', 'p', 'text-body-secondary small mb-0'); ?>
               </div>
             </div>
           </div>
@@ -209,8 +234,8 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       </div>
       <div class="col-lg-5">
         <div class="info-card h-100">
-          <h5 class="fw-bold mb-3"><i class="bi bi-info-circle text-primary me-2"></i>Before You Contact</h5>
-          <p class="small text-body-secondary mb-3">Many common questions can be answered quickly through our self-help resources:</p>
+          <?php contact_block('help_title', 'Before You Contact', 'h5', 'fw-bold mb-3'); ?>
+          <?php contact_block('help_intro', 'Many common questions can be answered quickly through our self-help resources:', 'p', 'small text-body-secondary mb-3'); ?>
           <ul class="list-unstyled mb-4 d-grid gap-2">
             <li>
               <a href="landingpage.php#faq" class="link-primary text-decoration-none d-flex align-items-start gap-2">
@@ -238,8 +263,8 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
             </li>
           </ul>
           <div class="p-3 rounded bg-body-tertiary">
-            <h6 class="fw-bold mb-2"><i class="bi bi-clock-history me-1"></i> Response Time</h6>
-            <p class="small mb-0">We aim to respond to inquiries within 1-2 business days during office hours (Mon-Fri, 8:00 AM - 5:00 PM).</p>
+            <?php contact_block('response_time_title', 'Response Time', 'h6', 'fw-bold mb-2'); ?>
+            <?php contact_block('response_time_text', 'We aim to respond to inquiries within 1-2 business days during office hours (Mon-Fri, 8:00 AM - 5:00 PM).', 'p', 'small mb-0'); ?>
           </div>
         </div>
       </div>
@@ -249,7 +274,7 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
     <div class="row g-4 mt-5 fade-in">
       <div class="col-lg-6">
         <div class="info-card h-100">
-          <h5 class="fw-bold mb-3"><i class="bi bi-people-fill text-primary me-2"></i>Program Offices</h5>
+          <?php contact_block('offices_title', 'Program Offices', 'h5', 'fw-bold mb-3'); ?>
           <ul class="list-unstyled mb-0 d-grid gap-2">
             <li class="d-flex gap-2">
               <i class="bi bi-dot text-primary" style="font-size:1.5rem;margin-top:-5px;"></i>
@@ -268,7 +293,7 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
       </div>
       <div class="col-lg-6">
         <div class="info-card h-100">
-          <h5 class="fw-bold mb-3"><i class="bi bi-info-circle text-warning me-2"></i>Common Topics</h5>
+          <?php contact_block('topics_title', 'Common Topics', 'h5', 'fw-bold mb-3'); ?>
           <ul class="list-unstyled mb-3 d-grid gap-2">
             <li><i class="bi bi-check-circle-fill text-success me-2"></i>Registration & slot availability</li>
             <li><i class="bi bi-check-circle-fill text-success me-2"></i>Document upload & verification</li>
@@ -379,5 +404,23 @@ document.getElementById('year').textContent = new Date().getFullYear();
 const observer=new IntersectionObserver(es=>{es.forEach(en=>{if(en.isIntersecting){en.target.classList.add('visible');observer.unobserve(en.target);}})},{threshold:.15});
 document.querySelectorAll('.fade-in').forEach(el=>observer.observe(el));
 </script>
+
+<?php if ($IS_EDIT_MODE): ?>
+<script src="../assets/js/content_editor.js"></script>
+<script>
+// Initialize Content Editor for Contact page
+document.addEventListener('DOMContentLoaded', function() {
+    ContentEditor.init({
+        saveEndpoint: 'ajax_save_contact_content.php',
+        getEndpoint: 'ajax_get_contact_blocks.php',
+        resetEndpoint: 'ajax_reset_contact_content.php',
+        historyEndpoint: 'ajax_get_contact_history.php',
+        rollbackEndpoint: 'ajax_rollback_contact_block.php',
+        pageTitle: 'Contact Page'
+    });
+});
+</script>
+<?php endif; ?>
+
 </body>
 </html>

@@ -35,7 +35,117 @@ if (strpos($_SERVER['PHP_SELF'], '/website/') !== false) {
 } elseif (strpos($_SERVER['PHP_SELF'], '/modules/admin/') !== false) {
   $base_path = '../../';
 }
+
+// Check if we're in edit mode (set by parent page)
+$in_edit_mode = isset($edit_mode) && $edit_mode === true;
+$is_edit_mode = isset($IS_EDIT_MODE) && $IS_EDIT_MODE === true;
+$is_edit_super_admin = isset($IS_EDIT_SUPER_ADMIN) && $IS_EDIT_SUPER_ADMIN === true;
+$navbar_edit_mode = $in_edit_mode || $is_edit_mode || $is_edit_super_admin;
+
+// Check if user is super admin - multiple ways depending on how page sets it
+$navbar_is_super_admin = false;
+if (isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin') {
+    $navbar_is_super_admin = true;
+} elseif (isset($is_super_admin) && $is_super_admin === true) {
+    $navbar_is_super_admin = true;
+} elseif (isset($IS_EDIT_SUPER_ADMIN) && $IS_EDIT_SUPER_ADMIN === true) {
+    $navbar_is_super_admin = true;
+} elseif (isset($_SESSION['admin_id']) && function_exists('getCurrentAdminRole')) {
+    // Fallback: check role dynamically
+    if (isset($connection)) {
+        $role = @getCurrentAdminRole($connection);
+        if ($role === 'super_admin') {
+            $navbar_is_super_admin = true;
+        }
+    }
+}
+
+// Define which pages are editable (for red outline indication)
+$editable_page_slugs = ['landingpage.php', 'about.php', 'how-it-works.php', 'requirements.php', 'announcements.php', 'contact.php'];
+
+// Helper function to check if a nav link is editable
+function is_editable_page($href) {
+    global $editable_page_slugs;
+    foreach ($editable_page_slugs as $slug) {
+        if (strpos($href, $slug) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Helper function to convert regular link to edit link
+function make_edit_link($href) {
+    // Remove any hash fragments
+    $href = strtok($href, '#');
+    // Add ?edit=1 parameter
+    if (strpos($href, '?') !== false) {
+        return $href . '&edit=1';
+    } else {
+        return $href . '?edit=1';
+    }
+}
 ?>
+
+<?php if ($navbar_edit_mode && $navbar_is_super_admin): ?>
+<style>
+  /* Red outline for editable navigation items */
+  .nav-link.editable-page {
+    position: relative;
+    padding-bottom: 0.5rem !important;
+  }
+  
+  .nav-link.editable-page::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80%;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #dc2626, transparent);
+    border-radius: 2px;
+    animation: pulse-underline 2s ease-in-out infinite;
+  }
+  
+  .nav-link.editable-page:hover::after {
+    background: linear-gradient(90deg, transparent, #991b1b, transparent);
+    animation: none;
+  }
+  
+  @keyframes pulse-underline {
+    0%, 100% {
+      opacity: 0.7;
+      height: 3px;
+    }
+    50% {
+      opacity: 1;
+      height: 4px;
+    }
+  }
+  
+  /* Tooltip to show it's editable */
+  .nav-link.editable-page {
+    cursor: pointer;
+  }
+  
+  .nav-link.editable-page:hover {
+    color: #dc2626 !important;
+  }
+  
+  /* Small edit icon indicator */
+  .nav-link.editable-page .edit-indicator {
+    font-size: 0.7rem;
+    margin-left: 0.25rem;
+    color: #dc2626;
+    opacity: 0.6;
+  }
+  
+  .nav-link.editable-page:hover .edit-indicator {
+    opacity: 1;
+  }
+</style>
+<?php endif; ?>
 
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg bg-white sticky-top" style="z-index: 1030;">
@@ -57,8 +167,21 @@ if (strpos($_SERVER['PHP_SELF'], '/website/') !== false) {
       <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
         <?php foreach ($nav_links as $link): ?>
         <li class="nav-item">
-          <a class="nav-link <?php echo $link['active'] ? 'active' : ''; ?>" href="<?php echo $link['href']; ?>">
+          <?php
+          // Check if this page is editable and we're in super admin edit mode
+          $is_editable = is_editable_page($link['href']);
+          $link_href = ($navbar_edit_mode && $navbar_is_super_admin && $is_editable) ? make_edit_link($link['href']) : $link['href'];
+          $editable_class = ($navbar_edit_mode && $navbar_is_super_admin && $is_editable) ? ' editable-page' : '';
+          ?>
+          <a class="nav-link<?php echo $link['active'] ? ' active' : ''; ?><?php echo $editable_class; ?>" 
+             href="<?php echo $link_href; ?>"
+             <?php if ($navbar_edit_mode && $navbar_is_super_admin && $is_editable): ?>
+             title="Click to edit this page"
+             <?php endif; ?>>
             <?php echo $link['label']; ?>
+            <?php if ($navbar_edit_mode && $navbar_is_super_admin && $is_editable): ?>
+            <i class="bi bi-pencil-fill edit-indicator"></i>
+            <?php endif; ?>
           </a>
         </li>
         <?php endforeach; ?>
