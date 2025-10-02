@@ -1,10 +1,24 @@
+<?php
+session_start();
+// Determine super admin edit mode for How It Works page (?edit=1)
+$IS_EDIT_MODE = false; $is_super_admin = false;
+@include_once __DIR__ . '/../config/database.php';
+@include_once __DIR__ . '/../includes/permissions.php';
+if (isset($_SESSION['admin_id']) && function_exists('getCurrentAdminRole')) {
+  $role = @getCurrentAdminRole($connection);
+  if ($role === 'super_admin') { $is_super_admin = true; }
+}
+if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_MODE = true; }
+// Load dedicated how-it-works page content helper (separate storage)
+@include_once __DIR__ . '/../includes/website/how_it_works_content_helper.php';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>How EducAid Works – City of General Trias</title>
-  <meta name="description" content="Step-by-step guide on how to apply and use the EducAid system for educational assistance" />
+  <title><?php echo strip_tags(hiw_block('hiw_page_title','How EducAid Works – City of General Trias')); ?></title>
+  <meta name="description" content="<?php echo htmlspecialchars(strip_tags(hiw_block('hiw_page_meta_desc','Step-by-step guide on how to apply and use the EducAid system for educational assistance'))); ?>" />
 
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -13,6 +27,33 @@
   <!-- Bootstrap Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
+  <style>
+    <?php if($IS_EDIT_MODE): ?>
+    .lp-edit-toolbar { position:fixed; top:70px; right:12px; width:300px; background:#fff; border:1px solid #d1d9e0; border-radius:12px; z-index:4000; padding:.75rem .85rem; font-family: system-ui, sans-serif; }
+    .lp-edit-highlight { outline:2px dashed #2563eb; outline-offset:2px; cursor:text; position:relative; }
+    .lp-edit-highlight[data-lp-dirty="1"]::after { content:'●'; position:absolute; top:-6px; right:-6px; background:#dc2626; color:#fff; width:14px; height:14px; font-size:.55rem; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:700; box-shadow:0 0 0 2px #fff; }
+    .lp-edit-toolbar textarea { font-size:.7rem; }
+    .lp-edit-toolbar .form-label { font-size:.6rem; letter-spacing:.5px; text-transform:uppercase; }
+    body.lp-editing { scroll-padding-top:90px; }
+    .lp-edit-badge { position:fixed; left:12px; top:70px; background:#1d4ed8; color:#fff; padding:4px 10px; font-size:.65rem; font-weight:600; letter-spacing:.5px; border-radius:30px; z-index:4000; display:flex; align-items:center; gap:4px; box-shadow:0 2px 4px rgba(0,0,0,.2);}    
+    .lp-edit-badge .dot { width:6px; height:6px; background:#22c55e; border-radius:50%; box-shadow:0 0 0 2px rgba(255,255,255,.4); }
+    .lp-inline-hist-btn { position:absolute; top:-10px; left:-10px; background:#fff; border:1px solid #94a3b8; color:#334155; font-size:.55rem; padding:2px 4px; border-radius:4px; display:none; cursor:pointer; line-height:1; }
+    [data-lp-key]:hover > .lp-inline-hist-btn { display:inline-block; }
+    .lp-inline-hist-btn:hover { background:#2563eb; color:#fff; border-color:#2563eb; }
+    /* History modal styles (shared) */
+    .lp-history-modal { position:fixed; inset:0; z-index:5000; display:none; }
+    .lp-history-modal.show { display:block; }
+    .lp-history-modal .lp-hist-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.45); backdrop-filter:blur(2px); }
+    .lp-history-modal .lp-hist-dialog { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:780px; max-width:95%; background:#fff; border-radius:14px; box-shadow:0 10px 40px -10px rgba(0,0,0,.35); display:flex; flex-direction:column; max-height:85vh; }
+    .lp-history-modal .lp-hist-header { padding:.55rem .8rem; border-bottom:1px solid #e2e8f0; }
+    .lp-history-modal .lp-hist-body { padding:.7rem .85rem .9rem; overflow:auto; }
+    .lp-history-modal .lp-hist-footer { padding:.45rem .85rem; border-top:1px solid #e2e8f0; background:#f8fafc; border-bottom-left-radius:14px; border-bottom-right-radius:14px; font-size:.65rem; }
+    .lp-hist-item { border:1px solid #e2e8f0; border-radius:6px; padding:.38rem .45rem; margin-bottom:.4rem; cursor:pointer; background:#fff; transition:background .15s,border-color .15s; }
+    .lp-hist-item:hover { background:#f1f5f9; }
+    .lp-hist-item.active { border-color:#2563eb; background:#eff6ff; }
+    @media (max-width:620px){ .lp-history-modal .lp-hist-dialog { width:95%; } }
+    <?php endif; ?>
+  </style>
 </head>
 <body>
   <?php
@@ -29,6 +70,39 @@
   include '../includes/website/topbar.php';
   include '../includes/website/navbar.php';
   ?>
+<?php if($IS_EDIT_MODE): ?>
+<div id="lp-edit-toolbar" class="lp-edit-toolbar shadow-sm">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <strong class="small">How It Works Editor</strong>
+    <div class="d-flex gap-1 flex-wrap">
+  <a href="../modules/admin/homepage.php" class="btn btn-sm btn-outline-primary" title="Return to Admin Dashboard"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a>
+  <button id="lp-save-btn" class="btn btn-sm btn-success" disabled><i class="bi bi-save me-1"></i>Save</button>
+  <button id="lp-save-all-btn" class="btn btn-sm btn-outline-success" title="Save all editable content"><i class="bi bi-cloud-arrow-up me-1"></i>Save All</button>
+      <button id="lp-reset-all" class="btn btn-sm btn-outline-danger" title="Reset ALL blocks"><i class="bi bi-trash3"></i></button>
+      <button id="lp-history-btn" class="btn btn-sm btn-outline-primary" title="View history"><i class="bi bi-clock-history"></i></button>
+      <a href="how-it-works.php" id="lp-exit-btn" class="btn btn-sm btn-outline-secondary" title="Exit"><i class="bi bi-x-lg"></i></a>
+    </div>
+  </div>
+  <div class="mb-2">
+    <label class="form-label mb-1">Selected</label>
+    <div id="lp-current-target" class="form-control form-control-sm bg-body-tertiary" style="height:auto;min-height:32px;font-size:.65rem"></div>
+  </div>
+  <div class="mb-2">
+    <label class="form-label mb-1">Text</label>
+    <textarea id="lp-edit-text" class="form-control form-control-sm" rows="3" placeholder="Click an editable element"></textarea>
+  </div>
+  <div class="row g-2 mb-2">
+    <div class="col-6"><label class="form-label mb-1">Text Color</label><input type="color" id="lp-text-color" class="form-control form-control-color form-control-sm" value="#000000" /></div>
+    <div class="col-6"><label class="form-label mb-1">BG Color</label><input type="color" id="lp-bg-color" class="form-control form-control-color form-control-sm" value="#ffffff" /></div>
+  </div>
+  <div class="d-flex gap-2 mb-2">
+    <button id="lp-reset-btn" class="btn btn-sm btn-outline-warning w-100" disabled><i class="bi bi-arrow-counterclockwise me-1"></i>Reset Block</button>
+    <button id="lp-highlight-toggle" class="btn btn-sm btn-outline-primary w-100" data-active="1"><i class="bi bi-bounding-box-circles me-1"></i>Hide Boxes</button>
+  </div>
+  <div class="text-end"><small class="text-muted" id="lp-status">Idle</small></div>
+</div>
+<div class="lp-edit-badge"><span class="dot"></span> EDIT MODE</div>
+<?php endif; ?>
 
   <!-- Hero Section -->
   <section class="hero py-5" style="min-height: 50vh;">
@@ -36,8 +110,8 @@
       <div class="row justify-content-center">
         <div class="col-lg-10">
           <div class="hero-card text-center">
-            <h1 class="display-4 fw-bold mb-3">How <span class="text-primary">EducAid</span> Works</h1>
-            <p class="lead">A comprehensive guide to applying for and receiving educational assistance through our digital platform.</p>
+            <h1 class="display-4 fw-bold mb-3" data-lp-key="hiw_hero_title"<?php echo hiw_block_style('hiw_hero_title'); ?>><?php echo hiw_block('hiw_hero_title','How <span class="text-primary">EducAid</span> Works'); ?></h1>
+            <p class="lead" data-lp-key="hiw_hero_lead"<?php echo hiw_block_style('hiw_hero_lead'); ?>><?php echo hiw_block('hiw_hero_lead','A comprehensive guide to applying for and receiving educational assistance through our digital platform.'); ?></p>
           </div>
         </div>
       </div>
@@ -48,8 +122,8 @@
   <section class="py-5">
     <div class="container">
       <div class="text-center mb-5">
-        <h2 class="section-title">Simple 4-Step Process</h2>
-        <p class="section-lead mx-auto" style="max-width: 700px;">From registration to claiming your assistance</p>
+        <h2 class="section-title" data-lp-key="hiw_overview_title"<?php echo hiw_block_style('hiw_overview_title'); ?>><?php echo hiw_block('hiw_overview_title','Simple 4-Step Process'); ?></h2>
+        <p class="section-lead mx-auto" style="max-width: 700px;" data-lp-key="hiw_overview_lead"<?php echo hiw_block_style('hiw_overview_lead'); ?>><?php echo hiw_block('hiw_overview_lead','From registration to claiming your assistance'); ?></p>
       </div>
       <div class="row g-4">
         <div class="col-md-6 col-lg-3">
@@ -57,8 +131,8 @@
             <div class="bg-primary rounded-circle p-3 d-inline-flex mb-3" style="width: 60px; height: 60px; align-items: center; justify-content: center;">
               <span class="text-white fw-bold fs-4">1</span>
             </div>
-            <h5 class="fw-bold text-primary">Register & Verify</h5>
-            <p class="text-body-secondary">Create your account and verify your identity</p>
+            <h5 class="fw-bold text-primary" data-lp-key="hiw_step1_title"<?php echo hiw_block_style('hiw_step1_title'); ?>><?php echo hiw_block('hiw_step1_title','Register & Verify'); ?></h5>
+            <p class="text-body-secondary" data-lp-key="hiw_step1_desc"<?php echo hiw_block_style('hiw_step1_desc'); ?>><?php echo hiw_block('hiw_step1_desc','Create your account and verify your identity'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3">
@@ -66,8 +140,8 @@
             <div class="bg-secondary rounded-circle p-3 d-inline-flex mb-3" style="width: 60px; height: 60px; align-items: center; justify-content: center;">
               <span class="text-white fw-bold fs-4">2</span>
             </div>
-            <h5 class="fw-bold">Apply & Upload</h5>
-            <p class="text-body-secondary">Complete application and submit documents</p>
+            <h5 class="fw-bold" data-lp-key="hiw_step2_title"<?php echo hiw_block_style('hiw_step2_title'); ?>><?php echo hiw_block('hiw_step2_title','Apply & Upload'); ?></h5>
+            <p class="text-body-secondary" data-lp-key="hiw_step2_desc"<?php echo hiw_block_style('hiw_step2_desc'); ?>><?php echo hiw_block('hiw_step2_desc','Complete application and submit documents'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3">
@@ -75,8 +149,8 @@
             <div class="bg-secondary rounded-circle p-3 d-inline-flex mb-3" style="width: 60px; height: 60px; align-items: center; justify-content: center;">
               <span class="text-white fw-bold fs-4">3</span>
             </div>
-            <h5 class="fw-bold">Get Evaluated</h5>
-            <p class="text-body-secondary">Admin reviews and approves your application</p>
+            <h5 class="fw-bold" data-lp-key="hiw_step3_title"<?php echo hiw_block_style('hiw_step3_title'); ?>><?php echo hiw_block('hiw_step3_title','Get Evaluated'); ?></h5>
+            <p class="text-body-secondary" data-lp-key="hiw_step3_desc"<?php echo hiw_block_style('hiw_step3_desc'); ?>><?php echo hiw_block('hiw_step3_desc','Admin reviews and approves your application'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3">
@@ -84,8 +158,8 @@
             <div class="bg-secondary rounded-circle p-3 d-inline-flex mb-3" style="width: 60px; height: 60px; align-items: center; justify-content: center;">
               <span class="text-white fw-bold fs-4">4</span>
             </div>
-            <h5 class="fw-bold">Claim with QR</h5>
-            <p class="text-body-secondary">Receive QR code and claim on distribution day</p>
+            <h5 class="fw-bold" data-lp-key="hiw_step4_title"<?php echo hiw_block_style('hiw_step4_title'); ?>><?php echo hiw_block('hiw_step4_title','Claim with QR'); ?></h5>
+            <p class="text-body-secondary" data-lp-key="hiw_step4_desc"<?php echo hiw_block_style('hiw_step4_desc'); ?>><?php echo hiw_block('hiw_step4_desc','Receive QR code and claim on distribution day'); ?></p>
           </div>
         </div>
       </div>
@@ -95,7 +169,7 @@
   <!-- Detailed Steps -->
   <section class="py-5 bg-body-tertiary">
     <div class="container">
-      <h2 class="section-title text-center mb-5">Detailed Process Guide</h2>
+      <h2 class="section-title text-center mb-5" data-lp-key="hiw_detailed_title"<?php echo hiw_block_style('hiw_detailed_title'); ?>><?php echo hiw_block('hiw_detailed_title','Detailed Process Guide'); ?></h2>
       
       <!-- Step 1 -->
       <div class="row g-5 align-items-center mb-5">
@@ -674,6 +748,25 @@ function formatChatbotResponse(text) {
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <!-- Mobile Navbar JS -->
-  <script src="assets/js/website/mobile-navbar.js"></script>
+  <script src="../assets/js/website/mobile-navbar.js"></script>
+  <?php if($IS_EDIT_MODE): ?>
+  <script src="../assets/js/website/content_editor.js"></script>
+  <script>
+  // Initialize shared ContentEditor for How It Works page
+  ContentEditor.init({
+    page: 'how-it-works',
+    saveEndpoint: 'ajax_save_hiw_content.php',
+    resetAllEndpoint: 'ajax_reset_hiw_content.php',
+    history: { fetchEndpoint: 'ajax_get_hiw_history.php', rollbackEndpoint: 'ajax_rollback_hiw_block.php' },
+    refreshAfterSave: async (keys)=>{
+      try {
+        const r = await fetch('ajax_get_hiw_blocks.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys})});
+        const d = await r.json(); if(!d.success) return;
+        (d.blocks||[]).forEach(b=>{ const el=document.querySelector('[data-lp-key="'+CSS.escape(b.block_key)+'"]'); if(!el) return; el.innerHTML=b.html; if(b.text_color) el.style.color=b.text_color; else el.style.removeProperty('color'); if(b.bg_color) el.style.backgroundColor=b.bg_color; else el.style.removeProperty('background-color'); });
+      } catch(err){ console.error('Refresh error', err); }
+    }
+  });
+  </script>
+  <?php endif; ?>
 </body>
 </html>

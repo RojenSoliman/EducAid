@@ -14,12 +14,11 @@ if (isset($custom_nav_links)) {
   $nav_links = $custom_nav_links;
 }
 
-// Brand configuration
+// Brand configuration (single editable text block; logo image is static, not inline editable)
 $brand_config = [
-  'badge' => 'EA',
-  'name' => 'EducAid',
-  'subtitle' => '• City of General Trias',
-  'href' => '#'
+  'name' => 'EducAid • City of General Trias',
+  'href' => '#',
+  'logo' => 'assets/images/educaid-logo.png' // fallback logo path
 ];
 
 // Override brand config if custom one is provided
@@ -41,29 +40,15 @@ if (strpos($_SERVER['PHP_SELF'], '/website/') !== false) {
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg bg-white sticky-top" style="z-index: 1030;">
   <div class="container">
-    <a class="navbar-brand" href="<?php echo $brand_config['href']; ?>" data-lp-key="nav_brand_wrapper"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_wrapper'):''; ?>>
-      <span class="brand-badge lp-no-text-edit" data-lp-key="nav_brand_badge"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_badge'):''; ?>><?php echo function_exists('lp_block')? lp_block('nav_brand_badge', htmlspecialchars($brand_config['badge'])):htmlspecialchars($brand_config['badge']); ?></span>
-      <?php
-        // Fetch blocks separately to avoid visual duplication when editors paste subtitle into the name block
-        $rawName = function_exists('lp_block')? lp_block('nav_brand_name', htmlspecialchars($brand_config['name'])):htmlspecialchars($brand_config['name']);
-        $rawSubtitle = function_exists('lp_block')? lp_block('nav_brand_subtitle', htmlspecialchars($brand_config['subtitle'])):htmlspecialchars($brand_config['subtitle']);
-        // Plain-text comparisons (strip tags & normalize spacing)
-        $plainName = trim(preg_replace('/\s+/', ' ', strip_tags($rawName)));
-        $plainSubtitle = trim(preg_replace('/\s+/', ' ', strip_tags($rawSubtitle)));
-        $subtitleAlreadyInside = false;
-        if($plainSubtitle !== ''){
-          // Check if name already ends with or contains the subtitle token
-          if(str_ends_with($plainName, $plainSubtitle) || str_contains($plainName, $plainSubtitle.' ')){
-            $subtitleAlreadyInside = true;
-          }
-        }
-      ?>
-      <span data-lp-key="nav_brand_name"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_name'):''; ?>>
-        <?php echo $rawName; ?>
-        <?php if(!$subtitleAlreadyInside && $plainSubtitle !== ''): ?>
-          <span class="text-body-secondary d-none d-sm-inline" data-lp-key="nav_brand_subtitle"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_subtitle'):''; ?>><?php echo $rawSubtitle; ?></span>
-        <?php endif; ?>
-      </span>
+    <?php
+      // Unified brand: one editable block (nav_brand_wrapper) containing full title text.
+      $brandDefault = htmlspecialchars($brand_config['name']);
+      $brandText = function_exists('lp_block') ? lp_block('nav_brand_wrapper', $brandDefault) : $brandDefault;
+      $logoPath = $brand_config['logo'];
+    ?>
+    <a class="navbar-brand d-flex align-items-center gap-2" href="<?php echo $brand_config['href']; ?>" data-lp-key="nav_brand_wrapper"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_wrapper'):''; ?>>
+      <img src="<?php echo htmlspecialchars($logoPath); ?>" alt="EducAid Logo" class="brand-logo" style="height:32px;width:auto;object-fit:contain;" onerror="this.style.display='none';">
+      <span class="brand-text m-0 p-0"><?php echo $brandText; ?></span>
     </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
