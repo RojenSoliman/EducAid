@@ -360,9 +360,8 @@ if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_
       <div class="row g-4">
         <div class="col-lg-8">
           <div class="soft-card p-4">
-            <h4 class="fw-bold mb-4">
-              <i class="bi bi-camera text-primary me-2"></i>
-              Photography Guidelines
+            <h4 class="fw-bold mb-4" data-lp-key="req_photo_title"<?php echo req_block_style('req_photo_title'); ?>>
+              <i class="bi bi-camera text-primary me-2"></i><?php echo req_block('req_photo_title','Photography Guidelines'); ?>
             </h4>
             
             <div class="row g-4">
@@ -422,26 +421,25 @@ if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_
         
         <div class="col-lg-4">
           <div class="soft-card p-4 h-100">
-            <h5 class="fw-bold mb-3">
-              <i class="bi bi-file-earmark-arrow-up text-info me-2"></i>
-              Upload Specifications
+            <h5 class="fw-bold mb-3" data-lp-key="req_upload_title"<?php echo req_block_style('req_upload_title'); ?>>
+              <i class="bi bi-file-earmark-arrow-up text-info me-2"></i><?php echo req_block('req_upload_title','Upload Specifications'); ?>
             </h5>
             <div class="d-grid gap-3">
               <div class="border-start border-primary border-3 ps-3">
-                <h6 class="fw-semibold">File Formats</h6>
-                <p class="small text-body-secondary mb-0">JPG, PNG, PDF</p>
+                <h6 class="fw-semibold" data-lp-key="req_spec1_title"<?php echo req_block_style('req_spec1_title'); ?>><?php echo req_block('req_spec1_title','File Formats'); ?></h6>
+                <p class="small text-body-secondary mb-0" data-lp-key="req_spec1_desc"<?php echo req_block_style('req_spec1_desc'); ?>><?php echo req_block('req_spec1_desc','JPG, PNG, PDF'); ?></p>
               </div>
               <div class="border-start border-success border-3 ps-3">
-                <h6 class="fw-semibold">Maximum Size</h6>
-                <p class="small text-body-secondary mb-0">5MB per file</p>
+                <h6 class="fw-semibold" data-lp-key="req_spec2_title"<?php echo req_block_style('req_spec2_title'); ?>><?php echo req_block('req_spec2_title','Maximum Size'); ?></h6>
+                <p class="small text-body-secondary mb-0" data-lp-key="req_spec2_desc"<?php echo req_block_style('req_spec2_desc'); ?>><?php echo req_block('req_spec2_desc','5MB per file'); ?></p>
               </div>
               <div class="border-start border-warning border-3 ps-3">
-                <h6 class="fw-semibold">Resolution</h6>
-                <p class="small text-body-secondary mb-0">Minimum 300 DPI</p>
+                <h6 class="fw-semibold" data-lp-key="req_spec3_title"<?php echo req_block_style('req_spec3_title'); ?>><?php echo req_block('req_spec3_title','Resolution'); ?></h6>
+                <p class="small text-body-secondary mb-0" data-lp-key="req_spec3_desc"<?php echo req_block_style('req_spec3_desc'); ?>><?php echo req_block('req_spec3_desc','Minimum 300 DPI'); ?></p>
               </div>
               <div class="border-start border-info border-3 ps-3">
-                <h6 class="fw-semibold">Color</h6>
-                <p class="small text-body-secondary mb-0">Color or clear grayscale</p>
+                <h6 class="fw-semibold" data-lp-key="req_spec4_title"<?php echo req_block_style('req_spec4_title'); ?>><?php echo req_block('req_spec4_title','Color'); ?></h6>
+                <p class="small text-body-secondary mb-0" data-lp-key="req_spec4_desc"<?php echo req_block_style('req_spec4_desc'); ?>><?php echo req_block('req_spec4_desc','Color or clear grayscale'); ?></p>
               </div>
             </div>
           </div>
@@ -512,8 +510,8 @@ if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_
   <section class="py-5 bg-body-tertiary">
     <div class="container">
       <div class="text-center mb-5">
-        <h2 class="section-title">Frequently Asked Questions</h2>
-        <p class="section-lead mx-auto" style="max-width: 700px;">Common questions about requirements and documentation</p>
+        <h2 class="section-title" data-lp-key="req_faq_title"<?php echo req_block_style('req_faq_title'); ?>><?php echo req_block('req_faq_title','Frequently Asked Questions'); ?></h2>
+        <p class="section-lead mx-auto" style="max-width: 700px;" data-lp-key="req_faq_lead"<?php echo req_block_style('req_faq_lead'); ?>><?php echo req_block('req_faq_lead','Common questions about requirements and documentation'); ?></p>
       </div>
       
       <div class="row justify-content-center">
@@ -521,34 +519,34 @@ if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_
           <div class="accordion soft-card" id="requirementsFaq">
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
-                  What if I don't have all the required documents?
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1" data-lp-key="req_faq1_q"<?php echo req_block_style('req_faq1_q'); ?>>
+                  <?php echo req_block('req_faq1_q','What if I don\'t have all the required documents?'); ?>
                 </button>
               </h2>
               <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#requirementsFaq">
-                <div class="accordion-body">
-                  You can still submit your application with the available documents. However, missing primary requirements may delay processing. Contact our support team for guidance on alternative documents or procedures.
+                <div class="accordion-body" data-lp-key="req_faq1_a"<?php echo req_block_style('req_faq1_a'); ?>>
+                  <?php echo req_block('req_faq1_a','You can still submit your application with the available documents. However, missing primary requirements may delay processing. Contact our support team for guidance on alternative documents or procedures.'); ?>
                 </div>
               </div>
             </div>
             
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
-                  Can I submit photocopies instead of original documents?
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2" data-lp-key="req_faq2_q"<?php echo req_block_style('req_faq2_q'); ?>>
+                  <?php echo req_block('req_faq2_q','Can I submit photocopies instead of original documents?'); ?>
                 </button>
               </h2>
               <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#requirementsFaq">
-                <div class="accordion-body">
-                  Yes, clear photocopies or digital scans are acceptable for online submission. However, you may be required to present original documents for verification during the claiming process.
+                <div class="accordion-body" data-lp-key="req_faq2_a"<?php echo req_block_style('req_faq2_a'); ?>>
+                  <?php echo req_block('req_faq2_a','Yes, clear photocopies or digital scans are acceptable for online submission. However, you may be required to present original documents for verification during the claiming process.'); ?>
                 </div>
               </div>
             </div>
             
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
-                  How recent should my documents be?
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3" data-lp-key="req_faq3_q"<?php echo req_block_style('req_faq3_q'); ?>>
+                  <?php echo req_block('req_faq3_q','How recent should my documents be?'); ?>
                 </button>
               </h2>
               <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#requirementsFaq">
@@ -592,8 +590,8 @@ if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_
                 <i class="bi bi-check-circle-fill text-white" style="font-size: 2.5rem;"></i>
               </div>
               <div>
-                <h3 class="fw-bold mb-1">All Set?</h3>
-                <p class="mb-0 opacity-75">You're ready to begin</p>
+                <h3 class="fw-bold mb-1" data-lp-key="req_cta_heading"<?php echo req_block_style('req_cta_heading'); ?>><?php echo req_block('req_cta_heading','All Set?'); ?></h3>
+                <p class="mb-0 opacity-75" data-lp-key="req_cta_subheading"<?php echo req_block_style('req_cta_subheading'); ?>><?php echo req_block('req_cta_subheading','You\'re ready to begin'); ?></p>
               </div>
             </div>
             <div class="row g-3 text-center">
