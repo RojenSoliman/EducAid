@@ -1,26 +1,39 @@
 <?php
-// filepath: c:\xampp\htdocs\EducAid\landingpage.php
-
-// Start session and check verification
+// Landing page with optional super admin inline edit mode
+// Start session
 session_start();
 
-// Check if user has completed CAPTCHA verification
-if (!isset($_SESSION['captcha_verified']) || $_SESSION['captcha_verified'] !== true) {
-    // Redirect to security verification page
-    header('Location: security_verification.php');
-    exit;
+$IS_EDIT_SUPER_ADMIN = false;
+// Detect super admin attempting to edit (bypass captcha gate)
+if (isset($_GET['edit']) && $_GET['edit'] == '1' && isset($_SESSION['admin_id'])) {
+  @include_once __DIR__ . '/../config/database.php';
+  @include_once __DIR__ . '/../includes/permissions.php';
+  if (function_exists('getCurrentAdminRole') && isset($connection)) {
+    $role = @getCurrentAdminRole($connection);
+    if ($role === 'super_admin') {
+      $IS_EDIT_SUPER_ADMIN = true;
+    }
+  }
 }
 
-// Optional: Check if verification is still valid (expires after 24 hours)
-$verificationTime = $_SESSION['captcha_verified_time'] ?? 0;
-$expirationTime = 24 * 60 * 60; // 24 hours in seconds
-
-if (time() - $verificationTime > $expirationTime) {
-    // Verification expired, require re-verification
-    unset($_SESSION['captcha_verified']);
-    unset($_SESSION['captcha_verified_time']);
-    header('Location: security_verification.php');
-    exit;
+if (!$IS_EDIT_SUPER_ADMIN) {
+  // Standard public captcha verification flow
+  if (!isset($_SESSION['captcha_verified']) || $_SESSION['captcha_verified'] !== true) {
+      header('Location: security_verification.php');
+      exit;
+  }
+  $verificationTime = $_SESSION['captcha_verified_time'] ?? 0;
+  $expirationTime = 24 * 60 * 60; // 24 hours
+  if (time() - $verificationTime > $expirationTime) {
+      unset($_SESSION['captcha_verified'], $_SESSION['captcha_verified_time']);
+      header('Location: security_verification.php');
+      exit;
+  }
+} else {
+  // Ensure DB available for downstream usage
+  if (!isset($connection)) {
+    @include_once __DIR__ . '/../config/database.php';
+  }
 }
 
 // Include reCAPTCHA v2 configuration
@@ -43,13 +56,36 @@ function lp_event_line($row){
   return implode(' • ',$parts);
 }
 function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
+
+// Simple sanitizer to strip script tags & dangerous inline event handlers from stored HTML
+function lp_sanitize_html($html){
+  $html = preg_replace('#<script[^>]*>.*?</script>#is','',$html); // remove scripts
+  // remove on* attributes and javascript: urls
+  $html = preg_replace('/on[a-zA-Z]+\s*=\s*"[^"]*"/i','',$html);
+  $html = preg_replace("/on[a-zA-Z]+\s*=\s*'[^']*'/i",'', $html);
+  $html = preg_replace('/javascript:/i','',$html);
+  return $html;
+}
+
+// Direct load of landing content blocks (no caching layer)
+$LP_SAVED_BLOCKS = [];
+$resBlocksSSR = @pg_query($connection, "SELECT block_key, html, text_color, bg_color FROM landing_content_blocks WHERE municipality_id=1");
+if ($resBlocksSSR) {
+  while($r = pg_fetch_assoc($resBlocksSSR)) { $LP_SAVED_BLOCKS[$r['block_key']] = $r; }
+  pg_free_result($resBlocksSSR);
+}
+function lp_block($key, $defaultHtml){
+  global $LP_SAVED_BLOCKS; if(isset($LP_SAVED_BLOCKS[$key])){ $h=$LP_SAVED_BLOCKS[$key]['html']; $h = lp_sanitize_html($h); return $h!==''? $h : $defaultHtml; } return $defaultHtml; }
+function lp_block_style($key){
+  global $LP_SAVED_BLOCKS; if(!isset($LP_SAVED_BLOCKS[$key])) return '';
+  $r = $LP_SAVED_BLOCKS[$key]; $s=[]; if(!empty($r['text_color'])) $s[]='color:'.$r['text_color']; if(!empty($r['bg_color'])) $s[]='background-color:'.$r['bg_color']; return $s? ' style="'.implode(';',$s).'"':''; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>EducAid – City of General Trias</title>
+  <title><?php echo strip_tags(lp_block('page_title','EducAid – City of General Trias')); ?></title>
   <meta name="description" content="Educational Assistance Management System for the City of General Trias" />
 
   <!-- Google Fonts -->
@@ -60,6 +96,9 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
   <link href="../assets/css/website/recaptcha_v2.css" rel="stylesheet" />
+  <?php // Dynamic theme variables (colors, hero gradient, etc.)
+    @include_once __DIR__ . '/../includes/website/landing_theme_loader.php';
+  ?>
   <style>
     /* Skeleton loader styles for announcements */
     .ann-skeleton { position:relative; overflow:hidden; background:#fff; border:1px solid #e5e7eb; border-radius:1rem; }
@@ -110,7 +149,84 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
   
   include '../includes/website/topbar.php';
   include '../includes/website/navbar.php';
+  
+  // Determine if super admin edit mode is enabled (?edit=1)
+  $IS_EDIT_MODE = false;
+  $is_super_admin = false;
+  if (isset($_SESSION['admin_id'])) {
+    // Re-use permissions helper if available
+    @include_once __DIR__ . '/../includes/permissions.php';
+    if (function_exists('getCurrentAdminRole')) {
+      $role = @getCurrentAdminRole($connection);
+      if ($role === 'super_admin') {
+        $is_super_admin = true;
+      }
+    }
+  }
+  if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') {
+    $IS_EDIT_MODE = true;
+  }
   ?>
+  <?php if ($IS_EDIT_MODE): ?>
+  <!-- Inline Landing Page Editor (Super Admin Only) -->
+  <div id="lp-edit-toolbar" class="lp-edit-toolbar shadow-sm">
+    <div class="lp-edit-toolbar-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <strong class="small">Landing Page Editor</strong>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <a href="../modules/admin/homepage.php" class="btn btn-sm btn-outline-primary" title="Return to Admin Dashboard">
+          <i class="bi bi-speedometer2 me-1"></i>Dashboard
+        </a>
+        <button id="lp-save-btn" class="btn btn-sm btn-success" disabled><i class="bi bi-save me-1"></i>Save</button>
+  <button id="lp-save-all-btn" class="btn btn-sm btn-outline-success" title="Save all editable content"><i class="bi bi-cloud-arrow-up me-1"></i>Save All</button>
+  <button id="lp-history-btn" class="btn btn-sm btn-outline-secondary" type="button" title="View edit history"><i class="bi bi-clock-history me-1"></i>History</button>
+        <a href="landingpage.php" id="lp-exit-btn" class="btn btn-sm btn-outline-secondary" title="Exit Edit Mode"><i class="bi bi-x-lg"></i></a>
+      </div>
+    </div>
+    <div class="lp-edit-toolbar-body small mt-2">
+      <div class="mb-2">
+        <label class="form-label small mb-1">Selected Element</label>
+        <div id="lp-current-target" class="form-control form-control-sm bg-body-tertiary" style="height:auto; min-height:32px; font-size:.65rem; overflow:auto"></div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label small mb-1">Text Content</label>
+        <textarea id="lp-edit-text" class="form-control form-control-sm" rows="3" placeholder="Click an editable element on the page"></textarea>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-6">
+          <label class="form-label small mb-1">Text Color</label>
+          <input type="color" id="lp-text-color" class="form-control form-control-color form-control-sm" value="#000000" title="Change text color" />
+        </div>
+        <div class="col-6">
+          <label class="form-label small mb-1">BG Color</label>
+          <input type="color" id="lp-bg-color" class="form-control form-control-color form-control-sm" value="#ffffff" title="Change background color" />
+        </div>
+      </div>
+      <div class="d-flex flex-column gap-2">
+        <div class="d-flex gap-2">
+          <button id="lp-reset-btn" class="btn btn-sm btn-outline-warning w-100" type="button" disabled><i class="bi bi-arrow-counterclockwise me-1"></i>Reset Block</button>
+          <button id="lp-highlight-toggle" class="btn btn-sm btn-outline-primary w-100" type="button" data-active="1"><i class="bi bi-bounding-box-circles me-1"></i>Hide Boxes</button>
+        </div>
+        <button id="lp-reset-all" class="btn btn-sm btn-outline-danger w-100" type="button"><i class="bi bi-trash3 me-1"></i>Reset All Blocks</button>
+      </div>
+      <div class="mt-2 text-end">
+        <small class="text-muted" id="lp-status">Idle</small>
+      </div>
+    </div>
+  </div>
+  <style>
+    .lp-edit-toolbar { position:fixed; top:70px; right:12px; width:300px; background:#fff; border:1px solid #d1d9e0; border-radius:12px; z-index:4000; padding:.75rem .85rem; font-family: system-ui, sans-serif; }
+    .lp-edit-highlight { outline:2px dashed #2563eb; outline-offset:2px; cursor:text; position:relative; }
+    .lp-edit-highlight:hover { outline-color:#1d4ed8; }
+    .lp-edit-highlight[data-lp-dirty="1"]::after { content:'●'; position:absolute; top:-6px; right:-6px; background:#dc2626; color:#fff; width:14px; height:14px; font-size:.55rem; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:700; box-shadow:0 0 0 2px #fff; }
+    .lp-edit-toolbar textarea { font-size:.7rem; }
+    .lp-edit-toolbar .form-label { font-size:.6rem; letter-spacing:.5px; text-transform:uppercase; }
+    .lp-edit-toolbar-header { border-bottom:1px solid #e2e8f0; padding-bottom:.25rem; }
+    body.lp-editing { scroll-padding-top:90px; }
+    .lp-edit-badge { position:fixed; left:12px; top:70px; background:#1d4ed8; color:#fff; padding:4px 10px; font-size:.65rem; font-weight:600; letter-spacing:.5px; border-radius:30px; z-index:4000; display:flex; align-items:center; gap:4px; box-shadow:0 2px 4px rgba(0,0,0,.2);}    
+    .lp-edit-badge .dot { width:6px; height:6px; background:#22c55e; border-radius:50%; box-shadow:0 0 0 2px rgba(255,255,255,.4); }
+  </style>
+  <div class="lp-edit-badge"><span class="dot"></span> EDIT MODE</div>
+  <?php endif; ?>
 
   <!-- Hero -->
   <header id="home" class="hero">
@@ -120,12 +236,12 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
           <div class="hero-card text-center text-lg-start">
             <div class="d-flex flex-column flex-lg-row align-items-center gap-4">
               <div class="flex-grow-1">
-                <span class="badge text-bg-primary-subtle text-primary rounded-pill mb-2"><i class="bi bi-stars me-2"></i>General Trias Scholarship & Aid</span>
-                <h1 class="display-5 mb-2">Educational Assistance, Simplified.</h1>
-                <p class="mb-4">Apply, upload requirements, track status, and claim assistance with QR — all in one city-run portal designed for students and families in General Trias.</p>
+                <?php echo '<span class="badge text-bg-primary-subtle text-primary rounded-pill mb-2" data-lp-key="hero_badge"'.lp_block_style('hero_badge').'>'.lp_block('hero_badge','<i class="bi bi-stars me-2"></i>General Trias Scholarship & Aid').'</span>'; ?>
+                <?php echo '<h1 class="display-5 mb-2" data-lp-key="hero_title"'.lp_block_style('hero_title').'>'.lp_block('hero_title','Educational Assistance, Simplified.').'</h1>'; ?>
+                <?php echo '<p class="mb-4" data-lp-key="hero_sublead"'.lp_block_style('hero_sublead').'>'.lp_block('hero_sublead','Apply, upload requirements, track status, and claim assistance with QR — all in one city-run portal designed for students and families in General Trias.').'</p>'; ?>
                 <div class="d-flex gap-2 justify-content-center justify-content-lg-start">
-                  <a href="<?php echo $base_path; ?>register.php" class="btn cta-btn btn-primary-custom"><i class="bi bi-journal-text me-2"></i>Apply Now</a>
-                  <a href="<?php echo $base_path; ?>unified_login.php" class="btn cta-btn btn-outline-custom"><i class="bi bi-box-arrow-in-right me-2"></i>Sign In</a>
+                  <a href="<?php echo $base_path; ?>register.php" class="btn cta-btn btn-primary-custom" data-lp-key="hero_cta_apply"><i class="bi bi-journal-text me-2"></i>Apply Now</a>
+                  <a href="<?php echo $base_path; ?>unified_login.php" class="btn cta-btn btn-outline-custom" data-lp-key="hero_cta_signin"><i class="bi bi-box-arrow-in-right me-2"></i>Sign In</a>
                 </div>
               </div>
               <div class="text-center">
@@ -139,23 +255,23 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
   </header>
 
   <!-- Quick links -->
-  <div class="quick-links">
+  <div class="quick-links" data-lp-key="quick_links_wrapper"<?php echo lp_block_style('quick_links_wrapper'); ?>>
     <div class="container">
       <div class="row g-3 g-md-4">
         <div class="col-6 col-lg">
-          <a class="ql-card" href="announcements.php"><span class="ql-icon"><i class="bi bi-megaphone"></i></span><span>Latest Announcements</span></a>
+          <a class="ql-card" href="announcements.php" data-lp-key="quick_link_announcements"<?php echo lp_block_style('quick_link_announcements'); ?>><?php echo lp_block('quick_link_announcements','<span class="ql-icon"><i class="bi bi-megaphone"></i></span><span>Latest Announcements</span>'); ?></a>
         </div>
         <div class="col-6 col-lg">
-          <a class="ql-card" href="requirements.php"><span class="ql-icon"><i class="bi bi-list-check"></i></span><span>Requirements</span></a>
+          <a class="ql-card" href="requirements.php" data-lp-key="quick_link_requirements"<?php echo lp_block_style('quick_link_requirements'); ?>><?php echo lp_block('quick_link_requirements','<span class="ql-icon"><i class="bi bi-list-check"></i></span><span>Requirements</span>'); ?></a>
         </div>
         <div class="col-6 col-lg">
-          <a class="ql-card" href="how-it-works.php"><span class="ql-icon"><i class="bi bi-gear-wide-connected"></i></span><span>How It Works</span></a>
+          <a class="ql-card" href="how-it-works.php" data-lp-key="quick_link_how"<?php echo lp_block_style('quick_link_how'); ?>><?php echo lp_block('quick_link_how','<span class="ql-icon"><i class="bi bi-gear-wide-connected"></i></span><span>How It Works</span>'); ?></a>
         </div>
         <div class="col-6 col-lg">
-          <a class="ql-card" href="#faq"><span class="ql-icon"><i class="bi bi-question-circle"></i></span><span>FAQs</span></a>
+          <a class="ql-card" href="#faq" data-lp-key="quick_link_faq"<?php echo lp_block_style('quick_link_faq'); ?>><?php echo lp_block('quick_link_faq','<span class="ql-icon"><i class="bi bi-question-circle"></i></span><span>FAQs</span>'); ?></a>
         </div>
         <div class="col-12 col-lg">
-          <a class="ql-card" href="#contact"><span class="ql-icon"><i class="bi bi-telephone"></i></span><span>Contact & Helpdesk</span></a>
+          <a class="ql-card" href="#contact" data-lp-key="quick_link_contact"<?php echo lp_block_style('quick_link_contact'); ?>><?php echo lp_block('quick_link_contact','<span class="ql-icon"><i class="bi bi-telephone"></i></span><span>Contact & Helpdesk</span>'); ?></a>
         </div>
       </div>
     </div>
@@ -169,9 +285,9 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
           <img class="mayor-photo" src="https://www.generaltrias.gov.ph/storage/image_upload/mayor.PNG" alt="Mayor Jon-Jon Ferrer" />
         </div>
         <div class="col-md-10">
-          <h2 class="section-title mb-2">Message from the Mayor</h2>
-          <p class="mb-2">Welcome to the City Government of General Trias' online platform — built to enhance connectivity, accessibility, and transparency for our thriving community. Our vision is a modern and sustainable city where every citizen can prosper.</p>
-          <p class="mb-2">Through this portal, we aim to empower students and families with timely information and accessible services, upholding transparency and accountability in governance.</p>
+          <?php echo '<h2 class="section-title mb-2" data-lp-key="mayor_title"'.lp_block_style('mayor_title').'>'.lp_block('mayor_title','Message from the Mayor').'</h2>'; ?>
+          <?php echo '<p class="mb-2" data-lp-key="mayor_paragraph_1"'.lp_block_style('mayor_paragraph_1').'>'.lp_block('mayor_paragraph_1',"Welcome to the City Government of General Trias' online platform — built to enhance connectivity, accessibility, and transparency for our thriving community. Our vision is a modern and sustainable city where every citizen can prosper.").'</p>'; ?>
+          <?php echo '<p class="mb-2" data-lp-key="mayor_paragraph_2"'.lp_block_style('mayor_paragraph_2').'>'.lp_block('mayor_paragraph_2','Through this portal, we aim to empower students and families with timely information and accessible services, upholding transparency and accountability in governance.').'</p>'; ?>
           <div class="d-flex align-items-center gap-3 mb-2">
             <img class="mayor-sign" src="https://www.generaltrias.gov.ph/storage/image_upload/mayorpng.png" alt="Mayor signature" />
             <div class="small">
@@ -192,31 +308,31 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
     <div class="container">
       <div class="row align-items-center g-4">
         <div class="col-lg-6">
-          <h2 class="section-title mb-3">What is <span class="text-primary">EducAid</span>?</h2>
-          <p class="section-lead">EducAid is the City of General Trias' official Educational Assistance Management System. Built with transparency and accessibility in mind, it streamlines application, evaluation, release, and reporting of aid for qualified students.</p>
+          <?php echo '<h2 class="section-title mb-3" data-lp-key="about_title"'.lp_block_style('about_title').'>'.lp_block('about_title','What is <span class="text-primary">EducAid</span>?').'</h2>'; ?>
+          <?php echo '<p class="section-lead" data-lp-key="about_lead"'.lp_block_style('about_lead').'>'.lp_block('about_lead',"EducAid is the City of General Trias' official Educational Assistance Management System. Built with transparency and accessibility in mind, it streamlines application, evaluation, release, and reporting of aid for qualified students.").'</p>'; ?>
           <div class="row g-3 mt-2">
             <div class="col-md-6">
               <div class="soft-card p-3">
-                <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-lock-fill text-success"></i><strong>Secure & Private</strong></div>
-                <p class="mb-0 small text-body-secondary">Data protected under RA 10173 and city policies.</p>
+                <div class="d-flex align-items-center gap-2 mb-1" data-lp-key="about_feature_secure_title"<?php echo lp_block_style('about_feature_secure_title'); ?>><?php echo lp_block('about_feature_secure_title','<i class="bi bi-lock-fill text-success"></i><strong>Secure & Private</strong>'); ?></div>
+                <p class="mb-0 small text-body-secondary" data-lp-key="about_feature_secure_desc"<?php echo lp_block_style('about_feature_secure_desc'); ?>><?php echo lp_block('about_feature_secure_desc','Data protected under RA 10173 and city policies.'); ?></p>
               </div>
             </div>
             <div class="col-md-6">
               <div class="soft-card p-3">
-                <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-qr-code text-success"></i><strong>QR-based Claiming</strong></div>
-                <p class="mb-0 small text-body-secondary">Fast verification on distribution day via secure QR codes.</p>
+                <div class="d-flex align-items-center gap-2 mb-1" data-lp-key="about_feature_qr_title"<?php echo lp_block_style('about_feature_qr_title'); ?>><?php echo lp_block('about_feature_qr_title','<i class="bi bi-qr-code text-success"></i><strong>QR-based Claiming</strong>'); ?></div>
+                <p class="mb-0 small text-body-secondary" data-lp-key="about_feature_qr_desc"<?php echo lp_block_style('about_feature_qr_desc'); ?>><?php echo lp_block('about_feature_qr_desc','Fast verification on distribution day via secure QR codes.'); ?></p>
               </div>
             </div>
             <div class="col-md-6">
               <div class="soft-card p-3">
-                <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-bell-fill text-success"></i><strong>Real-time Updates</strong></div>
-                <p class="mb-0 small text-body-secondary">Get notified on slots, schedules, and requirements.</p>
+                <div class="d-flex align-items-center gap-2 mb-1" data-lp-key="about_feature_updates_title"<?php echo lp_block_style('about_feature_updates_title'); ?>><?php echo lp_block('about_feature_updates_title','<i class="bi bi-bell-fill text-success"></i><strong>Real-time Updates</strong>'); ?></div>
+                <p class="mb-0 small text-body-secondary" data-lp-key="about_feature_updates_desc"<?php echo lp_block_style('about_feature_updates_desc'); ?>><?php echo lp_block('about_feature_updates_desc','Get notified on slots, schedules, and requirements.'); ?></p>
               </div>
             </div>
             <div class="col-md-6">
               <div class="soft-card p-3">
-                <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-people-fill text-success"></i><strong>LGU-Managed</strong></div>
-                <p class="mb-0 small text-body-secondary">Powered by the Office of the Mayor and partner departments.</p>
+                <div class="d-flex align-items-center gap-2 mb-1" data-lp-key="about_feature_lgu_title"<?php echo lp_block_style('about_feature_lgu_title'); ?>><?php echo lp_block('about_feature_lgu_title','<i class="bi bi-people-fill text-success"></i><strong>LGU-Managed</strong>'); ?></div>
+                <p class="mb-0 small text-body-secondary" data-lp-key="about_feature_lgu_desc"<?php echo lp_block_style('about_feature_lgu_desc'); ?>><?php echo lp_block('about_feature_lgu_desc','Powered by the Office of the Mayor and partner departments.'); ?></p>
               </div>
             </div>
           </div>
@@ -241,33 +357,33 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
     <div class="container">
       <div class="row mb-4">
         <div class="col-lg-8 fade-in-left">
-          <h2 class="section-title">How it works</h2>
-          <p class="section-lead">A simple four-step process from online application to aid claiming.</p>
+          <?php echo '<h2 class="section-title" data-lp-key="how_title"'.lp_block_style('how_title').'>'.lp_block('how_title','How it works').'</h2>'; ?>
+          <?php echo '<p class="section-lead" data-lp-key="how_lead"'.lp_block_style('how_lead').'>'.lp_block('how_lead','A simple four-step process from online application to aid claiming.').'</p>'; ?>
         </div>
       </div>
       <div class="row g-3 g-lg-4 fade-in-stagger">
         <div class="col-md-6 col-lg-3 fade-in">
           <div class="soft-card p-3 h-100">
-            <div class="step mb-2"><div class="step-badge">1</div><h6 class="mb-0">Create & Verify</h6></div>
-            <p class="small text-body-secondary mb-0">Register using your email and mobile. Verify via OTP to secure your account.</p>
+            <div class="step mb-2" data-lp-key="how_step1_title"<?php echo lp_block_style('how_step1_title'); ?>><?php echo lp_block('how_step1_title','<div class="step-badge">1</div><h6 class="mb-0">Create & Verify</h6>'); ?></div>
+            <p class="small text-body-secondary mb-0" data-lp-key="how_step1_desc"<?php echo lp_block_style('how_step1_desc'); ?>><?php echo lp_block('how_step1_desc','Register using your email and mobile. Verify via OTP to secure your account.'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3 fade-in">
           <div class="soft-card p-3 h-100">
-            <div class="step mb-2"><div class="step-badge">2</div><h6 class="mb-0">Apply Online</h6></div>
-            <p class="small text-body-secondary mb-0">Complete your profile, select your barangay, and upload required documents.</p>
+            <div class="step mb-2" data-lp-key="how_step2_title"<?php echo lp_block_style('how_step2_title'); ?>><?php echo lp_block('how_step2_title','<div class="step-badge">2</div><h6 class="mb-0">Apply Online</h6>'); ?></div>
+            <p class="small text-body-secondary mb-0" data-lp-key="how_step2_desc"<?php echo lp_block_style('how_step2_desc'); ?>><?php echo lp_block('how_step2_desc','Complete your profile, select your barangay, and upload required documents.'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3 fade-in">
           <div class="soft-card p-3 h-100">
-            <div class="step mb-2"><div class="step-badge">3</div><h6 class="mb-0">Get Evaluated</h6></div>
-            <p class="small text-body-secondary mb-0">Admins validate eligibility and post status updates with reminders.</p>
+            <div class="step mb-2" data-lp-key="how_step3_title"<?php echo lp_block_style('how_step3_title'); ?>><?php echo lp_block('how_step3_title','<div class="step-badge">3</div><h6 class="mb-0">Get Evaluated</h6>'); ?></div>
+            <p class="small text-body-secondary mb-0" data-lp-key="how_step3_desc"<?php echo lp_block_style('how_step3_desc'); ?>><?php echo lp_block('how_step3_desc','Admins validate eligibility and post status updates with reminders.'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3 fade-in">
           <div class="soft-card p-3 h-100">
-            <div class="step mb-2"><div class="step-badge">4</div><h6 class="mb-0">Claim with QR</h6></div>
-            <p class="small text-body-secondary mb-0">Receive your QR code and bring it on distribution day for quick claiming.</p>
+            <div class="step mb-2" data-lp-key="how_step4_title"<?php echo lp_block_style('how_step4_title'); ?>><?php echo lp_block('how_step4_title','<div class="step-badge">4</div><h6 class="mb-0">Claim with QR</h6>'); ?></div>
+            <p class="small text-body-secondary mb-0" data-lp-key="how_step4_desc"<?php echo lp_block_style('how_step4_desc'); ?>><?php echo lp_block('how_step4_desc','Receive your QR code and bring it on distribution day for quick claiming.'); ?></p>
           </div>
         </div>
       </div>
@@ -326,29 +442,29 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
     <div class="container">
       <div class="row mb-4">
         <div class="col-lg-8">
-          <h2 class="section-title">Basic Requirements</h2>
-          <p class="section-lead">Prepare clear photos or PDFs of the following. Additional documents may be requested for verification.</p>
+          <?php echo '<h2 class="section-title" data-lp-key="requirements_title"'.lp_block_style('requirements_title').'>'.lp_block('requirements_title','Basic Requirements').'</h2>'; ?>
+          <?php echo '<p class="section-lead" data-lp-key="requirements_lead"'.lp_block_style('requirements_lead').'>'.lp_block('requirements_lead','Prepare clear photos or PDFs of the following. Additional documents may be requested for verification.').'</p>'; ?>
         </div>
       </div>
       <div class="row g-4">
         <div class="col-md-6">
           <div class="soft-card p-4 h-100">
-            <h6 class="fw-bold mb-3"><i class="bi bi-person-vcard me-2 text-success"></i>Identity & Enrollment</h6>
+            <h6 class="fw-bold mb-3" data-lp-key="requirements_identity_title"<?php echo lp_block_style('requirements_identity_title'); ?>><?php echo lp_block('requirements_identity_title','<i class="bi bi-person-vcard me-2 text-success"></i>Identity & Enrollment'); ?></h6>
             <ul class="list-unstyled m-0 d-grid gap-2">
-              <li><i class="bi bi-check2 check me-2"></i>Valid School ID</li>
-              <li><i class="bi bi-check2 check me-2"></i>Enrollment Assessment Form</li>
-              <li><i class="bi bi-check2 check me-2"></i>Certificate of Indigency (after approval)</li>
-              <li><i class="bi bi-check2 check me-2"></i>Letter to the Mayor (PDF)</li>
+              <li data-lp-key="req_identity_school_id"<?php echo lp_block_style('req_identity_school_id'); ?>><?php echo lp_block('req_identity_school_id','<i class="bi bi-check2 check me-2"></i>Valid School ID'); ?></li>
+              <li data-lp-key="req_identity_eaf"<?php echo lp_block_style('req_identity_eaf'); ?>><?php echo lp_block('req_identity_eaf','<i class="bi bi-check2 check me-2"></i>Enrollment Assessment Form'); ?></li>
+              <li data-lp-key="req_identity_coi"<?php echo lp_block_style('req_identity_coi'); ?>><?php echo lp_block('req_identity_coi','<i class="bi bi-check2 check me-2"></i>Certificate of Indigency (after approval)'); ?></li>
+              <li data-lp-key="req_identity_letter_mayor"<?php echo lp_block_style('req_identity_letter_mayor'); ?>><?php echo lp_block('req_identity_letter_mayor','<i class="bi bi-check2 check me-2"></i>Letter to the Mayor (PDF)'); ?></li>
             </ul>
           </div>
         </div>
         <div class="col-md-6">
           <div class="soft-card p-4 h-100">
-            <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-2 text-success"></i>Account & Contact</h6>
+            <h6 class="fw-bold mb-3" data-lp-key="requirements_account_title"<?php echo lp_block_style('requirements_account_title'); ?>><?php echo lp_block('requirements_account_title','<i class="bi bi-shield-lock me-2 text-success"></i>Account & Contact'); ?></h6>
             <ul class="list-unstyled m-0 d-grid gap-2">
-              <li><i class="bi bi-check2 check me-2"></i>Active email (OTP verification)</li>
-              <li><i class="bi bi-check2 check me-2"></i>Mobile number for SMS updates</li>
-              <li><i class="bi bi-check2 check me-2"></i>Barangay information</li>
+              <li data-lp-key="req_account_email"<?php echo lp_block_style('req_account_email'); ?>><?php echo lp_block('req_account_email','<i class="bi bi-check2 check me-2"></i>Active email (OTP verification)'); ?></li>
+              <li data-lp-key="req_account_mobile"<?php echo lp_block_style('req_account_mobile'); ?>><?php echo lp_block('req_account_mobile','<i class="bi bi-check2 check me-2"></i>Mobile number for SMS updates'); ?></li>
+              <li data-lp-key="req_account_barangay"<?php echo lp_block_style('req_account_barangay'); ?>><?php echo lp_block('req_account_barangay','<i class="bi bi-check2 check me-2"></i>Barangay information'); ?></li>
             </ul>
           </div>
         </div>
@@ -361,33 +477,33 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
     <div class="container">
       <div class="row mb-4">
         <div class="col-lg-8">
-          <h2 class="section-title">Frequently Asked Questions</h2>
-          <p class="section-lead">Quick answers to common concerns about eligibility, slots, and claiming.</p>
+          <?php echo '<h2 class="section-title" data-lp-key="faq_title"'.lp_block_style('faq_title').'>'.lp_block('faq_title','Frequently Asked Questions').'</h2>'; ?>
+          <?php echo '<p class="section-lead" data-lp-key="faq_lead"'.lp_block_style('faq_lead').'>'.lp_block('faq_lead','Quick answers to common concerns about eligibility, slots, and claiming.').'</p>'; ?>
         </div>
       </div>
       <div class="accordion soft-card" id="faqAcc">
         <div class="accordion-item">
           <h2 class="accordion-header" id="q1">
-            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#a1">Who can apply?</button>
+            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#a1" data-lp-key="faq_q1"<?php echo lp_block_style('faq_q1'); ?>><?php echo lp_block('faq_q1','Who can apply?'); ?></button>
           </h2>
           <div id="a1" class="accordion-collapse collapse show" data-bs-parent="#faqAcc">
-            <div class="accordion-body">Students residing in General Trias who meet program criteria set by the LGU and partner agencies.</div>
+            <div class="accordion-body" data-lp-key="faq_a1"<?php echo lp_block_style('faq_a1'); ?>><?php echo lp_block('faq_a1','Students residing in General Trias who meet program criteria set by the LGU and partner agencies.'); ?></div>
           </div>
         </div>
         <div class="accordion-item">
           <h2 class="accordion-header" id="q2">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a2">How are slots allocated?</button>
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a2" data-lp-key="faq_q2"<?php echo lp_block_style('faq_q2'); ?>><?php echo lp_block('faq_q2','How are slots allocated?'); ?></button>
           </h2>
           <div id="a2" class="accordion-collapse collapse" data-bs-parent="#faqAcc">
-            <div class="accordion-body">Slots are released per batch and barangay. Availability appears during registration and closes automatically when filled.</div>
+            <div class="accordion-body" data-lp-key="faq_a2"<?php echo lp_block_style('faq_a2'); ?>><?php echo lp_block('faq_a2','Slots are released per batch and barangay. Availability appears during registration and closes automatically when filled.'); ?></div>
           </div>
         </div>
         <div class="accordion-item">
           <h2 class="accordion-header" id="q3">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a3">What if I lose my QR code?</button>
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#a3" data-lp-key="faq_q3"<?php echo lp_block_style('faq_q3'); ?>><?php echo lp_block('faq_q3','What if I lose my QR code?'); ?></button>
           </h2>
           <div id="a3" class="accordion-collapse collapse" data-bs-parent="#faqAcc">
-            <div class="accordion-body">You can re-download it from your dashboard. Bring a valid ID on distribution day for identity verification.</div>
+            <div class="accordion-body" data-lp-key="faq_a3"<?php echo lp_block_style('faq_a3'); ?>><?php echo lp_block('faq_a3','You can re-download it from your dashboard. Bring a valid ID on distribution day for identity verification.'); ?></div>
           </div>
         </div>
       </div>
@@ -400,17 +516,17 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
       <div class="row g-4 align-items-stretch">
         <div class="col-lg-6">
           <div class="soft-card p-4 h-100">
-            <h5 class="fw-bold mb-3">Contact & Helpdesk</h5>
-            <p class="text-body-secondary">For inquiries about requirements, schedules, or account issues, reach us here:</p>
+            <h5 class="fw-bold mb-3" data-lp-key="contact_title"<?php echo lp_block_style('contact_title'); ?>><?php echo lp_block('contact_title','Contact & Helpdesk'); ?></h5>
+            <p class="text-body-secondary" data-lp-key="contact_intro"<?php echo lp_block_style('contact_intro'); ?>><?php echo lp_block('contact_intro','For inquiries about requirements, schedules, or account issues, reach us here:'); ?></p>
             <ul class="list-unstyled d-grid gap-2 m-0">
-              <li><i class="bi bi-envelope me-2 text-primary"></i>educaid@generaltrias.gov.ph</li>
-              <li><i class="bi bi-telephone me-2 text-primary"></i>(046) 886-4454</li>
-              <li><i class="bi bi-geo-alt me-2 text-primary"></i>City Government of General Trias, Cavite</li>
+              <li data-lp-key="contact_email"<?php echo lp_block_style('contact_email'); ?>><?php echo lp_block('contact_email','<i class="bi bi-envelope me-2 text-primary"></i>educaid@generaltrias.gov.ph'); ?></li>
+              <li data-lp-key="contact_phone"<?php echo lp_block_style('contact_phone'); ?>><?php echo lp_block('contact_phone','<i class="bi bi-telephone me-2 text-primary"></i>(046) 886-4454'); ?></li>
+              <li data-lp-key="contact_address"<?php echo lp_block_style('contact_address'); ?>><?php echo lp_block('contact_address','<i class="bi bi-geo-alt me-2 text-primary"></i>City Government of General Trias, Cavite'); ?></li>
             </ul>
             <div class="d-flex gap-2 mt-3">
-              <a href="<?php echo $base_path; ?>register.php" class="btn btn-green cta-btn"><i class="bi bi-journal-text me-2"></i>Start Application</a>
-              <a href="announcements.php" class="btn btn-outline-custom cta-btn">See Announcements</a>
-              <a href="contact.php" class="btn btn-primary cta-btn"><i class="bi bi-chat-dots me-1"></i>Full Contact Page</a>
+              <a href="<?php echo $base_path; ?>register.php" class="btn btn-green cta-btn" data-lp-key="contact_cta_apply"<?php echo lp_block_style('contact_cta_apply'); ?>><?php echo lp_block('contact_cta_apply','<i class="bi bi-journal-text me-2"></i>Start Application'); ?></a>
+              <a href="announcements.php" class="btn btn-outline-custom cta-btn" data-lp-key="contact_cta_announcements"<?php echo lp_block_style('contact_cta_announcements'); ?>><?php echo lp_block('contact_cta_announcements','See Announcements'); ?></a>
+              <a href="contact.php" class="btn btn-primary cta-btn" data-lp-key="contact_cta_full"<?php echo lp_block_style('contact_cta_full'); ?>><?php echo lp_block('contact_cta_full','<i class="bi bi-chat-dots me-1"></i>Full Contact Page'); ?></a>
             </div>
           </div>
         </div>
@@ -431,17 +547,17 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
           <div class="d-flex align-items-center gap-3">
             <div class="brand-badge">EA</div>
             <div>
-              <div class="footer-logo">EducAid • General Trias</div>
-              <small>Let's join forces for a more progressive GenTrias.</small>
+              <div class="footer-logo" data-lp-key="footer_logo_text"<?php echo lp_block_style('footer_logo_text'); ?>><?php echo lp_block('footer_logo_text','EducAid • General Trias'); ?></div>
+              <small data-lp-key="footer_tagline"<?php echo lp_block_style('footer_tagline'); ?>><?php echo lp_block('footer_tagline','Let\'s join forces for a more progressive GenTrias.'); ?></small>
             </div>
           </div>
         </div>
         <div class="col-lg-6">
           <div class="row">
-            <div class="col-6 col-md-4"><h6>Explore</h6><ul class="list-unstyled small"><li><a href="#about">About</a></li><li><a href="how-it-works.php">Process</a></li><li><a href="#announcements">Announcements</a></li></ul></div>
-            <div class="col-6 col-md-4"><h6>Links</h6><ul class="list-unstyled small"><li><a href="#faq">FAQs</a></li><li><a href="requirements.php">Requirements</a></li><li><a href="#contact">Contact</a></li></ul></div>
+            <div class="col-6 col-md-4"><h6 data-lp-key="footer_col1_title"<?php echo lp_block_style('footer_col1_title'); ?>><?php echo lp_block('footer_col1_title','Explore'); ?></h6><ul class="list-unstyled small" data-lp-key="footer_col1_links"<?php echo lp_block_style('footer_col1_links'); ?>><?php echo lp_block('footer_col1_links','<li><a href="#about">About</a></li><li><a href="how-it-works.php">Process</a></li><li><a href="#announcements">Announcements</a></li>'); ?></ul></div>
+            <div class="col-6 col-md-4"><h6 data-lp-key="footer_col2_title"<?php echo lp_block_style('footer_col2_title'); ?>><?php echo lp_block('footer_col2_title','Links'); ?></h6><ul class="list-unstyled small" data-lp-key="footer_col2_links"<?php echo lp_block_style('footer_col2_links'); ?>><?php echo lp_block('footer_col2_links','<li><a href="#faq">FAQs</a></li><li><a href="requirements.php">Requirements</a></li><li><a href="#contact">Contact</a></li>'); ?></ul></div>
             <div class="col-12 col-md-4 mt-3 mt-md-0">
-              <h6>Stay Updated</h6>
+              <h6 data-lp-key="footer_newsletter_title"<?php echo lp_block_style('footer_newsletter_title'); ?>><?php echo lp_block('footer_newsletter_title','Stay Updated'); ?></h6>
               <form id="newsletterForm" class="d-flex gap-2">
                 <input type="email" id="emailInput" class="form-control" placeholder="Email address" required />
                 <button class="btn btn-light" type="submit" id="subscribeBtn">Subscribe</button>
@@ -453,8 +569,8 @@ function lp_esc($s){ return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
       </div>
       <hr class="border-light opacity-25 my-4" />
       <div class="d-flex justify-content-between flex-wrap gap-2 small">
-        <span>© <span id="year"></span> City Government of General Trias • EducAid</span>
-        <span>Powered by the Office of the Mayor • IT</span>
+  <span data-lp-key="footer_copyright"<?php echo lp_block_style('footer_copyright'); ?>><?php echo lp_block('footer_copyright','© <span id="year"></span> City Government of General Trias • EducAid'); ?></span>
+  <span data-lp-key="footer_powered"<?php echo lp_block_style('footer_powered'); ?>><?php echo lp_block('footer_powered','Powered by the Office of the Mayor • IT'); ?></span>
       </div>
     </div>
   </footer>
@@ -776,4 +892,304 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 </body>
+<?php if ($IS_EDIT_MODE): ?>
+<script>
+(function(){
+  // Any element with data-lp-key is considered editable
+  function getEditableElements(){
+    return Array.from(document.querySelectorAll('[data-lp-key]'));
+  }
+  const state = { target:null, originalContent:new Map(), dirtyKeys:new Set(), content:{}, saving:false };
+  const toolbar = document.getElementById('lp-edit-toolbar');
+  if(!toolbar){ return; }
+  document.body.classList.add('lp-editing');
+  const txtArea = document.getElementById('lp-edit-text');
+  const targetLabel = document.getElementById('lp-current-target');
+  const textColor = document.getElementById('lp-text-color');
+  const bgColor = document.getElementById('lp-bg-color');
+  const saveBtn = document.getElementById('lp-save-btn');
+  const saveAllBtn = document.getElementById('lp-save-all-btn');
+  const resetBtn = document.getElementById('lp-reset-btn');
+  const highlightToggle = document.getElementById('lp-highlight-toggle');
+  const statusEl = document.getElementById('lp-status');
+
+  function setStatus(msg,type='muted'){ statusEl.textContent = msg; statusEl.className = 'text-' + (type==='error'?'danger': type==='success'?'success':'muted'); }
+
+  function keyFor(el){
+    if(el.dataset && el.dataset.lpKey){ return el.dataset.lpKey; }
+    if(el.id) return el.tagName.toLowerCase()+'#'+el.id;
+    const idx = Array.from(el.parentNode.children).indexOf(el);
+    return el.tagName.toLowerCase()+'.'+(el.className||'').replace(/\s+/g,'-')+':'+idx;
+  }
+
+  function markDirty(el){
+    el.dataset.lpDirty = '1';
+    saveBtn.disabled = false;
+  }
+
+  function populateControls(el){
+    state.target = el;
+    targetLabel.textContent = el.tagName + (el.className?'.'+el.className.trim().replace(/\s+/g,' .'):'');
+    txtArea.value = el.innerText.trim();
+    const cs = getComputedStyle(el);
+    textColor.value = rgbToHex(cs.color) || '#000000';
+    bgColor.value = rgbToHex(cs.backgroundColor) || '#ffffff';
+  }
+
+  function rgbToHex(rgb){
+    if(!rgb) return null;
+    const m = rgb.match(/rgb[a]?\((\d+),\s*(\d+),\s*(\d+)/i); if(!m) return null;
+    return '#'+[m[1],m[2],m[3]].map(v=>('0'+parseInt(v).toString(16)).slice(-2)).join('');
+  }
+
+  function attach(){
+    getEditableElements().forEach(el=>{
+      el.classList.add('lp-edit-highlight');
+      const k = keyFor(el);
+      if(!state.originalContent.has(k)) state.originalContent.set(k, el.innerHTML);
+      el.addEventListener('click', e=>{
+        if(!toolbar.contains(e.target)){
+          e.preventDefault(); e.stopPropagation(); populateControls(el);
+        }
+      });
+    });
+  }
+
+  txtArea.addEventListener('input', ()=>{
+    if(!state.target) return; state.target.innerText = txtArea.value; markDirty(state.target);
+  });
+  textColor.addEventListener('input', ()=>{ if(state.target){ state.target.style.color = textColor.value; markDirty(state.target);} });
+  bgColor.addEventListener('input', ()=>{ if(state.target){ state.target.style.backgroundColor = bgColor.value; markDirty(state.target);} });
+  resetBtn.addEventListener('click', ()=>{ if(!state.target) return; const k=keyFor(state.target); const orig=state.originalContent.get(k); if(orig){ state.target.innerHTML=orig; } state.target.style.color=''; state.target.style.backgroundColor=''; state.target.removeAttribute('data-lp-dirty'); saveBtn.disabled = !document.querySelector('[data-lp-dirty="1"]'); setStatus('Block reset'); });
+  const resetAllBtn = document.getElementById('lp-reset-all');
+  const exitBtn = document.getElementById('lp-exit-btn');
+  if(resetAllBtn){
+    resetAllBtn.addEventListener('click', async ()=>{
+      if(!confirm('Reset ALL edited blocks to original content? This cannot be undone.')) return;
+      setStatus('Resetting all...');
+      try {
+        const res = await fetch('ajax_reset_landing_content.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'reset_all' }) });
+        const data = await res.json();
+        if(data.success){
+          document.querySelectorAll('[data-lp-key]').forEach(el=>{ const orig = state.originalContent.get(keyFor(el)); if(orig){ el.innerHTML = orig; } el.style.color=''; el.style.backgroundColor=''; el.removeAttribute('data-lp-dirty'); });
+          saveBtn.disabled = true; setStatus('All blocks reset','success');
+        } else { setStatus(data.message||'Reset failed','error'); }
+      } catch(e){ console.error(e); setStatus('Error resetting','error'); }
+    });
+  }
+  highlightToggle.addEventListener('click', ()=>{
+    const active = highlightToggle.getAttribute('data-active')==='1';
+    document.querySelectorAll('.lp-edit-highlight').forEach(el=>{ el.style.outline = active?'none':''; });
+    highlightToggle.setAttribute('data-active', active?'0':'1');
+    highlightToggle.innerHTML = active?'<i class="bi bi-bounding-box"></i> Show Boxes':'<i class="bi bi-bounding-box-circles"></i> Hide Boxes';
+  });
+
+  async function save(){
+    if(state.saving) return; const dirtyEls = Array.from(document.querySelectorAll('.lp-edit-highlight[data-lp-dirty="1"]'));
+    if(!dirtyEls.length){ setStatus('Nothing to save'); return; }
+    const payload = dirtyEls.map(el=>({ key:keyFor(el), html:el.innerHTML, styles:{ color:el.style.color||'', backgroundColor:el.style.backgroundColor||'' } }));
+    state.saving = true; setStatus('Saving...'); saveBtn.disabled = true;
+    try {
+      const res = await fetch('ajax_save_landing_content.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ blocks: payload }) });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+      if(data.success){
+        dirtyEls.forEach(el=>el.removeAttribute('data-lp-dirty'));
+        setStatus('Saved', 'success');
+      } else {
+        setStatus(data.message||'Save failed', 'error'); saveBtn.disabled=false;
+      }
+    } catch(err){ console.error(err); setStatus('Error: '+err.message,'error'); saveBtn.disabled=false; }
+    finally { state.saving=false; }
+  }
+  saveBtn.addEventListener('click', save);
+  async function saveAll(){
+    if(state.saving) return;
+    const allEls = Array.from(document.querySelectorAll('.lp-edit-highlight'));
+    if(!allEls.length){ setStatus('No editable elements','error'); return; }
+    const payload = allEls.map(el=>({ key:keyFor(el), html:el.innerHTML, styles:{ color:el.style.color||'', backgroundColor:el.style.backgroundColor||'' } }));
+    state.saving = true; setStatus('Saving full snapshot...'); saveAllBtn.disabled = true; saveBtn.disabled = true;
+    try {
+      const res = await fetch('ajax_save_landing_content.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ blocks: payload }) });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+      if(data.success){
+        document.querySelectorAll('.lp-edit-highlight[data-lp-dirty="1"]').forEach(el=>el.removeAttribute('data-lp-dirty'));
+        setStatus('Snapshot saved','success');
+      } else { setStatus(data.message||'Snapshot failed','error'); }
+    } catch(err){ console.error(err); setStatus('Error: '+err.message,'error'); }
+    finally { state.saving=false; saveAllBtn.disabled=false; saveBtn.disabled = !document.querySelector('.lp-edit-highlight[data-lp-dirty="1"]'); }
+  }
+  if(saveAllBtn){ saveAllBtn.addEventListener('click', saveAll); }
+  const historyBtn = document.getElementById('lp-history-btn');
+  if(historyBtn){ historyBtn.addEventListener('click', ()=>{ LPHistoryModal.open(); }); }
+  // Unsaved changes warnings
+  window.addEventListener('beforeunload', function(e){
+    if(document.querySelector('.lp-edit-highlight[data-lp-dirty="1"]')){ e.preventDefault(); e.returnValue=''; return ''; }
+  });
+  function guardNav(el){ if(!el) return; el.addEventListener('click', function(e){ if(document.querySelector('.lp-edit-highlight[data-lp-dirty="1"]')){ if(!confirm('You have unsaved changes. Leave without saving?')){ e.preventDefault(); } } }); }
+  guardNav(exitBtn);
+  document.querySelectorAll('a[href*="homepage.php"]').forEach(a=>guardNav(a));
+  attach();
+})();
+// History preview modal with live temporary preview (no save until user explicitly saves)
+const LPHistoryModal = (function(){
+  let modalEl, listEl, filterInput, blockSelect, closeBtn, loadBtn, limitSelect, previewEl, previewNotice, previewApplyBtn, previewCancelBtn;
+  let livePreview = null; // { key, el, originalHtml, originalTextColor, originalBgColor }
+  function ensure(){
+    if(modalEl) return;
+    modalEl = document.createElement('div');
+    modalEl.className = 'lp-history-modal';
+    modalEl.innerHTML = `
+<div class="lp-hist-backdrop"></div>
+<div class="lp-hist-dialog">
+  <div class="lp-hist-header d-flex justify-content-between align-items-center">
+    <strong class="small mb-0">Edit History</strong>
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-sm btn-outline-primary" data-load title="Reload"><i class="bi bi-arrow-repeat"></i></button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-close><i class="bi bi-x"></i></button>
+    </div>
+  </div>
+  <div class="lp-hist-body">
+    <div class="row g-2 mb-2">
+      <div class="col-5"><input type="text" class="form-control form-control-sm" placeholder="Filter by key" data-filter /></div>
+      <div class="col-4"><select class="form-select form-select-sm" data-limit>
+        <option value="25">Last 25</option>
+        <option value="50" selected>Last 50</option>
+        <option value="100">Last 100</option>
+      </select></div>
+      <div class="col-3"><select class="form-select form-select-sm" data-block><option value="">All Blocks</option></select></div>
+    </div>
+    <div class="lp-hist-list" data-list style="max-height:300px;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;padding:.45rem;background:#fff;font-size:.7rem"></div>
+    <div class="small text-muted mt-2">Select an entry: you can preview here or inject it temporarily into the page.</div>
+    <div class="lp-hist-preview mt-2" data-preview style="border:1px solid #cbd5e1;border-radius:6px;padding:.5rem;min-height:110px;background:#f8fafc;font-size:.75rem">(No selection)</div>
+    <div class="d-flex gap-2 mt-2">
+      <button type="button" class="btn btn-sm btn-outline-primary w-100" data-preview-apply disabled><i class="bi bi-eye"></i> Preview On Page</button>
+      <button type="button" class="btn btn-sm btn-outline-warning w-100" data-preview-cancel disabled><i class="bi bi-arrow-counterclockwise"></i> Cancel Preview</button>
+    </div>
+    <div class="small mt-2 text-warning-emphasis" data-preview-notice style="display:none;">Temporary preview active. Use Cancel to revert. Not saved yet.</div>
+  </div>
+  <div class="lp-hist-footer small text-end text-muted">Changes are NOT saved until you click Save / Save All in the main editor.</div>
+</div>`;
+    document.body.appendChild(modalEl);
+    listEl = modalEl.querySelector('[data-list]');
+    filterInput = modalEl.querySelector('[data-filter]');
+    blockSelect = modalEl.querySelector('[data-block]');
+    closeBtn = modalEl.querySelector('[data-close]');
+    loadBtn = modalEl.querySelector('[data-load]');
+    limitSelect = modalEl.querySelector('[data-limit]');
+    previewEl = modalEl.querySelector('[data-preview]');
+    previewApplyBtn = modalEl.querySelector('[data-preview-apply]');
+    previewCancelBtn = modalEl.querySelector('[data-preview-cancel]');
+    previewNotice = modalEl.querySelector('[data-preview-notice]');
+    closeBtn.addEventListener('click', hide);
+    modalEl.querySelector('.lp-hist-backdrop').addEventListener('click', hide);
+    loadBtn.addEventListener('click', load);
+    filterInput.addEventListener('input', applyFilter);
+    listEl.addEventListener('click', e=>{
+      const item = e.target.closest('.lp-hist-item');
+      if(!item) return; Array.from(listEl.querySelectorAll('.lp-hist-item')).forEach(x=>x.classList.remove('active'));
+      item.classList.add('active');
+      previewEl.innerHTML = item._html || '(empty)';
+      previewEl.style.color = item._textColor || '';
+      previewEl.style.backgroundColor = item._bgColor || '#f8fafc';
+      previewApplyBtn.disabled = false;
+      previewApplyBtn._selectedItem = item;
+    });
+    function revertPreview(){
+      if(!livePreview) return;
+      const { el, originalHtml, originalTextColor, originalBgColor } = livePreview;
+      el.innerHTML = originalHtml;
+      el.style.color = originalTextColor;
+      el.style.backgroundColor = originalBgColor;
+      livePreview = null;
+      previewNotice.style.display = 'none';
+      previewCancelBtn.disabled = true;
+    }
+    previewApplyBtn.addEventListener('click', ()=>{
+      const item = previewApplyBtn._selectedItem; if(!item) return;
+      const key = item.getAttribute('data-key');
+      const target = document.querySelector('[data-lp-key="'+CSS.escape(key)+'"]');
+      if(!target){ alert('Block not found on page.'); return; }
+      if(livePreview && livePreview.key !== key) { revertPreview(); }
+      if(!livePreview){
+        livePreview = { key, el: target, originalHtml: target.innerHTML, originalTextColor: target.style.color, originalBgColor: target.style.backgroundColor };
+      }
+      target.innerHTML = item._html || '';
+      target.style.color = item._textColor || '';
+      target.style.backgroundColor = item._bgColor || '';
+      previewNotice.style.display = 'block';
+      previewCancelBtn.disabled = false;
+    });
+    previewCancelBtn.addEventListener('click', ()=>{ revertPreview(); });
+  }
+  function applyFilter(){
+    const term = filterInput.value.trim().toLowerCase();
+    Array.from(listEl.querySelectorAll('.lp-hist-item')).forEach(it=>{
+      const key = it.getAttribute('data-key').toLowerCase();
+      it.style.display = term && !key.includes(term) ? 'none':'block';
+    });
+  }
+  async function load(){
+    listEl.innerHTML = '<div class="text-muted small">Loading…</div>';
+    const block = blockSelect.value.trim();
+    const limit = limitSelect.value;
+    try {
+      const res = await fetch('ajax_get_landing_history.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ block, limit }) });
+      const data = await res.json();
+      if(!data.success){ listEl.innerHTML = '<div class="text-danger small">Failed to load history</div>'; return; }
+      const recs = data.records || [];
+      if(blockSelect.options.length === 1){
+        const keys = Array.from(new Set(recs.map(r=>r.block_key))).sort();
+        keys.forEach(k=>{ const opt=document.createElement('option'); opt.value=k; opt.textContent=k; blockSelect.appendChild(opt); });
+      }
+      if(!recs.length){ listEl.innerHTML = '<div class="text-muted small">No history entries</div>'; return; }
+      listEl.innerHTML = '';
+      recs.forEach(r=>{
+        const div = document.createElement('div');
+        div.className = 'lp-hist-item';
+        div.setAttribute('data-key', r.block_key);
+        div.innerHTML = `<div class=\"d-flex justify-content-between\"><span class=\"text-primary\">${escapeHtml(r.block_key)}</span><span class=\"text-muted\">#${r.audit_id}</span></div><div class=\"text-muted\">${escapeHtml(r.action_type)} • ${escapeHtml(r.created_at)}</div>`;
+        div._html = r.html || '';
+        div._textColor = r.text_color; div._bgColor = r.bg_color;
+        listEl.appendChild(div);
+      });
+      applyFilter();
+    } catch(err){ console.error(err); listEl.innerHTML = '<div class="text-danger small">Error loading</div>'; }
+  }
+  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+  function show(){ ensure(); modalEl.classList.add('show'); load(); }
+  function hide(){ if(modalEl){ modalEl.classList.remove('show'); } }
+  return { open: show, close: hide };
+})();
+</script>
+<?php if($IS_EDIT_MODE): ?>
+<style>
+.lp-history-modal { position:fixed; inset:0; z-index:5000; display:none; }
+.lp-history-modal.show { display:block; }
+.lp-history-modal .lp-hist-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.45); backdrop-filter:blur(2px); }
+.lp-history-modal .lp-hist-dialog { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:760px; max-width:95%; background:#fff; border-radius:14px; box-shadow:0 10px 40px -10px rgba(0,0,0,.35); display:flex; flex-direction:column; max-height:85vh; }
+.lp-history-modal .lp-hist-header { padding:.55rem .8rem; border-bottom:1px solid #e2e8f0; }
+.lp-history-modal .lp-hist-body { padding:.7rem .85rem .9rem; overflow:auto; }
+.lp-history-modal .lp-hist-footer { padding:.45rem .85rem; border-top:1px solid #e2e8f0; background:#f8fafc; border-bottom-left-radius:14px; border-bottom-right-radius:14px; }
+.lp-hist-item { border:1px solid #e2e8f0; border-radius:6px; padding:.38rem .45rem; margin-bottom:.4rem; cursor:pointer; background:#fff; transition:background .15s,border-color .15s; }
+.lp-hist-item:hover { background:#f1f5f9; }
+.lp-hist-item.active { border-color:#2563eb; background:#eff6ff; }
+@media (max-width:620px){ .lp-history-modal .lp-hist-dialog { width:95%; } }
+</style>
+<?php endif; ?>
+<?php endif; ?>
+<?php
+// Always attempt to load saved blocks (no headers_sent guard to avoid early echo issues)
+@include_once __DIR__ . '/../config/database.php';
+if (isset($connection)) {
+  $resBlocks = @pg_query($connection, "SELECT block_key, html, text_color, bg_color FROM landing_content_blocks WHERE municipality_id=1");
+  $blocks = [];
+  if ($resBlocks) { while($r = pg_fetch_assoc($resBlocks)) { $blocks[$r['block_key']] = $r; } }
+  if ($blocks) {
+    $json = json_encode($blocks, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_QUOT|JSON_HEX_APOS);
+    echo '<script>window.__LP_SAVED_BLOCKS=' . $json . ';(function(){var d=window.__LP_SAVED_BLOCKS;for(var k in d){if(!Object.prototype.hasOwnProperty.call(d,k)) continue;var b=d[k];var sel="[data-lp-key=\\""+k.replace(/"/g,"\\\"")+"\\"]";var el=document.querySelector(sel);if(!el) continue;try{el.innerHTML=b.html;}catch(e){} if(b.text_color) el.style.color=b.text_color; if(b.bg_color) el.style.backgroundColor=b.bg_color;}})();</script>';
+  }
+}
+?>
 </html>

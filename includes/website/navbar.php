@@ -41,9 +41,9 @@ if (strpos($_SERVER['PHP_SELF'], '/website/') !== false) {
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg bg-white sticky-top" style="z-index: 1030;">
   <div class="container">
-    <a class="navbar-brand" href="<?php echo $brand_config['href']; ?>">
-      <span class="brand-badge"><?php echo $brand_config['badge']; ?></span>
-      <span><?php echo $brand_config['name']; ?> <span class="text-body-secondary d-none d-sm-inline"><?php echo $brand_config['subtitle']; ?></span></span>
+    <a class="navbar-brand" href="<?php echo $brand_config['href']; ?>" data-lp-key="nav_brand_wrapper"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_wrapper'):''; ?>>
+      <span class="brand-badge lp-no-text-edit" data-lp-key="nav_brand_badge"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_badge'):''; ?>><?php echo function_exists('lp_block')? lp_block('nav_brand_badge', htmlspecialchars($brand_config['badge'])):htmlspecialchars($brand_config['badge']); ?></span>
+      <span data-lp-key="nav_brand_name"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_name'):''; ?>><?php echo function_exists('lp_block')? lp_block('nav_brand_name', htmlspecialchars($brand_config['name'])):htmlspecialchars($brand_config['name']); ?> <span class="text-body-secondary d-none d-sm-inline" data-lp-key="nav_brand_subtitle"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_subtitle'):''; ?>><?php echo function_exists('lp_block')? lp_block('nav_brand_subtitle', htmlspecialchars($brand_config['subtitle'])):htmlspecialchars($brand_config['subtitle']); ?></span></span>
     </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>

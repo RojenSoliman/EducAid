@@ -63,49 +63,29 @@ $current_settings = $form_result['success'] && isset($form_result['data'])
 // Header theme settings retrieval (after any save)
 $header_settings = $headerThemeService->getCurrentSettings();
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Topbar Settings - Admin Panel</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-  <link href="../../assets/css/admin/sidebar.css" rel="stylesheet">
-  <link href="../../assets/css/admin/homepage.css" rel="stylesheet">
-  
-  <style>
-    /* Removed body top padding (handled by homepage.css using vars) */
-    
-    .settings-card {
-      background: white;
-      border-radius: 0.5rem;
-      padding: 1.5rem;
-      margin-bottom: 1.5rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    
-    .preview-topbar {
-      background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
-      color: #fff;
-      padding: 0.75rem 1rem;
-      border-radius: 0.375rem;
-      margin-bottom: 1.5rem;
-      font-size: 0.875rem;
-    }
-    
-    .form-label {
-      font-weight: 600;
-      color: #374151;
-    }
-    
-    .form-control:focus {
-      border-color: #2e7d32;
-      box-shadow: 0 0 0 0.2rem rgba(46, 125, 50, 0.25);
-    }
-  </style>
-</head>
-<body>
+<?php $page_title='Topbar Settings'; $extra_css=[]; include '../../includes/admin/admin_head.php'; ?>
+<style>
+  /* Page-specific styling (scoped where possible) */
+  body.topbar-settings-page .settings-card {
+    background: #ffffff;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+  body.topbar-settings-page .preview-topbar {
+    background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
+    color: #fff;
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.875rem;
+    font-family: 'Poppins', var(--bs-font-sans-serif, Arial, sans-serif);
+  }
+  body.topbar-settings-page .form-label { font-weight:600; color:#374151; }
+  body.topbar-settings-page .form-control:focus { border-color:#2e7d32; box-shadow:0 0 0 0.2rem rgba(46,125,50,0.25); }
+</style>
+<body class="topbar-settings-page">
   <?php include '../../includes/admin/admin_topbar.php'; ?>
   
   <div id="wrapper" class="admin-wrapper">
@@ -456,7 +436,8 @@ $header_settings = $headerThemeService->getCurrentSettings();
   </div>
   
   
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Use unified Bootstrap version (5.3.0) to match admin_head include -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/admin/topbar-settings.js"></script>
 </body>
 </html>

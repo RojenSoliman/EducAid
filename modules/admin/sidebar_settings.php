@@ -46,107 +46,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_sidebar_theme'
 }
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sidebar Theme Settings - EducAid Admin</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="../../assets/css/admin/sidebar.css" rel="stylesheet">
-    <link href="../../assets/css/admin/homepage.css" rel="stylesheet">
-    <style>
-        .preview-sidebar {
-            background: linear-gradient(180deg, <?= htmlspecialchars($currentSettings['sidebar_bg_start']) ?> 0%, <?= htmlspecialchars($currentSettings['sidebar_bg_end']) ?> 100%);
-            border: 1px solid <?= htmlspecialchars($currentSettings['sidebar_border_color']) ?>;
-            border-radius: 8px;
-            padding: 1rem;
-            min-height: 400px;
-            position: sticky;
-            top: 20px;
-        }
-        .preview-profile {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding-bottom: 1rem;
-            margin-bottom: 1rem;
-            border-bottom: 1px solid <?= htmlspecialchars($currentSettings['profile_border_color']) ?>;
-        }
-        .preview-avatar {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, <?= htmlspecialchars($currentSettings['profile_avatar_bg_start']) ?>, <?= htmlspecialchars($currentSettings['profile_avatar_bg_end']) ?>);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-        }
-        .preview-nav-item {
-            padding: 0.5rem 0.75rem;
-            margin: 0.25rem 0;
-            border-radius: 6px;
-            color: <?= htmlspecialchars($currentSettings['nav_text_color']) ?>;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .preview-nav-item:hover {
-            background: <?= htmlspecialchars($currentSettings['nav_hover_bg']) ?>;
-            color: <?= htmlspecialchars($currentSettings['nav_hover_text']) ?>;
-        }
-        .preview-nav-item.active {
-            background: <?= htmlspecialchars($currentSettings['nav_active_bg']) ?>;
-            color: <?= htmlspecialchars($currentSettings['nav_active_text']) ?>;
-        }
-        .preview-nav-item i {
-            color: <?= htmlspecialchars($currentSettings['nav_icon_color']) ?>;
-        }
-        .preview-submenu {
-            background: <?= htmlspecialchars($currentSettings['submenu_bg']) ?>;
-            margin: 0.25rem 0;
-            border-radius: 4px;
-            padding: 0.25rem;
-        }
-        .preview-submenu-item {
-            padding: 0.375rem 0.5rem 0.375rem 1.5rem;
-            margin: 0.125rem 0;
-            border-radius: 4px;
-            color: <?= htmlspecialchars($currentSettings['submenu_text_color']) ?>;
-            font-size: 0.85rem;
-            cursor: pointer;
-        }
-        .preview-submenu-item:hover {
-            background: <?= htmlspecialchars($currentSettings['submenu_hover_bg']) ?>;
-        }
-        .preview-submenu-item.active {
-            background: <?= htmlspecialchars($currentSettings['submenu_active_bg']) ?>;
-            color: <?= htmlspecialchars($currentSettings['submenu_active_text']) ?>;
-        }
-        .color-input-group {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .color-input-group input[type="color"] {
-            width: 40px;
-            height: 40px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        .color-input-group input[type="text"] {
-            width: 80px;
-            font-family: monospace;
-            text-transform: uppercase;
-        }
-    </style>
-</head>
-<body>
+<?php $page_title='Sidebar Theme Settings'; $extra_css=[]; include '../../includes/admin/admin_head.php'; ?>
+<style>
+  body.sidebar-settings-page .preview-sidebar {
+    background: linear-gradient(180deg, <?= htmlspecialchars($currentSettings['sidebar_bg_start']) ?> 0%, <?= htmlspecialchars($currentSettings['sidebar_bg_end']) ?> 100%);
+    border: 1px solid <?= htmlspecialchars($currentSettings['sidebar_border_color']) ?>;
+    border-radius: 8px;
+    padding: 1rem;
+    min-height: 400px;
+    position: sticky;
+    top: 20px;
+    font-family: 'Poppins', var(--bs-font-sans-serif, Arial, sans-serif);
+  }
+  body.sidebar-settings-page .preview-profile {display:flex;align-items:center;gap:0.75rem;padding-bottom:1rem;margin-bottom:1rem;border-bottom:1px solid <?= htmlspecialchars($currentSettings['profile_border_color']) ?>;}
+  body.sidebar-settings-page .preview-avatar {width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg, <?= htmlspecialchars($currentSettings['profile_avatar_bg_start']) ?>, <?= htmlspecialchars($currentSettings['profile_avatar_bg_end']) ?>);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;}
+  body.sidebar-settings-page .preview-nav-item {padding:0.5rem 0.75rem;margin:0.25rem 0;border-radius:6px;color:<?= htmlspecialchars($currentSettings['nav_text_color']) ?>;cursor:pointer;display:flex;align-items:center;gap:0.5rem;}
+  body.sidebar-settings-page .preview-nav-item:hover {background:<?= htmlspecialchars($currentSettings['nav_hover_bg']) ?>;color:<?= htmlspecialchars($currentSettings['nav_hover_text']) ?>;}
+  body.sidebar-settings-page .preview-nav-item.active {background:<?= htmlspecialchars($currentSettings['nav_active_bg']) ?>;color:<?= htmlspecialchars($currentSettings['nav_active_text']) ?>;}
+  body.sidebar-settings-page .preview-nav-item i {color:<?= htmlspecialchars($currentSettings['nav_icon_color']) ?>;}
+  body.sidebar-settings-page .preview-submenu {background:<?= htmlspecialchars($currentSettings['submenu_bg']) ?>;margin:0.25rem 0;border-radius:4px;padding:0.25rem;}
+  body.sidebar-settings-page .preview-submenu-item {padding:0.375rem 0.5rem 0.375rem 1.5rem;margin:0.125rem 0;border-radius:4px;color:<?= htmlspecialchars($currentSettings['submenu_text_color']) ?>;font-size:0.85rem;cursor:pointer;}
+  body.sidebar-settings-page .preview-submenu-item:hover {background:<?= htmlspecialchars($currentSettings['submenu_hover_bg']) ?>;}
+  body.sidebar-settings-page .preview-submenu-item.active {background:<?= htmlspecialchars($currentSettings['submenu_active_bg']) ?>;color:<?= htmlspecialchars($currentSettings['submenu_active_text']) ?>;}
+  body.sidebar-settings-page .color-input-group {display:flex;align-items:center;gap:0.5rem;}
+  body.sidebar-settings-page .color-input-group input[type=color]{width:40px;height:40px;border:none;border-radius:6px;cursor:pointer;}
+  body.sidebar-settings-page .color-input-group input[type=text]{width:80px;font-family:monospace;text-transform:uppercase;}
+</style>
+<body class="sidebar-settings-page">
     <?php include '../../includes/admin/admin_topbar.php'; ?>
     <div id="wrapper" class="admin-wrapper">
         <?php include '../../includes/admin/admin_sidebar.php'; ?>
