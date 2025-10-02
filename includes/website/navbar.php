@@ -43,7 +43,27 @@ if (strpos($_SERVER['PHP_SELF'], '/website/') !== false) {
   <div class="container">
     <a class="navbar-brand" href="<?php echo $brand_config['href']; ?>" data-lp-key="nav_brand_wrapper"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_wrapper'):''; ?>>
       <span class="brand-badge lp-no-text-edit" data-lp-key="nav_brand_badge"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_badge'):''; ?>><?php echo function_exists('lp_block')? lp_block('nav_brand_badge', htmlspecialchars($brand_config['badge'])):htmlspecialchars($brand_config['badge']); ?></span>
-      <span data-lp-key="nav_brand_name"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_name'):''; ?>><?php echo function_exists('lp_block')? lp_block('nav_brand_name', htmlspecialchars($brand_config['name'])):htmlspecialchars($brand_config['name']); ?> <span class="text-body-secondary d-none d-sm-inline" data-lp-key="nav_brand_subtitle"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_subtitle'):''; ?>><?php echo function_exists('lp_block')? lp_block('nav_brand_subtitle', htmlspecialchars($brand_config['subtitle'])):htmlspecialchars($brand_config['subtitle']); ?></span></span>
+      <?php
+        // Fetch blocks separately to avoid visual duplication when editors paste subtitle into the name block
+        $rawName = function_exists('lp_block')? lp_block('nav_brand_name', htmlspecialchars($brand_config['name'])):htmlspecialchars($brand_config['name']);
+        $rawSubtitle = function_exists('lp_block')? lp_block('nav_brand_subtitle', htmlspecialchars($brand_config['subtitle'])):htmlspecialchars($brand_config['subtitle']);
+        // Plain-text comparisons (strip tags & normalize spacing)
+        $plainName = trim(preg_replace('/\s+/', ' ', strip_tags($rawName)));
+        $plainSubtitle = trim(preg_replace('/\s+/', ' ', strip_tags($rawSubtitle)));
+        $subtitleAlreadyInside = false;
+        if($plainSubtitle !== ''){
+          // Check if name already ends with or contains the subtitle token
+          if(str_ends_with($plainName, $plainSubtitle) || str_contains($plainName, $plainSubtitle.' ')){
+            $subtitleAlreadyInside = true;
+          }
+        }
+      ?>
+      <span data-lp-key="nav_brand_name"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_name'):''; ?>>
+        <?php echo $rawName; ?>
+        <?php if(!$subtitleAlreadyInside && $plainSubtitle !== ''): ?>
+          <span class="text-body-secondary d-none d-sm-inline" data-lp-key="nav_brand_subtitle"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_subtitle'):''; ?>><?php echo $rawSubtitle; ?></span>
+        <?php endif; ?>
+      </span>
     </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
