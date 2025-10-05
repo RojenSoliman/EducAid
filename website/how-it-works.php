@@ -27,35 +27,21 @@ if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_
   <!-- Bootstrap Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
-  <style>
-    <?php if($IS_EDIT_MODE): ?>
-    .lp-edit-toolbar { position:fixed; top:70px; right:12px; width:300px; background:#fff; border:1px solid #d1d9e0; border-radius:12px; z-index:4000; padding:.75rem .85rem; font-family: system-ui, sans-serif; }
-    .lp-edit-highlight { outline:2px dashed #2563eb; outline-offset:2px; cursor:text; position:relative; }
-    .lp-edit-highlight[data-lp-dirty="1"]::after { content:'●'; position:absolute; top:-6px; right:-6px; background:#dc2626; color:#fff; width:14px; height:14px; font-size:.55rem; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:700; box-shadow:0 0 0 2px #fff; }
-    .lp-edit-toolbar textarea { font-size:.7rem; }
-    .lp-edit-toolbar .form-label { font-size:.6rem; letter-spacing:.5px; text-transform:uppercase; }
-    body.lp-editing { scroll-padding-top:90px; }
-    .lp-edit-badge { position:fixed; left:12px; top:70px; background:#1d4ed8; color:#fff; padding:4px 10px; font-size:.65rem; font-weight:600; letter-spacing:.5px; border-radius:30px; z-index:4000; display:flex; align-items:center; gap:4px; box-shadow:0 2px 4px rgba(0,0,0,.2);}    
-    .lp-edit-badge .dot { width:6px; height:6px; background:#22c55e; border-radius:50%; box-shadow:0 0 0 2px rgba(255,255,255,.4); }
-    .lp-inline-hist-btn { position:absolute; top:-10px; left:-10px; background:#fff; border:1px solid #94a3b8; color:#334155; font-size:.55rem; padding:2px 4px; border-radius:4px; display:none; cursor:pointer; line-height:1; }
-    [data-lp-key]:hover > .lp-inline-hist-btn { display:inline-block; }
-    .lp-inline-hist-btn:hover { background:#2563eb; color:#fff; border-color:#2563eb; }
-    /* History modal styles (shared) */
-    .lp-history-modal { position:fixed; inset:0; z-index:5000; display:none; }
-    .lp-history-modal.show { display:block; }
-    .lp-history-modal .lp-hist-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.45); backdrop-filter:blur(2px); }
-    .lp-history-modal .lp-hist-dialog { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:780px; max-width:95%; background:#fff; border-radius:14px; box-shadow:0 10px 40px -10px rgba(0,0,0,.35); display:flex; flex-direction:column; max-height:85vh; }
-    .lp-history-modal .lp-hist-header { padding:.55rem .8rem; border-bottom:1px solid #e2e8f0; }
-    .lp-history-modal .lp-hist-body { padding:.7rem .85rem .9rem; overflow:auto; }
-    .lp-history-modal .lp-hist-footer { padding:.45rem .85rem; border-top:1px solid #e2e8f0; background:#f8fafc; border-bottom-left-radius:14px; border-bottom-right-radius:14px; font-size:.65rem; }
-    .lp-hist-item { border:1px solid #e2e8f0; border-radius:6px; padding:.38rem .45rem; margin-bottom:.4rem; cursor:pointer; background:#fff; transition:background .15s,border-color .15s; }
-    .lp-hist-item:hover { background:#f1f5f9; }
-    .lp-hist-item.active { border-color:#2563eb; background:#eff6ff; }
-    @media (max-width:620px){ .lp-history-modal .lp-hist-dialog { width:95%; } }
-    <?php endif; ?>
-  </style>
+  <?php if ($IS_EDIT_MODE): ?>
+  <link href="../assets/css/content_editor.css" rel="stylesheet" />
+  <?php endif; ?>
 </head>
 <body>
+  <?php if ($IS_EDIT_MODE): ?>
+    <?php
+      $toolbar_config = [
+        'page_title' => 'How It Works Page',
+        'exit_url' => 'how-it-works.php'
+      ];
+      include '../includes/website/edit_toolbar.php';
+    ?>
+  <?php endif; ?>
+
   <?php
   // Custom navigation for how-it-works page
   $custom_nav_links = [
@@ -70,39 +56,6 @@ if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_
   include '../includes/website/topbar.php';
   include '../includes/website/navbar.php';
   ?>
-<?php if($IS_EDIT_MODE): ?>
-<div id="lp-edit-toolbar" class="lp-edit-toolbar shadow-sm">
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <strong class="small">How It Works Editor</strong>
-    <div class="d-flex gap-1 flex-wrap">
-  <a href="../modules/admin/homepage.php" class="btn btn-sm btn-outline-primary" title="Return to Admin Dashboard"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a>
-  <button id="lp-save-btn" class="btn btn-sm btn-success" disabled><i class="bi bi-save me-1"></i>Save</button>
-  <button id="lp-save-all-btn" class="btn btn-sm btn-outline-success" title="Save all editable content"><i class="bi bi-cloud-arrow-up me-1"></i>Save All</button>
-      <button id="lp-reset-all" class="btn btn-sm btn-outline-danger" title="Reset ALL blocks"><i class="bi bi-trash3"></i></button>
-      <button id="lp-history-btn" class="btn btn-sm btn-outline-primary" title="View history"><i class="bi bi-clock-history"></i></button>
-      <a href="how-it-works.php" id="lp-exit-btn" class="btn btn-sm btn-outline-secondary" title="Exit"><i class="bi bi-x-lg"></i></a>
-    </div>
-  </div>
-  <div class="mb-2">
-    <label class="form-label mb-1">Selected</label>
-    <div id="lp-current-target" class="form-control form-control-sm bg-body-tertiary" style="height:auto;min-height:32px;font-size:.65rem"></div>
-  </div>
-  <div class="mb-2">
-    <label class="form-label mb-1">Text</label>
-    <textarea id="lp-edit-text" class="form-control form-control-sm" rows="3" placeholder="Click an editable element"></textarea>
-  </div>
-  <div class="row g-2 mb-2">
-    <div class="col-6"><label class="form-label mb-1">Text Color</label><input type="color" id="lp-text-color" class="form-control form-control-color form-control-sm" value="#000000" /></div>
-    <div class="col-6"><label class="form-label mb-1">BG Color</label><input type="color" id="lp-bg-color" class="form-control form-control-color form-control-sm" value="#ffffff" /></div>
-  </div>
-  <div class="d-flex gap-2 mb-2">
-    <button id="lp-reset-btn" class="btn btn-sm btn-outline-warning w-100" disabled><i class="bi bi-arrow-counterclockwise me-1"></i>Reset Block</button>
-    <button id="lp-highlight-toggle" class="btn btn-sm btn-outline-primary w-100" data-active="1"><i class="bi bi-bounding-box-circles me-1"></i>Hide Boxes</button>
-  </div>
-  <div class="text-end"><small class="text-muted" id="lp-status">Idle</small></div>
-</div>
-<div class="lp-edit-badge"><span class="dot"></span> EDIT MODE</div>
-<?php endif; ?>
 
   <!-- Hero Section -->
   <section class="hero py-5" style="min-height: 50vh;">
@@ -755,6 +708,7 @@ function formatChatbotResponse(text) {
   // Initialize shared ContentEditor for How It Works page
   ContentEditor.init({
     page: 'how-it-works',
+    pageTitle: 'How It Works Page',
     saveEndpoint: 'ajax_save_hiw_content.php',
     resetAllEndpoint: 'ajax_reset_hiw_content.php',
     history: { fetchEndpoint: 'ajax_get_hiw_history.php', rollbackEndpoint: 'ajax_rollback_hiw_block.php' },
