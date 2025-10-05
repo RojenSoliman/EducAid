@@ -7,16 +7,31 @@
   const qsa=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const rgbToHex=rgb=>{ if(!rgb) return null; const m=rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i); if(!m) return null; return '#'+[m[1],m[2],m[3]].map(v=>('0'+parseInt(v,10).toString(16)).slice(-2)).join(''); };
   const esc=s=>(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+  const humanize=s=>{
+    if(!s) return '';
+    return String(s).replace(/[-_]+/g,' ').replace(/\b\w/g,ch=>ch.toUpperCase());
+  };
 
   CE.init=function(cfg){
     cfg=Object.assign({page:'generic'},cfg||{});
-    const tb=qs('#lp-edit-toolbar');
+  const tb=qs('#lp-edit-toolbar');
     if(!tb) return; // toolbar not present -> not in edit mode
     document.body.classList.add('lp-editing');
     const els=qsa('[data-lp-key]');
-    els.forEach(el=>el.classList.add('lp-edit-highlight'));
+    els.forEach(el=>{
+      el.classList.add('lp-edit-highlight');
+      const noText = el.classList.contains('lp-no-text-edit');
+      if (!noText) {
+        el.setAttribute('contenteditable', 'true');
+      } else {
+        el.setAttribute('contenteditable', 'false');
+      }
+      el.setAttribute('spellcheck', 'false');
+    });
 
-    const state={target:null,saving:false,original:new Map()};
+  const state={target:null,saving:false,original:new Map()};
+  const pageLabel = cfg.pageTitle || humanize(cfg.page) || 'Page';
+  const historyHeading = cfg.historyTitle || (pageLabel + ' History');
     const txt=qs('#lp-edit-text'), label=qs('#lp-current-target'), tc=qs('#lp-text-color'), bc=qs('#lp-bg-color'), saveBtn=qs('#lp-save-btn'), saveAllBtn=qs('#lp-save-all-btn'), resetBtn=qs('#lp-reset-btn'), resetAllBtn=qs('#lp-reset-all'), hiBtn=qs('#lp-highlight-toggle'), status=qs('#lp-status'), histBtn=qs('#lp-history-btn');
 
     const setStatus=(msg,type='muted')=>{ if(status){ status.textContent=msg; status.className='text-'+(type==='error'?'danger': type==='success'?'success':'muted'); }};
@@ -51,9 +66,9 @@
       let modal,listEl,filter,blockSel,limitSel,actionSel,closeBtn,loadBtn,preview,applyBtn,cancelBtn,notice,live=null;
       function ensure(){
         if(modal) return;
-        modal=document.createElement('div');
-        modal.className='lp-history-modal';
-        modal.innerHTML=`<div class="lp-hist-backdrop"></div><div class="lp-hist-dialog"><div class="lp-hist-header d-flex justify-content-between align-items-center"><strong class="small mb-0">${cfg.page==='about'?'About':'Landing'} History</strong><div class="d-flex gap-2"><button type="button" class="btn btn-sm btn-outline-primary" data-load><i class="bi bi-arrow-repeat"></i></button><button type="button" class="btn btn-sm btn-outline-secondary" data-close><i class="bi bi-x"></i></button></div></div><div class="lp-hist-body"><div class="row g-2 mb-2"><div class="col-4"><input data-filter type="text" class="form-control form-control-sm" placeholder="Filter key"/></div><div class="col-3"><select data-limit class="form-select form-select-sm"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></div><div class="col-3"><select data-block class="form-select form-select-sm"><option value="">All Blocks</option></select></div><div class="col-2"><select data-action class="form-select form-select-sm"><option value="">All</option><option value="update">Update</option><option value="reset_all">Reset</option><option value="rollback">Rollback</option></select></div></div><div class="d-flex gap-2"><div style="flex:1;min-height:250px;max-height:330px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;padding:.45rem;background:#fff;font-size:.7rem" data-list></div><div style="flex:1;display:flex;flex-direction:column;gap:.4rem"><div style="flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem;background:#f8fafc;overflow:auto" data-preview>(select)</div><div class="d-flex gap-2"><button class="btn btn-sm btn-outline-success w-100" data-apply disabled><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-warning w-100" data-cancel disabled><i class="bi bi-x"></i> Cancel</button></div><div class="small text-warning-emphasis" data-notice style="display:none;">Preview active. Cancel to revert.</div></div></div></div><div class="lp-hist-footer small text-end text-muted">Double‑click preview to apply rollback permanently.</div></div>`;
+  modal=document.createElement('div');
+  modal.className='lp-history-modal';
+  modal.innerHTML=`<div class="lp-hist-backdrop"></div><div class="lp-hist-dialog"><div class="lp-hist-header d-flex justify-content-between align-items-center"><strong class="small mb-0">${esc(historyHeading)}</strong><div class="d-flex gap-2"><button type="button" class="btn btn-sm btn-outline-primary" data-load><i class="bi bi-arrow-repeat"></i></button><button type="button" class="btn btn-sm btn-outline-secondary" data-close><i class="bi bi-x"></i></button></div></div><div class="lp-hist-body"><div class="row g-2 mb-2"><div class="col-4"><input data-filter type="text" class="form-control form-control-sm" placeholder="Filter key"/></div><div class="col-3"><select data-limit class="form-select form-select-sm"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></div><div class="col-3"><select data-block class="form-select form-select-sm"><option value="">All Blocks</option></select></div><div class="col-2"><select data-action class="form-select form-select-sm"><option value="">All</option><option value="update">Update</option><option value="reset_all">Reset</option><option value="rollback">Rollback</option></select></div></div><div class="d-flex gap-2"><div style="flex:1;min-height:250px;max-height:330px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;padding:.45rem;background:#fff;font-size:.7rem" data-list></div><div style="flex:1;display:flex;flex-direction:column;gap:.4rem"><div style="flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem;background:#f8fafc;overflow:auto" data-preview>(select)</div><div class="d-flex gap-2"><button class="btn btn-sm btn-outline-success w-100" data-apply disabled><i class="bi bi-eye"></i> Preview</button><button class="btn btn-sm btn-outline-warning w-100" data-cancel disabled><i class="bi bi-x"></i> Cancel</button></div><div class="small text-warning-emphasis" data-notice style="display:none;">Preview active. Cancel to revert.</div></div></div></div><div class="lp-hist-footer small text-end text-muted">Double‑click preview to apply rollback permanently.</div></div>`;
         document.body.appendChild(modal);
         listEl=qs('[data-list]',modal); filter=qs('[data-filter]',modal); blockSel=qs('[data-block]',modal); limitSel=qs('[data-limit]',modal); actionSel=qs('[data-action]',modal); closeBtn=qs('[data-close]',modal); loadBtn=qs('[data-load]',modal); preview=qs('[data-preview]',modal); applyBtn=qs('[data-apply]',modal); cancelBtn=qs('[data-cancel]',modal); notice=qs('[data-notice]',modal);
         closeBtn.addEventListener('click',hide); modal.querySelector('.lp-hist-backdrop').addEventListener('click',hide); loadBtn.addEventListener('click',load); filter.addEventListener('input',applyFilter); actionSel.addEventListener('change',load);
