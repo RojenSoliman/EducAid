@@ -6,42 +6,46 @@
  */
 
 session_start();
-require_once '../config/database.php';
-
 header('Content-Type: application/json');
 
-// Check authentication
-if (!isset($_SESSION['admin_id']) || $_SESSION['role'] !== 'super_admin') {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+require_once __DIR__ . '/../config/database.php';
+@include_once __DIR__ . '/../includes/permissions.php';
+
+function resp_reset($ok, $msg = '', $extra = []) {
+    echo json_encode(array_merge(['success' => $ok, 'message' => $msg], $extra));
     exit;
 }
 
-$input = json_decode(file_get_contents('php://input'), true);
-$blockKey = $input['block_key'] ?? 'all';
-
-try {
-    if ($blockKey === 'all') {
-        // Delete all blocks (will revert to defaults)
-        $stmt = $connection->prepare("DELETE FROM contact_content_blocks WHERE municipality_id = 1");
-        $stmt->execute();
-        $message = "All content blocks reset to defaults";
-    } else {
-        // Delete specific block
-        $stmt = $connection->prepare("DELETE FROM contact_content_blocks WHERE block_key = ? AND municipality_id = 1");
-        $stmt->execute([$blockKey]);
-        $message = "Block '{$blockKey}' reset to default";
-    }
-    
-    echo json_encode([
-        'success' => true,
-        'message' => $message
-    ]);
-    
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'message' => 'Database error: ' . $e->getMessage()
-    ]);
+if (!isset($connection)) {
+    resp_reset(false, 'Database unavailable');
 }
+
+$is_super_admin = false;
+if (isset($_SESSION['admin_id']) && function_exists('getCurrentAdminRole')) {
+    $role = @getCurrentAdminRole($connection);
+    if ($role === 'super_admin') {
+        $is_super_admin = true;
+    }
+}
+
+if (!$is_super_admin) {
+    resp_reset(false, 'Unauthorized');
+}
+
+$input = json_decode(file_get_contents('php://input'), true) ?: [];
+$blockKey = trim($input['block_key'] ?? 'all');
+
+if ($blockKey === '' || strtolower($blockKey) === 'all') {
+    $result = @pg_query($connection, "DELETE FROM contact_content_blocks WHERE municipality_id=1");
+    if ($result === false) {
+        resp_reset(false, 'Failed to reset blocks', ['error' => pg_last_error($connection)]);
+    }
+    resp_reset(true, 'All content blocks reset to defaults');
+}
+
+$result = @pg_query_params($connection, "DELETE FROM contact_content_blocks WHERE municipality_id=1 AND block_key=$1", [$blockKey]);
+if ($result === false) {
+    resp_reset(false, 'Failed to reset block', ['error' => pg_last_error($connection)]);
+}
+
+resp_reset(true, "Block '{$blockKey}' reset to default");

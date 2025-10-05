@@ -3,8 +3,22 @@
    ============================================ */
 
 /* Edit Mode Body */
-body.edit-mode {
-  padding-top: 60px; /* Account for edit toolbar */
+body.lp-editing {
+  padding-top: 0;
+}
+
+/* When editing, disable entrance animations so content stays visible */
+body.lp-editing .fade-in,
+body.lp-editing .fade-in-left,
+body.lp-editing .fade-in-right,
+body.lp-editing .fade-in-scale,
+body.lp-editing .hero h1,
+body.lp-editing .hero p,
+body.lp-editing .hero .cta-btn,
+body.lp-editing [data-aos] {
+  opacity: 1 !important;
+  transform: none !important;
+  animation: none !important;
 }
 
 /* ============================================
@@ -249,8 +263,8 @@ body.edit-mode {
    Responsive Adjustments
    ============================================ */
 @media (max-width: 768px) {
-  body.edit-mode {
-    padding-top: 100px; /* More space for wrapped toolbar */
+  body.lp-editing {
+    padding-top: 80px; /* Keep room for floating badge/toolbar on small screens */
   }
 
   .toolbar-content {
@@ -321,12 +335,12 @@ body.edit-mode {
 }
 
 /* Disable user-select on non-editable content in edit mode */
-body.edit-mode * {
+body.lp-editing * {
   user-select: text;
 }
 
-body.edit-mode img,
-body.edit-mode button,
-body.edit-mode a:not([data-lp-key]) {
+body.lp-editing img,
+body.lp-editing button,
+body.lp-editing a:not([data-lp-key]) {
   user-select: none;
 }

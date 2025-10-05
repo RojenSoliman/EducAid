@@ -6,86 +6,115 @@
  */
 
 session_start();
-require_once '../config/database.php';
-
 header('Content-Type: application/json');
 
-// Check authentication and authorization
-if (!isset($_SESSION['admin_id']) || $_SESSION['role'] !== 'super_admin') {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Unauthorized access']);
+require_once __DIR__ . '/../config/database.php';
+@include_once __DIR__ . '/../includes/permissions.php';
+
+function resp_contact($ok, $msg = '', $extra = []) {
+    echo json_encode(array_merge(['success' => $ok, 'message' => $msg], $extra));
     exit;
 }
 
-// Get JSON input
-$input = json_decode(file_get_contents('php://input'), true);
-
-if (!isset($input['blocks']) || !is_array($input['blocks'])) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'Invalid request data']);
-    exit;
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    resp_contact(false, 'Invalid method');
 }
 
-$blocks = $input['blocks'];
-$municipalityId = 1; // Default municipality
-$changedBy = $_SESSION['username'] ?? 'super_admin';
+if (!isset($connection)) {
+    resp_contact(false, 'Database unavailable');
+}
 
-try {
-    $connection->beginTransaction();
-    
-    $saved = 0;
-    foreach ($blocks as $blockData) {
-        if (!isset($blockData['key']) || !isset($blockData['html'])) {
-            continue;
-        }
-        
-        $key = trim($blockData['key']);
-        $html = $blockData['html'];
-        $textColor = $blockData['text_color'] ?? null;
-        $bgColor = $blockData['bg_color'] ?? null;
-        
-        // Sanitize HTML (basic)
-        $html = strip_tags($html, '<p><br><strong><em><u><a><ul><ol><li><h1><h2><h3><h4><h5><h6><span><div>');
-        
-        // Save to audit trail first
-        $auditStmt = $connection->prepare("
-            INSERT INTO contact_content_audit 
-            (municipality_id, block_key, html_snapshot, text_color, bg_color, changed_by, changed_at)
-            VALUES (?, ?, ?, ?, ?, ?, NOW())
-        ");
-        $auditStmt->execute([$municipalityId, $key, $html, $textColor, $bgColor, $changedBy]);
-        
-        // Update or insert main content
-        $stmt = $connection->prepare("
-            INSERT INTO contact_content_blocks 
-            (municipality_id, block_key, html, text_color, bg_color, updated_at)
-            VALUES (?, ?, ?, ?, ?, NOW())
-            ON CONFLICT (block_key) 
-            DO UPDATE SET 
-                html = EXCLUDED.html,
-                text_color = EXCLUDED.text_color,
-                bg_color = EXCLUDED.bg_color,
-                updated_at = NOW()
-        ");
-        $stmt->execute([$municipalityId, $key, $html, $textColor, $bgColor]);
-        
-        $saved++;
+$is_super_admin = false;
+if (isset($_SESSION['admin_id']) && function_exists('getCurrentAdminRole')) {
+    $role = @getCurrentAdminRole($connection);
+    if ($role === 'super_admin') {
+        $is_super_admin = true;
     }
-    
-    $connection->commit();
-    
-    echo json_encode([
-        'success' => true,
-        'message' => "Successfully saved {$saved} content block(s)",
-        'blocks_saved' => $saved
-    ]);
-    
-} catch (Exception $e) {
-    $connection->rollBack();
-    error_log("Contact save error: " . $e->getMessage());
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'message' => 'Database error: ' . $e->getMessage()
-    ]);
 }
+
+if (!$is_super_admin) {
+    resp_contact(false, 'Unauthorized');
+}
+
+$raw = file_get_contents('php://input');
+$payload = json_decode($raw, true);
+
+if (!is_array($payload) || empty($payload['blocks']) || !is_array($payload['blocks'])) {
+    resp_contact(false, 'Invalid payload');
+}
+
+// Ensure tables/indexes exist (idempotent)
+@pg_query($connection, "CREATE TABLE IF NOT EXISTS contact_content_blocks (
+    id SERIAL PRIMARY KEY,
+    municipality_id INT NOT NULL DEFAULT 1,
+    block_key VARCHAR(100) NOT NULL,
+    html TEXT NOT NULL,
+    text_color VARCHAR(20) DEFAULT NULL,
+    bg_color VARCHAR(20) DEFAULT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+)");
+@pg_query($connection, "CREATE TABLE IF NOT EXISTS contact_content_audit (
+    id SERIAL PRIMARY KEY,
+    municipality_id INT NOT NULL DEFAULT 1,
+    block_key VARCHAR(100) NOT NULL,
+    html_snapshot TEXT,
+    text_color VARCHAR(20),
+    bg_color VARCHAR(20),
+    changed_by VARCHAR(120),
+    changed_at TIMESTAMPTZ DEFAULT NOW()
+)");
+@pg_query($connection, "CREATE UNIQUE INDEX IF NOT EXISTS contact_content_blocks_unique ON contact_content_blocks(municipality_id, block_key)");
+
+$blocks = $payload['blocks'];
+$keys = array_filter(array_map(fn($b) => trim($b['key'] ?? ''), $blocks));
+$existing = [];
+if ($keys) {
+    $ph = [];
+    $params = [];
+    foreach ($keys as $i => $k) {
+        $ph[] = '$' . ($i + 1);
+        $params[] = $k;
+    }
+    $sql = "SELECT block_key, html, text_color, bg_color FROM contact_content_blocks WHERE municipality_id=1 AND block_key IN (" . implode(',', $ph) . ")";
+    $res = @pg_query_params($connection, $sql, $params);
+    if ($res) {
+        while ($row = pg_fetch_assoc($res)) {
+            $existing[$row['block_key']] = $row;
+        }
+        pg_free_result($res);
+    }
+}
+
+@pg_prepare($connection, 'contact_upsert', "INSERT INTO contact_content_blocks (municipality_id, block_key, html, text_color, bg_color) VALUES (1,$1,$2,$3,$4)
+    ON CONFLICT (municipality_id, block_key) DO UPDATE SET html=EXCLUDED.html, text_color=EXCLUDED.text_color, bg_color=EXCLUDED.bg_color, updated_at=NOW()");
+
+$updated = 0;
+$errors = [];
+$changedBy = $_SESSION['admin_username'] ?? $_SESSION['username'] ?? 'super_admin';
+
+foreach ($blocks as $block) {
+    $key = trim($block['key'] ?? '');
+    $html = isset($block['html']) ? (string)$block['html'] : '';
+    $styles = $block['styles'] ?? [];
+    if ($key === '' || $html === '') {
+        continue;
+    }
+
+    $html_clean = preg_replace('#<script[^>]*>.*?</script>#is', '', $html);
+    $textColor = preg_match('/^#[0-9a-fA-F]{3,8}$/', $styles['color'] ?? '') ? $styles['color'] : null;
+    $bgColor = preg_match('/^#[0-9a-fA-F]{3,8}$/', $styles['backgroundColor'] ?? '') ? $styles['backgroundColor'] : null;
+
+    $result = @pg_execute($connection, 'contact_upsert', [$key, $html_clean, $textColor, $bgColor]);
+    if ($result) {
+        $updated++;
+        @pg_query_params($connection, "INSERT INTO contact_content_audit (municipality_id, block_key, html_snapshot, text_color, bg_color, changed_by) VALUES (1,$1,$2,$3,$4,$5)", [$key, $html_clean, $textColor, $bgColor, $changedBy]);
+    } else {
+        $errors[] = $key;
+    }
+}
+
+if ($updated === 0 && empty($errors)) {
+    resp_contact(false, 'Nothing updated');
+}
+
+resp_contact(true, 'Updated ' . $updated . ' block(s)', ['errors' => $errors]);
