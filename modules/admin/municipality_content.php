@@ -298,30 +298,42 @@ include '../../includes/admin/admin_head.php';
 
     <section class="home-section" id="mainContent">
         <div class="container-fluid py-4 px-4">
+            <!-- Page Header -->
             <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
                 <div>
-                    <h2 class="fw-bold mb-1">Municipality Content Hub</h2>
-                    <p class="text-muted mb-0">Review assigned local government units and jump directly into their content editors.</p>
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-geo-alt-fill" style="font-size: 1.75rem; color: #10b981;"></i>
+                        <h2 class="fw-bold mb-0" style="color: #1e293b;">Municipality Content Hub</h2>
+                    </div>
+                    <p class="text-muted mb-0" style="font-size: 0.95rem;">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Review assigned local government units and jump directly into their content editors.
+                    </p>
                 </div>
                 <?php if (!empty($assignedMunicipalities)): ?>
-                <form method="post" class="d-flex gap-2 align-items-center">
+                <form method="post" class="d-flex gap-2 align-items-center flex-wrap">
                     <input type="hidden" name="select_municipality" value="1">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
-                    <label for="municipality_id" class="text-muted small mb-0">Active municipality</label>
-                    <select id="municipality_id" name="municipality_id" class="form-select form-select-sm" style="min-width: 220px;">
+                    <label for="municipality_id" class="text-muted small mb-0 fw-semibold">
+                        <i class="bi bi-building me-1"></i>Active municipality
+                    </label>
+                    <select id="municipality_id" name="municipality_id" class="form-select form-select-sm shadow-sm" style="min-width: 240px;">
                         <?php foreach ($assignedMunicipalities as $muni): ?>
                             <option value="<?= $muni['municipality_id'] ?>" <?= ($activeMunicipality && $muni['municipality_id'] === $activeMunicipality['municipality_id']) ? 'selected' : '' ?>>
                                 <?= htmlspecialchars($muni['name']) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
-                    <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check-circle me-1"></i>Apply</button>
+                    <button type="submit" class="btn btn-sm btn-success shadow-sm">
+                        <i class="bi bi-check-circle me-1"></i>Apply
+                    </button>
                 </form>
                 <?php endif; ?>
             </div>
 
             <?php if ($feedback): ?>
-                <div class="alert alert-<?= htmlspecialchars($feedback['type']) ?> alert-dismissible fade show" role="alert">
+                <div class="alert alert-<?= htmlspecialchars($feedback['type']) ?> alert-dismissible fade show shadow-sm" role="alert" style="border-radius: 12px;">
+                    <i class="bi bi-check-circle-fill me-2"></i>
                     <?= htmlspecialchars($feedback['message']) ?>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
@@ -357,77 +369,111 @@ include '../../includes/admin/admin_head.php';
                             </div>
                         </div>
                         <div class="col">
-                            <div class="d-flex flex-wrap gap-2 align-items-center mb-1">
-                                <span class="badge bg-success-subtle text-success fw-semibold">Assigned</span>
+                            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                <span class="badge bg-success-subtle text-success fw-semibold">
+                                    <i class="bi bi-check-circle-fill me-1"></i>Assigned
+                                </span>
                                 <span class="badge badge-soft">
+                                    <i class="bi bi-<?= $activeMunicipality['lgu_type'] === 'city' ? 'buildings' : 'house-door' ?> me-1"></i>
                                     <?= $activeMunicipality['lgu_type'] === 'city' ? 'City' : 'Municipality' ?>
                                     <?php if ($activeMunicipality['district_no']): ?>
                                         · District <?= $activeMunicipality['district_no'] ?>
                                     <?php endif; ?>
                                 </span>
                             </div>
-                            <h3 class="fw-bold mb-1 overflow-wrap-anywhere"><?= htmlspecialchars($activeMunicipality['name']) ?></h3>
+                            <h3 class="fw-bold mb-2 overflow-wrap-anywhere" style="color: #1e293b;">
+                                <?= htmlspecialchars($activeMunicipality['name']) ?>
+                            </h3>
                             <?php if (!empty($activeMunicipality['slug'])): ?>
-                                <div class="text-muted small mb-2">Slug: <?= htmlspecialchars($activeMunicipality['slug']) ?></div>
+                                <div class="text-muted small mb-3" style="font-family: 'Courier New', monospace;">
+                                    <i class="bi bi-link-45deg me-1"></i>
+                                    <strong>Slug:</strong> <?= htmlspecialchars($activeMunicipality['slug']) ?>
+                                </div>
                             <?php endif; ?>
-                            <div class="d-flex align-items-center gap-3 flex-wrap">
+                            <div class="d-flex align-items-center gap-4 flex-wrap">
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="color-chip" style="background: <?= htmlspecialchars($activeMunicipality['primary_color']) ?>;"></div>
                                     <div>
-                                        <div class="text-uppercase text-muted small">Primary</div>
-                                        <div class="fw-semibold"><?= htmlspecialchars($activeMunicipality['primary_color']) ?></div>
+                                        <div class="text-uppercase text-muted small" style="font-size: 0.75rem; letter-spacing: 0.5px;">Primary</div>
+                                        <div class="fw-bold" style="font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                            <?= htmlspecialchars($activeMunicipality['primary_color']) ?>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="color-chip" style="background: <?= htmlspecialchars($activeMunicipality['secondary_color']) ?>;"></div>
                                     <div>
-                                        <div class="text-uppercase text-muted small">Secondary</div>
-                                        <div class="fw-semibold"><?= htmlspecialchars($activeMunicipality['secondary_color']) ?></div>
+                                        <div class="text-uppercase text-muted small" style="font-size: 0.75rem; letter-spacing: 0.5px;">Secondary</div>
+                                        <div class="fw-bold" style="font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                            <?= htmlspecialchars($activeMunicipality['secondary_color']) ?>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                         <div class="col-auto">
                             <div class="d-flex flex-column gap-2">
-                                <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#uploadLogoModal">
-                                    <i class="bi bi-upload me-1"></i>Upload Custom Logo
+                                <button type="button" class="btn btn-primary btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#uploadLogoModal">
+                                    <i class="bi bi-upload me-1"></i>Upload Logo
                                 </button>
-                                <a href="topbar_settings.php" class="btn btn-outline-success btn-sm"><i class="bi bi-layout-text-window me-1"></i>Topbar Theme</a>
-                                <a href="sidebar_settings.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-layout-sidebar me-1"></i>Sidebar Theme</a>
-                                <a href="settings.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-sliders me-1"></i>System Settings</a>
+                                <a href="topbar_settings.php" class="btn btn-outline-success btn-sm">
+                                    <i class="bi bi-layout-text-window me-1"></i>Topbar
+                                </a>
+                                <a href="sidebar_settings.php" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-layout-sidebar me-1"></i>Sidebar
+                                </a>
+                                <a href="settings.php" class="btn btn-outline-secondary btn-sm">
+                                    <i class="bi bi-sliders me-1"></i>Settings
+                                </a>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="card mb-4">
+            <div class="card mb-4 shadow-sm">
                 <div class="card-header bg-white py-3">
-                    <h5 class="mb-0"><i class="bi bi-brush me-2 text-success"></i>Content Areas</h5>
+                    <h5 class="mb-0">
+                        <i class="bi bi-brush me-2 text-success"></i>Content Areas
+                        <span class="badge bg-light text-dark ms-2" style="font-size: 0.75rem;">
+                            <?= count($quickActions) ?> sections
+                        </span>
+                    </h5>
                 </div>
-                <div class="card-body">
-                    <div class="row g-3">
+                <div class="card-body p-4">
+                    <div class="row g-4">
                         <?php foreach ($quickActions as $action): ?>
                             <div class="col-xl-4 col-lg-6">
-                                <div class="card quick-action-card h-100">
+                                <div class="card quick-action-card h-100 shadow-sm">
                                     <div class="card-body d-flex flex-column">
-                                        <div class="d-flex align-items-center gap-3 mb-3">
-                                            <div class="p-2 rounded-circle bg-success-subtle text-success">
+                                        <div class="d-flex align-items-start gap-3 mb-3">
+                                            <div class="p-3 rounded-3 bg-success-subtle text-success">
                                                 <i class="bi <?= htmlspecialchars($action['icon']) ?>"></i>
                                             </div>
-                                            <div>
-                                                <h6 class="mb-1 fw-semibold"><?= htmlspecialchars($action['label']) ?></h6>
-                                                <div class="text-muted small">Blocks synced: <?= $action['count'] === null ? '—' : number_format($action['count']) ?></div>
+                                            <div class="flex-grow-1">
+                                                <h6 class="mb-1 fw-bold" style="color: #1e293b;">
+                                                    <?= htmlspecialchars($action['label']) ?>
+                                                </h6>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span class="badge" style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); color: #166534; font-size: 0.75rem;">
+                                                        <i class="bi bi-database me-1"></i>
+                                                        <?= $action['count'] === null ? 'N/A' : $action['count'] ?> blocks
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
-                                        <p class="text-muted small flex-grow-1 mb-3"><?= htmlspecialchars($action['description']) ?></p>
-                                        <div class="d-flex flex-wrap gap-2">
-                                            <a href="<?= htmlspecialchars($action['editor_url']) ?>" target="_blank" class="btn btn-success btn-sm">
-                                                <i class="bi bi-pencil-square me-1"></i>Edit Content
-                                            </a>
-                                            <a href="<?= htmlspecialchars($action['view_url']) ?>" target="_blank" class="btn btn-outline-secondary btn-sm">
-                                                <i class="bi bi-box-arrow-up-right me-1"></i>View Page
-                                            </a>
+                                        <p class="text-muted mb-3" style="font-size: 0.9rem; line-height: 1.6;">
+                                            <?= htmlspecialchars($action['description']) ?>
+                                        </p>
+                                        <div class="mt-auto">
+                                            <div class="d-flex flex-wrap gap-2">
+                                                <a href="<?= htmlspecialchars($action['editor_url']) ?>" target="_blank" class="btn btn-success btn-sm flex-grow-1">
+                                                    <i class="bi bi-pencil-square me-1"></i>Edit Content
+                                                </a>
+                                                <a href="<?= htmlspecialchars($action['view_url']) ?>" target="_blank" class="btn btn-outline-secondary btn-sm">
+                                                    <i class="bi bi-box-arrow-up-right"></i>
+                                                </a>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -443,43 +489,56 @@ include '../../includes/admin/admin_head.php';
             </div>
 
             <?php if (!empty($otherMunicipalities)): ?>
-                <div class="card">
+                <div class="card shadow-sm">
                     <div class="card-header bg-white py-3">
-                        <h5 class="mb-0"><i class="bi bi-geo-alt me-2 text-primary"></i>Other Assigned Municipalities</h5>
+                        <h5 class="mb-0">
+                            <i class="bi bi-geo-alt me-2 text-primary"></i>Other Assigned Municipalities
+                            <span class="badge bg-light text-dark ms-2" style="font-size: 0.75rem;">
+                                <?= count($otherMunicipalities) ?>
+                            </span>
+                        </h5>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body p-4">
                         <div class="row g-3">
                             <?php foreach ($otherMunicipalities as $muni): ?>
                                 <div class="col-xl-4 col-lg-6">
-                                    <div class="p-3 other-muni-card h-100 d-flex flex-column">
+                                    <div class="other-muni-card h-100 d-flex flex-column">
                                         <div class="d-flex align-items-center gap-3 mb-3">
-                                            <div class="muni-logo-wrapper" style="width:64px;height:64px;">
+                                            <div class="muni-logo-wrapper" style="width:72px;height:72px;">
                                                 <?php $logo = build_logo_src($muni['active_logo']); ?>
                                                 <?php if ($logo): ?>
-                                                    <img src="<?= htmlspecialchars($logo) ?>" alt="<?= htmlspecialchars($muni['name']) ?> logo" style="max-width:50px;max-height:50px;">
+                                                    <img src="<?= htmlspecialchars($logo) ?>" alt="<?= htmlspecialchars($muni['name']) ?> logo" style="max-width:56px;max-height:56px;">
                                                 <?php else: ?>
-                                                    <span class="text-muted small">No Logo</span>
+                                                    <div class="text-muted text-center">
+                                                        <i class="bi bi-image" style="font-size: 1.5rem;"></i>
+                                                    </div>
                                                 <?php endif; ?>
                                             </div>
-                                            <div>
-                                                <div class="fw-semibold overflow-wrap-anywhere"><?= htmlspecialchars($muni['name']) ?></div>
+                                            <div class="flex-grow-1">
+                                                <div class="fw-bold overflow-wrap-anywhere mb-1" style="color: #1e293b;">
+                                                    <?= htmlspecialchars($muni['name']) ?>
+                                                </div>
                                                 <?php if (!empty($muni['slug'])): ?>
-                                                    <div class="text-muted small">Slug: <?= htmlspecialchars($muni['slug']) ?></div>
+                                                    <div class="text-muted small" style="font-family: 'Courier New', monospace; font-size: 0.8rem;">
+                                                        <i class="bi bi-link-45deg"></i><?= htmlspecialchars($muni['slug']) ?>
+                                                    </div>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
-                                        <div class="mt-auto">
-                                            <form method="post" class="d-inline">
-                                                <input type="hidden" name="select_municipality" value="1">
-                                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
-                                                <input type="hidden" name="municipality_id" value="<?= $muni['municipality_id'] ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-success">
-                                                    <i class="bi bi-arrow-repeat me-1"></i>Set Active
-                                                </button>
-                                            </form>
-                                            <a href="<?= htmlspecialchars(sprintf('../../website/landingpage.php?municipality_id=%d', $muni['municipality_id'])) ?>" target="_blank" class="btn btn-sm btn-outline-secondary ms-1">
-                                                <i class="bi bi-box-arrow-up-right me-1"></i>Preview
-                                            </a>
+                                        <div class="mt-auto pt-3 border-top" style="border-color: rgba(226, 232, 240, 0.6) !important;">
+                                            <div class="d-flex gap-2">
+                                                <form method="post" class="flex-grow-1">
+                                                    <input type="hidden" name="select_municipality" value="1">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                                                    <input type="hidden" name="municipality_id" value="<?= $muni['municipality_id'] ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-success w-100">
+                                                        <i class="bi bi-arrow-repeat me-1"></i>Set Active
+                                                    </button>
+                                                </form>
+                                                <a href="<?= htmlspecialchars(sprintf('../../website/landingpage.php?municipality_id=%d', $muni['municipality_id'])) ?>" target="_blank" class="btn btn-sm btn-outline-secondary" title="Preview">
+                                                    <i class="bi bi-box-arrow-up-right"></i>
+                                                </a>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
