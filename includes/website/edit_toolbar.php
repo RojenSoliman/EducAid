@@ -95,19 +95,65 @@ if (!$toolbar_config['exit_url']) {
     50% { opacity: 0.7; transform: scale(1.1); }
 }
 .lp-toolbar-header {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     user-select: none;
     text-align: center;
     margin-bottom: 0.75rem;
+    padding-right: 2.5rem;
 }
 .lp-toolbar-header .lp-toolbar-title {
     font-weight: 600;
     display: block;
+    margin: 0;
 }
 .lp-toolbar-actions {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.5rem;
+}
+.lp-lock-toggle {
+    position: absolute;
+    top: -0.35rem;
+    right: -0.35rem;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    box-shadow: 0 2px 6px rgba(15,23,42,0.08);
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.lp-lock-toggle:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #fff;
+}
+.lp-lock-toggle:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+}
+.lp-lock-toggle.is-locked {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #fff;
+}
+.lp-edit-toolbar.lp-locked {
+    box-shadow: 0 4px 16px rgba(15,23,42,0.18);
+}
+.lp-toolbar-resizer.disabled,
+.lp-edit-toolbar.lp-locked .lp-toolbar-resizer {
+    opacity: 0.35;
+    pointer-events: none;
+    cursor: not-allowed;
 }
 .lp-toolbar-section {
     font-size: 0.6rem;
@@ -152,6 +198,9 @@ if (!$toolbar_config['exit_url']) {
 <div id="lp-edit-toolbar" class="lp-edit-toolbar shadow-sm">
     <div class="lp-toolbar-header mb-2">
         <strong class="small mb-0 lp-toolbar-title"><?php echo htmlspecialchars($toolbar_config['page_title']); ?></strong>
+        <button id="lp-lock-toggle" type="button" class="lp-lock-toggle" data-locked="0" aria-label="Lock toolbar" title="Lock toolbar">
+            <i class="bi bi-lock-fill"></i>
+        </button>
     </div>
     
     <div class="mb-2">
@@ -252,6 +301,7 @@ if (!$toolbar_config['exit_url']) {
     if (!toolbar) return;
 
     const resizer = toolbar.querySelector('.lp-toolbar-resizer');
+    const lockBtn = document.getElementById('lp-lock-toggle');
     const storageKey = 'lp-toolbar-state::' + window.location.pathname;
     const marginX = 12;
     const marginY = 12;
@@ -264,6 +314,15 @@ if (!$toolbar_config['exit_url']) {
     });
 
     let currentState = null;
+    let isLocked = false;
+    let dragActive = false;
+    let dragPointerId = null;
+    let offsetX = 0;
+    let offsetY = 0;
+    let resizeActive = false;
+    let resizePointerId = null;
+    let initialSize = null;
+    let initialPoint = null;
 
     const initialRect = toolbar.getBoundingClientRect();
     const initialState = {
@@ -293,6 +352,50 @@ if (!$toolbar_config['exit_url']) {
         };
     };
 
+    function updateLockButton() {
+        if (!lockBtn) return;
+        lockBtn.dataset.locked = isLocked ? '1' : '0';
+        lockBtn.setAttribute('aria-pressed', isLocked ? 'true' : 'false');
+        lockBtn.setAttribute('aria-label', isLocked ? 'Unlock toolbar' : 'Lock toolbar');
+        lockBtn.title = isLocked ? 'Unlock toolbar' : 'Lock toolbar';
+        lockBtn.innerHTML = isLocked ? '<i class="bi bi-unlock-fill"></i>' : '<i class="bi bi-lock-fill"></i>';
+        lockBtn.classList.toggle('is-locked', isLocked);
+    }
+
+    function setLock(value, skipSave = false) {
+        isLocked = !!value;
+        toolbar.classList.toggle('lp-locked', isLocked);
+        if (resizer) {
+            resizer.classList.toggle('disabled', isLocked);
+        }
+        if (isLocked && dragActive) {
+            dragActive = false;
+            if (dragPointerId != null && toolbar.releasePointerCapture) {
+                try { toolbar.releasePointerCapture(dragPointerId); } catch (err) { /* ignore */ }
+            }
+            dragPointerId = null;
+            toolbar.classList.remove('lp-dragging');
+            toolbar.style.transition = '';
+        }
+        if (isLocked && resizeActive) {
+            resizeActive = false;
+            if (resizer && resizer.releasePointerCapture && resizePointerId != null) {
+                try { resizer.releasePointerCapture(resizePointerId); } catch (err) { /* ignore */ }
+            }
+            resizePointerId = null;
+        }
+        updateLockButton();
+        if (currentState) {
+            currentState.locked = isLocked;
+        } else {
+            const baseState = defaultState();
+            currentState = { ...baseState, locked: isLocked };
+        }
+        if (!skipSave) {
+            saveState();
+        }
+    }
+
     const applyState = (nextState) => {
         if (!nextState) return;
         const base = currentState || {};
@@ -300,7 +403,8 @@ if (!$toolbar_config['exit_url']) {
             top: nextState.top ?? base.top ?? marginY,
             left: nextState.left ?? base.left ?? (window.innerWidth - (toolbar.offsetWidth || minWidth) - marginX),
             width: nextState.width ?? base.width ?? toolbar.offsetWidth,
-            height: nextState.height ?? base.height ?? toolbar.offsetHeight
+            height: nextState.height ?? base.height ?? toolbar.offsetHeight,
+            locked: typeof nextState.locked === 'boolean' ? nextState.locked : (base.locked ?? isLocked ?? false)
         };
 
         const size = clampSize(merged.width, merged.height);
@@ -320,11 +424,13 @@ if (!$toolbar_config['exit_url']) {
         toolbar.style.right = 'auto';
         toolbar.style.bottom = 'auto';
 
-        currentState = normalized;
+        const locked = merged.locked === true;
+        currentState = { ...normalized, locked };
+        setLock(locked, true);
         return currentState;
     };
 
-    const defaultState = () => ({ ...initialState });
+    const defaultState = () => ({ ...initialState, locked: false });
 
     const loadState = () => {
         try {
@@ -344,14 +450,15 @@ if (!$toolbar_config['exit_url']) {
         }
     };
 
-    const saveState = () => {
+    function saveState() {
         if (!currentState) return;
+        currentState.locked = isLocked;
         try {
             localStorage.setItem(storageKey, JSON.stringify(currentState));
         } catch (err) {
             // ignore storage failures
         }
-    };
+    }
 
     loadState();
 
@@ -360,7 +467,17 @@ if (!$toolbar_config['exit_url']) {
         const margin = 24;
         const offscreen = rect.right < margin || rect.left > window.innerWidth - margin || rect.bottom < margin || rect.top > window.innerHeight - margin;
         if (offscreen) {
-            applyState(defaultState());
+            const fallback = defaultState();
+            const width = currentState ? currentState.width : fallback.width;
+            const height = currentState ? currentState.height : fallback.height;
+            const locked = currentState ? currentState.locked : isLocked;
+            applyState({
+                top: fallback.top,
+                left: fallback.left,
+                width,
+                height,
+                locked
+            });
             saveState();
         }
     };
@@ -373,10 +490,12 @@ if (!$toolbar_config['exit_url']) {
         saveState();
     };
 
-    let dragActive = false;
-    let dragPointerId = null;
-    let offsetX = 0;
-    let offsetY = 0;
+    if (lockBtn) {
+        lockBtn.addEventListener('click', () => {
+            const next = !isLocked;
+            setLock(next);
+        });
+    }
 
     const interactiveSelectors = 'a, button, select, textarea, input';
     const isInteractiveElement = (el) => {
@@ -387,6 +506,7 @@ if (!$toolbar_config['exit_url']) {
     };
 
     const startDrag = (evt) => {
+        if (isLocked) return;
         if (evt.button !== undefined && evt.button !== 0) return;
         if (isInteractiveElement(evt.target)) return;
 
@@ -407,7 +527,7 @@ if (!$toolbar_config['exit_url']) {
     };
 
     const moveDrag = (evt) => {
-        if (!dragActive) return;
+        if (!dragActive || isLocked) return;
         if (dragPointerId !== null && evt.pointerId !== undefined && evt.pointerId !== dragPointerId) return;
         const point = readPoint(evt);
         if (point.x === undefined || point.y === undefined) return;
@@ -434,14 +554,9 @@ if (!$toolbar_config['exit_url']) {
     toolbar.addEventListener('pointermove', moveDrag);
     toolbar.addEventListener('pointerup', endDrag);
     toolbar.addEventListener('pointercancel', endDrag);
-
-    let resizeActive = false;
-    let resizePointerId = null;
-    let initialSize = null;
-    let initialPoint = null;
-
     const startResize = (evt) => {
         if (!resizer) return;
+        if (isLocked) return;
         if (evt.button !== undefined && evt.button !== 0) return;
         const point = readPoint(evt);
         if (point.x === undefined || point.y === undefined) return;
@@ -456,7 +571,7 @@ if (!$toolbar_config['exit_url']) {
     };
 
     const moveResize = (evt) => {
-        if (!resizeActive) return;
+        if (!resizeActive || isLocked) return;
         if (resizePointerId !== null && evt.pointerId !== undefined && evt.pointerId !== resizePointerId) return;
         const point = readPoint(evt);
         if (point.x === undefined || point.y === undefined) return;

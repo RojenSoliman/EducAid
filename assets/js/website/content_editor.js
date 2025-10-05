@@ -23,7 +23,17 @@
     const select=el=>{ state.target=el; label.textContent=el.dataset.lpKey; txt.value=el.innerText.trim(); const cs=getComputedStyle(el); tc.value=rgbToHex(cs.color)||'#000000'; bc.value=rgbToHex(cs.backgroundColor)||'#ffffff'; };
     const dirty=el=>{ el.dataset.lpDirty='1'; if(saveBtn) saveBtn.disabled=false; };
 
-    els.forEach(el=>{ if(!state.original.has(el.dataset.lpKey)) state.original.set(el.dataset.lpKey,el.innerHTML); el.addEventListener('click',e=>{ if(!tb.contains(e.target)){ e.preventDefault(); e.stopPropagation(); select(el);} }); });
+    els.forEach(el=>{
+      if(!state.original.has(el.dataset.lpKey)) state.original.set(el.dataset.lpKey,el.innerHTML);
+      el.addEventListener('click',e=>{ if(!tb.contains(e.target)){ e.preventDefault(); e.stopPropagation(); select(el);} });
+      el.addEventListener('input',()=>{
+        dirty(el);
+        if(state.target===el && txt){ txt.value=el.innerText.trim(); }
+      });
+      el.addEventListener('blur',()=>{
+        if(state.target===el && txt){ txt.value=el.innerText.trim(); }
+      });
+    });
     if(txt) txt.addEventListener('input',()=>{ if(!state.target) return; state.target.innerText=txt.value; dirty(state.target); });
     if(tc) tc.addEventListener('input',()=>{ if(state.target){ state.target.style.color=tc.value; dirty(state.target);} });
     if(bc) bc.addEventListener('input',()=>{ if(state.target){ state.target.style.backgroundColor=bc.value; dirty(state.target);} });
