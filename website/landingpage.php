@@ -40,6 +40,19 @@ if (!$IS_EDIT_SUPER_ADMIN) {
 require_once '../config/recaptcha_v2_config.php';
 // Bring in database for dynamic announcements preview
 require_once '../config/database.php';
+@include_once __DIR__ . '/../includes/permissions.php';
+
+$IS_EDIT_MODE = false;
+$is_super_admin = false;
+if (isset($_SESSION['admin_id']) && function_exists('getCurrentAdminRole')) {
+  $role = @getCurrentAdminRole($connection);
+  if ($role === 'super_admin') {
+    $is_super_admin = true;
+  }
+}
+if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') {
+  $IS_EDIT_MODE = true;
+}
 
 // Fetch latest 3 announcements for landing page preview
 $landing_announcements = [];
@@ -96,6 +109,9 @@ function lp_block_style($key){
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
   <link href="../assets/css/website/recaptcha_v2.css" rel="stylesheet" />
+  <?php if ($IS_EDIT_MODE): ?>
+  <link href="../assets/css/content_editor.css" rel="stylesheet" />
+  <?php endif; ?>
   <?php // Dynamic theme variables (colors, hero gradient, etc.)
     @include_once __DIR__ . '/../includes/website/landing_theme_loader.php';
   ?>
@@ -149,83 +165,15 @@ function lp_block_style($key){
   
   include '../includes/website/topbar.php';
   include '../includes/website/navbar.php';
-  
-  // Determine if super admin edit mode is enabled (?edit=1)
-  $IS_EDIT_MODE = false;
-  $is_super_admin = false;
-  if (isset($_SESSION['admin_id'])) {
-    // Re-use permissions helper if available
-    @include_once __DIR__ . '/../includes/permissions.php';
-    if (function_exists('getCurrentAdminRole')) {
-      $role = @getCurrentAdminRole($connection);
-      if ($role === 'super_admin') {
-        $is_super_admin = true;
-      }
-    }
-  }
-  if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') {
-    $IS_EDIT_MODE = true;
-  }
   ?>
   <?php if ($IS_EDIT_MODE): ?>
-  <!-- Inline Landing Page Editor (Super Admin Only) -->
-  <div id="lp-edit-toolbar" class="lp-edit-toolbar shadow-sm">
-    <div class="lp-edit-toolbar-header d-flex align-items-center justify-content-between flex-wrap gap-2">
-      <strong class="small">Landing Page Editor</strong>
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <a href="../modules/admin/homepage.php" class="btn btn-sm btn-outline-primary" title="Return to Admin Dashboard">
-          <i class="bi bi-speedometer2 me-1"></i>Dashboard
-        </a>
-        <button id="lp-save-btn" class="btn btn-sm btn-success" disabled><i class="bi bi-save me-1"></i>Save</button>
-  <button id="lp-save-all-btn" class="btn btn-sm btn-outline-success" title="Save all editable content"><i class="bi bi-cloud-arrow-up me-1"></i>Save All</button>
-  <button id="lp-history-btn" class="btn btn-sm btn-outline-secondary" type="button" title="View edit history"><i class="bi bi-clock-history me-1"></i>History</button>
-        <a href="landingpage.php" id="lp-exit-btn" class="btn btn-sm btn-outline-secondary" title="Exit Edit Mode"><i class="bi bi-x-lg"></i></a>
-      </div>
-    </div>
-    <div class="lp-edit-toolbar-body small mt-2">
-      <div class="mb-2">
-        <label class="form-label small mb-1">Selected Element</label>
-        <div id="lp-current-target" class="form-control form-control-sm bg-body-tertiary" style="height:auto; min-height:32px; font-size:.65rem; overflow:auto"></div>
-      </div>
-      <div class="mb-2">
-        <label class="form-label small mb-1">Text Content</label>
-        <textarea id="lp-edit-text" class="form-control form-control-sm" rows="3" placeholder="Click an editable element on the page"></textarea>
-      </div>
-      <div class="row g-2 mb-2">
-        <div class="col-6">
-          <label class="form-label small mb-1">Text Color</label>
-          <input type="color" id="lp-text-color" class="form-control form-control-color form-control-sm" value="#000000" title="Change text color" />
-        </div>
-        <div class="col-6">
-          <label class="form-label small mb-1">BG Color</label>
-          <input type="color" id="lp-bg-color" class="form-control form-control-color form-control-sm" value="#ffffff" title="Change background color" />
-        </div>
-      </div>
-      <div class="d-flex flex-column gap-2">
-        <div class="d-flex gap-2">
-          <button id="lp-reset-btn" class="btn btn-sm btn-outline-warning w-100" type="button" disabled><i class="bi bi-arrow-counterclockwise me-1"></i>Reset Block</button>
-          <button id="lp-highlight-toggle" class="btn btn-sm btn-outline-primary w-100" type="button" data-active="1"><i class="bi bi-bounding-box-circles me-1"></i>Hide Boxes</button>
-        </div>
-        <button id="lp-reset-all" class="btn btn-sm btn-outline-danger w-100" type="button"><i class="bi bi-trash3 me-1"></i>Reset All Blocks</button>
-      </div>
-      <div class="mt-2 text-end">
-        <small class="text-muted" id="lp-status">Idle</small>
-      </div>
-    </div>
-  </div>
-  <style>
-    .lp-edit-toolbar { position:fixed; top:70px; right:12px; width:300px; background:#fff; border:1px solid #d1d9e0; border-radius:12px; z-index:4000; padding:.75rem .85rem; font-family: system-ui, sans-serif; }
-    .lp-edit-highlight { outline:2px dashed #2563eb; outline-offset:2px; cursor:text; position:relative; }
-    .lp-edit-highlight:hover { outline-color:#1d4ed8; }
-    .lp-edit-highlight[data-lp-dirty="1"]::after { content:'●'; position:absolute; top:-6px; right:-6px; background:#dc2626; color:#fff; width:14px; height:14px; font-size:.55rem; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:700; box-shadow:0 0 0 2px #fff; }
-    .lp-edit-toolbar textarea { font-size:.7rem; }
-    .lp-edit-toolbar .form-label { font-size:.6rem; letter-spacing:.5px; text-transform:uppercase; }
-    .lp-edit-toolbar-header { border-bottom:1px solid #e2e8f0; padding-bottom:.25rem; }
-    body.lp-editing { scroll-padding-top:90px; }
-    .lp-edit-badge { position:fixed; left:12px; top:70px; background:#1d4ed8; color:#fff; padding:4px 10px; font-size:.65rem; font-weight:600; letter-spacing:.5px; border-radius:30px; z-index:4000; display:flex; align-items:center; gap:4px; box-shadow:0 2px 4px rgba(0,0,0,.2);}    
-    .lp-edit-badge .dot { width:6px; height:6px; background:#22c55e; border-radius:50%; box-shadow:0 0 0 2px rgba(255,255,255,.4); }
-  </style>
-  <div class="lp-edit-badge"><span class="dot"></span> EDIT MODE</div>
+    <?php
+      $toolbar_config = [
+        'page_title' => 'Landing Page',
+        'exit_url' => 'landingpage.php'
+      ];
+      include '../includes/website/edit_toolbar.php';
+    ?>
   <?php endif; ?>
 
   <!-- Hero -->
@@ -834,7 +782,7 @@ function formatChatbotResponse(text) {
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <!-- Mobile Navbar JS -->
-<script src="assets/js/website/mobile-navbar.js"></script>
+<script src="../assets/js/website/mobile-navbar.js"></script>
 
 <!-- Enhanced scroll animations - KEEP ONLY THIS ONE -->
 <script>
@@ -844,18 +792,17 @@ class ScrollAnimations {
       threshold: 0.1,
       rootMargin: '0px 0px -10% 0px'
     };
-    
     this.init();
   }
-  
+
   init() {
     this.createObserver();
     this.observeElements();
   }
-  
+
   createObserver() {
     this.observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
+      entries.forEach((entry) => {
         if (entry.isIntersecting) {
           this.animateElement(entry.target);
           this.observer.unobserve(entry.target);
@@ -863,16 +810,15 @@ class ScrollAnimations {
       });
     }, this.observerOptions);
   }
-  
+
   observeElements() {
     const elements = document.querySelectorAll('.fade-in, .fade-in-left, .fade-in-right, .fade-in-scale');
-    elements.forEach(el => this.observer.observe(el));
+    elements.forEach((el) => this.observer.observe(el));
   }
-  
+
   animateElement(element) {
     element.classList.add('visible');
-    
-    // Add stagger effect for child elements
+
     if (element.classList.contains('fade-in-stagger')) {
       const children = element.querySelectorAll('.fade-in');
       children.forEach((child, index) => {
@@ -884,312 +830,54 @@ class ScrollAnimations {
   }
 }
 
-// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   new ScrollAnimations();
 });
 </script>
 
+<?php if ($IS_EDIT_MODE): ?>
+  <script src="../assets/js/website/content_editor.js"></script>
+  <script>
+  ContentEditor.init({
+    page: 'landing',
+    pageTitle: 'Landing Page',
+    saveEndpoint: 'ajax_save_landing_content.php',
+    resetAllEndpoint: 'ajax_reset_landing_content.php',
+    history: {
+      fetchEndpoint: 'ajax_get_landing_history.php',
+      rollbackEndpoint: 'ajax_rollback_landing_block.php'
+    },
+    refreshAfterSave: async (keys) => {
+      try {
+        const response = await fetch('ajax_get_landing_blocks.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys })
+        });
+        const data = await response.json();
+        if (!data.success) return;
+        (data.blocks || []).forEach((block) => {
+          const el = document.querySelector('[data-lp-key="' + CSS.escape(block.block_key) + '"]');
+          if (!el) return;
+          el.innerHTML = block.html;
+          if (block.text_color) {
+            el.style.color = block.text_color;
+          } else {
+            el.style.removeProperty('color');
+          }
+          if (block.bg_color) {
+            el.style.backgroundColor = block.bg_color;
+          } else {
+            el.style.removeProperty('background-color');
+          }
+        });
+      } catch (error) {
+        console.error('Refresh error', error);
+      }
+    }
+  });
+  </script>
+<?php endif; ?>
 
 </body>
-<?php if ($IS_EDIT_MODE): ?>
-<script>
-(function(){
-  // Any element with data-lp-key is considered editable
-  function getEditableElements(){
-    return Array.from(document.querySelectorAll('[data-lp-key]'));
-  }
-  const state = { target:null, originalContent:new Map(), dirtyKeys:new Set(), content:{}, saving:false };
-  const toolbar = document.getElementById('lp-edit-toolbar');
-  if(!toolbar){ return; }
-  document.body.classList.add('lp-editing');
-  const txtArea = document.getElementById('lp-edit-text');
-  const targetLabel = document.getElementById('lp-current-target');
-  const textColor = document.getElementById('lp-text-color');
-  const bgColor = document.getElementById('lp-bg-color');
-  const saveBtn = document.getElementById('lp-save-btn');
-  const saveAllBtn = document.getElementById('lp-save-all-btn');
-  const resetBtn = document.getElementById('lp-reset-btn');
-  const highlightToggle = document.getElementById('lp-highlight-toggle');
-  const statusEl = document.getElementById('lp-status');
-
-  function setStatus(msg,type='muted'){ statusEl.textContent = msg; statusEl.className = 'text-' + (type==='error'?'danger': type==='success'?'success':'muted'); }
-
-  function keyFor(el){
-    if(el.dataset && el.dataset.lpKey){ return el.dataset.lpKey; }
-    if(el.id) return el.tagName.toLowerCase()+'#'+el.id;
-    const idx = Array.from(el.parentNode.children).indexOf(el);
-    return el.tagName.toLowerCase()+'.'+(el.className||'').replace(/\s+/g,'-')+':'+idx;
-  }
-
-  function markDirty(el){
-    el.dataset.lpDirty = '1';
-    saveBtn.disabled = false;
-  }
-
-  function populateControls(el){
-    state.target = el;
-    targetLabel.textContent = el.tagName + (el.className?'.'+el.className.trim().replace(/\s+/g,' .'):'');
-    txtArea.value = el.innerText.trim();
-    const cs = getComputedStyle(el);
-    textColor.value = rgbToHex(cs.color) || '#000000';
-    bgColor.value = rgbToHex(cs.backgroundColor) || '#ffffff';
-  }
-
-  function rgbToHex(rgb){
-    if(!rgb) return null;
-    const m = rgb.match(/rgb[a]?\((\d+),\s*(\d+),\s*(\d+)/i); if(!m) return null;
-    return '#'+[m[1],m[2],m[3]].map(v=>('0'+parseInt(v).toString(16)).slice(-2)).join('');
-  }
-
-  function attach(){
-    getEditableElements().forEach(el=>{
-      el.classList.add('lp-edit-highlight');
-      const k = keyFor(el);
-      if(!state.originalContent.has(k)) state.originalContent.set(k, el.innerHTML);
-      el.addEventListener('click', e=>{
-        if(!toolbar.contains(e.target)){
-          e.preventDefault(); e.stopPropagation(); populateControls(el);
-        }
-      });
-    });
-  }
-
-  txtArea.addEventListener('input', ()=>{
-    if(!state.target) return; state.target.innerText = txtArea.value; markDirty(state.target);
-  });
-  textColor.addEventListener('input', ()=>{ if(state.target){ state.target.style.color = textColor.value; markDirty(state.target);} });
-  bgColor.addEventListener('input', ()=>{ if(state.target){ state.target.style.backgroundColor = bgColor.value; markDirty(state.target);} });
-  resetBtn.addEventListener('click', ()=>{ if(!state.target) return; const k=keyFor(state.target); const orig=state.originalContent.get(k); if(orig){ state.target.innerHTML=orig; } state.target.style.color=''; state.target.style.backgroundColor=''; state.target.removeAttribute('data-lp-dirty'); saveBtn.disabled = !document.querySelector('[data-lp-dirty="1"]'); setStatus('Block reset'); });
-  const resetAllBtn = document.getElementById('lp-reset-all');
-  const exitBtn = document.getElementById('lp-exit-btn');
-  if(resetAllBtn){
-    resetAllBtn.addEventListener('click', async ()=>{
-      if(!confirm('Reset ALL edited blocks to original content? This cannot be undone.')) return;
-      setStatus('Resetting all...');
-      try {
-        const res = await fetch('ajax_reset_landing_content.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'reset_all' }) });
-        const data = await res.json();
-        if(data.success){
-          document.querySelectorAll('[data-lp-key]').forEach(el=>{ const orig = state.originalContent.get(keyFor(el)); if(orig){ el.innerHTML = orig; } el.style.color=''; el.style.backgroundColor=''; el.removeAttribute('data-lp-dirty'); });
-          saveBtn.disabled = true; setStatus('All blocks reset','success');
-        } else { setStatus(data.message||'Reset failed','error'); }
-      } catch(e){ console.error(e); setStatus('Error resetting','error'); }
-    });
-  }
-  highlightToggle.addEventListener('click', ()=>{
-    const active = highlightToggle.getAttribute('data-active')==='1';
-    document.querySelectorAll('.lp-edit-highlight').forEach(el=>{ el.style.outline = active?'none':''; });
-    highlightToggle.setAttribute('data-active', active?'0':'1');
-    highlightToggle.innerHTML = active?'<i class="bi bi-bounding-box"></i> Show Boxes':'<i class="bi bi-bounding-box-circles"></i> Hide Boxes';
-  });
-
-  async function save(){
-    if(state.saving) return; const dirtyEls = Array.from(document.querySelectorAll('.lp-edit-highlight[data-lp-dirty="1"]'));
-    if(!dirtyEls.length){ setStatus('Nothing to save'); return; }
-    const payload = dirtyEls.map(el=>({ key:keyFor(el), html:el.innerHTML, styles:{ color:el.style.color||'', backgroundColor:el.style.backgroundColor||'' } }));
-    state.saving = true; setStatus('Saving...'); saveBtn.disabled = true;
-    try {
-      const res = await fetch('ajax_save_landing_content.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ blocks: payload }) });
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      const data = await res.json();
-      if(data.success){
-        dirtyEls.forEach(el=>el.removeAttribute('data-lp-dirty'));
-        setStatus('Saved', 'success');
-      } else {
-        setStatus(data.message||'Save failed', 'error'); saveBtn.disabled=false;
-      }
-    } catch(err){ console.error(err); setStatus('Error: '+err.message,'error'); saveBtn.disabled=false; }
-    finally { state.saving=false; }
-  }
-  saveBtn.addEventListener('click', save);
-  async function saveAll(){
-    if(state.saving) return;
-    const allEls = Array.from(document.querySelectorAll('.lp-edit-highlight'));
-    if(!allEls.length){ setStatus('No editable elements','error'); return; }
-    const payload = allEls.map(el=>({ key:keyFor(el), html:el.innerHTML, styles:{ color:el.style.color||'', backgroundColor:el.style.backgroundColor||'' } }));
-    state.saving = true; setStatus('Saving full snapshot...'); saveAllBtn.disabled = true; saveBtn.disabled = true;
-    try {
-      const res = await fetch('ajax_save_landing_content.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ blocks: payload }) });
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      const data = await res.json();
-      if(data.success){
-        document.querySelectorAll('.lp-edit-highlight[data-lp-dirty="1"]').forEach(el=>el.removeAttribute('data-lp-dirty'));
-        setStatus('Snapshot saved','success');
-      } else { setStatus(data.message||'Snapshot failed','error'); }
-    } catch(err){ console.error(err); setStatus('Error: '+err.message,'error'); }
-    finally { state.saving=false; saveAllBtn.disabled=false; saveBtn.disabled = !document.querySelector('.lp-edit-highlight[data-lp-dirty="1"]'); }
-  }
-  if(saveAllBtn){ saveAllBtn.addEventListener('click', saveAll); }
-  const historyBtn = document.getElementById('lp-history-btn');
-  if(historyBtn){ historyBtn.addEventListener('click', ()=>{ LPHistoryModal.open(); }); }
-  // Unsaved changes warnings
-  window.addEventListener('beforeunload', function(e){
-    if(document.querySelector('.lp-edit-highlight[data-lp-dirty="1"]')){ e.preventDefault(); e.returnValue=''; return ''; }
-  });
-  function guardNav(el){ if(!el) return; el.addEventListener('click', function(e){ if(document.querySelector('.lp-edit-highlight[data-lp-dirty="1"]')){ if(!confirm('You have unsaved changes. Leave without saving?')){ e.preventDefault(); } } }); }
-  guardNav(exitBtn);
-  document.querySelectorAll('a[href*="homepage.php"]').forEach(a=>guardNav(a));
-  attach();
-})();
-// History preview modal with live temporary preview (no save until user explicitly saves)
-const LPHistoryModal = (function(){
-  let modalEl, listEl, filterInput, blockSelect, closeBtn, loadBtn, limitSelect, previewEl, previewNotice, previewApplyBtn, previewCancelBtn;
-  let livePreview = null; // { key, el, originalHtml, originalTextColor, originalBgColor }
-  function ensure(){
-    if(modalEl) return;
-    modalEl = document.createElement('div');
-    modalEl.className = 'lp-history-modal';
-    modalEl.innerHTML = `
-<div class="lp-hist-backdrop"></div>
-<div class="lp-hist-dialog">
-  <div class="lp-hist-header d-flex justify-content-between align-items-center">
-    <strong class="small mb-0">Edit History</strong>
-    <div class="d-flex gap-2">
-      <button type="button" class="btn btn-sm btn-outline-primary" data-load title="Reload"><i class="bi bi-arrow-repeat"></i></button>
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-close><i class="bi bi-x"></i></button>
-    </div>
-  </div>
-  <div class="lp-hist-body">
-    <div class="row g-2 mb-2">
-      <div class="col-5"><input type="text" class="form-control form-control-sm" placeholder="Filter by key" data-filter /></div>
-      <div class="col-4"><select class="form-select form-select-sm" data-limit>
-        <option value="25">Last 25</option>
-        <option value="50" selected>Last 50</option>
-        <option value="100">Last 100</option>
-      </select></div>
-      <div class="col-3"><select class="form-select form-select-sm" data-block><option value="">All Blocks</option></select></div>
-    </div>
-    <div class="lp-hist-list" data-list style="max-height:300px;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;padding:.45rem;background:#fff;font-size:.7rem"></div>
-    <div class="small text-muted mt-2">Select an entry: you can preview here or inject it temporarily into the page.</div>
-    <div class="lp-hist-preview mt-2" data-preview style="border:1px solid #cbd5e1;border-radius:6px;padding:.5rem;min-height:110px;background:#f8fafc;font-size:.75rem">(No selection)</div>
-    <div class="d-flex gap-2 mt-2">
-      <button type="button" class="btn btn-sm btn-outline-primary w-100" data-preview-apply disabled><i class="bi bi-eye"></i> Preview On Page</button>
-      <button type="button" class="btn btn-sm btn-outline-warning w-100" data-preview-cancel disabled><i class="bi bi-arrow-counterclockwise"></i> Cancel Preview</button>
-    </div>
-    <div class="small mt-2 text-warning-emphasis" data-preview-notice style="display:none;">Temporary preview active. Use Cancel to revert. Not saved yet.</div>
-  </div>
-  <div class="lp-hist-footer small text-end text-muted">Changes are NOT saved until you click Save / Save All in the main editor.</div>
-</div>`;
-    document.body.appendChild(modalEl);
-    listEl = modalEl.querySelector('[data-list]');
-    filterInput = modalEl.querySelector('[data-filter]');
-    blockSelect = modalEl.querySelector('[data-block]');
-    closeBtn = modalEl.querySelector('[data-close]');
-    loadBtn = modalEl.querySelector('[data-load]');
-    limitSelect = modalEl.querySelector('[data-limit]');
-    previewEl = modalEl.querySelector('[data-preview]');
-    previewApplyBtn = modalEl.querySelector('[data-preview-apply]');
-    previewCancelBtn = modalEl.querySelector('[data-preview-cancel]');
-    previewNotice = modalEl.querySelector('[data-preview-notice]');
-    closeBtn.addEventListener('click', hide);
-    modalEl.querySelector('.lp-hist-backdrop').addEventListener('click', hide);
-    loadBtn.addEventListener('click', load);
-    filterInput.addEventListener('input', applyFilter);
-    listEl.addEventListener('click', e=>{
-      const item = e.target.closest('.lp-hist-item');
-      if(!item) return; Array.from(listEl.querySelectorAll('.lp-hist-item')).forEach(x=>x.classList.remove('active'));
-      item.classList.add('active');
-      previewEl.innerHTML = item._html || '(empty)';
-      previewEl.style.color = item._textColor || '';
-      previewEl.style.backgroundColor = item._bgColor || '#f8fafc';
-      previewApplyBtn.disabled = false;
-      previewApplyBtn._selectedItem = item;
-    });
-    function revertPreview(){
-      if(!livePreview) return;
-      const { el, originalHtml, originalTextColor, originalBgColor } = livePreview;
-      el.innerHTML = originalHtml;
-      el.style.color = originalTextColor;
-      el.style.backgroundColor = originalBgColor;
-      livePreview = null;
-      previewNotice.style.display = 'none';
-      previewCancelBtn.disabled = true;
-    }
-    previewApplyBtn.addEventListener('click', ()=>{
-      const item = previewApplyBtn._selectedItem; if(!item) return;
-      const key = item.getAttribute('data-key');
-      const target = document.querySelector('[data-lp-key="'+CSS.escape(key)+'"]');
-      if(!target){ alert('Block not found on page.'); return; }
-      if(livePreview && livePreview.key !== key) { revertPreview(); }
-      if(!livePreview){
-        livePreview = { key, el: target, originalHtml: target.innerHTML, originalTextColor: target.style.color, originalBgColor: target.style.backgroundColor };
-      }
-      target.innerHTML = item._html || '';
-      target.style.color = item._textColor || '';
-      target.style.backgroundColor = item._bgColor || '';
-      previewNotice.style.display = 'block';
-      previewCancelBtn.disabled = false;
-    });
-    previewCancelBtn.addEventListener('click', ()=>{ revertPreview(); });
-  }
-  function applyFilter(){
-    const term = filterInput.value.trim().toLowerCase();
-    Array.from(listEl.querySelectorAll('.lp-hist-item')).forEach(it=>{
-      const key = it.getAttribute('data-key').toLowerCase();
-      it.style.display = term && !key.includes(term) ? 'none':'block';
-    });
-  }
-  async function load(){
-    listEl.innerHTML = '<div class="text-muted small">Loading…</div>';
-    const block = blockSelect.value.trim();
-    const limit = limitSelect.value;
-    try {
-      const res = await fetch('ajax_get_landing_history.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ block, limit }) });
-      const data = await res.json();
-      if(!data.success){ listEl.innerHTML = '<div class="text-danger small">Failed to load history</div>'; return; }
-      const recs = data.records || [];
-      if(blockSelect.options.length === 1){
-        const keys = Array.from(new Set(recs.map(r=>r.block_key))).sort();
-        keys.forEach(k=>{ const opt=document.createElement('option'); opt.value=k; opt.textContent=k; blockSelect.appendChild(opt); });
-      }
-      if(!recs.length){ listEl.innerHTML = '<div class="text-muted small">No history entries</div>'; return; }
-      listEl.innerHTML = '';
-      recs.forEach(r=>{
-        const div = document.createElement('div');
-        div.className = 'lp-hist-item';
-        div.setAttribute('data-key', r.block_key);
-        div.innerHTML = `<div class=\"d-flex justify-content-between\"><span class=\"text-primary\">${escapeHtml(r.block_key)}</span><span class=\"text-muted\">#${r.audit_id}</span></div><div class=\"text-muted\">${escapeHtml(r.action_type)} • ${escapeHtml(r.created_at)}</div>`;
-        div._html = r.html || '';
-        div._textColor = r.text_color; div._bgColor = r.bg_color;
-        listEl.appendChild(div);
-      });
-      applyFilter();
-    } catch(err){ console.error(err); listEl.innerHTML = '<div class="text-danger small">Error loading</div>'; }
-  }
-  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
-  function show(){ ensure(); modalEl.classList.add('show'); load(); }
-  function hide(){ if(modalEl){ modalEl.classList.remove('show'); } }
-  return { open: show, close: hide };
-})();
-</script>
-<?php if($IS_EDIT_MODE): ?>
-<style>
-.lp-history-modal { position:fixed; inset:0; z-index:5000; display:none; }
-.lp-history-modal.show { display:block; }
-.lp-history-modal .lp-hist-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.45); backdrop-filter:blur(2px); }
-.lp-history-modal .lp-hist-dialog { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:760px; max-width:95%; background:#fff; border-radius:14px; box-shadow:0 10px 40px -10px rgba(0,0,0,.35); display:flex; flex-direction:column; max-height:85vh; }
-.lp-history-modal .lp-hist-header { padding:.55rem .8rem; border-bottom:1px solid #e2e8f0; }
-.lp-history-modal .lp-hist-body { padding:.7rem .85rem .9rem; overflow:auto; }
-.lp-history-modal .lp-hist-footer { padding:.45rem .85rem; border-top:1px solid #e2e8f0; background:#f8fafc; border-bottom-left-radius:14px; border-bottom-right-radius:14px; }
-.lp-hist-item { border:1px solid #e2e8f0; border-radius:6px; padding:.38rem .45rem; margin-bottom:.4rem; cursor:pointer; background:#fff; transition:background .15s,border-color .15s; }
-.lp-hist-item:hover { background:#f1f5f9; }
-.lp-hist-item.active { border-color:#2563eb; background:#eff6ff; }
-@media (max-width:620px){ .lp-history-modal .lp-hist-dialog { width:95%; } }
-</style>
-<?php endif; ?>
-<?php endif; ?>
-<?php
-// Always attempt to load saved blocks (no headers_sent guard to avoid early echo issues)
-@include_once __DIR__ . '/../config/database.php';
-if (isset($connection)) {
-  $resBlocks = @pg_query($connection, "SELECT block_key, html, text_color, bg_color FROM landing_content_blocks WHERE municipality_id=1");
-  $blocks = [];
-  if ($resBlocks) { while($r = pg_fetch_assoc($resBlocks)) { $blocks[$r['block_key']] = $r; } }
-  if ($blocks) {
-    $json = json_encode($blocks, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_QUOT|JSON_HEX_APOS);
-    echo '<script>window.__LP_SAVED_BLOCKS=' . $json . ';(function(){var d=window.__LP_SAVED_BLOCKS;for(var k in d){if(!Object.prototype.hasOwnProperty.call(d,k)) continue;var b=d[k];var sel="[data-lp-key=\\""+k.replace(/"/g,"\\\"")+"\\"]";var el=document.querySelector(sel);if(!el) continue;try{el.innerHTML=b.html;}catch(e){} if(b.text_color) el.style.color=b.text_color; if(b.bg_color) el.style.backgroundColor=b.bg_color;}})();</script>';
-  }
-}
-?>
 </html>
