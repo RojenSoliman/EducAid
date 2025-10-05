@@ -86,6 +86,7 @@ $sysControlsFiles = [
     'manage_distributions.php',
     'blacklist_archive.php',
     'admin_management.php',
+  'municipality_content.php',
     'system_data.php',
     'settings.php',
     'topbar_settings.php',
@@ -183,6 +184,11 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
           <li>
             <a class="submenu-link <?= is_active('admin_management.php', $current) ? 'active' : '' ?>" href="admin_management.php">
               <i class="bi bi-people-fill me-2"></i> Admin Management
+            </a>
+          </li>
+          <li>
+            <a class="submenu-link <?= is_active('municipality_content.php', $current) ? 'active' : '' ?>" href="municipality_content.php">
+              <i class="bi bi-geo-alt me-2"></i> Municipalities
             </a>
           </li>
           <li>
