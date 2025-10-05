@@ -38,7 +38,7 @@ if (!$toolbar_config['exit_url']) {
     position: fixed;
     top: 70px;
     right: 12px;
-    width: 300px;
+    width: 320px;
     background: #fff;
     border: 1px solid #d1d9e0;
     border-radius: 12px;
@@ -46,10 +46,10 @@ if (!$toolbar_config['exit_url']) {
     padding: 0.75rem 0.85rem 1.6rem;
     font-family: system-ui, sans-serif;
     box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    overflow: auto;
+    overflow: visible;
     box-sizing: border-box;
-    min-width: 260px;
-    min-height: 220px;
+    min-width: 280px;
+    min-height: 320px;
 }
 .lp-edit-toolbar.lp-dragging {
     box-shadow: 0 10px 32px rgba(15,23,42,0.25);
@@ -96,9 +96,31 @@ if (!$toolbar_config['exit_url']) {
 }
 .lp-toolbar-header {
     user-select: none;
+    text-align: center;
+    margin-bottom: 0.75rem;
 }
 .lp-toolbar-header .lp-toolbar-title {
     font-weight: 600;
+    display: block;
+}
+.lp-toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+}
+.lp-toolbar-section {
+    font-size: 0.6rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 0.25rem;
+}
+.lp-toolbar-divider {
+    height: 1px;
+    background: #e2e8f0;
+    margin: 0.75rem 0;
 }
 .lp-toolbar-resizer {
     position: absolute;
@@ -128,50 +150,8 @@ if (!$toolbar_config['exit_url']) {
 
 <!-- Floating Edit Toolbar -->
 <div id="lp-edit-toolbar" class="lp-edit-toolbar shadow-sm">
-    <div class="lp-toolbar-header d-flex justify-content-between align-items-center mb-2">
+    <div class="lp-toolbar-header mb-2">
         <strong class="small mb-0 lp-toolbar-title"><?php echo htmlspecialchars($toolbar_config['page_title']); ?></strong>
-        <div class="d-flex gap-1 flex-wrap lp-toolbar-actions" data-lp-drag-ignore>
-            <?php if ($toolbar_config['show_dashboard']): ?>
-            <a href="<?php echo htmlspecialchars($toolbar_config['dashboard_url']); ?>" 
-               class="btn btn-sm btn-outline-primary" 
-               title="Return to Admin Dashboard">
-                <i class="bi bi-speedometer2 me-1"></i>Dashboard
-            </a>
-            <?php endif; ?>
-            
-            <?php if ($toolbar_config['show_save']): ?>
-            <button id="lp-save-btn" class="btn btn-sm btn-success" disabled>
-                <i class="bi bi-save me-1"></i>Save
-            </button>
-            <?php endif; ?>
-            
-            <?php if ($toolbar_config['show_save_all']): ?>
-            <button id="lp-save-all-btn" class="btn btn-sm btn-outline-success" title="Save all editable content">
-                <i class="bi bi-cloud-arrow-up me-1"></i>Save All
-            </button>
-            <?php endif; ?>
-            
-            <?php if ($toolbar_config['show_reset_all']): ?>
-            <button id="lp-reset-all" class="btn btn-sm btn-outline-danger" title="Reset ALL blocks">
-                <i class="bi bi-trash3"></i>
-            </button>
-            <?php endif; ?>
-            
-            <?php if ($toolbar_config['show_history']): ?>
-            <button id="lp-history-btn" class="btn btn-sm btn-outline-primary" title="View history">
-                <i class="bi bi-clock-history"></i>
-            </button>
-            <?php endif; ?>
-            
-            <?php if ($toolbar_config['show_exit']): ?>
-            <a href="<?php echo htmlspecialchars($toolbar_config['exit_url']); ?>" 
-               id="lp-exit-btn" 
-               class="btn btn-sm btn-outline-secondary" 
-               title="Exit">
-                <i class="bi bi-x-lg"></i>
-            </a>
-            <?php endif; ?>
-        </div>
     </div>
     
     <div class="mb-2">
@@ -197,6 +177,7 @@ if (!$toolbar_config['exit_url']) {
         </div>
     </div>
     
+    <div class="lp-toolbar-section">Block Controls</div>
     <div class="d-flex gap-2 mb-2">
         <?php if ($toolbar_config['show_reset']): ?>
         <button id="lp-reset-btn" class="btn btn-sm btn-outline-warning w-100" disabled>
@@ -207,6 +188,50 @@ if (!$toolbar_config['exit_url']) {
         <button id="lp-highlight-toggle" class="btn btn-sm btn-outline-primary w-100" data-active="1">
             <i class="bi bi-bounding-box-circles me-1"></i>Hide Boxes
         </button>
+    </div>
+    <div class="lp-toolbar-divider"></div>
+    <div class="lp-toolbar-section">Page Actions</div>
+    <div class="lp-toolbar-actions mb-3" data-lp-drag-ignore>
+        <?php if ($toolbar_config['show_dashboard']): ?>
+        <a href="<?php echo htmlspecialchars($toolbar_config['dashboard_url']); ?>" 
+           class="btn btn-sm btn-outline-primary" 
+           title="Return to Admin Dashboard">
+            <i class="bi bi-speedometer2 me-1"></i>Dashboard
+        </a>
+        <?php endif; ?>
+
+        <?php if ($toolbar_config['show_save']): ?>
+        <button id="lp-save-btn" class="btn btn-sm btn-success" disabled>
+            <i class="bi bi-save me-1"></i>Save
+        </button>
+        <?php endif; ?>
+
+        <?php if ($toolbar_config['show_save_all']): ?>
+        <button id="lp-save-all-btn" class="btn btn-sm btn-outline-success" title="Save all editable content">
+            <i class="bi bi-cloud-arrow-up me-1"></i>Save All
+        </button>
+        <?php endif; ?>
+
+        <?php if ($toolbar_config['show_reset_all']): ?>
+        <button id="lp-reset-all" class="btn btn-sm btn-outline-danger" title="Reset ALL blocks">
+            <i class="bi bi-trash3"></i>
+        </button>
+        <?php endif; ?>
+
+        <?php if ($toolbar_config['show_history']): ?>
+        <button id="lp-history-btn" class="btn btn-sm btn-outline-primary" title="View history">
+            <i class="bi bi-clock-history"></i>
+        </button>
+        <?php endif; ?>
+
+        <?php if ($toolbar_config['show_exit']): ?>
+        <a href="<?php echo htmlspecialchars($toolbar_config['exit_url']); ?>" 
+           id="lp-exit-btn" 
+           class="btn btn-sm btn-outline-secondary" 
+           title="Exit">
+            <i class="bi bi-x-lg"></i>
+        </a>
+        <?php endif; ?>
     </div>
     
     <div class="text-end">
@@ -230,8 +255,8 @@ if (!$toolbar_config['exit_url']) {
     const storageKey = 'lp-toolbar-state::' + window.location.pathname;
     const marginX = 12;
     const marginY = 12;
-    const minWidth = 260;
-    const minHeight = 220;
+    const minWidth = 280;
+    const minHeight = 320;
 
     const readPoint = (evt) => ({
         x: evt.clientX ?? (evt.touches && evt.touches[0] ? evt.touches[0].clientX : undefined),
