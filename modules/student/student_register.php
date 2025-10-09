@@ -2758,4 +2758,3 @@ if (!$isAjaxRequest) {
 </html>
 <?php
 } // End of main registration HTML for non-AJAX requests
-?>
