@@ -145,13 +145,44 @@ if (isset($connection)) {
   color: <?= htmlspecialchars($topbar_settings['topbar_text_color']) ?>;
   font-size:0.775rem;
   z-index:1050;
-  position:fixed;top:0;left:0;right:0;height:44px;
+  position:fixed;top:0;left:0;right:0;
+  min-height:44px;
   box-shadow:0 2px 4px rgba(0,0,0,.15);
 }
-.admin-topbar .container-fluid{height:44px;display:flex;align-items:center;}
+.admin-topbar .container-fluid{
+  min-height:44px;
+  display:flex;
+  align-items:center;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
 .admin-topbar a{color: <?= htmlspecialchars($topbar_settings['topbar_link_color']) ?>;text-decoration:none;}
 .admin-topbar a:hover{color:#fff;}
 .admin-topbar .bi{color:rgba(255,255,255,.85);}
+
+/* Mobile responsive adjustments */
+@media (max-width: 767.98px) {
+  .admin-topbar {
+    font-size: 0.7rem;
+  }
+  .admin-topbar .container-fluid {
+    gap: 0.5rem !important;
+    row-gap: 0.5rem;
+    justify-content: center !important;
+  }
+  .admin-topbar .d-flex.align-items-center.gap-3 {
+    gap: 0.5rem !important;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .admin-topbar a {
+    word-break: break-all;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
 
 /* Municipality Badge Styling */
 .admin-topbar .municipality-badge {
@@ -179,4 +210,23 @@ if (isset($connection)) {
   color: #fff;
   font-size: 0.8rem;
 }
+
+/* Mobile optimization for municipality badge */
+@media (max-width: 767.98px) {
+  .admin-topbar .municipality-badge {
+    padding: 2px 6px 2px 2px;
+  }
+  .admin-topbar .municipality-logo {
+    width: 22px;
+    height: 22px;
+  }
+  .admin-topbar .municipality-name {
+    font-size: 0.7rem;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 </style>
