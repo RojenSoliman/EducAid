@@ -88,6 +88,26 @@ $current_settings = $form_result['success'] && isset($form_result['data'])
 
 // Header theme settings retrieval (after any save)
 $header_settings = $headerThemeService->getCurrentSettings();
+
+$defaults = $themeService->getDefaultSettings();
+$topbar_bg_color = $current_settings['topbar_bg_color'] ?? ($defaults['topbar_bg_color'] ?? '#2e7d32');
+if (empty($topbar_bg_color)) {
+  $topbar_bg_color = $defaults['topbar_bg_color'] ?? '#2e7d32';
+}
+$topbar_bg_gradient_raw = $current_settings['topbar_bg_gradient'] ?? null;
+$gradient_enabled = !empty($topbar_bg_gradient_raw);
+$topbar_bg_gradient = $gradient_enabled ? $topbar_bg_gradient_raw : '';
+$preview_background = $gradient_enabled
+  ? sprintf('linear-gradient(135deg, %s 0%%, %s 100%%)', $topbar_bg_color, $topbar_bg_gradient_raw)
+  : $topbar_bg_color;
+$gradient_color_input_value = $gradient_enabled
+  ? $topbar_bg_gradient_raw
+  : ($defaults['topbar_bg_gradient'] ?? '#1b5e20');
+$gradient_text_display = $gradient_enabled ? $topbar_bg_gradient_raw : 'Solid color only';
+$preview_text_color = $current_settings['topbar_text_color'] ?? ($defaults['topbar_text_color'] ?? '#ffffff');
+if (empty($preview_text_color)) {
+  $preview_text_color = $defaults['topbar_text_color'] ?? '#ffffff';
+}
 ?>
 <?php $page_title='Topbar Settings'; $extra_css=[]; include '../../includes/admin/admin_head.php'; ?>
 <style>
@@ -100,7 +120,6 @@ $header_settings = $headerThemeService->getCurrentSettings();
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
   }
   body.topbar-settings-page .preview-topbar {
-    background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
     color: #fff;
     padding: 0.75rem 1rem;
     border-radius: 0.375rem;
@@ -110,6 +129,13 @@ $header_settings = $headerThemeService->getCurrentSettings();
   }
   body.topbar-settings-page .form-label { font-weight:600; color:#374151; }
   body.topbar-settings-page .form-control:focus { border-color:#2e7d32; box-shadow:0 0 0 0.2rem rgba(46,125,50,0.25); }
+  body.topbar-settings-page .input-group.gradient-disabled {
+    opacity: 0.65;
+  }
+  body.topbar-settings-page .input-group.gradient-disabled input[type="text"] {
+    font-style: italic;
+    color: #4b5563;
+  }
 </style>
 <body class="topbar-settings-page">
   <?php include '../../includes/admin/admin_topbar.php'; ?>
@@ -150,7 +176,7 @@ $header_settings = $headerThemeService->getCurrentSettings();
         <!-- Topbar Live Preview -->
         <div class="settings-card mb-3">
           <h5 class="mb-3"><i class="bi bi-eye me-2"></i>Topbar Preview</h5>
-          <div class="preview-topbar" id="preview-topbar">
+          <div class="preview-topbar" id="preview-topbar" style="background: <?= htmlspecialchars($preview_background, ENT_QUOTES) ?>; color: <?= htmlspecialchars($preview_text_color, ENT_QUOTES) ?>;">
             <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
               <div class="d-flex align-items-center gap-3 small">
                 <i class="bi bi-shield-lock" id="preview-topbar-icon"></i>
@@ -263,21 +289,30 @@ $header_settings = $headerThemeService->getCurrentSettings();
                     </div>
                   </div>
                   <div class="col-md-6">
-                    <label for="topbar_bg_gradient" class="form-label">
-                      <i class="bi bi-circle-half"></i> Gradient Color
-                    </label>
-                    <div class="input-group">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <label for="topbar_bg_gradient" class="form-label mb-0">
+                        <i class="bi bi-circle-half"></i> Gradient Color
+                      </label>
+                      <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="topbar_gradient_enabled" name="topbar_gradient_enabled" value="1" <?= $gradient_enabled ? 'checked' : '' ?>>
+                        <label class="form-check-label small" for="topbar_gradient_enabled">Use gradient</label>
+                      </div>
+                    </div>
+                    <div class="input-group <?= $gradient_enabled ? '' : 'gradient-disabled' ?> mt-2" data-gradient-group>
                       <input type="color" 
                              class="form-control form-control-color" 
                              id="topbar_bg_gradient" 
                              name="topbar_bg_gradient" 
-                             value="<?= htmlspecialchars($current_settings['topbar_bg_gradient']) ?>"
-                             title="Choose gradient color">
+                             value="<?= htmlspecialchars($gradient_color_input_value) ?>"
+                             data-default="<?= htmlspecialchars($defaults['topbar_bg_gradient'] ?? '#1b5e20') ?>"
+                             title="Choose gradient color" <?= $gradient_enabled ? '' : 'disabled' ?>>
                       <input type="text" 
                              class="form-control" 
-                             value="<?= htmlspecialchars($current_settings['topbar_bg_gradient']) ?>"
+                             id="topbar_bg_gradient_text"
+                             value="<?= htmlspecialchars($gradient_text_display) ?>"
                              readonly>
                     </div>
+                    <div class="form-text">Toggle off to use a solid background without a gradient overlay.</div>
                   </div>
                 </div>
                 

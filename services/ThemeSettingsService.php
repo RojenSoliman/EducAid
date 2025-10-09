@@ -61,8 +61,12 @@ class ThemeSettingsService {
         
         // Color validation
         $color_fields = ['topbar_bg_color', 'topbar_bg_gradient', 'topbar_text_color', 'topbar_link_color'];
+        $gradientEnabled = !empty($data['topbar_gradient_enabled']);
         foreach ($color_fields as $field) {
             $color = trim($data[$field] ?? '');
+            if ($field === 'topbar_bg_gradient' && !$gradientEnabled) {
+                continue;
+            }
             if (!empty($color) && !$this->isValidHexColor($color)) {
                 $field_name = str_replace(['topbar_', '_'], ['', ' '], $field);
                 $errors[] = "Please enter a valid hex color for {$field_name}.";
@@ -90,13 +94,24 @@ class ThemeSettingsService {
             'topbar_bg_gradient', 'topbar_text_color', 'topbar_link_color'
         ];
         
+        $gradientEnabled = !empty($data['topbar_gradient_enabled']);
+
         foreach ($fields as $field) {
-            $sanitized[$field] = trim($data[$field] ?? '');
+            $value = trim($data[$field] ?? '');
+            if ($field === 'topbar_bg_gradient') {
+                if (!$gradientEnabled) {
+                    $sanitized[$field] = null;
+                } else {
+                    $sanitized[$field] = ($value === '') ? null : $value;
+                }
+            } else {
+                $sanitized[$field] = $value;
+            }
         }
         
-        // Apply defaults for color fields if empty
+        // Apply defaults for required color fields if empty (gradient remains optional)
         $color_defaults = $this->getDefaultSettings();
-        foreach (['topbar_bg_color', 'topbar_bg_gradient', 'topbar_text_color', 'topbar_link_color'] as $color_field) {
+        foreach (['topbar_bg_color', 'topbar_text_color', 'topbar_link_color'] as $color_field) {
             if (empty($sanitized[$color_field])) {
                 $sanitized[$color_field] = $color_defaults[$color_field];
             }

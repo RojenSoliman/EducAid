@@ -8,6 +8,7 @@ class TopbarSettings {
     init() {
         this.bindTextInputs();
         this.bindColorPickers();
+        this.bindGradientToggle();
         this.updatePreview();
     }
     bindTextInputs() {
@@ -27,7 +28,7 @@ class TopbarSettings {
         });
     }
     bindColorPickers() {
-        ['topbar_bg_color','topbar_bg_gradient','topbar_text_color','topbar_link_color',
+        ['topbar_bg_color','topbar_text_color','topbar_link_color',
          'header_bg_color','header_border_color','header_text_color','header_icon_color','header_hover_bg','header_hover_icon_color']
             .forEach(id => {
                 const input = document.getElementById(id);
@@ -40,15 +41,61 @@ class TopbarSettings {
                 }
             });
     }
+    bindGradientToggle() {
+        const toggle = document.getElementById('topbar_gradient_enabled');
+        const gradientGroup = document.querySelector('[data-gradient-group]');
+        const gradientColor = document.getElementById('topbar_bg_gradient');
+        const gradientText = document.getElementById('topbar_bg_gradient_text');
+
+        if (!toggle || !gradientGroup || !gradientColor) {
+            return;
+        }
+
+        const applyState = () => {
+            const enabled = toggle.checked;
+            gradientGroup.classList.toggle('gradient-disabled', !enabled);
+
+            if (enabled) {
+                gradientColor.removeAttribute('disabled');
+                if (!gradientColor.value && gradientColor.dataset.default) {
+                    gradientColor.value = gradientColor.dataset.default;
+                }
+                if (gradientText) {
+                    gradientText.value = gradientColor.value || gradientColor.dataset.default || '';
+                }
+            } else {
+                gradientColor.setAttribute('disabled', 'disabled');
+                if (gradientText) {
+                    gradientText.value = 'Solid color only';
+                }
+            }
+
+            this.updatePreview();
+        };
+
+        toggle.addEventListener('change', applyState);
+
+        gradientColor.addEventListener('input', () => {
+            if (gradientText) {
+                gradientText.value = gradientColor.value || '';
+            }
+            this.updatePreview();
+        });
+
+        applyState();
+    }
     updatePreview() {
         const bg = this.val('topbar_bg_color','#2e7d32');
-        const grad = this.val('topbar_bg_gradient','#1b5e20');
+        const gradientToggle = document.getElementById('topbar_gradient_enabled');
+        const gradientColor = document.getElementById('topbar_bg_gradient');
+        const gradientEnabled = gradientToggle ? gradientToggle.checked : true;
+        const grad = (gradientEnabled && gradientColor && gradientColor.value) ? gradientColor.value : '';
         const txt = this.val('topbar_text_color','#ffffff');
         const link = this.val('topbar_link_color','#e8f5e9');
         const bar = document.querySelector('.preview-topbar');
         const email = document.getElementById('preview-email');
         if (bar) {
-            bar.style.background = `linear-gradient(135deg, ${bg} 0%, ${grad} 100%)`;
+            bar.style.background = grad ? `linear-gradient(135deg, ${bg} 0%, ${grad} 100%)` : bg;
             bar.style.color = txt;
         }
         if (email) email.style.color = link;

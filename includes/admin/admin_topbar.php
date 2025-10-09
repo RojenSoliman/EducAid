@@ -15,11 +15,23 @@ if (isset($connection)) {
   $result = pg_query($connection, "SELECT topbar_email, topbar_phone, topbar_office_hours, topbar_bg_color, topbar_bg_gradient, topbar_text_color, topbar_link_color FROM theme_settings WHERE municipality_id = 1 AND is_active = TRUE LIMIT 1");
   if ($result && pg_num_rows($result) > 0) {
     $db_settings = pg_fetch_assoc($result);
-    $topbar_settings = array_merge($topbar_settings, array_filter($db_settings, function($value) {
-      return $value !== null && $value !== '';
-    }));
+    foreach ($db_settings as $key => $value) {
+      if ($key === 'topbar_bg_gradient') {
+        $topbar_settings[$key] = $value; // allow null to disable gradient
+        continue;
+      }
+      if ($value !== null && $value !== '') {
+        $topbar_settings[$key] = $value;
+      }
+    }
   }
 }
+
+$bg_color = $topbar_settings['topbar_bg_color'] ?? '#2e7d32';
+$bg_gradient = $topbar_settings['topbar_bg_gradient'] ?? null;
+$topbar_background_css = ($bg_gradient && trim($bg_gradient) !== '')
+  ? sprintf('linear-gradient(135deg, %s 0%%, %s 100%%)', $bg_color, $bg_gradient)
+  : $bg_color;
 
 // Fetch active municipality logo and name
 $active_municipality_logo = null;
@@ -129,7 +141,7 @@ if (isset($connection)) {
 
 <style>
 .admin-topbar {
-  background: linear-gradient(135deg, <?= htmlspecialchars($topbar_settings['topbar_bg_color']) ?> 0%, <?= htmlspecialchars($topbar_settings['topbar_bg_gradient']) ?> 100%);
+  background: <?= htmlspecialchars($topbar_background_css, ENT_QUOTES) ?>;
   color: <?= htmlspecialchars($topbar_settings['topbar_text_color']) ?>;
   font-size:0.775rem;
   z-index:1050;
