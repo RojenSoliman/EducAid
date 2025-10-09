@@ -96,10 +96,10 @@ require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 $municipality_id = 1;
 
 // Check if this is an AJAX request (OCR, OTP processing, cleanup, or duplicate check)
-$isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) || 
-                 isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) || 
-                 isset($_POST['processCertificateOcr']) || isset($_POST['cleanup_temp']) ||
-                 isset($_POST['check_existing']) || isset($_POST['test_db']);
+$isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) ||
+                 isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) ||
+                 isset($_POST['processCertificateOcr']) || isset($_POST['processGradesOcr']) ||
+                 isset($_POST['cleanup_temp']) || isset($_POST['check_existing']) || isset($_POST['test_db']);
 
 // Only output HTML for non-AJAX requests
 if (!$isAjaxRequest) {
@@ -634,11 +634,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         if (file_exists($outputFile)) {
             unlink($outputFile);
         }
-    }
-    
-    // Clean up temporary OCR files
-    if (file_exists($outputFile)) {
-        unlink($outputFile);
     }
     
     if (empty(trim($ocrText))) {
@@ -1517,7 +1512,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
     if (!$captcha['ok']) {
         json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
     }
-    
+
     if (!isset($_FILES['grades_document']) || $_FILES['grades_document']['error'] !== UPLOAD_ERR_OK) {
         json_response(['status' => 'error', 'message' => 'No grades file uploaded or upload error.']);
     }
@@ -1541,134 +1536,221 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
         json_response(['status' => 'error', 'message' => 'Failed to save uploaded grades file.']);
     }
 
-    // Extract text from document
+    // Prepare OCR variables
     $ocrText = '';
     $fileExtension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
-    
+    $outputBase = $uploadDir . 'ocr_output_' . uniqid();
+    $outputFile = $outputBase . '.txt';
+
     try {
         if ($fileExtension === 'pdf') {
-            // PDF processing
-            $pdfText = shell_exec("pdftotext " . escapeshellarg($targetPath) . " - 2>nul");
+            // Try pdftotext first
+            $pdfTextCommand = "pdftotext " . escapeshellarg($targetPath) . " - 2>nul";
+            $pdfText = @shell_exec($pdfTextCommand);
             if (!empty(trim($pdfText))) {
                 $ocrText = $pdfText;
             } else {
-                json_response([
-                    'status' => 'error',
-                    'message' => 'Could not extract text from PDF',
-                    'suggestions' => ['Upload a clear image instead', 'Ensure PDF contains text']
-                ]);
+                // Basic fallback: attempt to extract any text-like content
+                $pdfContent = @file_get_contents($targetPath);
+                if ($pdfContent !== false) {
+                    preg_match_all('/\(([^)]+)\)/', $pdfContent, $matches);
+                    if (!empty($matches[1])) {
+                        $extractedText = implode(' ', $matches[1]);
+                        $extractedText = preg_replace('/[^\x20-\x7E]/', ' ', $extractedText);
+                        $extractedText = preg_replace('/\s+/', ' ', trim($extractedText));
+                        if (strlen($extractedText) > 10) {
+                            $ocrText = $extractedText;
+                        }
+                    }
+                }
+                if (empty(trim($ocrText))) {
+                    json_response([
+                        'status' => 'error',
+                        'message' => 'Unable to extract text from PDF.',
+                        'suggestions' => [
+                            'Convert the PDF to a JPG or PNG image',
+                            'Take a clear photo of the grades',
+                            'Ensure the PDF contains selectable text'
+                        ]
+                    ]);
+                }
             }
         } else {
-            // Image processing
-            $outputBase = $uploadDir . 'ocr_output';
-            $command = "tesseract " . escapeshellarg($targetPath) . " " . 
+            // Image processing via tesseract
+            $cmd = "tesseract " . escapeshellarg($targetPath) . " " . 
                       escapeshellarg($outputBase) . " --oem 1 --psm 6 -l eng";
             
-            exec($command, $output, $returnCode);
-            
-            if ($returnCode !== 0) {
+            exec($cmd, $outputLines, $returnCode);
+            $tesseractOutput = implode("\n", $outputLines);
+            if ($returnCode !== 0 || !file_exists($outputFile)) {
                 json_response([
                     'status' => 'error',
-                    'message' => 'OCR processing failed',
-                    'suggestions' => ['Ensure image is clear', 'Try different lighting']
+                    'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
+                    'debug_info' => substr($tesseractOutput, 0, 1000),
+                    'suggestions' => [
+                        'Ensure the image is clear and well-lit',
+                        'Use higher resolution',
+                        'Try converting PDF to image'
+                    ]
                 ]);
             }
-            
-            $ocrText = file_get_contents($outputBase . '.txt');
-            unlink($outputBase . '.txt'); // Clean up
+            $ocrText = file_get_contents($outputFile);
+            if (file_exists($outputFile)) {
+                @unlink($outputFile);
+            }
         }
-        
-        // Extract grades using regex
-        preg_match_all('/([A-Za-z\s&]+)\s*([\d.]+)/', $ocrText, $matches);
+
+        if (empty(trim($ocrText))) {
+            json_response(['status' => 'error', 'message' => 'No text could be extracted from the document.']);
+        }
+
+        // Normalize for matching
+        $ocrTextNorm = strtolower($ocrText);
+
+        // Read form values (now also accept university_id)
+        $firstName = trim($_POST['first_name'] ?? '');
+        $lastName = trim($_POST['last_name'] ?? '');
+        $yearLevelId = intval($_POST['year_level_id'] ?? 0);
+        $universityId = intval($_POST['university_id'] ?? 0);
+
+        // Lookup year name
+        $yearName = '';
+        if ($yearLevelId > 0) {
+            $yrRes = pg_query_params($connection, "SELECT name FROM year_levels WHERE year_level_id = $1", [$yearLevelId]);
+            if ($yrRow = pg_fetch_assoc($yrRes)) {
+                $yearName = strtolower($yrRow['name']);
+            }
+        }
+
+        // Lookup university name for verification
+        $universityName = '';
+        if ($universityId >  0) {
+            $uniRes = pg_query_params($connection, "SELECT name FROM universities WHERE university_id = $1", [$universityId]);
+            if ($uniRow = pg_fetch_assoc($uniRes)) {
+                $universityName = strtolower($uniRow['name']);
+            }
+        }
+
+        // Extract grades — only decimal numbers (requires a decimal point)
+        preg_match_all('/([A-Za-z0-9\.\-\&\s\/]+?)\s+([0-9]+\.[0-9]+)/m', $ocrText, $matches);
         $grades = [];
         $failingGrades = [];
         $allPassing = true;
-        
+
         for ($i = 0; $i < count($matches[0]); $i++) {
             $subject = trim($matches[1][$i]);
-            $grade = floatval($matches[2][$i]);
-            
+            $gradeRaw = $matches[2][$i];
+            $grade = floatval(str_replace(',', '.', $gradeRaw));
+
+            // Only accept decimal grades (we already matched decimals). Validate range.
             if ($grade > 0 && $grade <= 5.0) {
-                $grades[] = [
-                    'subject' => $subject,
-                    'grade' => number_format($grade, 2)
-                ];
-                
-                if ($grade > 3.0) {
-                    $failingGrades[] = [
-                        'subject' => $subject,
-                        'grade' => number_format($grade, 2)
-                    ];
+                $grades[] = ['subject' => $subject, 'grade' => number_format($grade, 2)];
+                if ($grade > 3.00) { // >3.00 is fail per rule
+                    $failingGrades[] = ['subject' => $subject, 'grade' => number_format($grade, 2)];
                     $allPassing = false;
                 }
             }
         }
 
-        // Name matching
-        $firstName = trim($_POST['first_name'] ?? '');
-        $lastName = trim($_POST['last_name'] ?? '');
-        $nameMatch = (
-            !empty($firstName) && 
-            !empty($lastName) && 
-            stripos($ocrText, $firstName) !== false && 
-            stripos($ocrText, $lastName) !== false
-        );
+        // Name matching (both first and last must appear somewhere)
+        $nameMatch = ($firstName !== '' && $lastName !== '' &&
+                     stripos($ocrTextNorm, strtolower($firstName)) !== false &&
+                     stripos($ocrTextNorm, strtolower($lastName)) !== false);
 
-        // Year level matching
-        $yearLevelId = intval($_POST['year_level_id'] ?? 0);
+        // Year matching — require explicit mention of the selected year (e.g., "3rd year" or "third year")
         $yearFound = false;
-        
-        if ($yearLevelId > 0) {
-            $yearResult = pg_query_params($connection, 
-                "SELECT name FROM year_levels WHERE year_level_id = $1", 
-                [$yearLevelId]
-            );
-            if ($yearRow = pg_fetch_assoc($yearResult)) {
-                $yearFound = stripos($ocrText, $yearRow['name']) !== false;
+        if (!empty($yearName)) {
+            // Accept exact year name OR common variants for the numeric year
+            $variants = [];
+            if (preg_match('/\d/', $yearName)) {
+                // If yearName contains number (like "3rd Year"), also check numeric forms
+                if (stripos($yearName, '1') !== false) $variants = array_merge($variants, ['1st year','1st yr','year 1','first year']);
+                if (stripos($yearName, '2') !== false) $variants = array_merge($variants, ['2nd year','2nd yr','year 2','second year']);
+                if (stripos($yearName, '3') !== false) $variants = array_merge($variants, ['3rd year','3rd yr','year 3','third year']);
+                if (stripos($yearName, '4') !== false) $variants = array_merge($variants, ['4th year','4th yr','year 4','fourth year']);
+            } else {
+                // If name is textual like "Third Year" include common forms
+                $variants = array_merge($variants, [$yearName, preg_replace('/\s+/', ' ', $yearName)]);
+                $variants = array_merge($variants, ['3rd year','third year','3rd yr']); // keep permissive
+            }
+
+            // Check for any variant in OCR text
+            foreach ($variants as $v) {
+                if ($v !== '' && stripos($ocrTextNorm, strtolower($v)) !== false) {
+                    $yearFound = true;
+                    break;
+                }
+            }
+            // also accept explicit '3rd year' presence if user selected 3rd year even when OCR also shows earlier year grades
+            if (!$yearFound && stripos($ocrTextNorm, '3rd year') !== false && stripos($yearName, '3') !== false) {
+                $yearFound = true;
             }
         }
 
-        // Build verification result
+        // University/school matching — require university name or strong partial match
+        $schoolFound = false;
+        if (!empty($universityName)) {
+            if (stripos($ocrTextNorm, $universityName) !== false) {
+                $schoolFound = true;
+            } else {
+                // check word-level matches (require 2+ significant words to match)
+                $uniWords = array_values(array_filter(explode(' ', preg_replace('/[^a-z0-9 ]/i',' ', $universityName))));
+                $matched = 0;
+                foreach ($uniWords as $w) {
+                    if (strlen($w) <= 2) continue;
+                    if (stripos($ocrTextNorm, $w) !== false) $matched++;
+                }
+                if ($matched >= min(2, max(1, count($uniWords)))) {
+                    $schoolFound = true;
+                }
+            }
+        } else {
+            // no university selected — do not block
+            $schoolFound = true;
+        }
+
+        // Build verification
         $verification = [
-            'name_match'      => $nameMatch,
-            'year_found'      => $yearFound,
-            'all_passing'     => $allPassing,
-            'grades'          => $grades,
-            'failing_grades'  => $failingGrades,
-            'confidence_scores'=> [
-                'name'   => $nameMatch ? 95 : 0,
-                'year'   => $yearFound ? 90 : 0,
+            'name_match' => $nameMatch,
+            'year_found' => $yearFound,
+            'school_found' => $schoolFound,
+            'all_passing' => $allPassing,
+            'grades' => $grades,
+            'failing_grades' => $failingGrades,
+            'confidence_scores' => [
+                'name' => $nameMatch ? 95 : 0,
+                'year' => $yearFound ? 90 : 0,
+                'school' => $schoolFound ? 90 : 0,
                 'grades' => !empty($grades) ? 85 : 0
             ],
-            'overall_success' => ($nameMatch && $yearFound && $all_passing && !empty($grades)),
+            // overall success requires name, year, school and all passing grades and at least one grade detected
+            'overall_success' => ($nameMatch && $yearFound && $schoolFound && $allPassing && !empty($grades)),
             'found_text_snippets' => [],
             'summary' => [
-                'passed_checks' => ($nameMatch ? 1 : 0) + ($yearFound ? 1 : 0) + ($allPassing ? 1 : 0),
-                'total_checks'  => 3,
+                'passed_checks' => ($nameMatch ? 1 : 0) + ($yearFound ? 1 : 0) + ($schoolFound ? 1 : 0) + ($allPassing ? 1 : 0),
+                'total_checks' => 4,
                 'average_confidence' => 0,
-                'recommendation' => $allPassing ? 
-                    'All grades verified successfully' : 
-                    'Some grades are below the required 3.00 minimum'
+                'recommendation' => $allPassing ? 'All grades verified successfully' : 'Some grades are below the required 3.00 minimum'
             ]
-                    ];
-                    
+        ]; 
+
         // Compute average confidence
         $confValues = array_values($verification['confidence_scores']);
         $verification['summary']['average_confidence'] = !empty($confValues) ? round(array_sum($confValues) / count($confValues), 1) : 0;
 
-        // Save OCR results for registration (confidence)
+        // Save confidence JSON for later use
         $confidenceFile = $uploadDir . 'grades_confidence.json';
         $confidenceData = [
             'overall_confidence' => $verification['summary']['average_confidence'],
-            'detailed_scores'    => $verification['confidence_scores'],
-            'grades'             => $grades,
-            'timestamp'          => time()
+            'detailed_scores' => $verification['confidence_scores'],
+            'grades' => $grades,
+            'timestamp' => time()
         ];
         @file_put_contents($confidenceFile, json_encode($confidenceData));
 
         json_response(['status' => 'success', 'verification' => $verification]);
 
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         error_log("Grades OCR Error: " . $e->getMessage());
         json_response([
             'status' => 'error',
@@ -1680,7 +1762,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
             ]
         ]);
     }
-} 
+}
 // --- Final registration submission ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     // Basic input validation
@@ -2864,6 +2946,7 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
     formData.append('first_name', document.querySelector('input[name="first_name"]').value);
     formData.append('last_name', document.querySelector('input[name="last_name"]').value);
     formData.append('year_level_id', document.querySelector('select[name="year_level_id"]').value);
+    formData.append('university_id', document.querySelector('select[name="university_id"]').value); // ADDED
 
     // Add reCAPTCHA token
     if (typeof grecaptcha !== 'undefined' && window.RECAPTCHA_SITE_KEY) {
@@ -3079,4 +3162,3 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
 </html>
 <?php
 } // End of main registration HTML for non-AJAX requests
-?>

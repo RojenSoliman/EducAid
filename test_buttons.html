@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Button Test</title>
+    <script>
+        // Test if nextStep function is available globally
+        function testButtons() {
+            console.log('=== Button Test Results ===');
+            console.log('nextStep function exists:', typeof window.nextStep);
+            console.log('prevStep function exists:', typeof window.prevStep);
+            console.log('showStep function exists:', typeof window.showStep);
+            
+            // Test if we can call nextStep
+            try {
+                if (typeof window.nextStep === 'function') {
+                    console.log('✅ nextStep is callable');
+                } else {
+                    console.log('❌ nextStep is not a function');
+                }
+            } catch (e) {
+                console.log('❌ Error calling nextStep:', e.message);
+            }
+            
+            // Check if user_registration.js is loaded
+            const scripts = Array.from(document.scripts);
+            const registrationScript = scripts.find(s => s.src.includes('user_registration.js'));
+            console.log('Registration script loaded:', registrationScript ? '✅ Yes' : '❌ No');
+            
+            // Test button clicks
+            const testBtn = document.getElementById('testBtn');
+            if (testBtn) {
+                testBtn.onclick = function() {
+                    console.log('Button click works!');
+                    alert('Button click successful!');
+                };
+                console.log('✅ Test button onclick handler set');
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(testButtons, 1000); // Wait for scripts to load
+        });
+    </script>
+    <script src="../../assets/js/student/user_registration.js"></script>
+</head>
+<body>
+    <h2>EducAid Button Test</h2>
+    <p>Check the browser console for test results.</p>
+    
+    <button type="button" id="testBtn" onclick="nextStep()" style="padding: 10px 20px; margin: 10px;">
+        Test nextStep() Function
+    </button>
+    
+    <button type="button" onclick="testButtons()" style="padding: 10px 20px; margin: 10px;">
+        Run Button Tests
+    </button>
+    
+    <div id="results" style="margin-top: 20px; padding: 10px; background: #f5f5f5;">
+        <p>Open browser console (F12) to see test results.</p>
+    </div>
+</body>
+</html>

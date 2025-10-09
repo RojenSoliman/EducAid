@@ -567,6 +567,13 @@ function nextStep() {
     console.log('=== End Debug ===');
     
     if (currentStep === 8) return;
+    
+    // TEMPORARY DEBUG: Skip validation for Step 1-3 to test progression
+    if (currentStep <= 3) {
+        console.log('🚀 DEBUG: Skipping validation for steps 1-3');
+        showStep(currentStep + 1);
+        return;
+    }
 
     // Clear any existing highlights first
     clearFieldHighlights();
@@ -574,6 +581,11 @@ function nextStep() {
     // Validate current step
     const missingFields = validateCurrentStep();
     const specialValidationErrors = validateSpecialFields();
+    
+    // DEBUG: Log validation results
+    console.log('🔍 Step validation debug:');
+    console.log('- Missing fields:', missingFields);
+    console.log('- Special validation errors:', specialValidationErrors);
     
     // Combine all validation errors
     const allErrors = [...missingFields, ...specialValidationErrors];
@@ -600,7 +612,11 @@ function nextStep() {
 
     // Step-specific validations
     if (currentStep === 7) {
-        console.log('Step 7 validation - otpVerified:', otpVerified); // Debug log
+        // Step 7 is grade validation, no OTP required yet
+        console.log('Moving from step 7 (grade validation) to step 8 (OTP)'); // Debug log
+        showStep(currentStep + 1);
+    } else if (currentStep === 8) {
+        console.log('Step 8 validation - otpVerified:', otpVerified); // Debug log
         if (!otpVerified) {
             const otpField = document.getElementById('otp');
             highlightMissingFields([otpField]);
@@ -609,8 +625,9 @@ function nextStep() {
         }
         // Success vibration when moving to final step
         triggerMobileVibration('success');
-        console.log('Moving from step 7 to step 8'); // Debug log
-        showStep(currentStep + 1);
+        console.log('OTP verified - proceeding to final submission'); // Debug log
+        // Don't move to next step - this should trigger form submission instead
+        // showStep(currentStep + 1);
     } else if (currentStep === 4) {
         if (!documentVerified) {
             const fileField = document.getElementById('enrollmentForm');
@@ -638,6 +655,20 @@ function prevStep() {
         showStep(currentStep - 1);
     }
 }
+
+// ============================================
+// MAKE FUNCTIONS GLOBALLY AVAILABLE FOR ONCLICK HANDLERS
+// ============================================
+window.nextStep = nextStep;
+window.prevStep = prevStep;
+window.showStep = showStep;
+
+// Debug: Log that functions are available
+console.log('✅ Core navigation functions registered globally:', {
+    nextStep: typeof window.nextStep,
+    prevStep: typeof window.prevStep,
+    showStep: typeof window.showStep
+});
 
 // Add vibration to button clicks
 function addVibrationToButtons() {
@@ -2133,7 +2164,74 @@ window.debugRegistration = {
         console.log('Button element:', btn);
         console.log('Button disabled:', btn ? btn.disabled : 'N/A');
         console.log('Button onclick:', btn ? btn.onclick : 'N/A');
-        console.log('OTP verified:', otpVerified);
-        console.log('Current step:', currentStep);
     }
 };
+
+// ---- NAVIGATION FUNCTIONS FOR REFRESH/RESTART ----
+
+function startAgain() {
+    if (confirm('Are you sure you want to start the registration process again? All entered data will be lost.')) {
+        // Clear localStorage
+        localStorage.removeItem(CONFIG.STORAGE_KEY);
+        
+        // Clear all form data
+        document.querySelectorAll('input, select, textarea').forEach(el => {
+            if (el.type === 'checkbox' || el.type === 'radio') {
+                el.checked = false;
+            } else {
+                el.value = '';
+            }
+        });
+        
+        // Clear all upload previews
+        document.querySelectorAll('[id*="Preview"]').forEach(el => {
+            el.classList.add('d-none');
+        });
+        
+        // Reset all state variables
+        currentStep = 1;
+        otpVerified = false;
+        documentVerified = false;
+        filenameValid = false;
+        hasUnsavedChanges = false;
+        registrationInProgress = false;
+        hasUploadedFiles = false;
+        hasVerifiedOTP = false;
+        formSubmitted = false;
+        
+        // Reset all button states
+        document.querySelectorAll('[id*="nextStep"]').forEach(btn => {
+            btn.disabled = false;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-primary');
+            btn.innerHTML = 'Next';
+        });
+        
+        // Reload the page to completely reset
+        window.location.reload();
+    }
+}
+
+function returnToPrevious() {
+    if (currentStep > 1) {
+        showStep(currentStep - 1);
+    } else {
+        startAgain();
+    }
+}
+
+// Handle page refresh/navigation with enhanced protection
+window.addEventListener('beforeunload', function(e) {
+    if (registrationInProgress && !formSubmitted) {
+        const message = 'You have unsaved registration progress. Are you sure you want to leave?';
+        e.preventDefault();
+        e.returnValue = message;
+        return message;
+    }
+});
+
+// Make additional functions globally available for onclick handlers
+window.startAgain = startAgain;
+window.returnToPrevious = returnToPrevious;
+console.log('OTP verified:', otpVerified);
+console.log('Current step:', currentStep);

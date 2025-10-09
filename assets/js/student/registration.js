@@ -54,7 +54,7 @@ function showNotifier(message, type = 'error') {
 }
 
 function nextStep() {
-    if (currentStep === 6) return;
+    if (currentStep === 8) return;
 
     let isValid = true;
     const currentPanel = document.getElementById(`step-${currentStep}`);
@@ -80,13 +80,13 @@ function nextStep() {
         return;
     }
 
-    if (currentStep === 5) {
+    if (currentStep === 7) {
         if (!otpVerified) {
             showNotifier('Please verify your OTP before proceeding.', 'error');
             return;
         }
         showStep(currentStep + 1);
-    } else if (currentStep < 6) {
+    } else if (currentStep < 8) {
         showStep(currentStep + 1);
     }
 }
@@ -896,3 +896,64 @@ document.addEventListener('DOMContentLoaded', () => {
     
     console.log('Student registration system initialized successfully');
 });
+
+// ---- NAVIGATION FUNCTIONS FOR REFRESH/RESTART ----
+
+function startAgain() {
+    if (confirm('Are you sure you want to start the registration process again? All entered data will be lost.')) {
+        // Clear all form data
+        document.querySelectorAll('input, select, textarea').forEach(el => {
+            if (el.type === 'checkbox' || el.type === 'radio') {
+                el.checked = false;
+            } else {
+                el.value = '';
+            }
+        });
+        
+        // Clear all upload previews
+        document.querySelectorAll('[id*="Preview"]').forEach(el => {
+            el.classList.add('d-none');
+        });
+        
+        // Reset step navigation
+        currentStep = 1;
+        otpVerified = false;
+        documentVerified = false;
+        filenameValid = false;
+        termsRead = false;
+        termsAccepted = false;
+        
+        // Show first step
+        showStep(1);
+        
+        // Reset all button states
+        document.querySelectorAll('[id*="nextStep"]').forEach(btn => {
+            btn.disabled = false;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-primary');
+        });
+        
+        // Reload the page to completely reset
+        window.location.reload();
+    }
+}
+
+function returnToPrevious() {
+    if (currentStep > 1) {
+        showStep(currentStep - 1);
+    } else {
+        startAgain();
+    }
+}
+
+// Handle page refresh/navigation
+window.addEventListener('beforeunload', function(e) {
+    if (currentStep > 1) {
+        e.preventDefault();
+        e.returnValue = 'Are you sure you want to leave? Your progress will be lost.';
+    }
+});
+
+// Add these functions to the global scope for onclick handlers
+window.startAgain = startAgain;
+window.returnToPrevious = returnToPrevious;
