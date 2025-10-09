@@ -104,11 +104,16 @@ class TopbarSettingsController {
             return null;
         }
         
-        $query = "SELECT admin_id, username, full_name, email FROM admins WHERE admin_id = $1 AND is_active = TRUE";
+        $query = "SELECT admin_id, username, TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS full_name, email FROM admins WHERE admin_id = $1 AND is_active = TRUE";
         $result = pg_query_params($this->connection, $query, [$this->admin_id]);
         
         if ($result && pg_num_rows($result) > 0) {
-            return pg_fetch_assoc($result);
+            $row = pg_fetch_assoc($result);
+            // Ensure full_name always has a value for downstream notifications
+            if (empty(trim($row['full_name'] ?? ''))) {
+                $row['full_name'] = $row['username'] ?? '';
+            }
+            return $row;
         }
         
         return null;

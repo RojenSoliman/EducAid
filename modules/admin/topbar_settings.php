@@ -30,7 +30,9 @@ $controller = new TopbarSettingsController($themeService, $_SESSION['admin_id'] 
 // Unified form submission (topbar + header)
 $form_result = [ 'success' => false, 'message' => '', 'data' => $themeService->getCurrentSettings() ];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  if (CSRFProtection::validateToken('topbar_settings', $_POST['csrf_token'] ?? '')) {
+  // Validate token but don't consume it yet (consume=false)
+  // We'll manually consume it only after successful save
+  if (CSRFProtection::validateToken('topbar_settings', $_POST['csrf_token'] ?? '', false)) {
     // Save topbar first
     $form_result = $controller->handleFormSubmission();
     $success = $form_result['success'];
@@ -41,13 +43,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($form_result['success'] && $headerSave['success']) {
       $successMessage = trim($msgTop . ' ' . $msgHeader);
       $errorMessage = '';
+      // Both saves successful - now consume the token
+      if (isset($_SESSION['csrf_tokens']['topbar_settings'])) {
+        unset($_SESSION['csrf_tokens']['topbar_settings']);
+      }
     } else {
       $successMessage = ($form_result['success'] ? $msgTop : '') . ($headerSave['success'] ? (' ' . $msgHeader) : '');
       $errorMessage = (!$form_result['success'] ? $msgTop : '') . (!$headerSave['success'] ? (' ' . $msgHeader) : '');
+      // Don't consume token on error - allow retry
     }
   } else {
     $successMessage = '';
-    $errorMessage = 'Invalid security token.';
+    // Add debug info to error message
+    $debug_info = '';
+  if (isset($_POST['csrf_token'])) {
+    $submitted_token = substr($_POST['csrf_token'], 0, 16) . '...';
+    $session_data = $_SESSION['csrf_tokens']['topbar_settings'] ?? null;
+    if (is_array($session_data)) {
+      $session_preview = array_map(function ($token) {
+        return substr($token, 0, 16) . '...';
+      }, $session_data);
+      $session_token = 'MULTI [' . implode(', ', $session_preview) . ']';
+    } elseif (is_string($session_data)) {
+      $session_token = substr($session_data, 0, 16) . '...';
+    } else {
+      $session_token = 'NO TOKEN IN SESSION';
+    }
+    $debug_info = " (Submitted: $submitted_token, Session: $session_token)";
+    } else {
+        $debug_info = " (No csrf_token in POST data)";
+    }
+    $errorMessage = 'Security token validation failed. Please try again.' . $debug_info;
   }
 }
 

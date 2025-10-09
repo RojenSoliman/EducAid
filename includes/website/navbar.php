@@ -60,6 +60,87 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin') {
     }
 }
 
+// Fetch active municipality logo for super admin
+$navbar_municipality_logo = null;
+$navbar_municipality_name = null;
+
+if ($navbar_is_super_admin && isset($connection)) {
+    // First try to get from session
+    $muni_id = isset($_SESSION['active_municipality_id']) ? (int)$_SESSION['active_municipality_id'] : null;
+    
+    // If no session, get the admin's first assigned municipality
+    if (!$muni_id && isset($_SESSION['admin_id'])) {
+        $admin_id = (int)$_SESSION['admin_id'];
+        $assign_result = pg_query_params(
+            $connection,
+            "SELECT municipality_id FROM admin_municipality_assignments 
+             WHERE admin_id = $1 
+             ORDER BY municipality_id ASC 
+             LIMIT 1",
+            [$admin_id]
+        );
+        
+        if ($assign_result && pg_num_rows($assign_result) > 0) {
+            $assign_data = pg_fetch_assoc($assign_result);
+            $muni_id = (int)$assign_data['municipality_id'];
+            pg_free_result($assign_result);
+        }
+    }
+    
+    // Fetch municipality logo if we have an ID
+    if ($muni_id) {
+        $muni_result = pg_query_params(
+            $connection,
+            "SELECT name, 
+                    COALESCE(custom_logo_image, preset_logo_image) AS active_logo
+             FROM municipalities 
+             WHERE municipality_id = $1 
+             LIMIT 1",
+            [$muni_id]
+        );
+        
+        if ($muni_result && pg_num_rows($muni_result) > 0) {
+            $muni_data = pg_fetch_assoc($muni_result);
+            $navbar_municipality_name = $muni_data['name'];
+            
+            // Build logo path using the same base_path logic
+            if (!empty($muni_data['active_logo'])) {
+                $logo_path = trim($muni_data['active_logo']);
+                
+                // Handle base64 data URIs
+                if (preg_match('#^data:image/[^;]+;base64,#i', $logo_path)) {
+                    $navbar_municipality_logo = $logo_path;
+                }
+                // Handle external URLs
+                elseif (preg_match('#^(?:https?:)?//#i', $logo_path)) {
+                    $navbar_municipality_logo = $logo_path;
+                }
+                // Handle absolute web paths (start with /)
+                elseif (str_starts_with($logo_path, '/')) {
+                    // Absolute paths from web root - just need to make them relative using base_path
+                    // Remove leading slash and add base_path
+                    $relative = ltrim($logo_path, '/');
+                    $encoded = implode('/', array_map('rawurlencode', explode('/', $relative)));
+                    $navbar_municipality_logo = $base_path . $encoded;
+                }
+                // Handle relative paths
+                else {
+                    // Normalize path
+                    $normalized = str_replace('\\', '/', $logo_path);
+                    $normalized = preg_replace('#(?<!:)/{2,}#', '/', $normalized);
+                    
+                    // URL encode each segment while preserving slashes
+                    $encoded = implode('/', array_map('rawurlencode', explode('/', $normalized)));
+                    
+                    // Use base_path to create correct relative path
+                    $navbar_municipality_logo = $base_path . $encoded;
+                }
+            }
+            pg_free_result($muni_result);
+        }
+    }
+}
+
 // Define which pages are editable (for red outline indication)
 $editable_page_slugs = ['landingpage.php', 'about.php', 'how-it-works.php', 'requirements.php', 'announcements.php', 'contact.php'];
 
@@ -86,6 +167,21 @@ function make_edit_link($href) {
     }
 }
 ?>
+
+<style>
+/* Municipality logo styling - Simple and clean like generaltrias.gov.ph */
+.municipality-badge-navbar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.municipality-logo-navbar {
+  height: 80px;
+  width: auto;
+  object-fit: contain;
+}
+</style>
 
 <?php if ($navbar_edit_mode && $navbar_is_super_admin): ?>
 <style>
@@ -158,6 +254,14 @@ function make_edit_link($href) {
     ?>
     <a class="navbar-brand d-flex align-items-center gap-2" href="<?php echo $brand_config['href']; ?>" data-lp-key="nav_brand_wrapper"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_wrapper'):''; ?>>
       <img src="<?php echo htmlspecialchars($logoPath); ?>" alt="EducAid Logo" class="brand-logo" style="height:32px;width:auto;object-fit:contain;" onerror="this.style.display='none';">
+      <?php if ($navbar_municipality_logo && $navbar_municipality_name): ?>
+      <div class="municipality-badge-navbar" title="<?php echo htmlspecialchars($navbar_municipality_name); ?>">
+        <img src="<?php echo htmlspecialchars($navbar_municipality_logo); ?>" 
+             alt="<?php echo htmlspecialchars($navbar_municipality_name); ?>" 
+             class="municipality-logo-navbar"
+             onerror="this.style.display='none';">
+      </div>
+      <?php endif; ?>
       <span class="brand-text m-0 p-0"><?php echo $brandText; ?></span>
     </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-label="Toggle navigation">
