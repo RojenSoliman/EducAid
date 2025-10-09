@@ -51,33 +51,80 @@ document.addEventListener("DOMContentLoaded", function () {
   // On page load, set sidebar state
   updateSidebarState();
 
-  // === JS Animation (no CSS transitions) for desktop collapse/expand ===
+  // === JS Animation for both desktop and mobile ===
   let sidebarAnimFrame = null;
   let sidebarAnimating = false;
+  let backdropAnimFrame = null;
 
   function animateSidebar(expand) {
     if (sidebarAnimating) {
       cancelAnimationFrame(sidebarAnimFrame);
+      if (backdropAnimFrame) cancelAnimationFrame(backdropAnimFrame);
       sidebarAnimating = false;
     }
 
     if (isMobile()) {
-      // Mobile: still instant overlay behavior
+      // Mobile: animate slide-in/out with smooth transform
+      const startTransform = expand ? -100 : 0;
+      const targetTransform = expand ? 0 : -100;
+      const startOpacity = expand ? 0 : 1;
+      const targetOpacity = expand ? 1 : 0;
+      const startTime = performance.now();
+      const duration = 400; // ms - smoother with longer duration
+
+      // Setup initial state
       if (expand) {
         sidebar.classList.add("open");
         sidebar.classList.remove("close");
         backdrop.classList.remove("d-none");
         document.body.style.overflow = "hidden";
-      } else {
-        sidebar.classList.remove("open");
-        sidebar.classList.add("close");
-        backdrop.classList.add("d-none");
-        document.body.style.overflow = "";
       }
-      adjustLayout();
+
+      sidebarAnimating = true;
+
+      // Smooth easing function
+      function easeInOutCubic(t) {
+        return t < 0.5 
+          ? 4 * t * t * t 
+          : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      }
+
+      function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        const eased = easeInOutCubic(progress);
+        
+        // Animate sidebar transform
+        const currentTransform = startTransform + (targetTransform - startTransform) * eased;
+        sidebar.style.transform = `translateX(${currentTransform}%)`;
+        
+        // Animate backdrop opacity
+        const currentOpacity = startOpacity + (targetOpacity - startOpacity) * eased;
+        backdrop.style.opacity = currentOpacity;
+
+        if (progress < 1) {
+          sidebarAnimFrame = requestAnimationFrame(step);
+        } else {
+          // Finish state
+          sidebarAnimating = false;
+          sidebar.style.transform = '';
+          backdrop.style.opacity = '';
+          
+          if (!expand) {
+            sidebar.classList.remove("open");
+            sidebar.classList.add("close");
+            backdrop.classList.add("d-none");
+            document.body.style.overflow = "";
+          }
+          adjustLayout();
+        }
+      }
+
+      requestAnimationFrame(step);
       return;
     }
 
+    // Desktop animation (existing code)
     const startWidth = sidebar.offsetWidth;
     const targetWidth = expand ? 250 : 70; // sync with CSS values
     const startTime = performance.now();
@@ -141,11 +188,7 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   backdrop.addEventListener("click", function () {
-    sidebar.classList.remove("open");
-    sidebar.classList.add("close");
-    backdrop.classList.add("d-none");
-    document.body.style.overflow = "";
-    adjustLayout();
+    animateSidebar(false); // Use animation for closing
   });
 
   // Hide sidebar on mobile when clicking outside of it
@@ -153,11 +196,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (isMobile() && sidebar.classList.contains("open")) {
       const isClickInside = sidebar.contains(e.target) || toggleBtn.contains(e.target);
       if (!isClickInside) {
-        sidebar.classList.remove("open");
-        sidebar.classList.add("close");
-        backdrop.classList.add("d-none");
-        document.body.style.overflow = "";
-        adjustLayout();
+        animateSidebar(false); // Use animation for closing
       }
     }
   });

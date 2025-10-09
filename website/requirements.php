@@ -1,10 +1,24 @@
+<?php
+session_start();
+// Determine super admin edit mode for Requirements page (?edit=1)
+$IS_EDIT_MODE = false; $is_super_admin = false;
+@include_once __DIR__ . '/../config/database.php';
+@include_once __DIR__ . '/../includes/permissions.php';
+if (isset($_SESSION['admin_id']) && function_exists('getCurrentAdminRole')) {
+  $role = @getCurrentAdminRole($connection);
+  if ($role === 'super_admin') { $is_super_admin = true; }
+}
+if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_MODE = true; }
+// Load dedicated requirements page content helper (separate storage)
+@include_once __DIR__ . '/../includes/website/requirements_content_helper.php';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Requirements – EducAid City of General Trias</title>
-  <meta name="description" content="Complete list of requirements and documents needed for EducAid educational assistance application" />
+  <title><?php echo strip_tags(req_block('req_page_title','Requirements – EducAid City of General Trias')); ?></title>
+  <meta name="description" content="<?php echo htmlspecialchars(strip_tags(req_block('req_page_meta_desc','Complete list of requirements and documents needed for EducAid educational assistance application'))); ?>" />
 
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -13,8 +27,22 @@
   <!-- Bootstrap Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
+  <?php if ($IS_EDIT_MODE): ?>
+  <link href="../assets/css/content_editor.css" rel="stylesheet" />
+  <?php endif; ?>
 </head>
 <body>
+
+  <?php if ($IS_EDIT_MODE): ?>
+    <?php
+      $toolbar_config = [
+        'page_title' => 'Requirements Page',
+        'exit_url' => 'requirements.php'
+      ];
+      include '../includes/website/edit_toolbar.php';
+    ?>
+  <?php endif; ?>
+
   <?php
   // Custom navigation for requirements page
   $custom_nav_links = [
@@ -23,7 +51,7 @@
     ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => false],
     ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => true],
     ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => false],
-    ['href' => 'landingpage.php#contact', 'label' => 'Contact', 'active' => false]
+    ['href' => 'contact.php', 'label' => 'Contact', 'active' => false]
   ];
   
   include '../includes/website/topbar.php';
@@ -36,8 +64,8 @@
       <div class="row justify-content-center">
         <div class="col-lg-10">
           <div class="hero-card text-center">
-            <h1 class="display-4 fw-bold mb-3">Application <span class="text-primary">Requirements</span></h1>
-            <p class="lead">Complete checklist of documents and information needed for your EducAid application.</p>
+            <h1 class="display-4 fw-bold mb-3" data-lp-key="req_hero_title"<?php echo req_block_style('req_hero_title'); ?>><?php echo req_block('req_hero_title','Application <span class="text-primary">Requirements</span>'); ?></h1>
+            <p class="lead" data-lp-key="req_hero_lead"<?php echo req_block_style('req_hero_lead'); ?>><?php echo req_block('req_hero_lead','Complete checklist of documents and information needed for your EducAid application.'); ?></p>
             <div class="mt-4">
               <a href="#checklist" class="btn btn-primary btn-lg me-3">
                 <i class="bi bi-list-check me-2"></i>View Checklist
@@ -56,8 +84,8 @@
   <section class="py-5 bg-body-tertiary">
     <div class="container">
       <div class="text-center mb-5">
-        <h2 class="section-title">Requirements at a Glance</h2>
-        <p class="section-lead">Essential documents you'll need to prepare</p>
+        <h2 class="section-title" data-lp-key="req_overview_title"<?php echo req_block_style('req_overview_title'); ?>><?php echo req_block('req_overview_title','Requirements at a Glance'); ?></h2>
+        <p class="section-lead mx-auto" style="max-width: 700px;" data-lp-key="req_overview_lead"<?php echo req_block_style('req_overview_lead'); ?>><?php echo req_block('req_overview_lead','Essential documents you\'ll need to prepare'); ?></p>
       </div>
       <div class="row g-4">
         <div class="col-md-6 col-lg-3">
@@ -65,8 +93,8 @@
             <div class="bg-primary bg-opacity-10 rounded-circle p-3 d-inline-flex mb-3">
               <i class="bi bi-person-vcard text-primary fs-3"></i>
             </div>
-            <h5 class="fw-bold">Identity Documents</h5>
-            <p class="text-body-secondary small">School ID, birth certificate, and valid government ID</p>
+            <h5 class="fw-bold" data-lp-key="req_cat1_title"<?php echo req_block_style('req_cat1_title'); ?>><?php echo req_block('req_cat1_title','Identity Documents'); ?></h5>
+            <p class="text-body-secondary small" data-lp-key="req_cat1_desc"<?php echo req_block_style('req_cat1_desc'); ?>><?php echo req_block('req_cat1_desc','School ID, birth certificate, and valid government ID'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3">
@@ -74,8 +102,8 @@
             <div class="bg-success bg-opacity-10 rounded-circle p-3 d-inline-flex mb-3">
               <i class="bi bi-mortarboard text-success fs-3"></i>
             </div>
-            <h5 class="fw-bold">Academic Records</h5>
-            <p class="text-body-secondary small">Enrollment forms, grades, and school certifications</p>
+            <h5 class="fw-bold" data-lp-key="req_cat2_title"<?php echo req_block_style('req_cat2_title'); ?>><?php echo req_block('req_cat2_title','Academic Records'); ?></h5>
+            <p class="text-body-secondary small" data-lp-key="req_cat2_desc"<?php echo req_block_style('req_cat2_desc'); ?>><?php echo req_block('req_cat2_desc','Enrollment forms, grades, and school certifications'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3">
@@ -83,8 +111,8 @@
             <div class="bg-warning bg-opacity-10 rounded-circle p-3 d-inline-flex mb-3">
               <i class="bi bi-file-earmark-text text-warning fs-3"></i>
             </div>
-            <h5 class="fw-bold">Financial Documents</h5>
-            <p class="text-body-secondary small">Income statements, certificates of indigency</p>
+            <h5 class="fw-bold" data-lp-key="req_cat3_title"<?php echo req_block_style('req_cat3_title'); ?>><?php echo req_block('req_cat3_title','Financial Documents'); ?></h5>
+            <p class="text-body-secondary small" data-lp-key="req_cat3_desc"<?php echo req_block_style('req_cat3_desc'); ?>><?php echo req_block('req_cat3_desc','Income statements, certificates of indigency'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3">
@@ -92,8 +120,8 @@
             <div class="bg-info bg-opacity-10 rounded-circle p-3 d-inline-flex mb-3">
               <i class="bi bi-house text-info fs-3"></i>
             </div>
-            <h5 class="fw-bold">Residency Proof</h5>
-            <p class="text-body-secondary small">Barangay certificates and utility bills</p>
+            <h5 class="fw-bold" data-lp-key="req_cat4_title"<?php echo req_block_style('req_cat4_title'); ?>><?php echo req_block('req_cat4_title','Residency Proof'); ?></h5>
+            <p class="text-body-secondary small" data-lp-key="req_cat4_desc"<?php echo req_block_style('req_cat4_desc'); ?>><?php echo req_block('req_cat4_desc','Barangay certificates and utility bills'); ?></p>
           </div>
         </div>
       </div>
@@ -103,7 +131,7 @@
   <!-- Detailed Requirements -->
   <section id="checklist" class="py-5">
     <div class="container">
-      <h2 class="section-title text-center mb-5">Complete Requirements Checklist</h2>
+      <h2 class="section-title text-center mb-5" data-lp-key="req_checklist_title"<?php echo req_block_style('req_checklist_title'); ?>><?php echo req_block('req_checklist_title','Complete Requirements Checklist'); ?></h2>
       
       <!-- Primary Requirements -->
       <div class="row g-5">
@@ -114,8 +142,8 @@
                 <i class="bi bi-star-fill text-white fs-4"></i>
               </div>
               <div>
-                <h4 class="fw-bold mb-0">Primary Requirements</h4>
-                <p class="text-body-secondary mb-0">Essential documents for all applicants</p>
+                <h4 class="fw-bold mb-0" data-lp-key="req_primary_title"<?php echo req_block_style('req_primary_title'); ?>><?php echo req_block('req_primary_title','Primary Requirements'); ?></h4>
+                <p class="text-body-secondary mb-0" data-lp-key="req_primary_subtitle"<?php echo req_block_style('req_primary_subtitle'); ?>><?php echo req_block('req_primary_subtitle','Essential documents for all applicants'); ?></p>
               </div>
             </div>
             
@@ -124,8 +152,8 @@
                 <div class="d-flex gap-3">
                   <i class="bi bi-check-circle text-success fs-5 mt-1"></i>
                   <div>
-                    <h6 class="fw-bold mb-1">Valid School ID</h6>
-                    <p class="text-body-secondary small mb-1">Current academic year school identification card</p>
+                    <h6 class="fw-bold mb-1" data-lp-key="req_item1_title"<?php echo req_block_style('req_item1_title'); ?>><?php echo req_block('req_item1_title','Valid School ID'); ?></h6>
+                    <p class="text-body-secondary small mb-1" data-lp-key="req_item1_desc"<?php echo req_block_style('req_item1_desc'); ?>><?php echo req_block('req_item1_desc','Current academic year school identification card'); ?></p>
                     <span class="badge text-bg-primary-subtle">Required</span>
                   </div>
                 </div>
@@ -135,8 +163,8 @@
                 <div class="d-flex gap-3">
                   <i class="bi bi-check-circle text-success fs-5 mt-1"></i>
                   <div>
-                    <h6 class="fw-bold mb-1">Certificate of Enrollment</h6>
-                    <p class="text-body-secondary small mb-1">Official enrollment certificate from your school</p>
+                    <h6 class="fw-bold mb-1" data-lp-key="req_item2_title"<?php echo req_block_style('req_item2_title'); ?>><?php echo req_block('req_item2_title','Certificate of Enrollment'); ?></h6>
+                    <p class="text-body-secondary small mb-1" data-lp-key="req_item2_desc"<?php echo req_block_style('req_item2_desc'); ?>><?php echo req_block('req_item2_desc','Official enrollment certificate from your school'); ?></p>
                     <span class="badge text-bg-primary-subtle">Required</span>
                   </div>
                 </div>
@@ -146,8 +174,8 @@
                 <div class="d-flex gap-3">
                   <i class="bi bi-check-circle text-success fs-5 mt-1"></i>
                   <div>
-                    <h6 class="fw-bold mb-1">Enrollment Assessment Form</h6>
-                    <p class="text-body-secondary small mb-1">Statement of account showing tuition and fees</p>
+                    <h6 class="fw-bold mb-1" data-lp-key="req_item3_title"<?php echo req_block_style('req_item3_title'); ?>><?php echo req_block('req_item3_title','Enrollment Assessment Form'); ?></h6>
+                    <p class="text-body-secondary small mb-1" data-lp-key="req_item3_desc"<?php echo req_block_style('req_item3_desc'); ?>><?php echo req_block('req_item3_desc','Statement of account showing tuition and fees'); ?></p>
                     <span class="badge text-bg-primary-subtle">Required</span>
                   </div>
                 </div>
@@ -157,8 +185,8 @@
                 <div class="d-flex gap-3">
                   <i class="bi bi-check-circle text-success fs-5 mt-1"></i>
                   <div>
-                    <h6 class="fw-bold mb-1">Letter to the Mayor</h6>
-                    <p class="text-body-secondary small mb-1">Formal application letter explaining your need for assistance</p>
+                    <h6 class="fw-bold mb-1" data-lp-key="req_item4_title"<?php echo req_block_style('req_item4_title'); ?>><?php echo req_block('req_item4_title','Letter to the Mayor'); ?></h6>
+                    <p class="text-body-secondary small mb-1" data-lp-key="req_item4_desc"<?php echo req_block_style('req_item4_desc'); ?>><?php echo req_block('req_item4_desc','Formal application letter explaining your need for assistance'); ?></p>
                     <span class="badge text-bg-primary-subtle">Required</span>
                   </div>
                 </div>
@@ -168,8 +196,8 @@
                 <div class="d-flex gap-3">
                   <i class="bi bi-check-circle text-success fs-5 mt-1"></i>
                   <div>
-                    <h6 class="fw-bold mb-1">Birth Certificate (PSA)</h6>
-                    <p class="text-body-secondary small mb-1">Original PSA-issued birth certificate</p>
+                    <h6 class="fw-bold mb-1" data-lp-key="req_item5_title"<?php echo req_block_style('req_item5_title'); ?>><?php echo req_block('req_item5_title','Birth Certificate (PSA)'); ?></h6>
+                    <p class="text-body-secondary small mb-1" data-lp-key="req_item5_desc"<?php echo req_block_style('req_item5_desc'); ?>><?php echo req_block('req_item5_desc','Original PSA-issued birth certificate'); ?></p>
                     <span class="badge text-bg-primary-subtle">Required</span>
                   </div>
                 </div>
@@ -179,8 +207,8 @@
                 <div class="d-flex gap-3">
                   <i class="bi bi-check-circle text-success fs-5 mt-1"></i>
                   <div>
-                    <h6 class="fw-bold mb-1">Barangay Certificate</h6>
-                    <p class="text-body-secondary small mb-1">Proof of residency in General Trias</p>
+                    <h6 class="fw-bold mb-1" data-lp-key="req_item6_title"<?php echo req_block_style('req_item6_title'); ?>><?php echo req_block('req_item6_title','Barangay Certificate'); ?></h6>
+                    <p class="text-body-secondary small mb-1" data-lp-key="req_item6_desc"<?php echo req_block_style('req_item6_desc'); ?>><?php echo req_block('req_item6_desc','Proof of residency in General Trias'); ?></p>
                     <span class="badge text-bg-primary-subtle">Required</span>
                   </div>
                 </div>
@@ -197,8 +225,8 @@
                 <i class="bi bi-plus-circle text-white fs-4"></i>
               </div>
               <div>
-                <h4 class="fw-bold mb-0">Additional Requirements</h4>
-                <p class="text-body-secondary mb-0">May be required based on your situation</p>
+                <h4 class="fw-bold mb-0" data-lp-key="req_additional_title"<?php echo req_block_style('req_additional_title'); ?>><?php echo req_block('req_additional_title','Additional Requirements'); ?></h4>
+                <p class="text-body-secondary mb-0" data-lp-key="req_additional_subtitle"<?php echo req_block_style('req_additional_subtitle'); ?>><?php echo req_block('req_additional_subtitle','May be required based on your situation'); ?></p>
               </div>
             </div>
             
@@ -207,8 +235,8 @@
                 <div class="d-flex gap-3">
                   <i class="bi bi-exclamation-circle text-warning fs-5 mt-1"></i>
                   <div>
-                    <h6 class="fw-bold mb-1">Certificate of Indigency</h6>
-                    <p class="text-body-secondary small mb-1">From your barangay (required after initial approval)</p>
+                    <h6 class="fw-bold mb-1" data-lp-key="req_add1_title"<?php echo req_block_style('req_add1_title'); ?>><?php echo req_block('req_add1_title','Certificate of Indigency'); ?></h6>
+                    <p class="text-body-secondary small mb-1" data-lp-key="req_add1_desc"<?php echo req_block_style('req_add1_desc'); ?>><?php echo req_block('req_add1_desc','From your barangay (required after initial approval)'); ?></p>
                     <span class="badge text-bg-warning-subtle">Conditional</span>
                   </div>
                 </div>
@@ -218,8 +246,8 @@
                 <div class="d-flex gap-3">
                   <i class="bi bi-info-circle text-info fs-5 mt-1"></i>
                   <div>
-                    <h6 class="fw-bold mb-1">Parent/Guardian Income Statement</h6>
-                    <p class="text-body-secondary small mb-1">ITR, Certificate of Employment, or Affidavit of Income</p>
+                    <h6 class="fw-bold mb-1" data-lp-key="req_add2_title"<?php echo req_block_style('req_add2_title'); ?>><?php echo req_block('req_add2_title','Parent/Guardian Income Statement'); ?></h6>
+                    <p class="text-body-secondary small mb-1" data-lp-key="req_add2_desc"<?php echo req_block_style('req_add2_desc'); ?>><?php echo req_block('req_add2_desc','ITR, Certificate of Employment, or Affidavit of Income'); ?></p>
                     <span class="badge text-bg-info-subtle">If Applicable</span>
                   </div>
                 </div>
@@ -279,16 +307,15 @@
   <section id="preparation" class="py-5 bg-body-tertiary">
     <div class="container">
       <div class="text-center mb-5">
-        <h2 class="section-title">Document Preparation Guide</h2>
-        <p class="section-lead">How to properly prepare and upload your documents</p>
+        <h2 class="section-title" data-lp-key="req_prep_title"<?php echo req_block_style('req_prep_title'); ?>><?php echo req_block('req_prep_title','Document Preparation Guide'); ?></h2>
+        <p class="section-lead mx-auto" style="max-width: 700px;" data-lp-key="req_prep_lead"<?php echo req_block_style('req_prep_lead'); ?>><?php echo req_block('req_prep_lead','How to properly prepare and upload your documents'); ?></p>
       </div>
       
       <div class="row g-4">
         <div class="col-lg-8">
           <div class="soft-card p-4">
-            <h4 class="fw-bold mb-4">
-              <i class="bi bi-camera text-primary me-2"></i>
-              Photography Guidelines
+            <h4 class="fw-bold mb-4" data-lp-key="req_photo_title"<?php echo req_block_style('req_photo_title'); ?>>
+              <i class="bi bi-camera text-primary me-2"></i><?php echo req_block('req_photo_title','Photography Guidelines'); ?>
             </h4>
             
             <div class="row g-4">
@@ -348,26 +375,25 @@
         
         <div class="col-lg-4">
           <div class="soft-card p-4 h-100">
-            <h5 class="fw-bold mb-3">
-              <i class="bi bi-file-earmark-arrow-up text-info me-2"></i>
-              Upload Specifications
+            <h5 class="fw-bold mb-3" data-lp-key="req_upload_title"<?php echo req_block_style('req_upload_title'); ?>>
+              <i class="bi bi-file-earmark-arrow-up text-info me-2"></i><?php echo req_block('req_upload_title','Upload Specifications'); ?>
             </h5>
             <div class="d-grid gap-3">
               <div class="border-start border-primary border-3 ps-3">
-                <h6 class="fw-semibold">File Formats</h6>
-                <p class="small text-body-secondary mb-0">JPG, PNG, PDF</p>
+                <h6 class="fw-semibold" data-lp-key="req_spec1_title"<?php echo req_block_style('req_spec1_title'); ?>><?php echo req_block('req_spec1_title','File Formats'); ?></h6>
+                <p class="small text-body-secondary mb-0" data-lp-key="req_spec1_desc"<?php echo req_block_style('req_spec1_desc'); ?>><?php echo req_block('req_spec1_desc','JPG, PNG, PDF'); ?></p>
               </div>
               <div class="border-start border-success border-3 ps-3">
-                <h6 class="fw-semibold">Maximum Size</h6>
-                <p class="small text-body-secondary mb-0">5MB per file</p>
+                <h6 class="fw-semibold" data-lp-key="req_spec2_title"<?php echo req_block_style('req_spec2_title'); ?>><?php echo req_block('req_spec2_title','Maximum Size'); ?></h6>
+                <p class="small text-body-secondary mb-0" data-lp-key="req_spec2_desc"<?php echo req_block_style('req_spec2_desc'); ?>><?php echo req_block('req_spec2_desc','5MB per file'); ?></p>
               </div>
               <div class="border-start border-warning border-3 ps-3">
-                <h6 class="fw-semibold">Resolution</h6>
-                <p class="small text-body-secondary mb-0">Minimum 300 DPI</p>
+                <h6 class="fw-semibold" data-lp-key="req_spec3_title"<?php echo req_block_style('req_spec3_title'); ?>><?php echo req_block('req_spec3_title','Resolution'); ?></h6>
+                <p class="small text-body-secondary mb-0" data-lp-key="req_spec3_desc"<?php echo req_block_style('req_spec3_desc'); ?>><?php echo req_block('req_spec3_desc','Minimum 300 DPI'); ?></p>
               </div>
               <div class="border-start border-info border-3 ps-3">
-                <h6 class="fw-semibold">Color</h6>
-                <p class="small text-body-secondary mb-0">Color or clear grayscale</p>
+                <h6 class="fw-semibold" data-lp-key="req_spec4_title"<?php echo req_block_style('req_spec4_title'); ?>><?php echo req_block('req_spec4_title','Color'); ?></h6>
+                <p class="small text-body-secondary mb-0" data-lp-key="req_spec4_desc"<?php echo req_block_style('req_spec4_desc'); ?>><?php echo req_block('req_spec4_desc','Color or clear grayscale'); ?></p>
               </div>
             </div>
           </div>
@@ -438,8 +464,8 @@
   <section class="py-5 bg-body-tertiary">
     <div class="container">
       <div class="text-center mb-5">
-        <h2 class="section-title">Frequently Asked Questions</h2>
-        <p class="section-lead">Common questions about requirements and documentation</p>
+        <h2 class="section-title" data-lp-key="req_faq_title"<?php echo req_block_style('req_faq_title'); ?>><?php echo req_block('req_faq_title','Frequently Asked Questions'); ?></h2>
+        <p class="section-lead mx-auto" style="max-width: 700px;" data-lp-key="req_faq_lead"<?php echo req_block_style('req_faq_lead'); ?>><?php echo req_block('req_faq_lead','Common questions about requirements and documentation'); ?></p>
       </div>
       
       <div class="row justify-content-center">
@@ -447,34 +473,34 @@
           <div class="accordion soft-card" id="requirementsFaq">
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
-                  What if I don't have all the required documents?
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1" data-lp-key="req_faq1_q"<?php echo req_block_style('req_faq1_q'); ?>>
+                  <?php echo req_block('req_faq1_q','What if I don\'t have all the required documents?'); ?>
                 </button>
               </h2>
               <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#requirementsFaq">
-                <div class="accordion-body">
-                  You can still submit your application with the available documents. However, missing primary requirements may delay processing. Contact our support team for guidance on alternative documents or procedures.
+                <div class="accordion-body" data-lp-key="req_faq1_a"<?php echo req_block_style('req_faq1_a'); ?>>
+                  <?php echo req_block('req_faq1_a','You can still submit your application with the available documents. However, missing primary requirements may delay processing. Contact our support team for guidance on alternative documents or procedures.'); ?>
                 </div>
               </div>
             </div>
             
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
-                  Can I submit photocopies instead of original documents?
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2" data-lp-key="req_faq2_q"<?php echo req_block_style('req_faq2_q'); ?>>
+                  <?php echo req_block('req_faq2_q','Can I submit photocopies instead of original documents?'); ?>
                 </button>
               </h2>
               <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#requirementsFaq">
-                <div class="accordion-body">
-                  Yes, clear photocopies or digital scans are acceptable for online submission. However, you may be required to present original documents for verification during the claiming process.
+                <div class="accordion-body" data-lp-key="req_faq2_a"<?php echo req_block_style('req_faq2_a'); ?>>
+                  <?php echo req_block('req_faq2_a','Yes, clear photocopies or digital scans are acceptable for online submission. However, you may be required to present original documents for verification during the claiming process.'); ?>
                 </div>
               </div>
             </div>
             
             <div class="accordion-item">
               <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
-                  How recent should my documents be?
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3" data-lp-key="req_faq3_q"<?php echo req_block_style('req_faq3_q'); ?>>
+                  <?php echo req_block('req_faq3_q','How recent should my documents be?'); ?>
                 </button>
               </h2>
               <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#requirementsFaq">
@@ -502,18 +528,114 @@
     </div>
   </section>
 
-  <!-- CTA Section -->
-  <section class="py-5 bg-primary text-white">
-    <div class="container text-center">
-      <h2 class="fw-bold mb-3">Ready to Prepare Your Documents?</h2>
-      <p class="lead mb-4">Gather your requirements and start your EducAid application today.</p>
-      <div class="d-flex gap-3 justify-content-center flex-wrap">
-        <a href="landingpage.php#apply" class="btn btn-light btn-lg">
-          <i class="bi bi-journal-text me-2"></i>Start Application
-        </a>
-        <a href="how-it-works.php" class="btn btn-outline-light btn-lg">
-          <i class="bi bi-question-circle me-2"></i>How It Works
-        </a>
+  <!-- CTA Section - Eye-catching design -->
+  <section class="py-5" style="background: linear-gradient(135deg, #0d47a1 0%, #1976d2 50%, #42a5f5 100%); position: relative; overflow: hidden;">
+    <!-- Decorative elements -->
+    <div style="position: absolute; top: -50px; right: -50px; width: 300px; height: 300px; background: rgba(255,255,255,0.1); border-radius: 50%; filter: blur(60px);"></div>
+    <div style="position: absolute; bottom: -80px; left: -80px; width: 400px; height: 400px; background: rgba(255,255,255,0.08); border-radius: 50%; filter: blur(80px);"></div>
+    
+    <div class="container" style="position: relative; z-index: 1;">
+      <div class="row align-items-center g-5">
+        <!-- Left side - Icon & Stats -->
+        <div class="col-lg-5">
+          <div class="text-white">
+            <div class="d-flex align-items-center gap-3 mb-4">
+              <div class="bg-white bg-opacity-25 rounded-circle p-4 d-flex align-items-center justify-content-center" style="width: 80px; height: 80px; backdrop-filter: blur(10px);">
+                <i class="bi bi-check-circle-fill text-white" style="font-size: 2.5rem;"></i>
+              </div>
+              <div>
+                <h3 class="fw-bold mb-1" data-lp-key="req_cta_heading"<?php echo req_block_style('req_cta_heading'); ?>><?php echo req_block('req_cta_heading','All Set?'); ?></h3>
+                <p class="mb-0 opacity-75" data-lp-key="req_cta_subheading"<?php echo req_block_style('req_cta_subheading'); ?>><?php echo req_block('req_cta_subheading','You\'re ready to begin'); ?></p>
+              </div>
+            </div>
+            <div class="row g-3 text-center">
+              <div class="col-4">
+                <div class="bg-white bg-opacity-25 rounded p-3 border border-white border-opacity-25" style="backdrop-filter: blur(10px);">
+                  <h4 class="fw-bold mb-1 text-white">4</h4>
+                  <small class="text-white" style="opacity: 0.9;">Categories</small>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="bg-white bg-opacity-25 rounded p-3 border border-white border-opacity-25" style="backdrop-filter: blur(10px);">
+                  <h4 class="fw-bold mb-1 text-white">10+</h4>
+                  <small class="text-white" style="opacity: 0.9;">Documents</small>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="bg-white bg-opacity-25 rounded p-3 border border-white border-opacity-25" style="backdrop-filter: blur(10px);">
+                  <h4 class="fw-bold mb-1 text-white">24/7</h4>
+                  <small class="text-white" style="opacity: 0.9;">Upload</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right side - CTA Content -->
+        <div class="col-lg-7">
+          <div class="text-white">
+            <span class="badge bg-white text-primary rounded-pill px-3 py-2 mb-3">
+              <i class="bi bi-stars me-2"></i>Ready to Apply
+            </span>
+            <h2 class="display-5 fw-bold mb-3">Start Your Application Journey</h2>
+            <p class="lead mb-4 opacity-90">Gather your requirements and begin your EducAid application today. Our streamlined process makes it easy to upload documents and track your progress.</p>
+            
+            <!-- Feature highlights -->
+            <div class="row g-3 mb-4">
+              <div class="col-md-6">
+                <div class="d-flex align-items-start gap-2">
+                  <i class="bi bi-check-circle-fill mt-1"></i>
+                  <div>
+                    <strong class="d-block">Quick & Easy Upload</strong>
+                    <small class="opacity-75">Scan or photo from any device</small>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="d-flex align-items-start gap-2">
+                  <i class="bi bi-check-circle-fill mt-1"></i>
+                  <div>
+                    <strong class="d-block">Real-time Tracking</strong>
+                    <small class="opacity-75">Monitor your application status</small>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="d-flex align-items-start gap-2">
+                  <i class="bi bi-check-circle-fill mt-1"></i>
+                  <div>
+                    <strong class="d-block">Secure Processing</strong>
+                    <small class="opacity-75">Your documents are safe with us</small>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="d-flex align-items-start gap-2">
+                  <i class="bi bi-check-circle-fill mt-1"></i>
+                  <div>
+                    <strong class="d-block">24/7 Availability</strong>
+                    <small class="opacity-75">Apply anytime, anywhere</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="d-flex gap-3 flex-wrap">
+              <a href="../register.php" class="btn btn-light btn-lg px-4 py-3 shadow" style="border-radius: 12px;">
+                <i class="bi bi-rocket-takeoff me-2"></i>Start Application Now
+              </a>
+              <a href="how-it-works.php" class="btn btn-outline-light btn-lg px-4 py-3" style="border-radius: 12px; backdrop-filter: blur(10px); background: rgba(255,255,255,0.1);">
+                <i class="bi bi-question-circle me-2"></i>Learn the Process
+              </a>
+            </div>
+            
+            <div class="mt-4 d-flex align-items-center gap-3 flex-wrap">
+              <small class="opacity-75"><i class="bi bi-clock me-1"></i> Application takes ~15 minutes</small>
+              <small class="opacity-75"><i class="bi bi-people me-1"></i> Join 5,000+ beneficiaries</small>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -546,7 +668,7 @@
               <ul class="list-unstyled small">
                 <li><a href="#preparation">Photo Tips</a></li>
                 <li><a href="landingpage.php#faq">FAQs</a></li>
-                <li><a href="landingpage.php#contact">Contact Support</a></li>
+                <li><a href="contact.php">Contact Support</a></li>
               </ul>
             </div>
             <div class="col-12 col-md-4 mt-3 mt-md-0">
@@ -795,6 +917,26 @@ function formatChatbotResponse(text) {
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <!-- Mobile Navbar JS -->
-  <script src="assets/js/website/mobile-navbar.js"></script>
+  <script src="../assets/js/website/mobile-navbar.js"></script>
+  <?php if($IS_EDIT_MODE): ?>
+  <script src="../assets/js/website/content_editor.js"></script>
+  <script>
+  // Initialize shared ContentEditor for Requirements page
+  ContentEditor.init({
+    page: 'requirements',
+    pageTitle: 'Requirements Page',
+    saveEndpoint: 'ajax_save_req_content.php',
+    resetAllEndpoint: 'ajax_reset_req_content.php',
+    history: { fetchEndpoint: 'ajax_get_req_history.php', rollbackEndpoint: 'ajax_rollback_req_block.php' },
+    refreshAfterSave: async (keys)=>{
+      try {
+        const r = await fetch('ajax_get_req_blocks.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys})});
+        const d = await r.json(); if(!d.success) return;
+        (d.blocks||[]).forEach(b=>{ const el=document.querySelector('[data-lp-key="'+CSS.escape(b.block_key)+'"]'); if(!el) return; el.innerHTML=b.html; if(b.text_color) el.style.color=b.text_color; else el.style.removeProperty('color'); if(b.bg_color) el.style.backgroundColor=b.bg_color; else el.style.removeProperty('background-color'); });
+      } catch(err){ console.error('Refresh error', err); }
+    }
+  });
+  </script>
+  <?php endif; ?>
 </body>
 </html>

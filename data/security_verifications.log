@@ -140,3 +140,10 @@
 {"ts":"2025-10-03T01:01:37+02:00","ip":"::1","ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 OPR/120.0.0.0","action":"process_letter_ocr","result":"ok","score":0.9,"reason":null,"session":"41rt8056irnnmcv0"}
 {"ts":"2025-10-03T01:01:43+02:00","ip":"::1","ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 OPR/120.0.0.0","action":"process_certificate_ocr","result":"ok","score":0.9,"reason":null,"session":"41rt8056irnnmcv0"}
 {"ts":"2025-10-03T01:01:48+02:00","ip":"::1","ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 OPR/120.0.0.0","action":"process_grades_ocr","result":"ok","score":0.9,"reason":null,"session":"41rt8056irnnmcv0"}
+2025-10-01 20:31:22 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
+2025-10-02 20:56:44 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
+2025-10-05 00:49:03 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
+2025-10-05 01:21:33 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
+2025-10-06 03:48:18 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
+2025-10-08 03:47:23 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
+2025-10-09 11:19:59 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36

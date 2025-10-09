@@ -6,7 +6,7 @@ require_once __DIR__ . '/env.php';
 $dbHost = getenv('DB_HOST') ?: 'localhost';
 $dbName = getenv('DB_NAME') ?: 'educaid';
 $dbUser = getenv('DB_USER') ?: 'postgres';
-$dbPass = getenv('DB_PASSWORD') ?: '';
+$dbPass = getenv('DB_PASSWORD') ?: 'postgres_dev_2025'; // Default for development
 $dbPort = getenv('DB_PORT') ?: '5432';
 
 $connString = sprintf(

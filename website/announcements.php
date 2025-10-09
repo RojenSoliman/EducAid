@@ -1,11 +1,40 @@
 <?php
 session_start();
-if (!isset($_SESSION['captcha_verified']) || $_SESSION['captcha_verified'] !== true) {
-    header('Location: security_verification.php');
-    exit;
+
+$IS_EDIT_MODE = false;
+$IS_EDIT_SUPER_ADMIN = false;
+
+require_once __DIR__ . '/../config/database.php';
+@include_once __DIR__ . '/../includes/permissions.php';
+
+if (isset($_GET['edit']) && ($_GET['edit'] === 'true' || $_GET['edit'] == '1')) {
+  if (isset($_SESSION['admin_id']) && function_exists('getCurrentAdminRole')) {
+    $role = @getCurrentAdminRole($connection);
+    if ($role === 'super_admin') {
+      $IS_EDIT_SUPER_ADMIN = true;
+      $IS_EDIT_MODE = true;
+    }
+  } elseif (isset($_SESSION['user_id']) && isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin') {
+    $IS_EDIT_SUPER_ADMIN = true;
+    $IS_EDIT_MODE = true;
+  }
 }
 
-require_once '../config/database.php';
+if (!$IS_EDIT_MODE) {
+    if (!isset($_SESSION['captcha_verified']) || $_SESSION['captcha_verified'] !== true) {
+        header('Location: security_verification.php');
+        exit;
+    }
+  $verificationTime = $_SESSION['captcha_verified_time'] ?? 0;
+  if (time() - $verificationTime > 24 * 60 * 60) {
+    unset($_SESSION['captcha_verified'], $_SESSION['captcha_verified_time']);
+    header('Location: security_verification.php');
+    exit;
+  }
+}
+
+// Load announcements content helper
+require_once '../includes/website/announcements_content_helper.php';
 
 // Optional deep-link id
 $requested_id = isset($_GET['id']) && ctype_digit($_GET['id']) ? (int)$_GET['id'] : null;
@@ -45,7 +74,7 @@ $custom_nav_links = [
   ['href'=>'announcements.php','label'=>'Announcements','active'=>true],
   ['href'=>'requirements.php','label'=>'Requirements','active'=>false],
   ['href'=>'how-it-works.php','label'=>'How it works','active'=>false],
-  ['href'=>'landingpage.php#contact','label'=>'Contact','active'=>false]
+  ['href'=>'contact.php','label'=>'Contact','active'=>false]
 ];
 ?>
 <!DOCTYPE html>
@@ -58,6 +87,9 @@ $custom_nav_links = [
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
 <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
+<?php if ($IS_EDIT_MODE): ?>
+<link href="../assets/css/content_editor.css" rel="stylesheet" />
+<?php endif; ?>
 <style>
   body { font-family: 'Manrope', system-ui, sans-serif; }
   /* Featured announcement redesigned to follow soft-card visual language */
@@ -94,16 +126,27 @@ $custom_nav_links = [
 </style>
  </head>
  <body>
+
+<?php if ($IS_EDIT_MODE): ?>
+  <?php
+    $toolbar_config = [
+      'page_title' => 'Announcements Page',
+      'exit_url' => 'announcements.php'
+    ];
+    include '../includes/website/edit_toolbar.php';
+  ?>
+<?php endif; ?>
+
 <?php
 
-  // Custom navigation for requirements page
+  // Custom navigation for announcements page
   $custom_nav_links = [
     ['href' => 'landingpage.php', 'label' => 'Home', 'active' => false],
     ['href' => 'about.php', 'label' => 'About', 'active' => false],
     ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => false],
     ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
     ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => true],
-    ['href' => 'landingpage.php#contact', 'label' => 'Contact', 'active' => false]
+    ['href' => 'contact.php', 'label' => 'Contact', 'active' => false]
   ];
   // Modular includes placed inside body to mirror landing page structure
   include '../includes/website/topbar.php';
@@ -111,15 +154,15 @@ $custom_nav_links = [
 ?>
 
 <!-- Hero (mirrors landing page hero pattern) -->
-<header class="hero" id="announcements-hero">
+<header class="hero" id="announcements-hero"<?php echo ann_block_style('hero-bg'); ?>>
   <div class="container">
     <div class="row align-items-center justify-content-center">
       <div class="col-12 col-lg-10">
         <div class="hero-card text-center">
           <div class="d-flex flex-column align-items-center gap-3">
-            <span class="badge text-bg-primary-subtle text-primary rounded-pill"><i class="bi bi-megaphone me-1"></i>Official Updates</span>
-            <h1 class="display-5 mb-2">Announcements & Notices</h1>
-            <p class="mb-0 lead" style="max-width:760px;">Program-wide schedules, orientations, distribution reminders, and important administrative advisories.</p>
+            <span class="badge text-bg-primary-subtle text-primary rounded-pill"<?php echo ann_block_style('hero-badge'); ?> data-lp-key="hero-badge" contenteditable="<?php echo $IS_EDIT_MODE ? 'true' : 'false'; ?>"><?php echo ann_block('hero-badge', '<i class="bi bi-megaphone me-1"></i>Official Updates'); ?></span>
+            <h1 class="display-5 mb-2"<?php echo ann_block_style('hero-title'); ?> data-lp-key="hero-title" contenteditable="<?php echo $IS_EDIT_MODE ? 'true' : 'false'; ?>"><?php echo ann_block('hero-title', 'Announcements &amp; Notices'); ?></h1>
+            <p class="mb-0 lead" style="max-width:760px;"<?php echo ann_block_style('hero-description'); ?> data-lp-key="hero-description" contenteditable="<?php echo $IS_EDIT_MODE ? 'true' : 'false'; ?>"><?php echo ann_block('hero-description', 'Program-wide schedules, orientations, distribution reminders, and important administrative advisories.'); ?></p>
           </div>
         </div>
       </div>
@@ -162,12 +205,12 @@ $custom_nav_links = [
   </div>
 </section>
 
-<section class="past-section bg-body-tertiary">
+<section class="past-section bg-body-tertiary"<?php echo ann_block_style('past-section-bg'); ?>>
   <div class="container">
     <div class="d-flex justify-content-between align-items-end flex-wrap mb-3 gap-2">
       <div>
-        <h2 class="h5 fw-bold mb-1"><i class="bi bi-archive me-2 text-primary"></i>Past Announcements</h2>
-        <p class="small text-body-secondary mb-0">Historical updates & previous schedules</p>
+  <h2 class="h5 fw-bold mb-1"<?php echo ann_block_style('past-title'); ?> data-lp-key="past-title" contenteditable="<?php echo $IS_EDIT_MODE ? 'true' : 'false'; ?>"><?php echo ann_block('past-title', '<i class="bi bi-archive me-2 text-primary"></i>Past Announcements'); ?></h2>
+  <p class="small text-body-secondary mb-0"<?php echo ann_block_style('past-subtitle'); ?> data-lp-key="past-subtitle" contenteditable="<?php echo $IS_EDIT_MODE ? 'true' : 'false'; ?>"><?php echo ann_block('past-subtitle', 'Historical updates &amp; previous schedules'); ?></p>
       </div>
       <div class="small text-body-secondary">Total: <?php echo count($past); ?></div>
     </div>
@@ -212,7 +255,7 @@ $custom_nav_links = [
             <ul class="list-unstyled small">
               <li><a href="requirements.php">Requirements</a></li>
               <li><a href="landingpage.php#faq">FAQs</a></li>
-              <li><a href="landingpage.php#contact">Contact</a></li>
+              <li><a href="contact.php">Contact</a></li>
             </ul>
           </div>
           <div class="col-12 col-md-4 mt-3 mt-md-0">
@@ -431,5 +474,25 @@ $custom_nav_links = [
     });
   })();
 </script>
+
+<?php if ($IS_EDIT_MODE): ?>
+<script src="../assets/js/website/content_editor.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  ContentEditor.init({
+    page: 'announcements',
+    pageTitle: 'Announcements Page',
+    saveEndpoint: 'ajax_save_ann_content.php',
+    getEndpoint: 'ajax_get_ann_blocks.php',
+    resetAllEndpoint: 'ajax_reset_ann_content.php',
+    history: {
+      fetchEndpoint: 'ajax_get_ann_history.php',
+      rollbackEndpoint: 'ajax_rollback_ann_block.php'
+    }
+  });
+});
+</script>
+<?php endif; ?>
+
 </body>
 </html>

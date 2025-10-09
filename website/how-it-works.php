@@ -1,10 +1,24 @@
+<?php
+session_start();
+// Determine super admin edit mode for How It Works page (?edit=1)
+$IS_EDIT_MODE = false; $is_super_admin = false;
+@include_once __DIR__ . '/../config/database.php';
+@include_once __DIR__ . '/../includes/permissions.php';
+if (isset($_SESSION['admin_id']) && function_exists('getCurrentAdminRole')) {
+  $role = @getCurrentAdminRole($connection);
+  if ($role === 'super_admin') { $is_super_admin = true; }
+}
+if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_MODE = true; }
+// Load dedicated how-it-works page content helper (separate storage)
+@include_once __DIR__ . '/../includes/website/how_it_works_content_helper.php';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>How EducAid Works – City of General Trias</title>
-  <meta name="description" content="Step-by-step guide on how to apply and use the EducAid system for educational assistance" />
+  <title><?php echo strip_tags(hiw_block('hiw_page_title','How EducAid Works – City of General Trias')); ?></title>
+  <meta name="description" content="<?php echo htmlspecialchars(strip_tags(hiw_block('hiw_page_meta_desc','Step-by-step guide on how to apply and use the EducAid system for educational assistance'))); ?>" />
 
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -13,8 +27,21 @@
   <!-- Bootstrap Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
   <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
+  <?php if ($IS_EDIT_MODE): ?>
+  <link href="../assets/css/content_editor.css" rel="stylesheet" />
+  <?php endif; ?>
 </head>
 <body>
+  <?php if ($IS_EDIT_MODE): ?>
+    <?php
+      $toolbar_config = [
+        'page_title' => 'How It Works Page',
+        'exit_url' => 'how-it-works.php'
+      ];
+      include '../includes/website/edit_toolbar.php';
+    ?>
+  <?php endif; ?>
+
   <?php
   // Custom navigation for how-it-works page
   $custom_nav_links = [
@@ -23,7 +50,7 @@
     ['href' => 'how-it-works.php', 'label' => 'How it works', 'active' => true],
     ['href' => 'requirements.php', 'label' => 'Requirements', 'active' => false],
     ['href' => 'announcements.php', 'label' => 'Announcements', 'active' => false],
-    ['href' => 'landingpage.php#contact', 'label' => 'Contact', 'active' => false]
+    ['href' => 'contact.php', 'label' => 'Contact', 'active' => false]
   ];
   
   include '../includes/website/topbar.php';
@@ -36,8 +63,8 @@
       <div class="row justify-content-center">
         <div class="col-lg-10">
           <div class="hero-card text-center">
-            <h1 class="display-4 fw-bold mb-3">How <span class="text-primary">EducAid</span> Works</h1>
-            <p class="lead">A comprehensive guide to applying for and receiving educational assistance through our digital platform.</p>
+            <h1 class="display-4 fw-bold mb-3" data-lp-key="hiw_hero_title"<?php echo hiw_block_style('hiw_hero_title'); ?>><?php echo hiw_block('hiw_hero_title','How <span class="text-primary">EducAid</span> Works'); ?></h1>
+            <p class="lead" data-lp-key="hiw_hero_lead"<?php echo hiw_block_style('hiw_hero_lead'); ?>><?php echo hiw_block('hiw_hero_lead','A comprehensive guide to applying for and receiving educational assistance through our digital platform.'); ?></p>
           </div>
         </div>
       </div>
@@ -48,8 +75,8 @@
   <section class="py-5">
     <div class="container">
       <div class="text-center mb-5">
-        <h2 class="section-title">Simple 4-Step Process</h2>
-        <p class="section-lead">From registration to claiming your assistance</p>
+        <h2 class="section-title" data-lp-key="hiw_overview_title"<?php echo hiw_block_style('hiw_overview_title'); ?>><?php echo hiw_block('hiw_overview_title','Simple 4-Step Process'); ?></h2>
+        <p class="section-lead mx-auto" style="max-width: 700px;" data-lp-key="hiw_overview_lead"<?php echo hiw_block_style('hiw_overview_lead'); ?>><?php echo hiw_block('hiw_overview_lead','From registration to claiming your assistance'); ?></p>
       </div>
       <div class="row g-4">
         <div class="col-md-6 col-lg-3">
@@ -57,8 +84,8 @@
             <div class="bg-primary rounded-circle p-3 d-inline-flex mb-3" style="width: 60px; height: 60px; align-items: center; justify-content: center;">
               <span class="text-white fw-bold fs-4">1</span>
             </div>
-            <h5 class="fw-bold text-primary">Register & Verify</h5>
-            <p class="text-body-secondary">Create your account and verify your identity</p>
+            <h5 class="fw-bold text-primary" data-lp-key="hiw_step1_title"<?php echo hiw_block_style('hiw_step1_title'); ?>><?php echo hiw_block('hiw_step1_title','Register & Verify'); ?></h5>
+            <p class="text-body-secondary" data-lp-key="hiw_step1_desc"<?php echo hiw_block_style('hiw_step1_desc'); ?>><?php echo hiw_block('hiw_step1_desc','Create your account and verify your identity'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3">
@@ -66,8 +93,8 @@
             <div class="bg-secondary rounded-circle p-3 d-inline-flex mb-3" style="width: 60px; height: 60px; align-items: center; justify-content: center;">
               <span class="text-white fw-bold fs-4">2</span>
             </div>
-            <h5 class="fw-bold">Apply & Upload</h5>
-            <p class="text-body-secondary">Complete application and submit documents</p>
+            <h5 class="fw-bold" data-lp-key="hiw_step2_title"<?php echo hiw_block_style('hiw_step2_title'); ?>><?php echo hiw_block('hiw_step2_title','Apply & Upload'); ?></h5>
+            <p class="text-body-secondary" data-lp-key="hiw_step2_desc"<?php echo hiw_block_style('hiw_step2_desc'); ?>><?php echo hiw_block('hiw_step2_desc','Complete application and submit documents'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3">
@@ -75,8 +102,8 @@
             <div class="bg-secondary rounded-circle p-3 d-inline-flex mb-3" style="width: 60px; height: 60px; align-items: center; justify-content: center;">
               <span class="text-white fw-bold fs-4">3</span>
             </div>
-            <h5 class="fw-bold">Get Evaluated</h5>
-            <p class="text-body-secondary">Admin reviews and approves your application</p>
+            <h5 class="fw-bold" data-lp-key="hiw_step3_title"<?php echo hiw_block_style('hiw_step3_title'); ?>><?php echo hiw_block('hiw_step3_title','Get Evaluated'); ?></h5>
+            <p class="text-body-secondary" data-lp-key="hiw_step3_desc"<?php echo hiw_block_style('hiw_step3_desc'); ?>><?php echo hiw_block('hiw_step3_desc','Admin reviews and approves your application'); ?></p>
           </div>
         </div>
         <div class="col-md-6 col-lg-3">
@@ -84,8 +111,8 @@
             <div class="bg-secondary rounded-circle p-3 d-inline-flex mb-3" style="width: 60px; height: 60px; align-items: center; justify-content: center;">
               <span class="text-white fw-bold fs-4">4</span>
             </div>
-            <h5 class="fw-bold">Claim with QR</h5>
-            <p class="text-body-secondary">Receive QR code and claim on distribution day</p>
+            <h5 class="fw-bold" data-lp-key="hiw_step4_title"<?php echo hiw_block_style('hiw_step4_title'); ?>><?php echo hiw_block('hiw_step4_title','Claim with QR'); ?></h5>
+            <p class="text-body-secondary" data-lp-key="hiw_step4_desc"<?php echo hiw_block_style('hiw_step4_desc'); ?>><?php echo hiw_block('hiw_step4_desc','Receive QR code and claim on distribution day'); ?></p>
           </div>
         </div>
       </div>
@@ -95,7 +122,7 @@
   <!-- Detailed Steps -->
   <section class="py-5 bg-body-tertiary">
     <div class="container">
-      <h2 class="section-title text-center mb-5">Detailed Process Guide</h2>
+      <h2 class="section-title text-center mb-5" data-lp-key="hiw_detailed_title"<?php echo hiw_block_style('hiw_detailed_title'); ?>><?php echo hiw_block('hiw_detailed_title','Detailed Process Guide'); ?></h2>
       
       <!-- Step 1 -->
       <div class="row g-5 align-items-center mb-5">
@@ -375,7 +402,7 @@
     <div class="container">
       <div class="text-center mb-5">
         <h2 class="section-title">Tips for Success</h2>
-        <p class="section-lead">Best practices to ensure smooth application processing</p>
+        <p class="section-lead mx-auto" style="max-width: 700px;">Best practices to ensure smooth application processing</p>
       </div>
       <div class="row g-4">
         <div class="col-md-6 col-lg-4">
@@ -469,7 +496,7 @@
               <ul class="list-unstyled small">
                 <li><a href="requirements.php">Requirements</a></li>
                 <li><a href="landingpage.php#faq">FAQs</a></li>
-                <li><a href="landingpage.php#contact">Contact</a></li>
+                <li><a href="contact.php">Contact</a></li>
               </ul>
             </div>
             <div class="col-12 col-md-4 mt-3 mt-md-0">
@@ -674,6 +701,26 @@ function formatChatbotResponse(text) {
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <!-- Mobile Navbar JS -->
-  <script src="assets/js/website/mobile-navbar.js"></script>
+  <script src="../assets/js/website/mobile-navbar.js"></script>
+  <?php if($IS_EDIT_MODE): ?>
+  <script src="../assets/js/website/content_editor.js"></script>
+  <script>
+  // Initialize shared ContentEditor for How It Works page
+  ContentEditor.init({
+    page: 'how-it-works',
+    pageTitle: 'How It Works Page',
+    saveEndpoint: 'ajax_save_hiw_content.php',
+    resetAllEndpoint: 'ajax_reset_hiw_content.php',
+    history: { fetchEndpoint: 'ajax_get_hiw_history.php', rollbackEndpoint: 'ajax_rollback_hiw_block.php' },
+    refreshAfterSave: async (keys)=>{
+      try {
+        const r = await fetch('ajax_get_hiw_blocks.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys})});
+        const d = await r.json(); if(!d.success) return;
+        (d.blocks||[]).forEach(b=>{ const el=document.querySelector('[data-lp-key="'+CSS.escape(b.block_key)+'"]'); if(!el) return; el.innerHTML=b.html; if(b.text_color) el.style.color=b.text_color; else el.style.removeProperty('color'); if(b.bg_color) el.style.backgroundColor=b.bg_color; else el.style.removeProperty('background-color'); });
+      } catch(err){ console.error('Refresh error', err); }
+    }
+  });
+  </script>
+  <?php endif; ?>
 </body>
 </html>

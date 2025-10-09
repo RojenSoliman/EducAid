@@ -42,9 +42,15 @@ if (!function_exists('educaid_parse_env_file')) {
 if (!function_exists('educaid_load_env_layered')) {
     function educaid_load_env_layered(string $projectRoot): void {
         $loaded = [];
+        // Check for .env in project root first
         $base = $projectRoot . DIRECTORY_SEPARATOR . '.env';
         if (is_readable($base)) {
             $loaded['.env'] = educaid_parse_env_file($base);
+        }
+        // Also check for .env in config directory
+        $configEnv = $projectRoot . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . '.env';
+        if (is_readable($configEnv)) {
+            $loaded['config/.env'] = educaid_parse_env_file($configEnv);
         }
         $envDir = $projectRoot . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'env.d';
         if (is_dir($envDir)) {
