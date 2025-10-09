@@ -20,7 +20,15 @@ body {
 
 /* Header now sticky instead of fully fixed so main content flows correctly */
 /* Fixed header just below topbar; content pads beneath */
-.admin-main-header { position:fixed; top:var(--admin-topbar-h); left:250px; right:0; height:var(--admin-header-h); z-index:1030; }
+.admin-main-header { 
+  position:fixed; 
+  top:var(--admin-topbar-h); 
+  left:250px; 
+  right:0; 
+  height:var(--admin-header-h); 
+  z-index:1030; 
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
 .sidebar.close ~ .admin-main-header { left:70px; }
 
 /* On mobile header spans full width */
@@ -225,7 +233,7 @@ body {
   #wrapper.admin-wrapper { flex-direction: column; }
   .home-section,
   #mainContent { margin-left:0 !important; width:100% !important; }
-  .sidebar { z-index: 1100; } /* bring above content on mobile slide-in */
+  .sidebar { z-index: 1060; } /* bring above header (1030) and topbar (1050) on mobile slide-in */
 
   .sidebar.open {
     transform: translateX(0);
@@ -237,7 +245,7 @@ body {
 
   .sidebar-backdrop {
     display: block;
-    z-index: 1030;
+    z-index: 1055;
     position: fixed;
     top: 0;
     left: 0;
