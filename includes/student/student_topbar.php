@@ -1,47 +1,120 @@
 <?php
-// Student Topbar Component
-// This topbar is specifically designed for student dashboard pages
+// includes/student/student_topbar.php
+// Student topbar reusing super admin theme logic with minimal contact info.
+
+require_once __DIR__ . '/../../config/database.php';
+
+$topbar_settings = [
+  'topbar_email' => 'educaid@generaltrias.gov.ph',
+  'topbar_phone' => '(046) 886-4454',
+  'topbar_bg_color' => '#1565c0',
+  'topbar_bg_gradient' => '#0d47a1',
+  'topbar_text_color' => '#ffffff',
+  'topbar_link_color' => '#e3f2fd'
+];
+
+if (isset($connection)) {
+  $muni_id = isset($_SESSION['active_municipality_id']) ? (int)$_SESSION['active_municipality_id'] : 1;
+
+  $result = pg_query_params(
+    $connection,
+    "SELECT topbar_email, topbar_phone, topbar_bg_color, topbar_bg_gradient, topbar_text_color, topbar_link_color
+     FROM theme_settings
+     WHERE municipality_id = $1 AND is_active = TRUE
+     LIMIT 1",
+    [$muni_id]
+  );
+
+  if ($result && pg_num_rows($result) > 0) {
+    $db_settings = pg_fetch_assoc($result);
+    foreach ($db_settings as $key => $value) {
+      if ($key === 'topbar_bg_gradient') {
+        $topbar_settings[$key] = $value;
+        continue;
+      }
+      if ($value !== null && $value !== '') {
+        $topbar_settings[$key] = $value;
+      }
+    }
+    pg_free_result($result);
+  }
+}
+
+$bg_color = $topbar_settings['topbar_bg_color'] ?? '#1565c0';
+$bg_gradient = $topbar_settings['topbar_bg_gradient'] ?? null;
+$topbar_background_css = ($bg_gradient && trim($bg_gradient) !== '')
+  ? sprintf('linear-gradient(135deg, %s 0%%, %s 100%%)', $bg_color, $bg_gradient)
+  : $bg_color;
 ?>
-<!-- Student Topbar -->
-<div class="topbar">
-  <div class="container-fluid d-flex align-items-center justify-content-between gap-3 flex-wrap">
-    <div class="d-flex align-items-center gap-3">
-      <i class="bi bi-envelope-paper"></i>
-      <a href="mailto:educaid@generaltrias.gov.ph">educaid@generaltrias.gov.ph</a>
-      <span class="vr mx-2 d-none d-md-inline"></span>
+<div class="student-topbar">
+  <div class="container-fluid d-flex align-items-center justify-content-center gap-3 flex-wrap">
+    <div class="d-flex align-items-center gap-3 small flex-wrap justify-content-center">
+      <i class="bi bi-envelope"></i>
+      <a href="mailto:<?= htmlspecialchars($topbar_settings['topbar_email']) ?>">
+        <?= htmlspecialchars($topbar_settings['topbar_email']) ?>
+      </a>
+      <span class="vr mx-2 d-none d-lg-inline"></span>
       <i class="bi bi-telephone"></i>
-      <span>(046) 886-4454</span>
-    </div>
-    <div class="d-flex align-items-center gap-3">
-      <i class="bi bi-clock"></i>
-      <span class="d-none d-md-inline">Mon-Fri 8:00AM - 5:00PM</span>
-      <span class="d-md-none">Office Hours</span>
+      <span class="d-none d-sm-inline">
+        <?= htmlspecialchars($topbar_settings['topbar_phone']) ?>
+      </span>
+      <span class="d-sm-none">
+        <?= htmlspecialchars($topbar_settings['topbar_phone']) ?>
+      </span>
     </div>
   </div>
 </div>
 
 <style>
-/* Topbar styles */
-.topbar {
-  background: linear-gradient(135deg, #0068da 0%, #004aa3 100%);
-  color: white;
-  font-size: 0.875rem;
+.student-topbar {
+  background: <?= htmlspecialchars($topbar_background_css, ENT_QUOTES) ?>;
+  color: <?= htmlspecialchars($topbar_settings['topbar_text_color']) ?>;
+  font-size: 0.775rem;
   z-index: 1050;
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: 44px; /* Fixed height for consistent spacing */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, .15);
 }
-.topbar .container-fluid { height: 44px; display: flex; align-items: center; }
-.topbar a {
-  color: rgba(255, 255, 255, 0.9);
+
+.student-topbar .container-fluid {
+  display: flex;
+  align-items: center;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.student-topbar a {
+  color: <?= htmlspecialchars($topbar_settings['topbar_link_color']) ?>;
   text-decoration: none;
 }
-.topbar a:hover {
-  color: white;
+
+.student-topbar a:hover {
+  color: #fff;
 }
-.topbar .bi {
-  color: rgba(255, 255, 255, 0.8);
+
+.student-topbar .bi {
+  color: rgba(255, 255, 255, .85);
+}
+
+@media (max-width: 767.98px) {
+  .student-topbar {
+    font-size: 0.7rem;
+  }
+
+  .student-topbar .container-fluid {
+    justify-content: center !important;
+    row-gap: 0.5rem;
+  }
+
+  .student-topbar .d-flex.align-items-center.gap-3 {
+    gap: 0.5rem !important;
+    text-align: center;
+  }
+
+  .student-topbar a {
+    word-break: break-word;
+  }
 }
 </style>

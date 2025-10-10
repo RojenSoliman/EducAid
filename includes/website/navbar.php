@@ -169,6 +169,24 @@ function make_edit_link($href) {
 ?>
 
 <style>
+:root {
+  --topbar-height: 0px;
+  --navbar-height: 0px;
+}
+
+body.has-header-offset {
+  padding-top: calc(var(--topbar-height, 0px) + var(--navbar-height, 0px));
+}
+
+nav.navbar.fixed-header {
+  position: fixed;
+  top: var(--topbar-height, 0px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  z-index: 1040;
+}
+
 /* Municipality logo styling - Simple and clean like generaltrias.gov.ph */
 .municipality-badge-navbar {
   display: inline-flex;
@@ -177,9 +195,89 @@ function make_edit_link($href) {
 }
 
 .municipality-logo-navbar {
-  height: 80px;
+  max-height: 48px;
   width: auto;
   object-fit: contain;
+}
+
+nav.navbar.fixed-header .navbar-brand {
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+nav.navbar.fixed-header .navbar-brand .brand-logo {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
+}
+
+nav.navbar.fixed-header .navbar-brand .brand-text {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+nav.navbar.fixed-header .navbar-nav.spread-nav {
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+nav.navbar.fixed-header .navbar-nav.spread-nav .nav-link {
+  white-space: nowrap;
+  font-size: 0.95rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+@media (min-width: 992px) {
+  nav.navbar.fixed-header .navbar-nav.spread-nav {
+    flex: 0 1 auto;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  nav.navbar.fixed-header .navbar-nav.spread-nav .nav-item {
+    display: flex;
+    align-items: center;
+  }
+
+  nav.navbar.fixed-header .navbar-nav.spread-nav .nav-link {
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+    padding-left: 0.65rem;
+    padding-right: 0.65rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  nav.navbar.fixed-header .navbar-nav.spread-nav {
+    gap: 1.25rem;
+  }
+
+  nav.navbar.fixed-header .navbar-nav.spread-nav .nav-link {
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+}
+
+nav.navbar.fixed-header .navbar-collapse {
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.navbar-actions {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+@media (min-width: 992px) {
+  .w-lg-auto {
+    width: auto !important;
+  }
 }
 </style>
 
@@ -244,8 +342,8 @@ function make_edit_link($href) {
 <?php endif; ?>
 
 <!-- Navbar -->
-<nav class="navbar navbar-expand-lg bg-white sticky-top" style="z-index: 1030;">
-  <div class="container">
+<nav class="navbar navbar-expand-lg bg-white fixed-header">
+  <div class="container-fluid px-3 px-lg-4 px-xl-5">
     <?php
       // Unified brand: one editable block (nav_brand_wrapper) containing full title text.
       $brandDefault = htmlspecialchars($brand_config['name']);
@@ -253,7 +351,7 @@ function make_edit_link($href) {
       $logoPath = $brand_config['logo'];
     ?>
     <a class="navbar-brand d-flex align-items-center gap-2" href="<?php echo $brand_config['href']; ?>" data-lp-key="nav_brand_wrapper"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_wrapper'):''; ?>>
-      <img src="<?php echo htmlspecialchars($logoPath); ?>" alt="EducAid Logo" class="brand-logo" style="height:32px;width:auto;object-fit:contain;" onerror="this.style.display='none';">
+  <img src="<?php echo htmlspecialchars($logoPath); ?>" alt="EducAid Logo" class="brand-logo" style="height:48px;width:auto;object-fit:contain;" onerror="this.style.display='none';">
       <?php if ($navbar_municipality_logo && $navbar_municipality_name): ?>
       <div class="municipality-badge-navbar" title="<?php echo htmlspecialchars($navbar_municipality_name); ?>">
         <img src="<?php echo htmlspecialchars($navbar_municipality_logo); ?>" 
@@ -267,8 +365,8 @@ function make_edit_link($href) {
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
-    <div class="collapse navbar-collapse" id="nav">
-      <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+  <div class="collapse navbar-collapse align-items-lg-center justify-content-lg-center" id="nav">
+  <ul class="navbar-nav spread-nav mx-lg-auto mb-2 mb-lg-0">
         <?php foreach ($nav_links as $link): ?>
         <li class="nav-item">
           <?php
@@ -291,11 +389,11 @@ function make_edit_link($href) {
         <?php endforeach; ?>
       </ul>
       <?php if (!isset($hide_auth_buttons) || !$hide_auth_buttons): ?>
-      <div class="navbar-nav ms-lg-3 mt-2 mt-lg-0">
-        <a href="<?php echo $base_path; ?>unified_login.php" class="btn btn-outline-primary btn-sm me-2 mb-2 mb-lg-0">
+  <div class="navbar-actions d-flex flex-column flex-lg-row align-items-center gap-2 ms-lg-4 mt-2 mt-lg-0 ms-lg-auto">
+        <a href="<?php echo $base_path; ?>unified_login.php" class="btn btn-outline-primary btn-sm d-flex align-items-center justify-content-center gap-2 w-100 w-lg-auto">
           <i class="bi bi-box-arrow-in-right"></i><span class="d-none d-sm-inline ms-1">Sign In</span>
         </a>
-        <a href="<?php echo $base_path; ?>register.php" class="btn btn-primary btn-sm">
+        <a href="<?php echo $base_path; ?>register.php" class="btn btn-primary btn-sm d-flex align-items-center justify-content-center gap-2 w-100 w-lg-auto">
           <i class="bi bi-journal-text"></i><span class="d-none d-sm-inline ms-1">Apply</span>
         </a>
       </div>
@@ -303,3 +401,73 @@ function make_edit_link($href) {
     </div>
   </div>
 </nav>
+<script>
+(function () {
+  const root = document.documentElement;
+
+  function getTopbar() {
+    return document.querySelector('.landing-topbar, .student-topbar, .admin-topbar');
+  }
+
+  function getNavbar() {
+    return document.querySelector('nav.navbar.fixed-header');
+  }
+
+  function updateOffsets() {
+    const topbar = getTopbar();
+    const navbar = getNavbar();
+    const topbarHeight = topbar ? topbar.offsetHeight : 0;
+    const navbarHeight = navbar ? navbar.offsetHeight : 0;
+
+    root.style.setProperty('--topbar-height', `${topbarHeight}px`);
+    root.style.setProperty('--navbar-height', `${navbarHeight}px`);
+
+    if (topbarHeight || navbarHeight) {
+      document.body.classList.add('has-header-offset');
+    } else {
+      document.body.classList.remove('has-header-offset');
+    }
+  }
+
+  let resizeObserver;
+  const supportsResizeObserver = typeof ResizeObserver !== 'undefined';
+
+  function observeElements() {
+    if (!supportsResizeObserver) {
+      return;
+    }
+
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+    }
+
+    resizeObserver = new ResizeObserver(updateOffsets);
+
+    const topbar = getTopbar();
+    const navbar = getNavbar();
+
+    if (topbar) {
+      resizeObserver.observe(topbar);
+    }
+
+    if (navbar) {
+      resizeObserver.observe(navbar);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    updateOffsets();
+    observeElements();
+
+    const navbarCollapse = document.getElementById('nav');
+    if (navbarCollapse) {
+      ['shown.bs.collapse', 'hidden.bs.collapse'].forEach(eventName => {
+        navbarCollapse.addEventListener(eventName, updateOffsets);
+      });
+    }
+  });
+
+  window.addEventListener('load', updateOffsets);
+  window.addEventListener('resize', updateOffsets);
+})();
+</script>
