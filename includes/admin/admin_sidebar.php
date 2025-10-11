@@ -202,11 +202,6 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
             </a>
           </li>
           <li>
-            <a class="submenu-link" id="edit-landing-trigger" href="#" data-edit-landing="1">
-              <i class="bi bi-brush me-2"></i> Edit Landing Page
-            </a>
-          </li>
-          <li>
             <a class="submenu-link <?= is_active('topbar_settings.php', $current) ? 'active' : '' ?>" href="topbar_settings.php">
               <i class="bi bi-layout-text-window-reverse me-2"></i> Topbar Settings
             </a>
@@ -446,54 +441,8 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 
 </style>
-<!-- Edit Landing Page Warning Modal -->
-<div class="modal fade" id="editLandingModal" tabindex="-1" aria-labelledby="editLandingModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header border-0 pb-0">
-        <h5 class="modal-title" id="editLandingModalLabel"><i class="bi bi-exclamation-triangle text-warning me-2"></i>Proceed to Landing Page Editor?</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body pt-1">
-        <p class="mb-2">You are about to enter the <strong>public landing page</strong> in live edit mode.</p>
-        <ul class="small ps-3 mb-3">
-          <li>Changes you save will immediately affect what visitors see.</li>
-          <li>Please review text for accuracy and professionalism.</li>
-          <li>Avoid adding sensitive or internal-only information.</li>
-        </ul>
-        <div class="alert alert-warning small mb-0"><i class="bi bi-info-circle me-1"></i> Edits are logged per block. A versioning/rollback system can be added later.</div>
-      </div>
-      <div class="modal-footer d-flex justify-content-between">
-        <a href="homepage.php" class="btn btn-outline-secondary">
-          <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
-        </a>
-        <div class="d-flex gap-2">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="button" class="btn btn-primary" id="confirmEditLandingBtn">
-            <i class="bi bi-brush me-1"></i>Continue & Edit
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- No longer needed - Edit Landing Page moved to Content Areas -->
 <script>
-document.addEventListener('DOMContentLoaded', function(){
-  const trigger = document.getElementById('edit-landing-trigger');
-  if(!trigger) return;
-  trigger.addEventListener('click', function(e){
-    e.preventDefault();
-    const modalEl = document.getElementById('editLandingModal');
-    if(!modalEl) return;
-    const modal = new bootstrap.Modal(modalEl);
-    modal.show();
-  });
-  const proceedBtn = document.getElementById('confirmEditLandingBtn');
-  if(proceedBtn){
-    proceedBtn.addEventListener('click', function(){
-      // From modules/admin/ we must go up two levels to reach /website/landingpage.php
-      window.location.href = '../../website/landingpage.php?edit=1';
-    });
-  }
-});
+// Legacy modal functionality removed
+// Content editing now handled through Municipality Content Hub
 </script>

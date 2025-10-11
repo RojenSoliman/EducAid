@@ -818,6 +818,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
 
 </head>
 <body class="login-page-isolated has-header-offset<?php echo $IS_LOGIN_EDIT_MODE ? ' edit-mode' : ''; ?>">
+    
+    <?php if (isset($_GET['debug'])): ?>
+    <!-- DEBUG INFO - Remove in production -->
+    <div style="position: fixed; top: 0; left: 0; right: 0; background: #000; color: #0f0; padding: 1rem; z-index: 99999; font-family: monospace; font-size: 12px;">
+        <strong>DEBUG MODE:</strong><br>
+        SESSION ROLE: <?php echo isset($_SESSION['role']) ? $_SESSION['role'] : 'NOT SET'; ?><br>
+        ADMIN ID: <?php echo isset($_SESSION['admin_id']) ? $_SESSION['admin_id'] : 'NOT SET'; ?><br>
+        GET[edit]: <?php echo isset($_GET['edit']) ? $_GET['edit'] : 'NOT SET'; ?><br>
+        $IS_LOGIN_EDIT_MODE: <?php echo $IS_LOGIN_EDIT_MODE ? 'TRUE' : 'FALSE'; ?><br>
+        BLOCKS LOADED: <?php echo count($LOGIN_SAVED_BLOCKS); ?><br>
+        <a href="unified_login.php?edit=1&debug=1" style="color: #fff;">With Edit</a> | 
+        <a href="unified_login.php?debug=1" style="color: #fff;">Without Edit</a> | 
+        <a href="unified_login.php" style="color: #fff;">Normal View</a>
+    </div>
+    <?php endif; ?>
+    
     <?php
     // Include topbar
     include 'includes/website/topbar.php';
