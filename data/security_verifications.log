@@ -147,3 +147,9 @@
 2025-10-06 03:48:18 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
 2025-10-08 03:47:23 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
 2025-10-09 11:19:59 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36
+2025-10-11 19:39:49 - IP: ::1 - User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+{"ts":"2025-10-11T19:42:46+02:00","ip":"::1","ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36","action":"process_letter_ocr","result":"ok","score":0.9,"reason":null,"session":"8oq51fmjofdrajkn"}
+{"ts":"2025-10-11T19:42:57+02:00","ip":"::1","ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36","action":"process_certificate_ocr","result":"ok","score":0.9,"reason":null,"session":"8oq51fmjofdrajkn"}
+{"ts":"2025-10-11T19:43:06+02:00","ip":"::1","ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36","action":"process_grades_ocr","result":"fail","score":0,"reason":"action_mismatch","session":"8oq51fmjofdrajkn"}
+{"ts":"2025-10-11T19:43:13+02:00","ip":"::1","ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36","action":"process_grades_ocr","result":"ok","score":0.9,"reason":null,"session":"8oq51fmjofdrajkn"}
+{"ts":"2025-10-11T19:43:24+02:00","ip":"::1","ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36","action":"process_grades_ocr","result":"ok","score":0.9,"reason":null,"session":"8oq51fmjofdrajkn"}

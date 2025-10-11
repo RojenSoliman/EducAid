@@ -18,7 +18,11 @@ if (isset($custom_nav_links)) {
 $brand_config = [
   'name' => 'EducAid • City of General Trias',
   'href' => '#',
-  'logo' => 'assets/images/educaid-logo.png' // fallback logo path
+  'logo' => 'assets/images/educaid-logo.png', // fallback logo path
+  'hide_educaid_logo' => false, // whether to hide the EducAid logo
+  'show_municipality' => false, // whether to show custom municipality badge
+  'municipality_logo' => null,
+  'municipality_name' => null
 ];
 
 // Override brand config if custom one is provided
@@ -172,6 +176,7 @@ function make_edit_link($href) {
 :root {
   --topbar-height: 0px;
   --navbar-height: 0px;
+  --navbar-content-max-width: 1320px;
 }
 
 body.has-header-offset {
@@ -185,6 +190,31 @@ nav.navbar.fixed-header {
   right: 0;
   width: 100%;
   z-index: 1040;
+}
+
+/* Critical: Force container-fluid to respect max-width */
+nav.navbar.fixed-header .container-fluid {
+  max-width: var(--navbar-content-max-width, 1320px) !important;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  box-sizing: border-box;
+}
+
+@media (min-width: 992px) {
+  nav.navbar.fixed-header .container-fluid {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  nav.navbar.fixed-header .container-fluid {
+    padding-left: 2.5rem;
+    padding-right: 2.5rem;
+  }
 }
 
 /* Municipality logo styling - Simple and clean like generaltrias.gov.ph */
@@ -343,7 +373,7 @@ nav.navbar.fixed-header .navbar-collapse {
 
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg bg-white fixed-header">
-  <div class="container-fluid px-3 px-lg-4 px-xl-5">
+  <div class="container-fluid">
     <?php
       // Unified brand: one editable block (nav_brand_wrapper) containing full title text.
       $brandDefault = htmlspecialchars($brand_config['name']);
@@ -351,11 +381,33 @@ nav.navbar.fixed-header .navbar-collapse {
       $logoPath = $brand_config['logo'];
     ?>
     <a class="navbar-brand d-flex align-items-center gap-2" href="<?php echo $brand_config['href']; ?>" data-lp-key="nav_brand_wrapper"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_wrapper'):''; ?>>
-  <img src="<?php echo htmlspecialchars($logoPath); ?>" alt="EducAid Logo" class="brand-logo" style="height:48px;width:auto;object-fit:contain;" onerror="this.style.display='none';">
-      <?php if ($navbar_municipality_logo && $navbar_municipality_name): ?>
-      <div class="municipality-badge-navbar" title="<?php echo htmlspecialchars($navbar_municipality_name); ?>">
-        <img src="<?php echo htmlspecialchars($navbar_municipality_logo); ?>" 
-             alt="<?php echo htmlspecialchars($navbar_municipality_name); ?>" 
+      <?php if (!$brand_config['hide_educaid_logo']): ?>
+        <img src="<?php echo htmlspecialchars($logoPath); ?>" alt="EducAid Logo" class="brand-logo" style="height:48px;width:auto;object-fit:contain;" onerror="this.style.display='none';">
+      <?php endif; ?>
+      
+      <?php 
+      // Show municipality badge - either from custom config or from super admin session
+      $show_muni_badge = false;
+      $muni_logo_src = null;
+      $muni_name = null;
+      
+      if ($brand_config['show_municipality'] && $brand_config['municipality_logo']) {
+          // Custom municipality from page config
+          $show_muni_badge = true;
+          $muni_logo_src = $brand_config['municipality_logo'];
+          $muni_name = $brand_config['municipality_name'];
+      } elseif ($navbar_municipality_logo && $navbar_municipality_name) {
+          // Super admin municipality
+          $show_muni_badge = true;
+          $muni_logo_src = $navbar_municipality_logo;
+          $muni_name = $navbar_municipality_name;
+      }
+      
+      if ($show_muni_badge && $muni_logo_src):
+      ?>
+      <div class="municipality-badge-navbar" title="<?php echo htmlspecialchars($muni_name); ?>">
+        <img src="<?php echo htmlspecialchars($muni_logo_src); ?>" 
+             alt="<?php echo htmlspecialchars($muni_name); ?>" 
              class="municipality-logo-navbar"
              onerror="this.style.display='none';">
       </div>
@@ -365,8 +417,8 @@ nav.navbar.fixed-header .navbar-collapse {
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
-  <div class="collapse navbar-collapse align-items-lg-center justify-content-lg-center" id="nav">
-  <ul class="navbar-nav spread-nav mx-lg-auto mb-2 mb-lg-0">
+    <div class="collapse navbar-collapse align-items-lg-center justify-content-lg-center" id="nav">
+      <ul class="navbar-nav spread-nav mx-lg-auto mb-2 mb-lg-0">
         <?php foreach ($nav_links as $link): ?>
         <li class="nav-item">
           <?php
@@ -389,7 +441,7 @@ nav.navbar.fixed-header .navbar-collapse {
         <?php endforeach; ?>
       </ul>
       <?php if (!isset($hide_auth_buttons) || !$hide_auth_buttons): ?>
-  <div class="navbar-actions d-flex flex-column flex-lg-row align-items-center gap-2 ms-lg-4 mt-2 mt-lg-0 ms-lg-auto">
+      <div class="navbar-actions d-flex flex-column flex-lg-row align-items-center gap-2 ms-lg-4 mt-2 mt-lg-0 ms-lg-auto">
         <a href="<?php echo $base_path; ?>unified_login.php" class="btn btn-outline-primary btn-sm d-flex align-items-center justify-content-center gap-2 w-100 w-lg-auto">
           <i class="bi bi-box-arrow-in-right"></i><span class="d-none d-sm-inline ms-1">Sign In</span>
         </a>
@@ -406,7 +458,7 @@ nav.navbar.fixed-header .navbar-collapse {
   const root = document.documentElement;
 
   function getTopbar() {
-    return document.querySelector('.landing-topbar, .student-topbar, .admin-topbar');
+    return document.querySelector('.landing-topbar, .student-topbar, .admin-topbar, .topbar');
   }
 
   function getNavbar() {

@@ -3,6 +3,73 @@ include __DIR__ . '/config/database.php';
 include __DIR__ . '/config/recaptcha_config.php';
 session_start();
 
+// Fetch municipality data for navbar (General Trias as default)
+$municipality_logo = null;
+$municipality_name = 'General Trias';
+
+if (isset($connection)) {
+    // Fetch General Trias municipality data (assuming municipality_id = 1 or name = 'General Trias')
+    $muni_result = pg_query_params(
+        $connection,
+        "SELECT name, preset_logo_image 
+         FROM municipalities 
+         WHERE LOWER(name) LIKE LOWER($1)
+         LIMIT 1",
+        ['%general trias%']
+    );
+    
+    if ($muni_result && pg_num_rows($muni_result) > 0) {
+        $muni_data = pg_fetch_assoc($muni_result);
+        $municipality_name = $muni_data['name'];
+        
+        if (!empty($muni_data['preset_logo_image'])) {
+            $logo_path = trim($muni_data['preset_logo_image']);
+            // Remove leading slash if present to make it relative to root
+            $municipality_logo = ltrim($logo_path, '/');
+        }
+        pg_free_result($muni_result);
+    }
+}
+
+// CMS System - Load content blocks for login page
+$LOGIN_SAVED_BLOCKS = [];
+if (isset($connection)) {
+    $resBlocksLogin = @pg_query($connection, "SELECT block_key, html, text_color, bg_color FROM landing_content_blocks WHERE municipality_id=1 AND block_key LIKE 'login_%'");
+    if ($resBlocksLogin) {
+        while($r = pg_fetch_assoc($resBlocksLogin)) { 
+            $LOGIN_SAVED_BLOCKS[$r['block_key']] = $r; 
+        }
+        pg_free_result($resBlocksLogin);
+    }
+}
+
+// CMS Helper functions for login page
+function login_block($key, $defaultHtml){
+    global $LOGIN_SAVED_BLOCKS;
+    if(isset($LOGIN_SAVED_BLOCKS[$key])){ 
+        $h = $LOGIN_SAVED_BLOCKS[$key]['html'];
+        $h = strip_tags($h, '<p><br><b><strong><i><em><u><a><span><div><h1><h2><h3><h4><h5><h6><ul><ol><li>');
+        return $h !== '' ? $h : $defaultHtml;
+    }
+    return $defaultHtml;
+}
+
+function login_block_style($key){
+    global $LOGIN_SAVED_BLOCKS;
+    if(!isset($LOGIN_SAVED_BLOCKS[$key])) return '';
+    $r = $LOGIN_SAVED_BLOCKS[$key];
+    $s = [];
+    if(!empty($r['text_color'])) $s[] = 'color:'.$r['text_color'];
+    if(!empty($r['bg_color'])) $s[] = 'background-color:'.$r['bg_color'];
+    return $s ? ' style="'.implode(';', $s).'"' : '';
+}
+
+// Check if in edit mode (super admin with ?edit=1)
+$IS_LOGIN_EDIT_MODE = false;
+if (isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin' && isset($_GET['edit']) && $_GET['edit'] == '1') {
+    $IS_LOGIN_EDIT_MODE = true;
+}
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
@@ -413,7 +480,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EducAid - Login</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
     <link href="assets/css/universal.css" rel="stylesheet">
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
@@ -423,47 +490,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <script src="https://www.google.com/recaptcha/api.js?render=<?php echo RECAPTCHA_SITE_KEY; ?>"></script>
     
     <style>
-        /* Login page specific adjustments for navbar */
-        body.login-page {
-            padding-top: 0;
+        /* Navbar enabled with isolation fixes applied */
+        :root {
+            --topbar-height: 0px;
+            --navbar-height: 0px;
+            --thm-primary: #0051f8;
+            --thm-green: #18a54a;
         }
         
-        /* Adjust brand section height */
+        /* FIX 1: Unique body class to isolate from navbar */
+        body.login-page-isolated {
+            padding-top: var(--navbar-height);
+            overflow-x: hidden;
+            font-family: "Manrope", sans-serif;
+        }
+        
+        /* FIX 2: Unique page wrapper to prevent container-fluid conflicts */
+        .login-page-isolated .login-main-wrapper {
+            min-height: calc(100vh - var(--navbar-height));
+            max-width: 100vw;
+            overflow-x: hidden;
+        }
+        
+        /* FIX 3: Separate content container that won't affect navbar */
+        .login-page-isolated .login-content-container {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        /* FIX 4: CSS isolation for navbar to prevent page CSS bleed */
+        .login-page-isolated nav.navbar.fixed-header {
+            isolation: isolate;
+            contain: layout style;
+        }
+        
+        /* Match landing page navbar button styles */
+        .login-page-isolated .navbar .btn-outline-primary {
+            border: 2px solid var(--thm-primary) !important;
+            color: var(--thm-primary) !important;
+            background: #fff !important;
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: all 0.2s ease;
+        }
+        
+        .login-page-isolated .navbar .btn-outline-primary:hover {
+            background: var(--thm-primary) !important;
+            color: #fff !important;
+            border-color: var(--thm-primary) !important;
+            transform: translateY(-1px);
+        }
+        
+        .login-page-isolated .navbar .btn-primary {
+            background: var(--thm-primary) !important;
+            color: #fff !important;
+            border: 2px solid var(--thm-primary) !important;
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: all 0.2s ease;
+        }
+        
+        .login-page-isolated .navbar .btn-primary:hover {
+            background: var(--thm-green) !important;
+            border-color: var(--thm-green) !important;
+            color: #fff !important;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(24, 165, 74, 0.3);
+        }
+        
+        /* Match landing page navbar font */
+        .login-page-isolated .navbar {
+            font-family: "Manrope", sans-serif;
+        }
+        
+        .login-page-isolated .navbar-brand {
+            font-weight: 700;
+        }
+        
+        .login-page-isolated .nav-link {
+            font-weight: 500;
+        }
+        
+        /* Topbar integration */
+        .login-page-isolated .landing-topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1050;
+        }
+        
+        /* Adjust brand section height to account for navbar and topbar */
         .brand-section {
-            min-height: calc(100vh - 140px);
+            min-height: calc(100vh - var(--navbar-height) - var(--topbar-height));
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         /* Ensure login form section adjusts properly */
         .col-lg-6:not(.brand-section) {
-            min-height: calc(100vh - 140px);
+            min-height: calc(100vh - var(--navbar-height) - var(--topbar-height));
             display: flex;
             align-items: center;
+            padding-top: 2rem;
+            padding-bottom: 2rem;
         }
         
         /* Mobile adjustments */
         @media (max-width: 991.98px) {
-            .container-fluid {
-                min-height: calc(100vh - 100px) !important;
+            .login-page-isolated .login-main-wrapper {
+                min-height: auto;
             }
             
-            .topbar {
-                display: none !important;
-            }
-            
+            .brand-section,
             .col-lg-6:not(.brand-section) {
-                min-height: calc(100vh - 80px);
+                min-height: auto;
+                padding-top: 1.5rem;
+                padding-bottom: 1.5rem;
             }
-        }
-        
-        /* Navbar styling for login page */
-        .navbar .btn-outline-primary {
-            border-color: var(--thm-primary);
-            color: var(--thm-primary);
-        }
-        
-        .navbar .btn-outline-primary:hover {
-            background: var(--thm-primary);
-            color: white;
         }
         
         /* reCAPTCHA v3 badge positioning */
@@ -473,83 +624,270 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             bottom: 14px !important;
             right: 14px !important;
         }
+        
+        /* ==== MODERN BRAND SECTION STYLES ==== */
+        .brand-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .brand-content {
+            position: relative;
+            z-index: 2;
+            width: 100%;
+            max-width: 520px;
+            padding: 3rem 2.5rem;
+        }
+        
+        /* Hero Badge */
+        .login-hero-badge {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            color: white;
+            padding: 0.5rem 1.25rem;
+            border-radius: 50px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        /* Hero Title */
+        .login-hero-title {
+            font-size: 3rem;
+            font-weight: 800;
+            color: white;
+            margin-bottom: 1rem;
+            line-height: 1.1;
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #fff 0%, #e0e7ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        /* Hero Subtitle */
+        .login-hero-subtitle {
+            font-size: 1.125rem;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 2.5rem;
+            line-height: 1.6;
+        }
+        
+        /* Feature Cards */
+        .feature-cards-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .feature-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 1.25rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateX(8px);
+        }
+        
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        
+        .feature-icon i {
+            font-size: 1.5rem;
+            color: white;
+        }
+        
+        .feature-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 0.25rem;
+        }
+        
+        .feature-desc {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.8);
+            line-height: 1.5;
+        }
+        
+        /* Decorative Circles */
+        .brand-decorative-circles {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+        
+        .circle {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        .circle-1 {
+            width: 400px;
+            height: 400px;
+            top: -200px;
+            right: -100px;
+            animation-delay: 0s;
+        }
+        
+        .circle-2 {
+            width: 300px;
+            height: 300px;
+            bottom: -150px;
+            left: -75px;
+            animation-delay: 2s;
+        }
+        
+        .circle-3 {
+            width: 200px;
+            height: 200px;
+            top: 50%;
+            left: 10%;
+            animation-delay: 4s;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) scale(1); }
+            50% { transform: translateY(-20px) scale(1.05); }
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 1199.98px) {
+            .login-hero-title { font-size: 2.5rem; }
+        }
+        
+        @media (max-width: 991.98px) {
+            .brand-section { display: none !important; }
+        }
     </style>
+    
+    <?php if ($IS_LOGIN_EDIT_MODE): ?>
+    <!-- ContentTools for Super Admin Editing -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ContentTools@1.6.20/build/content-tools.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/ContentTools@1.6.20/build/content-tools.min.js"></script>
+    <style>
+        [data-login-key] {
+            cursor: pointer;
+            position: relative;
+            transition: outline 0.2s ease;
+        }
+        [data-login-key]:hover {
+            outline: 2px dashed rgba(255, 255, 255, 0.5);
+            outline-offset: 4px;
+        }
+        .edit-mode-banner {
+            position: fixed;
+            top: calc(var(--topbar-height) + var(--navbar-height));
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            padding: 0.75rem 1rem;
+            text-align: center;
+            font-weight: 600;
+            z-index: 9998;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+    </style>
+    <?php endif; ?>
 
 </head>
-<body class = "login-page"> 
-    <!-- Top Info Bar -->
-    <div class="topbar py-2 d-none d-md-block">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-6">
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi bi-telephone"></i>
-                            <span>(046) 509-5555</span>
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi bi-envelope"></i>
-                            <span>educaid@generaltrias.gov.ph</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6 text-end">
-                    <div class="d-flex align-items-center justify-content-end gap-3">
-                        <span>🏛️ Official City Portal</span>
-                        <div class="d-flex gap-2">
-                            <a href="#" class="text-white"><i class="bi bi-facebook"></i></a>
-                            <a href="#" class="text-white"><i class="bi bi-twitter"></i></a>
-                            <a href="#" class="text-white"><i class="bi bi-instagram"></i></a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <?php 
+<body class="login-page-isolated has-header-offset<?php echo $IS_LOGIN_EDIT_MODE ? ' edit-mode' : ''; ?>">
+    <?php
+    // Include topbar
+    include 'includes/website/topbar.php';
+    
     // Configure navbar for login page
+    // Display municipality name with logo badge
     $custom_brand_config = [
-        'href' => 'landingpage.php'
+        'href' => 'website/landingpage.php',
+        'name' => 'EducAid • ' . $municipality_name,
+        'hide_educaid_logo' => true, // Flag to hide the EducAid logo in navbar
+        'show_municipality' => true,
+        'municipality_logo' => $municipality_logo,
+        'municipality_name' => $municipality_name
     ];
-    $custom_nav_links = [
-        ['href' => 'landingpage.php', 'label' => '<i class="bi bi-house me-1"></i>Back to Home', 'active' => false]
-    ];
-    $simple_nav_style = true;
-    include 'includes/website/navbar.php'; 
+    
+    // Empty nav links array - no navigation menu items
+    $custom_nav_links = [];
+    
+    // Include navbar with custom configuration and isolation fixes
+    include 'includes/website/navbar.php';
     ?>
     
-    <!-- Main Login Container -->
-    <div class="container-fluid p-0" style="min-height: calc(100vh - 140px);">
+    <!-- Main Login Container - Using unique classes to isolate from navbar -->
+    <div class="login-content-container">
+        <div class="login-main-wrapper">
+            <div class="container-fluid p-0">
         <div class="row g-0 h-100">
             <!-- Brand Section - Hidden on mobile, visible on tablet+ -->
             <div class="col-lg-6 d-none d-lg-flex brand-section">
                 <div class="brand-content">
-                    <div class="brand-logo">
-                        <img src="assets/images/logo.png" alt="EducAid Logo" class="img-fluid">
+                    <!-- Hero Badge -->
+                    <?php echo '<div class="login-hero-badge" data-login-key="login_hero_badge"'.login_block_style('login_hero_badge').'>'.login_block('login_hero_badge','<i class="bi bi-shield-check-fill me-2"></i>Trusted by 10,000+ Students').'</div>'; ?>
+                    
+                    <!-- Main Title -->
+                    <?php echo '<h1 class="login-hero-title" data-login-key="login_hero_title"'.login_block_style('login_hero_title').'>'.login_block('login_hero_title','Welcome to<br><span class="gradient-text">EducAid</span>').'</h1>'; ?>
+                    
+                    <!-- Subtitle -->
+                    <?php echo '<p class="login-hero-subtitle" data-login-key="login_hero_subtitle"'.login_block_style('login_hero_subtitle').'>'.login_block('login_hero_subtitle','Your gateway to accessible educational financial assistance in General Trias.').'</p>'; ?>
+                    
+                    <!-- Feature Cards -->
+                    <div class="feature-cards-grid">
+                        <div class="feature-card">
+                            <div class="feature-icon">
+                                <i class="bi bi-lightning-charge-fill"></i>
+                            </div>
+                            <?php echo '<div class="feature-title" data-login-key="login_feature1_title"'.login_block_style('login_feature1_title').'>'.login_block('login_feature1_title','Fast Processing').'</div>'; ?>
+                            <?php echo '<div class="feature-desc" data-login-key="login_feature1_desc"'.login_block_style('login_feature1_desc').'>'.login_block('login_feature1_desc','Get your application reviewed within 48 hours').'</div>'; ?>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">
+                                <i class="bi bi-shield-fill-check"></i>
+                            </div>
+                            <?php echo '<div class="feature-title" data-login-key="login_feature2_title"'.login_block_style('login_feature2_title').'>'.login_block('login_feature2_title','Secure & Safe').'</div>'; ?>
+                            <?php echo '<div class="feature-desc" data-login-key="login_feature2_desc"'.login_block_style('login_feature2_desc').'>'.login_block('login_feature2_desc','Your data is protected with enterprise-level security').'</div>'; ?>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">
+                                <i class="bi bi-phone-fill"></i>
+                            </div>
+                            <?php echo '<div class="feature-title" data-login-key="login_feature3_title"'.login_block_style('login_feature3_title').'>'.login_block('login_feature3_title','24/7 Support').'</div>'; ?>
+                            <?php echo '<div class="feature-desc" data-login-key="login_feature3_desc"'.login_block_style('login_feature3_desc').'>'.login_block('login_feature3_desc','We\'re here to help anytime you need assistance').'</div>'; ?>
+                        </div>
                     </div>
-                    <h1 class="brand-title">EducAid</h1>
-                    <p class="brand-subtitle">
-                        Empowering students through accessible financial assistance programs in General Trias.
-                    </p>
-                    <ul class="feature-list d-none d-xl-block">
-                        <li class="feature-item">
-                            <i class="bi bi-shield-check"></i>
-                            <span>Secure Application Process</span>
-                        </li>
-                        <li class="feature-item">
-                            <i class="bi bi-clock-history"></i>
-                            <span>Fast Processing Time</span>
-                        </li>
-                        <li class="feature-item">
-                            <i class="bi bi-people"></i>
-                            <span>Community Support</span>
-                        </li>
-                        <li class="feature-item">
-                            <i class="bi bi-award"></i>
-                            <span>Merit-Based Awards</span>
-                        </li>
-                    </ul>
+                    
+                    <!-- Decorative Elements -->
+                    <div class="brand-decorative-circles">
+                        <div class="circle circle-1"></div>
+                        <div class="circle circle-2"></div>
+                        <div class="circle circle-3"></div>
+                    </div>
                 </div>
             </div>
 
@@ -764,6 +1102,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             </div>
         </div>
     </div>
+    <!-- Close wrapper divs for isolation -->
+        </div>
+    </div>
 
     <?php
     include_once 'includes/footer.php';
@@ -879,6 +1220,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             }
         });
     </script>
+    
+    <?php if ($IS_LOGIN_EDIT_MODE): ?>
+    <!-- Edit Mode Banner -->
+    <div class="edit-mode-banner">
+        <i class="bi bi-pencil-square me-2"></i>
+        <strong>EDIT MODE ACTIVE</strong> - Click on any text to edit. Changes will be saved automatically.
+        <a href="unified_login.php" style="color: white; text-decoration: underline; margin-left: 1rem;">Exit Edit Mode</a>
+    </div>
+    
+    <!-- ContentTools Editor Script -->
+    <script>
+        window.addEventListener('load', function() {
+            var editor;
+            
+            ContentTools.StylePalette.add([
+                new ContentTools.Style('Highlight', 'highlight', ['p', 'span', 'div']),
+                new ContentTools.Style('Bold', 'bold', ['p', 'span', 'div'])
+            ]);
+            
+            editor = ContentTools.EditorApp.get();
+            editor.init('[data-login-key]', 'data-login-key');
+            
+            editor.addEventListener('saved', function(ev) {
+                var name, payload, regions, xhr;
+                
+                regions = ev.detail().regions;
+                
+                if (Object.keys(regions).length == 0) {
+                    return;
+                }
+                
+                payload = new FormData();
+                payload.append('municipality_id', '1');
+                
+                for (name in regions) {
+                    if (regions.hasOwnProperty(name)) {
+                        payload.append(name, regions[name]);
+                    }
+                }
+                
+                xhr = new XMLHttpRequest();
+                xhr.addEventListener('readystatechange', function() {
+                    if (xhr.readyState == 4) {
+                        if (xhr.status == 200) {
+                            new ContentTools.FlashUI('ok');
+                        } else {
+                            new ContentTools.FlashUI('no');
+                        }
+                    }
+                });
+                
+                xhr.open('POST', 'services/save_login_content.php', true);
+                xhr.send(payload);
+            });
+        });
+    </script>
+    <?php endif; ?>
 
 </body>
 </html>
