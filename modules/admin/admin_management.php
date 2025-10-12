@@ -1,5 +1,6 @@
 <?php
 include __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 session_start();
 
 if (!isset($_SESSION['admin_username'])) {
@@ -20,6 +21,10 @@ if ($current_admin_role !== 'super_admin') {
     header("Location: homepage.php");
     exit;
 }
+
+// Generate CSRF tokens for forms
+$csrfTokenCreateAdmin = CSRFProtection::generateToken('create_admin');
+$csrfTokenToggleStatus = CSRFProtection::generateToken('toggle_admin_status');
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
