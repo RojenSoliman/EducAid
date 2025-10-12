@@ -216,6 +216,11 @@ $migration_result = $_SESSION['migration_result'] ?? null;
 // Generate CSRF token for CSV migration
 $csrfMigrationToken = CSRFProtection::generateToken('csv_migration');
 
+// Generate CSRF tokens for applicant approval flows
+$csrfApproveApplicantToken = CSRFProtection::generateToken('approve_applicant');
+$csrfOverrideApplicantToken = CSRFProtection::generateToken('override_applicant');
+$csrfRejectApplicantToken = CSRFProtection::generateToken('reject_applicant');
+
 // Clear migration sessions on GET request to prevent resubmission warnings
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['clear_migration'])) {
     // If a preview still exists, only clear the result so remaining rows persist
@@ -574,6 +579,7 @@ $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query
 
 // Table rendering function with live preview
 function render_table($applicants, $connection) {
+    global $csrfApproveApplicantToken, $csrfRejectApplicantToken, $csrfOverrideApplicantToken;
     ob_start();
     ?>
     <table class="table table-bordered align-middle">
@@ -761,11 +767,13 @@ function render_table($applicants, $connection) {
                                     <form method="POST" class="d-inline" onsubmit="return confirm('Verify this student?');">
                                         <input type="hidden" name="student_id" value="<?= $student_id ?>">
                                         <input type="hidden" name="mark_verified" value="1">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfApproveApplicantToken) ?>">
                                         <button class="btn btn-success btn-sm"><i class="bi bi-check-circle me-1"></i> Verify</button>
                                     </form>
                                     <form method="POST" class="d-inline ms-2" onsubmit="return confirm('Reject and reset uploads?');">
                                         <input type="hidden" name="student_id" value="<?= $student_id ?>">
                                         <input type="hidden" name="reject_applicant" value="1">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfRejectApplicantToken) ?>">
                                         <button class="btn btn-danger btn-sm"><i class="bi bi-x-circle me-1"></i> Reject</button>
                                     </form>
                                 <?php else: ?>
@@ -774,6 +782,7 @@ function render_table($applicants, $connection) {
                                     <form method="POST" class="d-inline ms-2" onsubmit="return confirm('Override verification and mark this student as Active even without complete grades/documents?');">
                                         <input type="hidden" name="student_id" value="<?= $student_id ?>">
                                         <input type="hidden" name="mark_verified_override" value="1">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfOverrideApplicantToken) ?>">
                                         <button class="btn btn-warning btn-sm"><i class="bi bi-exclamation-triangle me-1"></i> Override Verify</button>
                                     </form>
                                     <?php endif; ?>
@@ -827,6 +836,24 @@ function render_pagination($page, $totalPages) {
 
 // Handle verify/reject actions before AJAX or page render
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $applicantCsrfAction = null;
+    if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
+        $applicantCsrfAction = 'approve_applicant';
+    } elseif (!empty($_POST['mark_verified_override']) && isset($_POST['student_id'])) {
+        $applicantCsrfAction = 'override_applicant';
+    } elseif (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
+        $applicantCsrfAction = 'reject_applicant';
+    }
+
+    if ($applicantCsrfAction !== null) {
+        $token = $_POST['csrf_token'] ?? '';
+        if (!CSRFProtection::validateToken($applicantCsrfAction, $token)) {
+            $_SESSION['error'] = 'Security validation failed. Please refresh the page and try again.';
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
+    }
+
     // Verify student
     if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
         $sid = trim($_POST['student_id']); // Remove intval for TEXT student_id

@@ -1,5 +1,6 @@
 <?php
 include __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 session_start();
 
 if (!isset($_SESSION['admin_username'])) {
@@ -83,6 +84,14 @@ $offset = ($page - 1) * $records_per_page;
 
 // Handle finalize distribution action
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution'])) {
+    // Validate CSRF token
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('finalize_distribution', $token)) {
+        $_SESSION['error_message'] = 'Security validation failed. Please refresh the page and try again.';
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
+        exit;
+    }
+    
     // Verify admin password
     $password = $_POST['admin_password'] ?? '';
     $location = $_POST['distribution_location'] ?? '';
@@ -273,6 +282,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution
     header('Location: ' . $_SERVER['PHP_SELF'] . '?' . $_SERVER['QUERY_STRING']);
     exit;
 }
+
+// Generate CSRF token for the finalize distribution form
+$csrfToken = CSRFProtection::generateToken('finalize_distribution');
+
 $barangay_filter = isset($_GET['barangay']) ? $_GET['barangay'] : '';
 $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
 $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
@@ -884,6 +897,7 @@ $slot_data = $slot_result ? pg_fetch_assoc($slot_result) : null;
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                             </div>
                             <form method="POST" id="finalizeForm">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                                 <div class="modal-body">
                                     <div class="alert alert-warning">
                                         <i class="bi bi-exclamation-triangle me-2"></i>
