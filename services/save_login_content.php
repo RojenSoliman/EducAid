@@ -22,6 +22,15 @@ if (!isset($_SESSION['admin_role']) || $_SESSION['admin_role'] !== 'super_admin'
     exit;
 }
 
+// CSRF Protection
+require_once __DIR__ . '/../includes/CSRFProtection.php';
+$token = $_POST['csrf_token'] ?? '';
+if (!CSRFProtection::validateToken('edit_login_content', $token)) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Invalid security token. Please refresh the page.']);
+    exit;
+}
+
 // Validate request method
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);

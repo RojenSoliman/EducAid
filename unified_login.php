@@ -93,6 +93,11 @@ function login_section_visible($sectionKey){
 $IS_LOGIN_EDIT_MODE = false;
 if (isset($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'super_admin' && isset($_GET['edit']) && $_GET['edit'] == '1') {
     $IS_LOGIN_EDIT_MODE = true;
+    
+    // Generate CSRF tokens for edit mode
+    require_once __DIR__ . '/includes/CSRFProtection.php';
+    $EDIT_CSRF_TOKEN = CSRFProtection::generateToken('edit_login_content');
+    $TOGGLE_CSRF_TOKEN = CSRFProtection::generateToken('toggle_section');
 }
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -1411,6 +1416,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             
             const formData = new FormData();
             formData.append('municipality_id', '1');
+            formData.append('csrf_token', '<?= $EDIT_CSRF_TOKEN ?>');
             formData.append(blockKey, newContent);
             
             console.log('Saving block:', blockKey, 'Content:', newContent);
@@ -1491,6 +1497,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             const formData = new FormData();
             formData.append('section_key', sectionKey);
             formData.append('is_visible', isVisible ? '1' : '0');
+            formData.append('csrf_token', '<?= $TOGGLE_CSRF_TOKEN ?>');
             
             fetch('services/toggle_section_visibility.php', {
                 method: 'POST',

@@ -16,6 +16,14 @@ if (!isset($_SESSION['admin_role']) || $_SESSION['admin_role'] !== 'super_admin'
     exit;
 }
 
+// CSRF Protection
+require_once __DIR__ . '/../includes/CSRFProtection.php';
+$token = $_POST['csrf_token'] ?? '';
+if (!CSRFProtection::validateToken('toggle_section', $token)) {
+    echo json_encode(['success' => false, 'error' => 'Invalid security token. Please refresh the page.']);
+    exit;
+}
+
 @require_once __DIR__ . '/../config/database.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
