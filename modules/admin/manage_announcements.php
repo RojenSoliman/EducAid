@@ -1,15 +1,28 @@
 <?php
 include __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 session_start();
 if (!isset($_SESSION['admin_username'])) {
     header("Location: ../../unified_login.php");
     exit;
 }
 
+// Generate CSRF tokens
+$csrfTokenPost = CSRFProtection::generateToken('post_announcement');
+$csrfTokenToggle = CSRFProtection::generateToken('toggle_announcement');
+
 // Handle form submission for general announcements (create)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  // Validate CSRF token first
+  $token = $_POST['csrf_token'] ?? '';
+  
   // Toggle activation request (repost/unpost)
   if (isset($_POST['announcement_id'], $_POST['toggle_active'])) {
+    if (!CSRFProtection::validateToken('toggle_announcement', $token)) {
+      header('Location: ' . $_SERVER['PHP_SELF'] . '?error=csrf');
+      exit;
+    }
+    
     $aid = (int)$_POST['announcement_id'];
     $toggle = (int)$_POST['toggle_active']; // 1 => set active, 0 => deactivate
     if ($toggle === 1) {
@@ -23,6 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   if (isset($_POST['post_announcement'])) {
+    if (!CSRFProtection::validateToken('post_announcement', $token)) {
+      header('Location: ' . $_SERVER['PHP_SELF'] . '?error=csrf');
+      exit;
+    }
     $title = trim($_POST['title']);
     $remarks = trim($_POST['remarks']);
     $event_date = !empty($_POST['event_date']) ? $_POST['event_date'] : null;
@@ -115,6 +132,7 @@ $posted = isset($_GET['posted']);
 
       <div class="card p-4 mb-4">
         <form method="POST" enctype="multipart/form-data" id="announcementForm">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfTokenPost) ?>">
           <div class="mb-3">
             <label class="form-label">Title</label>
             <input type="text" name="title" class="form-control form-control-lg" placeholder="Scholarship Orientation" required>
@@ -237,6 +255,7 @@ function renderPage() {
       <td>${badge}</td>
       <td>
         <form method="POST" class="d-inline">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfTokenToggle) ?>">
           <input type="hidden" name="announcement_id" value="${a.announcement_id}">
           <input type="hidden" name="toggle_active" value="${toggleValue}">
           <button type="submit" class="btn btn-sm btn-outline-${btnClass}">${btnLabel}</button>

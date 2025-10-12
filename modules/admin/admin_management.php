@@ -29,36 +29,49 @@ $csrfTokenToggleStatus = CSRFProtection::generateToken('toggle_admin_status');
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['create_admin'])) {
-        $first_name = trim($_POST['first_name']);
-        $middle_name = trim($_POST['middle_name']);
-        $last_name = trim($_POST['last_name']);
-        $email = trim($_POST['email']);
-        $username = trim($_POST['username']);
-        $password = $_POST['password'];
-        $role = $_POST['role'];
-        
-        if (strlen($password) < 6) {
-            $error = "Password must be at least 6 characters.";
+        // CSRF validation
+        $token = $_POST['csrf_token'] ?? '';
+        if (!CSRFProtection::validateToken('create_admin', $token)) {
+            $error = "Security validation failed. Please refresh the page.";
         } else {
-            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-            $municipality_id = 1; // Default municipality
+            $first_name = trim($_POST['first_name']);
+            $middle_name = trim($_POST['middle_name']);
+            $last_name = trim($_POST['last_name']);
+            $email = trim($_POST['email']);
+            $username = trim($_POST['username']);
+            $password = $_POST['password'];
+            $role = $_POST['role'];
             
-            $insertQuery = "INSERT INTO admins (municipality_id, first_name, middle_name, last_name, email, username, password, role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
-            $result = pg_query_params($connection, $insertQuery, [$municipality_id, $first_name, $middle_name, $last_name, $email, $username, $hashed_password, $role]);
-            
-            if ($result) {
-                // Add admin notification
-                $notification_msg = "New " . ($role === 'super_admin' ? 'Super Admin' : 'Sub Admin') . " created: " . $first_name . " " . $last_name . " (" . $username . ")";
-                pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
-                
-                $success = "Admin created successfully!";
+            if (strlen($password) < 6) {
+                $error = "Password must be at least 6 characters.";
             } else {
-                $error = "Failed to create admin. Username or email may already exist.";
+                $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+                $municipality_id = 1; // Default municipality
+                
+                $insertQuery = "INSERT INTO admins (municipality_id, first_name, middle_name, last_name, email, username, password, role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
+                $result = pg_query_params($connection, $insertQuery, [$municipality_id, $first_name, $middle_name, $last_name, $email, $username, $hashed_password, $role]);
+                
+                if ($result) {
+                    // Add admin notification
+                    $notification_msg = "New " . ($role === 'super_admin' ? 'Super Admin' : 'Sub Admin') . " created: " . $first_name . " " . $last_name . " (" . $username . ")";
+                    pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                    
+                    $success = "Admin created successfully!";
+                } else {
+                    $error = "Failed to create admin. Username or email may already exist.";
+                }
             }
         }
     }
     
     if (isset($_POST['toggle_status'])) {
+        // CSRF validation
+        $token = $_POST['csrf_token'] ?? '';
+        if (!CSRFProtection::validateToken('toggle_admin_status', $token)) {
+            echo json_encode(['success' => false, 'error' => 'Invalid security token']);
+            exit;
+        }
+        
         $admin_id = intval($_POST['admin_id']);
         $new_status = $_POST['new_status'] === 'true';
         
@@ -216,6 +229,7 @@ $admins = pg_fetch_all($adminsResult) ?: [];
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST" id="createAdminForm">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfTokenCreateAdmin) ?>">
                 <div class="modal-body">
                     <div class="row">
                         <div class="col-md-4">
@@ -299,6 +313,7 @@ $admins = pg_fetch_all($adminsResult) ?: [];
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST" id="toggleStatusForm">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfTokenToggleStatus) ?>">
                 <div class="modal-body">
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle me-2"></i>

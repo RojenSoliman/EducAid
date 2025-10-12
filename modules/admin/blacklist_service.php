@@ -1,5 +1,6 @@
 <?php
 include __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 session_start();
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -32,6 +33,13 @@ if (!$admin) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // CSRF Protection - validate token first
+    $csrfToken = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('blacklist_operation', $csrfToken)) {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid security token. Please refresh the page.']);
+        exit;
+    }
+    
     $action = $_POST['action'] ?? '';
     
     // Debug logging

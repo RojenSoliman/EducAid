@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 session_start();
 if (!isset($_SESSION['admin_username'])) {
     header("Location: ../../unified_login.php");
@@ -212,6 +213,9 @@ function send_migration_email($toEmail, $toName, $passwordPlain) {
 $migration_preview = $_SESSION['migration_preview'] ?? null;
 $migration_result = $_SESSION['migration_result'] ?? null;
 
+// Generate CSRF token for CSV migration
+$csrfMigrationToken = CSRFProtection::generateToken('csv_migration');
+
 // Clear migration sessions on GET request to prevent resubmission warnings
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['clear_migration'])) {
     // If a preview still exists, only clear the result so remaining rows persist
@@ -226,6 +230,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['clear_migration'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migration_action'])) {
+    // CSRF Protection - validate token first
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('csv_migration', $token)) {
+        $_SESSION['error'] = 'Security validation failed. Please refresh the page.';
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    
     if ($_POST['migration_action'] === 'preview' && isset($_FILES['csv_file'])) {
         $municipality_id = intval($adminMunicipalityId ?? 0);
         if (!$municipality_id) { $municipality_id = intval($_POST['municipality_id'] ?? 0); }
@@ -994,6 +1006,7 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
         <?php /* Migration result is now shown via JS alert after reload; avoid unsetting here to prevent race */ ?>
 
             <form method="POST" enctype="multipart/form-data" class="mb-3" id="migrationUploadForm">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfMigrationToken) ?>">
                     <input type="hidden" name="migration_action" value="preview">
                                             <div class="row g-3 align-items-end">
                                                 <div class="col-12 col-md-6">
@@ -1025,6 +1038,7 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
 
                         <?php if (!empty($_SESSION['migration_preview'])): $mp = $_SESSION['migration_preview']; ?>
                     <form method="POST" id="migrationForm">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfMigrationToken) ?>">
                         <input type="hidden" name="migration_action" value="confirm">
                                                         <div class="d-flex justify-content-end gap-2 mb-2 preview-scroll-controls">
                                                 <button type="button" class="btn btn-outline-secondary btn-sm" id="scrollStartBtn" title="Scroll to start"><i class="bi bi-skip-backward"></i></button>
