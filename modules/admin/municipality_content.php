@@ -242,7 +242,7 @@ if ($activeMunicipality) {
             'label' => 'Login Page Info',
             'description' => 'Welcome message, features, and trust indicators.',
             'icon' => 'bi-box-arrow-in-right',
-            'table' => 'landing_content_blocks',
+            'table' => 'login_content_blocks',
             'editor_url' => '../../unified_login.php?edit=1',
             'view_url' => '../../unified_login.php'
         ],

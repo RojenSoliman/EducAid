@@ -4,7 +4,15 @@
  * Used by ContentTools editor on unified_login.php in edit mode
  */
 
-session_start();
+// Start output buffering to prevent any unwanted output
+ob_start();
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Clear any output and set JSON header
+ob_end_clean();
 header('Content-Type: application/json');
 
 // Security: Only allow super admins
@@ -21,8 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Include database connection
-require_once __DIR__ . '/../config/database.php';
+// Include database connection (suppress any warnings)
+@require_once __DIR__ . '/../config/database.php';
 
 if (!isset($connection)) {
     http_response_code(500);
@@ -59,7 +67,7 @@ foreach ($_POST as $key => $value) {
     $clean_html = sanitize_html($value);
     
     // Check if block exists
-    $check_query = "SELECT block_key FROM landing_content_blocks WHERE municipality_id = $1 AND block_key = $2";
+    $check_query = "SELECT block_key FROM login_content_blocks WHERE municipality_id = $1 AND block_key = $2";
     $check_result = pg_query_params($connection, $check_query, [$municipality_id, $key]);
     
     if (!$check_result) {
@@ -72,13 +80,13 @@ foreach ($_POST as $key => $value) {
     
     if ($exists) {
         // Update existing block
-        $update_query = "UPDATE landing_content_blocks 
+        $update_query = "UPDATE login_content_blocks 
                         SET html = $1, updated_at = NOW() 
                         WHERE municipality_id = $2 AND block_key = $3";
         $result = pg_query_params($connection, $update_query, [$clean_html, $municipality_id, $key]);
     } else {
         // Insert new block
-        $insert_query = "INSERT INTO landing_content_blocks (municipality_id, block_key, html, created_at, updated_at) 
+        $insert_query = "INSERT INTO login_content_blocks (municipality_id, block_key, html, created_at, updated_at) 
                         VALUES ($1, $2, $3, NOW(), NOW())";
         $result = pg_query_params($connection, $insert_query, [$municipality_id, $key, $clean_html]);
     }
@@ -93,14 +101,20 @@ foreach ($_POST as $key => $value) {
 // Log the save action
 $admin_id = $_SESSION['admin_id'] ?? null;
 if ($admin_id) {
-    $log_query = "INSERT INTO admin_activity_log (admin_id, action, details, created_at) 
-                  VALUES ($1, $2, $3, NOW())";
-    $log_details = json_encode([
-        'page' => 'unified_login',
-        'blocks_saved' => $saved_count,
-        'municipality_id' => $municipality_id
-    ]);
-    pg_query_params($connection, $log_query, [$admin_id, 'edit_login_page_content', $log_details]);
+    $log_table_check = pg_query_params($connection, "SELECT 1 FROM information_schema.tables WHERE table_name = $1", ['admin_activity_log']);
+    if ($log_table_check && pg_num_rows($log_table_check) > 0) {
+        $log_query = "INSERT INTO admin_activity_log (admin_id, action, details, created_at) 
+                      VALUES ($1, $2, $3, NOW())";
+        $log_details = json_encode([
+            'page' => 'unified_login',
+            'blocks_saved' => $saved_count,
+            'municipality_id' => $municipality_id
+        ]);
+        @pg_query_params($connection, $log_query, [$admin_id, 'edit_login_page_content', $log_details]);
+    }
+    if ($log_table_check) {
+        pg_free_result($log_table_check);
+    }
 }
 
 // Return response

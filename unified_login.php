@@ -34,7 +34,7 @@ if (isset($connection)) {
 // CMS System - Load content blocks for login page
 $LOGIN_SAVED_BLOCKS = [];
 if (isset($connection)) {
-    $resBlocksLogin = @pg_query($connection, "SELECT block_key, html, text_color, bg_color, is_visible FROM landing_content_blocks WHERE municipality_id=1 AND block_key LIKE 'login_%'");
+    $resBlocksLogin = @pg_query($connection, "SELECT block_key, html, text_color, bg_color, is_visible FROM login_content_blocks WHERE municipality_id=1");
     if ($resBlocksLogin) {
         while($r = pg_fetch_assoc($resBlocksLogin)) { 
             $LOGIN_SAVED_BLOCKS[$r['block_key']] = $r; 
@@ -78,17 +78,14 @@ function login_edit_btn($key, $title){
 
 // Check if a content section is visible
 function login_section_visible($sectionKey){
-    global $LOGIN_SAVED_BLOCKS, $IS_LOGIN_EDIT_MODE;
+    global $LOGIN_SAVED_BLOCKS;
     
-    // In edit mode, always show sections so admin can manage them
-    if($IS_LOGIN_EDIT_MODE) return true;
-    
-    // Check if section has visibility setting
-    if(isset($LOGIN_SAVED_BLOCKS[$sectionKey]) && isset($LOGIN_SAVED_BLOCKS[$sectionKey]['is_visible'])) {
-        return $LOGIN_SAVED_BLOCKS[$sectionKey]['is_visible'] === 't' || $LOGIN_SAVED_BLOCKS[$sectionKey]['is_visible'] === true;
+    if(isset($LOGIN_SAVED_BLOCKS[$sectionKey]) && array_key_exists('is_visible', $LOGIN_SAVED_BLOCKS[$sectionKey])) {
+        $visibleValue = $LOGIN_SAVED_BLOCKS[$sectionKey]['is_visible'];
+        return $visibleValue === true || $visibleValue === 't' || $visibleValue === 'true' || $visibleValue === 1 || $visibleValue === '1';
     }
     
-    // Default to visible if not set
+    // Default to visible if value not stored yet
     return true;
 }
 
