@@ -34,7 +34,7 @@ if (isset($connection)) {
 // CMS System - Load content blocks for login page
 $LOGIN_SAVED_BLOCKS = [];
 if (isset($connection)) {
-    $resBlocksLogin = @pg_query($connection, "SELECT block_key, html, text_color, bg_color FROM landing_content_blocks WHERE municipality_id=1 AND block_key LIKE 'login_%'");
+    $resBlocksLogin = @pg_query($connection, "SELECT block_key, html, text_color, bg_color, is_visible FROM landing_content_blocks WHERE municipality_id=1 AND block_key LIKE 'login_%'");
     if ($resBlocksLogin) {
         while($r = pg_fetch_assoc($resBlocksLogin)) { 
             $LOGIN_SAVED_BLOCKS[$r['block_key']] = $r; 
@@ -64,9 +64,37 @@ function login_block_style($key){
     return $s ? ' style="'.implode(';', $s).'"' : '';
 }
 
+// Generate edit button for login page content
+function login_edit_btn($key, $title){
+    global $IS_LOGIN_EDIT_MODE, $LOGIN_SAVED_BLOCKS;
+    if(!$IS_LOGIN_EDIT_MODE) return '';
+    
+    $currentContent = isset($LOGIN_SAVED_BLOCKS[$key]) ? htmlspecialchars($LOGIN_SAVED_BLOCKS[$key]['html'], ENT_QUOTES) : '';
+    
+    return '<button class="edit-btn-inline" onclick="openEditModal(\''.$key.'\', `'.$currentContent.'`, \''.$title.'\')" title="Edit '.$title.'">
+        <i class="bi bi-pencil-fill"></i>
+    </button>';
+}
+
+// Check if a content section is visible
+function login_section_visible($sectionKey){
+    global $LOGIN_SAVED_BLOCKS, $IS_LOGIN_EDIT_MODE;
+    
+    // In edit mode, always show sections so admin can manage them
+    if($IS_LOGIN_EDIT_MODE) return true;
+    
+    // Check if section has visibility setting
+    if(isset($LOGIN_SAVED_BLOCKS[$sectionKey]) && isset($LOGIN_SAVED_BLOCKS[$sectionKey]['is_visible'])) {
+        return $LOGIN_SAVED_BLOCKS[$sectionKey]['is_visible'] === 't' || $LOGIN_SAVED_BLOCKS[$sectionKey]['is_visible'] === true;
+    }
+    
+    // Default to visible if not set
+    return true;
+}
+
 // Check if in edit mode (super admin with ?edit=1)
 $IS_LOGIN_EDIT_MODE = false;
-if (isset($_SESSION['role']) && $_SESSION['role'] === 'super_admin' && isset($_GET['edit']) && $_GET['edit'] == '1') {
+if (isset($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'super_admin' && isset($_GET['edit']) && $_GET['edit'] == '1') {
     $IS_LOGIN_EDIT_MODE = true;
 }
 
@@ -783,23 +811,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
         
         @media (max-width: 991.98px) {
             .brand-section { display: none !important; }
+            
+            /* Show brand section in edit mode even on mobile */
+            body.edit-mode .brand-section { 
+                display: flex !important; 
+                min-height: 100vh;
+            }
         }
     </style>
     
     <?php if ($IS_LOGIN_EDIT_MODE): ?>
-    <!-- ContentTools for Super Admin Editing -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ContentTools@1.6.20/build/content-tools.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/ContentTools@1.6.20/build/content-tools.min.js"></script>
+    <!-- Custom Inline Editor Styles -->
     <style>
-        [data-login-key] {
+        /* Edit button styling */
+        .edit-btn-inline {
+            display: inline-block;
+            margin-left: 0.5rem;
+            padding: 0.25rem 0.5rem;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 0.25rem;
+            color: white;
+            font-size: 0.75rem;
             cursor: pointer;
-            position: relative;
-            transition: outline 0.2s ease;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(10px);
         }
-        [data-login-key]:hover {
-            outline: 2px dashed rgba(255, 255, 255, 0.5);
-            outline-offset: 4px;
+        .edit-btn-inline:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.6);
+            transform: translateY(-1px);
         }
+        .edit-btn-inline i {
+            font-size: 0.875rem;
+        }
+        
+        /* Edit mode banner */
         .edit-mode-banner {
             position: fixed;
             top: calc(var(--topbar-height) + var(--navbar-height));
@@ -813,6 +860,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             z-index: 9998;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
+        
+        /* Make editable sections have subtle indication */
+        [data-login-key] {
+            position: relative;
+        }
+        
+        /* Edit modal styling */
+        #loginEditModal .modal-content {
+            border-radius: 1rem;
+            border: none;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+        #loginEditModal .modal-header {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border-radius: 1rem 1rem 0 0;
+            border: none;
+        }
+        #loginEditModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+        }
+        #loginEditModal textarea {
+            min-height: 150px;
+            border-radius: 0.5rem;
+            border: 2px solid #e5e7eb;
+            transition: border-color 0.2s ease;
+        }
+        #loginEditModal textarea:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
     </style>
     <?php endif; ?>
 
@@ -823,7 +901,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <!-- DEBUG INFO - Remove in production -->
     <div style="position: fixed; top: 0; left: 0; right: 0; background: #000; color: #0f0; padding: 1rem; z-index: 99999; font-family: monospace; font-size: 12px;">
         <strong>DEBUG MODE:</strong><br>
-        SESSION ROLE: <?php echo isset($_SESSION['role']) ? $_SESSION['role'] : 'NOT SET'; ?><br>
+        SESSION ROLE (admin_role): <?php echo isset($_SESSION['admin_role']) ? $_SESSION['admin_role'] : 'NOT SET'; ?><br>
         ADMIN ID: <?php echo isset($_SESSION['admin_id']) ? $_SESSION['admin_id'] : 'NOT SET'; ?><br>
         GET[edit]: <?php echo isset($_GET['edit']) ? $_GET['edit'] : 'NOT SET'; ?><br>
         $IS_LOGIN_EDIT_MODE: <?php echo $IS_LOGIN_EDIT_MODE ? 'TRUE' : 'FALSE'; ?><br>
@@ -865,38 +943,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             <div class="col-lg-6 d-none d-lg-flex brand-section">
                 <div class="brand-content">
                     <!-- Hero Badge -->
-                    <?php echo '<div class="login-hero-badge" data-login-key="login_hero_badge"'.login_block_style('login_hero_badge').'>'.login_block('login_hero_badge','<i class="bi bi-shield-check-fill me-2"></i>Trusted by 10,000+ Students').'</div>'; ?>
+                    <?php echo '<div class="login-hero-badge" data-login-key="login_hero_badge"'.login_block_style('login_hero_badge').'>'.login_block('login_hero_badge','<i class="bi bi-shield-check-fill me-2"></i>Trusted by 10,000+ Students').login_edit_btn('login_hero_badge', 'Hero Badge').'</div>'; ?>
                     
                     <!-- Main Title -->
-                    <?php echo '<h1 class="login-hero-title" data-login-key="login_hero_title"'.login_block_style('login_hero_title').'>'.login_block('login_hero_title','Welcome to<br><span class="gradient-text">EducAid</span>').'</h1>'; ?>
+                    <?php echo '<h1 class="login-hero-title" data-login-key="login_hero_title"'.login_block_style('login_hero_title').'>'.login_block('login_hero_title','Welcome to<br><span class="gradient-text">EducAid</span>').login_edit_btn('login_hero_title', 'Main Title').'</h1>'; ?>
                     
                     <!-- Subtitle -->
-                    <?php echo '<p class="login-hero-subtitle" data-login-key="login_hero_subtitle"'.login_block_style('login_hero_subtitle').'>'.login_block('login_hero_subtitle','Your gateway to accessible educational financial assistance in General Trias.').'</p>'; ?>
+                    <?php echo '<p class="login-hero-subtitle" data-login-key="login_hero_subtitle"'.login_block_style('login_hero_subtitle').'>'.login_block('login_hero_subtitle','Your gateway to accessible educational financial assistance in General Trias.').login_edit_btn('login_hero_subtitle', 'Subtitle').'</p>'; ?>
                     
-                    <!-- Feature Cards -->
-                    <div class="feature-cards-grid">
+                    <!-- Feature Cards Section (can be hidden/archived) -->
+                    <?php if(login_section_visible('login_features_section')): ?>
+                    <div class="feature-cards-grid" id="featureCardsSection">
+                        <?php if($IS_LOGIN_EDIT_MODE): ?>
+                        <div class="d-flex justify-content-end mb-2">
+                            <button class="btn btn-sm btn-outline-light" onclick="toggleSectionVisibility('login_features_section', false)" title="Hide this section (archive for future use)">
+                                <i class="bi bi-eye-slash me-1"></i> Hide Section
+                            </button>
+                        </div>
+                        <?php endif; ?>
+                        
                         <div class="feature-card">
                             <div class="feature-icon">
                                 <i class="bi bi-lightning-charge-fill"></i>
                             </div>
-                            <?php echo '<div class="feature-title" data-login-key="login_feature1_title"'.login_block_style('login_feature1_title').'>'.login_block('login_feature1_title','Fast Processing').'</div>'; ?>
-                            <?php echo '<div class="feature-desc" data-login-key="login_feature1_desc"'.login_block_style('login_feature1_desc').'>'.login_block('login_feature1_desc','Get your application reviewed within 48 hours').'</div>'; ?>
+                            <?php echo '<div class="feature-title" data-login-key="login_feature1_title"'.login_block_style('login_feature1_title').'>'.login_block('login_feature1_title','Fast Processing').login_edit_btn('login_feature1_title', 'Feature 1 Title').'</div>'; ?>
+                            <?php echo '<div class="feature-desc" data-login-key="login_feature1_desc"'.login_block_style('login_feature1_desc').'>'.login_block('login_feature1_desc','Get your application reviewed within 48 hours').login_edit_btn('login_feature1_desc', 'Feature 1 Description').'</div>'; ?>
                         </div>
                         <div class="feature-card">
                             <div class="feature-icon">
                                 <i class="bi bi-shield-fill-check"></i>
                             </div>
-                            <?php echo '<div class="feature-title" data-login-key="login_feature2_title"'.login_block_style('login_feature2_title').'>'.login_block('login_feature2_title','Secure & Safe').'</div>'; ?>
-                            <?php echo '<div class="feature-desc" data-login-key="login_feature2_desc"'.login_block_style('login_feature2_desc').'>'.login_block('login_feature2_desc','Your data is protected with enterprise-level security').'</div>'; ?>
+                            <?php echo '<div class="feature-title" data-login-key="login_feature2_title"'.login_block_style('login_feature2_title').'>'.login_block('login_feature2_title','Secure & Safe').login_edit_btn('login_feature2_title', 'Feature 2 Title').'</div>'; ?>
+                            <?php echo '<div class="feature-desc" data-login-key="login_feature2_desc"'.login_block_style('login_feature2_desc').'>'.login_block('login_feature2_desc','Your data is protected with enterprise-level security').login_edit_btn('login_feature2_desc', 'Feature 2 Description').'</div>'; ?>
                         </div>
                         <div class="feature-card">
                             <div class="feature-icon">
                                 <i class="bi bi-phone-fill"></i>
                             </div>
-                            <?php echo '<div class="feature-title" data-login-key="login_feature3_title"'.login_block_style('login_feature3_title').'>'.login_block('login_feature3_title','24/7 Support').'</div>'; ?>
-                            <?php echo '<div class="feature-desc" data-login-key="login_feature3_desc"'.login_block_style('login_feature3_desc').'>'.login_block('login_feature3_desc','We\'re here to help anytime you need assistance').'</div>'; ?>
+                            <?php echo '<div class="feature-title" data-login-key="login_feature3_title"'.login_block_style('login_feature3_title').'>'.login_block('login_feature3_title','24/7 Support').login_edit_btn('login_feature3_title', 'Feature 3 Title').'</div>'; ?>
+                            <?php echo '<div class="feature-desc" data-login-key="login_feature3_desc"'.login_block_style('login_feature3_desc').'>'.login_block('login_feature3_desc','We\'re here to help anytime you need assistance').login_edit_btn('login_feature3_desc', 'Feature 3 Description').'</div>'; ?>
                         </div>
                     </div>
+                    <?php else: ?>
+                    <!-- Hidden Section Placeholder (Edit Mode Only) -->
+                    <?php if($IS_LOGIN_EDIT_MODE): ?>
+                    <div class="alert alert-info d-flex align-items-center justify-content-between">
+                        <div>
+                            <i class="bi bi-eye-slash me-2"></i>
+                            <strong>Feature Cards Section</strong> is currently hidden (archived)
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="toggleSectionVisibility('login_features_section', true)">
+                            <i class="bi bi-eye me-1"></i> Show Section
+                        </button>
+                    </div>
+                    <?php endif; ?>
+                    <?php endif; ?>
                     
                     <!-- Decorative Elements -->
                     <div class="brand-decorative-circles">
@@ -1241,56 +1342,182 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <!-- Edit Mode Banner -->
     <div class="edit-mode-banner">
         <i class="bi bi-pencil-square me-2"></i>
-        <strong>EDIT MODE ACTIVE</strong> - Click on any text to edit. Changes will be saved automatically.
+        <strong>EDIT MODE ACTIVE</strong> - Click the <i class="bi bi-pencil-fill"></i> buttons to edit content
         <a href="unified_login.php" style="color: white; text-decoration: underline; margin-left: 1rem;">Exit Edit Mode</a>
     </div>
     
-    <!-- ContentTools Editor Script -->
+    <!-- Edit Modal -->
+    <div class="modal fade" id="loginEditModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-pencil-fill me-2"></i>
+                        <span id="editModalTitle">Edit Content</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="editContent" class="form-label fw-bold">Content</label>
+                        <textarea class="form-control" id="editContent" rows="5"></textarea>
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            You can use HTML for formatting (e.g., &lt;b&gt;bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;, &lt;br&gt; for line breaks)
+                        </small>
+                    </div>
+                    <input type="hidden" id="editBlockKey">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i> Cancel
+                    </button>
+                    <button type="button" class="btn btn-primary" id="saveContentBtn">
+                        <i class="bi bi-check-circle me-1"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Custom Editor Script -->
     <script>
-        window.addEventListener('load', function() {
-            var editor;
+        console.log('=== LOGIN PAGE EDITOR INITIALIZED ===');
+        
+        // Open edit modal
+        window.openEditModal = function(blockKey, currentContent, title) {
+            console.log('Opening edit modal for:', blockKey);
             
-            ContentTools.StylePalette.add([
-                new ContentTools.Style('Highlight', 'highlight', ['p', 'span', 'div']),
-                new ContentTools.Style('Bold', 'bold', ['p', 'span', 'div'])
-            ]);
+            document.getElementById('editModalTitle').textContent = 'Edit ' + title;
+            document.getElementById('editContent').value = currentContent;
+            document.getElementById('editBlockKey').value = blockKey;
             
-            editor = ContentTools.EditorApp.get();
-            editor.init('[data-login-key]', 'data-login-key');
+            const modal = new bootstrap.Modal(document.getElementById('loginEditModal'));
+            modal.show();
+        };
+        
+        // Save content
+        document.getElementById('saveContentBtn').addEventListener('click', function() {
+            const blockKey = document.getElementById('editBlockKey').value;
+            const newContent = document.getElementById('editContent').value.trim();
+            const btn = this;
             
-            editor.addEventListener('saved', function(ev) {
-                var name, payload, regions, xhr;
+            if (!newContent) {
+                alert('Content cannot be empty');
+                return;
+            }
+            
+            // Show loading state
+            const originalHTML = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+            
+            const formData = new FormData();
+            formData.append('municipality_id', '1');
+            formData.append(blockKey, newContent);
+            
+            console.log('Saving block:', blockKey, 'Content:', newContent);
+            
+            fetch('services/save_login_content.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Save response:', data);
                 
-                regions = ev.detail().regions;
-                
-                if (Object.keys(regions).length == 0) {
-                    return;
-                }
-                
-                payload = new FormData();
-                payload.append('municipality_id', '1');
-                
-                for (name in regions) {
-                    if (regions.hasOwnProperty(name)) {
-                        payload.append(name, regions[name]);
+                if (data.success) {
+                    // Update the content on the page
+                    const element = document.querySelector('[data-login-key="' + blockKey + '"]');
+                    if (element) {
+                        element.innerHTML = newContent;
                     }
+                    
+                    // Show success message
+                    showToast('Content saved successfully!', 'success');
+                    
+                    // Close modal
+                    bootstrap.Modal.getInstance(document.getElementById('loginEditModal')).hide();
+                } else {
+                    showToast('Failed to save: ' + (data.error || 'Unknown error'), 'danger');
                 }
-                
-                xhr = new XMLHttpRequest();
-                xhr.addEventListener('readystatechange', function() {
-                    if (xhr.readyState == 4) {
-                        if (xhr.status == 200) {
-                            new ContentTools.FlashUI('ok');
-                        } else {
-                            new ContentTools.FlashUI('no');
-                        }
-                    }
-                });
-                
-                xhr.open('POST', 'services/save_login_content.php', true);
-                xhr.send(payload);
+            })
+            .catch(error => {
+                console.error('Save error:', error);
+                showToast('Error saving content. Please try again.', 'danger');
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
             });
         });
+        
+        // Toast notification function
+        window.showToast = function(message, type = 'success') {
+            const toastContainer = document.getElementById('toastContainer') || createToastContainer();
+            
+            const toast = document.createElement('div');
+            toast.className = `toast align-items-center text-white bg-${type} border-0`;
+            toast.setAttribute('role', 'alert');
+            toast.innerHTML = `
+                <div class="d-flex">
+                    <div class="toast-body">
+                        <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
+                        ${message}
+                    </div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                </div>
+            `;
+            
+            toastContainer.appendChild(toast);
+            const bsToast = new bootstrap.Toast(toast, { delay: 3000 });
+            bsToast.show();
+            
+            toast.addEventListener('hidden.bs.toast', () => toast.remove());
+        };
+        
+        function createToastContainer() {
+            const container = document.createElement('div');
+            container.id = 'toastContainer';
+            container.className = 'toast-container position-fixed top-0 end-0 p-3';
+            container.style.zIndex = '9999';
+            document.body.appendChild(container);
+            return container;
+        }
+        
+        // Toggle section visibility (hide/show)
+        window.toggleSectionVisibility = function(sectionKey, isVisible) {
+            if (!confirm(isVisible ? 'Show this section?' : 'Hide this section? (Content will be archived and can be restored later)')) {
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('section_key', sectionKey);
+            formData.append('is_visible', isVisible ? '1' : '0');
+            
+            fetch('services/toggle_section_visibility.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    // Reload page to reflect changes
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showToast('Failed to toggle visibility: ' + (data.error || 'Unknown error'), 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Toggle visibility error:', error);
+                showToast('Error toggling visibility. Please try again.', 'danger');
+            });
+        };
+        
+        console.log('✅ Login Page Editor ready');
     </script>
     <?php endif; ?>
 

@@ -8,7 +8,7 @@ session_start();
 header('Content-Type: application/json');
 
 // Security: Only allow super admins
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'super_admin') {
+if (!isset($_SESSION['admin_role']) || $_SESSION['admin_role'] !== 'super_admin') {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
