@@ -1,6 +1,7 @@
 <?php 
 session_start();
 require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 include_once __DIR__ . '/../../includes/workflow_control.php';
 
 // Check admin authentication
@@ -52,8 +53,19 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 
 // Handle QR scan confirmation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_distribution'])) {
-    $student_id = $_POST['student_id'];
-    $admin_id = $_SESSION['admin_id'] ?? 1;
+  $token = $_POST['csrf_token'] ?? '';
+  if (!CSRFProtection::validateToken('confirm_distribution', $token)) {
+    http_response_code(400);
+    echo json_encode([
+      'success' => false,
+      'message' => 'Security validation failed. Please refresh the page and try again.',
+      'next_token' => CSRFProtection::generateToken('confirm_distribution')
+    ]);
+    exit;
+  }
+
+  $student_id = $_POST['student_id'];
+  $admin_id = $_SESSION['admin_id'] ?? 1;
     
     // Update student status to 'given'
     $update_query = "UPDATE students SET status = 'given' WHERE student_id = $1";
@@ -69,18 +81,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_distribution'
         $notif_message = "Your scholarship aid has been successfully distributed. Thank you for participating in the EducAid program.";
         pg_query_params($connection, $notif_query, [$student_id, $notif_message]);
         
-        echo json_encode(['success' => true, 'message' => 'Distribution confirmed successfully']);
+    echo json_encode([
+      'success' => true,
+      'message' => 'Distribution confirmed successfully',
+      'next_token' => CSRFProtection::generateToken('confirm_distribution')
+    ]);
     } else {
-        echo json_encode(['success' => false, 'message' => 'Failed to update student status']);
+    echo json_encode([
+      'success' => false,
+      'message' => 'Failed to update student status',
+      'next_token' => CSRFProtection::generateToken('confirm_distribution')
+    ]);
     }
     exit;
 }
 
 // Handle QR code lookup
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_qr'])) {
-    error_log("QR Lookup started for: " . $_POST['qr_code']);
+  $token = $_POST['csrf_token'] ?? '';
+  if (!CSRFProtection::validateToken('lookup_qr', $token)) {
+    http_response_code(400);
+    echo json_encode([
+      'success' => false,
+      'message' => 'Security validation failed. Please refresh the page and try again.',
+      'next_token' => CSRFProtection::generateToken('lookup_qr')
+    ]);
+    exit;
+  }
+
+  error_log("QR Lookup started for: " . $_POST['qr_code']);
     
-    $qr_unique_id = $_POST['qr_code'];
+  $qr_unique_id = $_POST['qr_code'];
     
     $lookup_query = "
         SELECT s.student_id, s.first_name, s.middle_name, s.last_name, 
@@ -98,17 +129,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_qr'])) {
     
     if (!$lookup_result) {
         error_log("Database query failed: " . pg_last_error($connection));
-        echo json_encode(['success' => false, 'message' => 'Database error occurred']);
+    echo json_encode([
+      'success' => false,
+      'message' => 'Database error occurred',
+      'next_token' => CSRFProtection::generateToken('lookup_qr')
+    ]);
         exit;
     }
     
     if (pg_num_rows($lookup_result) > 0) {
         $student = pg_fetch_assoc($lookup_result);
         error_log("Student found: " . $student['student_id']);
-        echo json_encode(['success' => true, 'student' => $student]);
+    echo json_encode([
+      'success' => true,
+      'student' => $student,
+      'next_token' => CSRFProtection::generateToken('lookup_qr')
+    ]);
     } else {
         error_log("No student found for QR: " . $qr_unique_id);
-        echo json_encode(['success' => false, 'message' => 'QR code not found or student not eligible for distribution']);
+    echo json_encode([
+      'success' => false,
+      'message' => 'QR code not found or student not eligible for distribution',
+      'next_token' => CSRFProtection::generateToken('lookup_qr')
+    ]);
     }
     exit;
 }
@@ -132,6 +175,9 @@ if ($students_result) {
         $students[] = $row;
     }
 }
+
+$csrf_lookup_token = CSRFProtection::generateToken('lookup_qr');
+$csrf_confirm_token = CSRFProtection::generateToken('confirm_distribution');
 ?>
 
 <?php $page_title='QR Code Scanner'; include '../../includes/admin/admin_head.php'; ?>
@@ -327,6 +373,20 @@ if ($students_result) {
     const html5QrCode = new Html5Qrcode("reader");
     let currentCameraId = null;
     let currentStudentData = null;
+    const csrfTokens = {
+      lookup: <?= json_encode($csrf_lookup_token) ?>,
+      confirm: <?= json_encode($csrf_confirm_token) ?>
+    };
+
+    function updateCsrfToken(action, nextToken) {
+      if (nextToken) {
+        csrfTokens[action] = nextToken;
+      }
+    }
+
+    function buildFormBody(params) {
+      return new URLSearchParams(params).toString();
+    }
     
     // Initialize camera selection
     Html5Qrcode.getCameras().then(cameras => {
@@ -473,24 +533,36 @@ if ($students_result) {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: 'lookup_qr=1&qr_code=' + encodeURIComponent(qrCode)
+        body: buildFormBody({
+          lookup_qr: '1',
+          qr_code: qrCode,
+          csrf_token: csrfTokens.lookup
+        })
       })
       .then(response => {
         clearTimeout(timeoutId);
         console.log('Response status:', response.status);
         
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
         return response.text().then(text => {
           console.log('Raw response:', text);
+          let data;
           try {
-            return JSON.parse(text);
+            data = JSON.parse(text);
           } catch (e) {
             console.error('JSON parse error:', e);
-            throw new Error('Invalid JSON response: ' + text);
+            const parseError = new Error('Invalid JSON response');
+            throw parseError;
           }
+
+          updateCsrfToken('lookup', data.next_token);
+
+          if (!response.ok || !data.success) {
+            const error = new Error(data.message || `Request failed with status ${response.status}`);
+            error.responseData = data;
+            throw error;
+          }
+
+          return data;
         });
       })
       .then(data => {
@@ -502,19 +574,18 @@ if ($students_result) {
         
         console.log('Parsed data:', data);
         
-        if (data.success) {
-          currentStudentData = data.student;
-          showStudentModal(data.student);
-        } else {
-          clearModalIssues(); // Clear any modal issues before showing alert
-          alert(data.message || 'QR code not found or student not eligible');
-        }
+        currentStudentData = data.student;
+        showStudentModal(data.student);
       })
       .catch(error => {
         clearTimeout(timeoutId);
         clearModalIssues(); // Clear any modal issues on error
         console.error('Fetch error:', error);
-        alert('Error processing QR code: ' + error.message);
+        const serverMessage = error.responseData && error.responseData.message;
+        if (error.responseData) {
+          updateCsrfToken('lookup', error.responseData.next_token);
+        }
+        alert(serverMessage || ('Error processing QR code: ' + error.message));
       });
     }
 
@@ -665,49 +736,61 @@ if ($students_result) {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: 'confirm_distribution=1&student_id=' + encodeURIComponent(currentStudentData.student_id)
+        body: buildFormBody({
+          confirm_distribution: '1',
+          student_id: currentStudentData.student_id,
+          csrf_token: csrfTokens.confirm
+        })
       })
       .then(response => {
         clearTimeout(confirmTimeoutId);
         console.log('Confirmation response status:', response.status);
         
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
         return response.text().then(text => {
           console.log('Confirmation raw response:', text);
+          let data;
           try {
-            return JSON.parse(text);
+            data = JSON.parse(text);
           } catch (e) {
             console.error('JSON parse error in confirmation:', e);
-            throw new Error('Invalid JSON response: ' + text);
+            const parseError = new Error('Invalid JSON response');
+            throw parseError;
           }
+
+          updateCsrfToken('confirm', data.next_token);
+
+          if (!response.ok || !data.success) {
+            const error = new Error(data.message || `Request failed with status ${response.status}`);
+            error.responseData = data;
+            throw error;
+          }
+
+          return data;
         });
       })
       .then(data => {
         console.log('Confirmation parsed data:', data);
+
+        // Force hide ALL modals immediately
+        clearModalIssues();
         
-        if (data.success) {
-          // Force hide ALL modals immediately
-          clearModalIssues();
-          
-          // Update table row
-          updateStudentRow(currentStudentData.student_id);
-          
-          // Show success message
-          showSuccessMessage('Distribution confirmed successfully!');
-          
-          // Reset current student data
-          currentStudentData = null;
-        } else {
-          alert(data.message || 'Failed to confirm distribution');
-        }
+        // Update table row
+        updateStudentRow(currentStudentData.student_id);
+        
+        // Show success message
+        showSuccessMessage('Distribution confirmed successfully!');
+        
+        // Reset current student data
+        currentStudentData = null;
       })
       .catch(error => {
         clearTimeout(confirmTimeoutId);
         console.error('Confirmation error:', error);
-        alert('Error confirming distribution: ' + error.message);
+        if (error.responseData) {
+          updateCsrfToken('confirm', error.responseData.next_token);
+        }
+        const serverMessage = error.responseData && error.responseData.message;
+        alert(serverMessage || ('Error confirming distribution: ' + error.message));
       })
       .finally(() => {
         // Always re-enable the button and hide reset button
