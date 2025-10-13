@@ -674,7 +674,7 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
   <footer class="main-footer">
     <div class="footer-chip">
       <i class="bi bi-c-circle"></i>
-      <span><?php echo date('Y'); ?> City of General Trias</span>
+      <span><?php echo date('Y'); ?> EducAid</span>
     </div>
   </footer>
 
