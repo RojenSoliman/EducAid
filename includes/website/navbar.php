@@ -375,12 +375,12 @@ nav.navbar.fixed-header .navbar-collapse {
 <nav class="navbar navbar-expand-lg bg-white fixed-header">
   <div class="container-fluid">
     <?php
-      // Unified brand: one editable block (nav_brand_wrapper) containing full title text.
+      // Unified brand: static, non-editable brand text
       $brandDefault = htmlspecialchars($brand_config['name']);
-      $brandText = function_exists('lp_block') ? lp_block('nav_brand_wrapper', $brandDefault) : $brandDefault;
+      $brandText = $brandDefault;
       $logoPath = $brand_config['logo'];
     ?>
-    <a class="navbar-brand d-flex align-items-center gap-2" href="<?php echo $brand_config['href']; ?>" data-lp-key="nav_brand_wrapper"<?php echo function_exists('lp_block_style')? lp_block_style('nav_brand_wrapper'):''; ?>>
+    <a class="navbar-brand d-flex align-items-center gap-2" href="<?php echo $brand_config['href']; ?>">
       <?php if (!$brand_config['hide_educaid_logo']): ?>
         <img src="<?php echo htmlspecialchars($logoPath); ?>" alt="EducAid Logo" class="brand-logo" style="height:48px;width:auto;object-fit:contain;" onerror="this.style.display='none';">
       <?php endif; ?>
