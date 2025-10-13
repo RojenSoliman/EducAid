@@ -26,6 +26,7 @@ BEGIN;
 -- CITIES (IDs fixed; 1 is Gentri)
 INSERT INTO municipalities (municipality_id, name, slug, lgu_type, district_no, preset_logo_image)
 VALUES
+  (1, 'City of General Trias', 'general-trias',  'city', 6, '/assets/City Logos/General_Trias_City_Logo.png'),
   (2, 'City of Dasmariñas',  'dasmarinas',     'city', 4, '/assets/City Logos/Dasma_City_Logo.png'),
   (3, 'City of Imus',        'imus',           'city', 3, '/assets/City Logos/Imus_City_Logo.png'),
   (4, 'City of Bacoor',      'bacoor',         'city', 2, '/assets/City Logos/Bacoor_City_Logo.png'),
