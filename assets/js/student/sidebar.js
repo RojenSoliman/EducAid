@@ -14,9 +14,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const header = document.querySelector('.student-main-header') || document.querySelector('.main-header');
   const adjustLayout = () => {
+    if (!header) return;
     const closed = sidebar.classList.contains('close');
     const left = closed ? 70 : 250; // match .sidebar.close { width: 70px; }
-    // Header doesn't need adjustment when sticky positioned inside home-section
+    header.style.left = isMobile() ? '0px' : left + 'px';
     if (homeSection) {
       // Remove any inline margin-left so CSS width calc stays accurate
       homeSection.style.marginLeft = isMobile() ? '0px' : '';
@@ -148,8 +149,8 @@ document.addEventListener("DOMContentLoaded", function () {
       const current = Math.round(startWidth + (targetWidth - startWidth) * eased);
       sidebar.style.width = current + 'px';
 
-      // Animate content shift inline (will be cleaned up after)
-      // No need to animate header since it's sticky positioned inside home-section
+      // Animate header and content shift inline (will be cleaned up after)
+      if (header && !isMobile()) header.style.left = current + 'px';
       if (homeSection && !isMobile()) {
         homeSection.style.marginLeft = current + 'px';
         homeSection.style.width = `calc(100% - ${current}px)`;
