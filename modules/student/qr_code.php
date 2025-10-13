@@ -205,10 +205,11 @@ if ($has_qr_code) {
 
   <div id="wrapper" style="padding-top: var(--topbar-h);">
   <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
+  
+    <!-- Student Header -->
+    <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
+    
     <section class="home-section" id="page-content-wrapper">
-      <!-- Student Header -->
-      <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
-      
       <div class="main-content">
         <div class="qr-card">
           <!-- Student Information Header -->

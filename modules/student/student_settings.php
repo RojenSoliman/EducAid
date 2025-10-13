@@ -575,11 +575,11 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
     <!-- Include Sidebar -->
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     
+    <!-- Student Header -->
+    <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
+    
     <!-- Main Content Area -->
     <section class="home-section" id="page-content-wrapper">
-      <!-- Student Header -->
-      <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
-      
       <div class="container-fluid py-4 px-4">
         <!-- Settings Header -->
         <div class="settings-header">

@@ -73,11 +73,12 @@ function getNotificationIcon($message) {
     <!-- Sidebar -->
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
+    
+    <!-- Student Header -->
+    <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
+    
     <!-- Page Content -->
     <section class="home-section" id="page-content-wrapper">
-      <!-- Student Header -->
-      <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
-      
       <div class="container-fluid py-4 px-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h3 class="fw-bold mb-0"><i class="bi bi-bell-fill me-2 text-warning"></i>Notifications

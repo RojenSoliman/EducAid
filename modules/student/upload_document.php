@@ -280,11 +280,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
     <!-- Sidebar -->
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     
+    <!-- Student Header -->
+    <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
+    
     <!-- Main Content Area -->
     <section class="home-section upload-container" id="page-content-wrapper">
-      <!-- Student Header -->
-      <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
-      
       <div class="container-fluid py-4 px-4">
         <div class="upload-card">
           <!-- Header Section -->
