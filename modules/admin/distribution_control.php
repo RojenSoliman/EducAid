@@ -111,59 +111,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
         case 'finalize_distribution':
             // Archive documents, close everything, set to finalized
+            $begin_result = pg_query($connection, "BEGIN");
+            if (!$begin_result) {
+                $message = 'Failed to start transaction: ' . pg_last_error($connection);
+                break;
+            }
+            
             try {
-                pg_query($connection, "BEGIN");
-                
-                // Archive all current documents
-                $archive_query = "
-                    INSERT INTO document_archives (
-                        student_id, document_type, file_path, uploaded_date,
-                        academic_year, semester, archived_date
-                    )
+                // Check if necessary tables exist before proceeding
+                $tables_check = pg_query($connection, "
                     SELECT 
-                        student_id, document_type, file_path, uploaded_date,
-                        EXTRACT(YEAR FROM CURRENT_DATE)::text as academic_year,
-                        CASE 
-                            WHEN EXTRACT(MONTH FROM CURRENT_DATE) BETWEEN 1 AND 5 THEN 'Spring'
-                            WHEN EXTRACT(MONTH FROM CURRENT_DATE) BETWEEN 6 AND 8 THEN 'Summer'
-                            ELSE 'Fall'
-                        END as semester,
-                        CURRENT_TIMESTAMP
-                    FROM uploaded_documents
-                ";
-                pg_query($connection, $archive_query);
+                        EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='uploaded_documents') as has_uploads,
+                        EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='document_archives') as has_archives,
+                        EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='distribution_snapshots') as has_snapshots
+                ");
                 
-                // Create distribution snapshot
-                $snapshot_query = "
-                    INSERT INTO distribution_snapshots (
-                        distribution_date, academic_year, semester, 
-                        total_students_count, location, notes
-                    ) VALUES (
-                        CURRENT_DATE,
-                        EXTRACT(YEAR FROM CURRENT_DATE)::text,
-                        CASE 
-                            WHEN EXTRACT(MONTH FROM CURRENT_DATE) BETWEEN 1 AND 5 THEN 'Spring'
-                            WHEN EXTRACT(MONTH FROM CURRENT_DATE) BETWEEN 6 AND 8 THEN 'Summer'
-                            ELSE 'Fall'
-                        END,
-                        (SELECT COUNT(*) FROM students WHERE status = 'active'),
-                        'Main Distribution Center',
-                        'Automated distribution finalization'
-                    )
-                ";
-                pg_query($connection, $snapshot_query);
+                if (!$tables_check) {
+                    throw new Exception('Failed to check table existence: ' . pg_last_error($connection));
+                }
                 
-                // Clear current documents
-                pg_query($connection, "DELETE FROM uploaded_documents");
+                $table_status = pg_fetch_assoc($tables_check);
+                $archived_count = 0;
+                
+                // Archive documents only if both tables exist and there are documents to archive
+                if ($table_status['has_uploads'] === 't' && $table_status['has_archives'] === 't') {
+                    // Check if there are any documents to archive
+                    $count_result = pg_query($connection, "SELECT COUNT(*) as doc_count FROM uploaded_documents");
+                    if ($count_result) {
+                        $count_data = pg_fetch_assoc($count_result);
+                        $archived_count = intval($count_data['doc_count']);
+                        
+                        if ($archived_count > 0) {
+                            // Archive all current documents
+                            $archive_query = "
+                                INSERT INTO document_archives (
+                                    student_id, document_type, file_path, uploaded_date,
+                                    academic_year, semester, archived_date
+                                )
+                                SELECT 
+                                    student_id, document_type, file_path, uploaded_date,
+                                    EXTRACT(YEAR FROM CURRENT_DATE)::text as academic_year,
+                                    CASE 
+                                        WHEN EXTRACT(MONTH FROM CURRENT_DATE) BETWEEN 1 AND 5 THEN 'Spring'
+                                        WHEN EXTRACT(MONTH FROM CURRENT_DATE) BETWEEN 6 AND 8 THEN 'Summer'
+                                        ELSE 'Fall'
+                                    END as semester,
+                                    CURRENT_TIMESTAMP
+                                FROM uploaded_documents
+                            ";
+                            $archive_result = pg_query($connection, $archive_query);
+                            if (!$archive_result) {
+                                throw new Exception('Failed to archive documents: ' . pg_last_error($connection));
+                            }
+                        }
+                        
+                        // Clear current documents
+                        $clear_result = pg_query($connection, "DELETE FROM uploaded_documents");
+                        if (!$clear_result) {
+                            throw new Exception('Failed to clear documents: ' . pg_last_error($connection));
+                        }
+                    }
+                }
+                
+                // Create distribution snapshot only if table exists
+                if ($table_status['has_snapshots'] === 't') {
+                    $snapshot_query = "
+                        INSERT INTO distribution_snapshots (
+                            distribution_date, academic_year, semester, 
+                            total_students_count, location, notes
+                        ) VALUES (
+                            CURRENT_DATE,
+                            EXTRACT(YEAR FROM CURRENT_DATE)::text,
+                            CASE 
+                                WHEN EXTRACT(MONTH FROM CURRENT_DATE) BETWEEN 1 AND 5 THEN 'Spring'
+                                WHEN EXTRACT(MONTH FROM CURRENT_DATE) BETWEEN 6 AND 8 THEN 'Summer'
+                                ELSE 'Fall'
+                            END,
+                            (SELECT COUNT(*) FROM students WHERE status = 'active'),
+                            'Main Distribution Center',
+                            'Automated distribution finalization'
+                        )
+                    ";
+                    $snapshot_result = pg_query($connection, $snapshot_query);
+                    if (!$snapshot_result) {
+                        throw new Exception('Failed to create distribution snapshot: ' . pg_last_error($connection));
+                    }
+                }
                 
                 // Set status to finalized and close everything
-                pg_query($connection, "INSERT INTO config (key, value) VALUES ('distribution_status', 'finalized') ON CONFLICT (key) DO UPDATE SET value = 'finalized'");
-                pg_query($connection, "INSERT INTO config (key, value) VALUES ('slots_open', '0') ON CONFLICT (key) DO UPDATE SET value = '0'");
-                pg_query($connection, "INSERT INTO config (key, value) VALUES ('uploads_enabled', '0') ON CONFLICT (key) DO UPDATE SET value = '0'");
+                $status_queries = [
+                    "INSERT INTO config (key, value) VALUES ('distribution_status', 'finalized') ON CONFLICT (key) DO UPDATE SET value = 'finalized'",
+                    "INSERT INTO config (key, value) VALUES ('slots_open', '0') ON CONFLICT (key) DO UPDATE SET value = '0'",
+                    "INSERT INTO config (key, value) VALUES ('uploads_enabled', '0') ON CONFLICT (key) DO UPDATE SET value = '0'"
+                ];
                 
-                pg_query($connection, "COMMIT");
+                foreach ($status_queries as $query) {
+                    $result = pg_query($connection, $query);
+                    if (!$result) {
+                        throw new Exception('Failed to update configuration: ' . pg_last_error($connection));
+                    }
+                }
+                
+                $commit_result = pg_query($connection, "COMMIT");
+                if (!$commit_result) {
+                    throw new Exception('Failed to commit transaction: ' . pg_last_error($connection));
+                }
+                
                 $success = true;
-                $message = 'Distribution finalized successfully! All documents archived and system reset for next cycle.';
+                $message = "Distribution finalized successfully! $archived_count documents archived and system reset for next cycle.";
                 
             } catch (Exception $e) {
                 pg_query($connection, "ROLLBACK");
