@@ -32,11 +32,17 @@ body {
   width: calc(100% - 250px);
   min-height: calc(100vh - var(--topbar-h));
   background: #f8f9fa;
-  padding-top: calc(var(--topbar-h) + var(--student-header-h) + 10px);
-  padding-bottom: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
   position: relative;
   z-index: 1;
   box-sizing: border-box;
+}
+
+/* Add space for fixed header inside the container */
+.home-section > .container-fluid {
+  padding-top: calc(var(--student-header-h) + 1rem) !important;
+  padding-bottom: 2rem;
 }
 
 .sidebar.close ~ .home-section {
