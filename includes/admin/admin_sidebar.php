@@ -123,6 +123,9 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
       <?= menu_link('validate_grades.php', 'bi bi-file-earmark-check', 'Validate Grades', is_active('validate_grades.php', $current)); ?>
     <?php endif; ?>
 
+    <!-- My Profile -->
+    <?= menu_link('admin_profile.php', 'bi bi-person-circle', 'My Profile', is_active('admin_profile.php', $current)); ?>
+
     <!-- System Controls (super_admin only) -->
     <?php if ($admin_role === 'super_admin'): ?>
   <li class="nav-item dropdown">
