@@ -25,16 +25,16 @@ body {
    Main Content Area
 =========================== */
 .home-section {
-  margin-left: 260px;
-  width: calc(100% - 260px);
+  margin-left: 250px;
+  width: calc(100% - 250px);
   min-height: calc(100vh - var(--topbar-h)); /* Account for fixed topbar */
   background: #f8f9fa;
   padding-top: 0;
 }
 
 .sidebar.close ~ .home-section {
-  margin-left: 78px;
-  width: calc(100% - 78px);
+  margin-left: 70px;
+  width: calc(100% - 70px);
 }
 
 .sidebar-toggle { padding: 10px 16px; }

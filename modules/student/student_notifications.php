@@ -186,7 +186,7 @@ function getNotificationIcon($message) {
       </div>
     </section>
   </div>
-  <script src="../../assets/js/homepage.js"></script>
+  <script src="../../assets/js/student/sidebar.js"></script>
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
   <!-- Reuse admin notifications behavior script -->
   <script src="../../assets/js/admin/notifications.js"></script>

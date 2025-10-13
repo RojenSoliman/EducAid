@@ -129,14 +129,18 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
       box-shadow: 0 2px 4px rgba(0,0,0,0.08);
       padding: 0.5rem 0; /* restored thickness */
       z-index: 1030;
-      position: relative;
+      position: sticky;
+      top: 0;
+      margin-left: -1.5rem;
+      margin-right: -1.5rem;
+      margin-bottom: 1rem;
     }
     .main-header .header-content {
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    .main-header .container-fluid { padding-left: 1rem; padding-right: 1rem; }
+    .main-header .container-fluid { padding-left: 1.5rem; padding-right: 1.5rem; }
     .main-header .header-actions {
       display: flex;
       align-items: center;
@@ -268,6 +272,10 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
       .welcome-actions {
         width: 100%;
         text-align: center;
+      }
+      .main-header {
+        margin-left: 0;
+        margin-right: 0;
       }
     }
   </style>
@@ -762,7 +770,7 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
 
   <!-- JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="../../assets/js/homepage.js"></script>
+  <script src="../../assets/js/student/sidebar.js"></script>
   <script src="../../assets/js/deadline.js"></script>
   <script src="../../assets/js/student/student_homepage.js"></script>
 </body>

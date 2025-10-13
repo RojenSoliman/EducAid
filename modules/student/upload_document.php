@@ -507,7 +507,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_FILES['documents']) && !$al
   </div>
 
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
-  <script src="../../assets/js/homepage.js"></script>
+  <script src="../../assets/js/student/sidebar.js"></script>
   <script src="../../assets/js/student/upload.js"></script>
   
   <script>

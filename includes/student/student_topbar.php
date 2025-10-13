@@ -118,3 +118,24 @@ $topbar_background_css = ($bg_gradient && trim($bg_gradient) !== '')
   }
 }
 </style>
+
+<script>
+(function () {
+  function updateTopbarHeight() {
+    var topbar = document.querySelector('.student-topbar');
+    if (!topbar) { return; }
+    var height = topbar.offsetHeight;
+    if (height > 0) {
+      document.documentElement.style.setProperty('--topbar-h', height + 'px');
+    }
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    updateTopbarHeight();
+  } else {
+    document.addEventListener('DOMContentLoaded', updateTopbarHeight);
+  }
+
+  window.addEventListener('resize', updateTopbarHeight);
+})();
+</script>

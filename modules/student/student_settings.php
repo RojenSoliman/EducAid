@@ -871,7 +871,7 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
   </div>
 
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
-  <script src="../../assets/js/homepage.js"></script>
+  <script src="../../assets/js/student/sidebar.js"></script>
   <script src="../../assets/js/student/student_profile.js"></script>
   
   <script>
