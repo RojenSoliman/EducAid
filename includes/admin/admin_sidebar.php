@@ -79,12 +79,14 @@ if (!function_exists('menu_link')) {
 
 /** Submenu membership for “System Controls” (super_admin) */
 $sysControlsFiles = [
+    'distribution_control.php',
     'manage_slots.php',
     'verify_students.php',
     'manage_schedules.php',
     'scan_qr.php',
     'manage_distributions.php',
     'blacklist_archive.php',
+    'document_archives.php',
     'admin_management.php',
   'municipality_content.php',
     'system_data.php',
@@ -137,6 +139,12 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
 
   <ul class="collapse list-unstyled ms-3 <?= $isSysControlsActive ? 'show' : '' ?>" id="submenu-sys">
           <li>
+            <a class="submenu-link <?= is_active('distribution_control.php', $current) ? 'active' : '' ?>" href="distribution_control.php">
+              <i class="bi bi-gear-fill me-2"></i> Distribution Control
+              <span class="badge bg-primary ms-2">New</span>
+            </a>
+          </li>
+          <li>
             <a class="submenu-link <?= is_active('manage_slots.php', $current) ? 'active' : '' ?>" href="manage_slots.php">
               <i class="bi bi-sliders me-2"></i> Signup Slots
             </a>
@@ -182,6 +190,11 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
           <li>
             <a class="submenu-link <?= is_active('blacklist_archive.php', $current) ? 'active' : '' ?>" href="blacklist_archive.php">
               <i class="bi bi-person-x-fill me-2"></i> Blacklist Archive
+            </a>
+          </li>
+          <li>
+            <a class="submenu-link <?= is_active('document_archives.php', $current) ? 'active' : '' ?>" href="document_archives.php">
+              <i class="bi bi-archive me-2"></i> Document Archives
             </a>
           </li>
           <li>

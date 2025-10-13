@@ -49,16 +49,58 @@ function isStudentListFinalized($connection) {
 }
 
 /**
+ * Check current distribution status
+ */
+function getDistributionStatus($connection) {
+    $query = "SELECT value FROM config WHERE key = 'distribution_status'";
+    $result = pg_query($connection, $query);
+    $data = pg_fetch_assoc($result);
+    
+    // States: inactive, preparing, active, finalizing, finalized
+    return ($data && $data['value']) ? $data['value'] : 'inactive';
+}
+
+/**
+ * Check if slots are open for registration
+ */
+function areSlotsOpen($connection) {
+    $query = "SELECT value FROM config WHERE key = 'slots_open'";
+    $result = pg_query($connection, $query);
+    $data = pg_fetch_assoc($result);
+    
+    return ($data && $data['value'] === '1');
+}
+
+/**
+ * Check if document uploads are enabled
+ */
+function areUploadsEnabled($connection) {
+    $query = "SELECT value FROM config WHERE key = 'uploads_enabled'";
+    $result = pg_query($connection, $query);
+    $data = pg_fetch_assoc($result);
+    
+    return ($data && $data['value'] === '1');
+}
+
+/**
  * Get workflow status for navigation control
  */
 function getWorkflowStatus($connection) {
+    $distributionStatus = getDistributionStatus($connection);
+    
     return [
         'list_finalized' => isStudentListFinalized($connection),
         'has_payroll_qr' => hasPayrollAndQR($connection),
         'has_schedules' => hasSchedules($connection),
         'can_schedule' => hasPayrollAndQR($connection),
         'can_scan_qr' => hasPayrollAndQR($connection),
-        'can_revert_payroll' => hasPayrollAndQR($connection) && !hasSchedules($connection)
+        'can_revert_payroll' => hasPayrollAndQR($connection) && !hasSchedules($connection),
+        'distribution_status' => $distributionStatus,
+        'slots_open' => areSlotsOpen($connection),
+        'uploads_enabled' => areUploadsEnabled($connection),
+        'can_start_distribution' => $distributionStatus === 'inactive' || $distributionStatus === 'finalized',
+        'can_open_slots' => in_array($distributionStatus, ['preparing', 'active']),
+        'can_finalize_distribution' => $distributionStatus === 'active'
     ];
 }
 

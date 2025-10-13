@@ -242,8 +242,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution
             throw new Exception('Failed to create distribution snapshot.');
         }
         
-        // Update all students with 'given' status to 'applicant' and clear payroll numbers and QR codes
-        $update_students = pg_query($connection, "UPDATE students SET status = 'applicant', payroll_no = NULL, qr_code = NULL WHERE status = 'given'");
+        // Get the snapshot ID for archiving
+        $snapshot_id_result = pg_query($connection, "SELECT lastval() as snapshot_id");
+        $snapshot_id = $snapshot_id_result ? pg_fetch_assoc($snapshot_id_result)['snapshot_id'] : null;
+        
+        // Archive documents for all students who received distribution
+        if ($snapshot_id) {
+            $given_students_query = "SELECT student_id FROM students WHERE status = 'given'";
+            $given_students_result = pg_query($connection, $given_students_query);
+            
+            while ($student_row = pg_fetch_assoc($given_students_result)) {
+                $archive_result = pg_query_params($connection, 
+                    "SELECT archive_student_documents($1, $2, $3, $4)",
+                    [$student_row['student_id'], $snapshot_id, $academic_year, $semester]
+                );
+            }
+        }
+        
+        // Delete current documents to force re-upload
+        $delete_documents = pg_query($connection, "DELETE FROM documents WHERE student_id IN (SELECT student_id FROM students WHERE status = 'given')");
+        $delete_grade_uploads = pg_query($connection, "DELETE FROM grade_uploads WHERE student_id IN (SELECT student_id FROM students WHERE status = 'given')");
+        
+        // Update all students with 'given' status to 'applicant', clear payroll/QR, and set upload requirements
+        $update_students = pg_query_params($connection, 
+            "UPDATE students 
+             SET status = 'applicant', 
+                 payroll_no = NULL, 
+                 qr_code = NULL, 
+                 needs_document_upload = TRUE,
+                 last_distribution_snapshot_id = $1
+             WHERE status = 'given'", 
+            [$snapshot_id]
+        );
         
         // Delete all distribution records for these students
         $delete_distributions = pg_query($connection, "DELETE FROM distributions");
@@ -254,7 +284,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finalize_distribution
         // Delete all schedules
         $delete_schedules = pg_query($connection, "DELETE FROM schedules");
         
-        if ($update_students && $delete_distributions && $delete_qr_codes && $delete_schedules) {
+        if ($update_students && $delete_distributions && $delete_qr_codes && $delete_schedules && $delete_documents && $delete_grade_uploads) {
             // Reset schedule settings to unpublished state
             $settings_reset_path = __DIR__ . '/../../data/municipal_settings.json';
             $current_settings = file_exists($settings_reset_path) ? json_decode(file_get_contents($settings_reset_path), true) : [];
