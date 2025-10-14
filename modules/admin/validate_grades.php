@@ -5,9 +5,18 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 include '../../config/database.php';
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 
 // Handle validation actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    // Validate CSRF token
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('validate_grades', $token)) {
+        $_SESSION['error_message'] = 'Security validation failed. Please refresh and try again.';
+        header('Location: validate_grades.php');
+        exit;
+    }
+    
     $uploadId = intval($_POST['upload_id']);
     $action = $_POST['action'];
     $adminNotes = $_POST['admin_notes'] ?? '';
@@ -78,6 +87,9 @@ $query = "
 ";
 
 $uploads = pg_query($connection, $query);
+
+// Generate CSRF token for all forms on this page
+$csrfToken = CSRFProtection::generateToken('validate_grades');
 ?>
 
 <?php $page_title='Validate Grades'; $extra_css=[]; include '../../includes/admin/admin_head.php'; ?>
@@ -241,6 +253,7 @@ $uploads = pg_query($connection, $query);
                                         <input type="hidden" name="upload_id" value="<?= $upload['upload_id'] ?>">
                                         <input type="hidden" name="action" value="approve">
                                         <input type="hidden" name="admin_notes" value="">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                                         <button type="submit" class="btn btn-success btn-sm" 
                                                 onclick="return confirm('Approve these grades?')">
                                             <i class="bi bi-check-circle me-1"></i>Approve
@@ -251,6 +264,7 @@ $uploads = pg_query($connection, $query);
                                         <input type="hidden" name="upload_id" value="<?= $upload['upload_id'] ?>">
                                         <input type="hidden" name="action" value="reject">
                                         <input type="hidden" name="admin_notes" value="">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                                         <button type="submit" class="btn btn-danger btn-sm" 
                                                 onclick="return confirm('Reject these grades?')">
                                             <i class="bi bi-x-circle me-1"></i>Reject
@@ -282,6 +296,7 @@ $uploads = pg_query($connection, $query);
             <form method="POST" id="notesForm">
                 <div class="modal-body">
                     <input type="hidden" name="upload_id" id="modal_upload_id">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                     <div class="mb-3">
                         <label class="form-label">Action:</label>
                         <select name="action" class="form-select" required>

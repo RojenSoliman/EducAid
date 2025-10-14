@@ -1,6 +1,7 @@
 <?php
 include __DIR__ . '/../../config/database.php';
 include __DIR__ . '/../../includes/workflow_control.php';
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 session_start();
 if (!isset($_SESSION['admin_username'])) {
     header("Location: ../../unified_login.php");
@@ -55,6 +56,12 @@ function fetch_students($connection, $status, $sort, $barangayFilter, $searchSur
    POST ACTIONS
 ----------------------------*/
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Validate CSRF token for all POST operations
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('verify_students_operation', $token)) {
+        echo "<script>alert('Security validation failed. Please refresh the page and try again.'); window.location.href='verify_students.php';</script>";
+        exit;
+    }
 
     // Revert selected actives back to applicants
   if (isset($_POST['deactivate']) && !empty($_POST['selected_actives'])) {
@@ -210,6 +217,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $workflow_status = getWorkflowStatus($connection);
 $student_counts = getStudentCounts($connection);
 
+// Generate CSRF token for all forms on this page
+$csrfToken = CSRFProtection::generateToken('verify_students_operation');
+
 /* ---------------------------
    FILTERS
 ----------------------------*/
@@ -312,6 +322,7 @@ while ($row = pg_fetch_assoc($barangayResult)) {
 
       <!-- Active Students -->
       <form method="POST" id="activeStudentsForm">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
         <div class="card shadow-sm">
           <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
             <span><i class="bi bi-people-fill me-2"></i>Active Students</span>
@@ -420,6 +431,7 @@ while ($row = pg_fetch_assoc($barangayResult)) {
                   <i class="bi bi-check2-circle me-1"></i> Finalize List
                 </button>
                 <input type="hidden" name="finalize_list" id="finalizeListInput" value="">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <?php endif; ?>
               
               <!-- Next Steps Information -->
@@ -570,6 +582,12 @@ while ($row = pg_fetch_assoc($barangayResult)) {
     input.name = 'generate_payroll';
     input.value = '1';
     form.appendChild(input);
+    // Add CSRF token
+    var csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '<?= htmlspecialchars($csrfToken) ?>';
+    form.appendChild(csrfInput);
     document.body.appendChild(form);
     form.submit();
   });
@@ -593,6 +611,12 @@ while ($row = pg_fetch_assoc($barangayResult)) {
     input2.value = '1';
     form.appendChild(input1);
     form.appendChild(input2);
+    // Add CSRF token
+    var csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '<?= htmlspecialchars($csrfToken) ?>';
+    form.appendChild(csrfInput);
     document.body.appendChild(form);
     form.submit();
   });

@@ -1,107 +1,305 @@
 <?php
-// Student Header Component
-// Reusable header with sidebar toggle, notifications, and profile dropdown
-// Requires: $student_info array with first_name and last_name
-?>
+// Student Header with dynamic theming
+// Requires: $_SESSION['student_username'], $_SESSION['student_id']
+$studentDisplay = htmlspecialchars($_SESSION['student_username'] ?? 'Student');
+$studentId = $_SESSION['student_id'] ?? null;
 
-<!-- Main Header -->
-<div class="main-header">
+// Get unread notification count and recent notifications for dropdown
+include_once __DIR__ . '/../../config/database.php';
+$unreadNotificationCount = 0;
+$recentNotifications = [];
+$student_info = ['first_name' => '', 'last_name' => ''];
+
+if (isset($connection) && $studentId) {
+  // Fetch student info
+  $student_info_query = "SELECT first_name, last_name FROM students WHERE student_id = $1";
+  $student_info_result = pg_query_params($connection, $student_info_query, [$studentId]);
+  if ($student_info_result && pg_num_rows($student_info_result) > 0) {
+    $student_info = pg_fetch_assoc($student_info_result);
+  }
+
+  // Get unread notification count (placeholder - can be implemented later)
+  // For now, using static count
+  $unreadNotificationCount = 3;
+    
+  // Get recent notifications (placeholder - can be implemented later)
+  $recentNotifications = [
+    ['message' => 'New announcement available', 'created_at' => date('Y-m-d H:i:s'), 'is_read' => false],
+    ['message' => 'Document review completed', 'created_at' => date('Y-m-d H:i:s', strtotime('-1 hour')), 'is_read' => false],
+    ['message' => 'Deadline reminder: Submit grades', 'created_at' => date('Y-m-d H:i:s', strtotime('-2 hours')), 'is_read' => true]
+  ];
+}
+
+// Function to get notification icon based on content
+if (!function_exists('getStudentHeaderNotificationIcon')) {
+    function getStudentHeaderNotificationIcon($message) {
+        $message = strtolower($message);
+        if (strpos($message, 'announcement') !== false) {
+            return 'bi-megaphone-fill';
+        } elseif (strpos($message, 'document') !== false || strpos($message, 'review') !== false) {
+            return 'bi-file-earmark-check';
+        } elseif (strpos($message, 'deadline') !== false || strpos($message, 'reminder') !== false) {
+            return 'bi-alarm';
+        } elseif (strpos($message, 'schedule') !== false) {
+            return 'bi-calendar-event';
+        } else {
+            return 'bi-info-circle';
+        }
+    }
+}
+
+// Function to truncate notification message for dropdown
+if (!function_exists('truncateStudentMessage')) {
+    function truncateStudentMessage($message, $maxLength = 50) {
+        return strlen($message) > $maxLength ? substr($message, 0, $maxLength) . '...' : $message;
+    }
+}
+?>
+<div class="student-main-header">
   <div class="container-fluid px-4">
-    <div class="header-content">
-      <div class="header-left d-flex align-items-center">
-        <div class="sidebar-toggle me-2">
-          <i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i>
-        </div>
+    <div class="student-header-content">
+      <div class="student-header-left d-flex align-items-center">
+        <div class="sidebar-toggle me-2"><i class="bi bi-list" id="menu-toggle" aria-label="Toggle Sidebar"></i></div>
+        <h5 class="mb-0 fw-semibold d-none d-md-inline text-primary-emphasis">Dashboard</h5>
       </div>
-      <div class="header-actions">
-        <button class="notification-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+      <div class="student-header-actions">
+        <button class="student-icon-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications" data-unread-count="<?=$unreadNotificationCount?>">
           <i class="bi bi-bell"></i>
-          <span class="badge rounded-pill bg-danger">3</span>
+          <?php if ($unreadNotificationCount > 0): ?>
+            <span class="badge rounded-pill bg-danger"><?= $unreadNotificationCount ?></span>
+          <?php endif; ?>
         </button>
-        <ul class="dropdown-menu dropdown-menu-end">
-          <li><h6 class="dropdown-header">Notifications</h6></li>
-          <li><a class="dropdown-item" href="#"><i class="bi bi-info-circle me-2"></i>New announcement available</a></li>
-          <li><a class="dropdown-item" href="#"><i class="bi bi-upload me-2"></i>Document review completed</a></li>
-          <li><a class="dropdown-item" href="#"><i class="bi bi-calendar me-2"></i>Deadline reminder</a></li>
-          <li><hr class="dropdown-divider"></li>
-          <li><a class="dropdown-item text-center" href="#">View all notifications</a></li>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+          <li><h6 class="dropdown-header">
+            Notifications
+            <?php if ($unreadNotificationCount > 0): ?>
+              <span class="badge bg-danger ms-2" id="header-dropdown-unread-count"><?= $unreadNotificationCount ?></span>
+            <?php endif; ?>
+          </h6></li>
+          
+          <?php if (empty($recentNotifications)): ?>
+            <li><div class="dropdown-item-text text-muted text-center py-3">No notifications</div></li>
+          <?php else: ?>
+            <?php foreach ($recentNotifications as $notification): ?>
+              <li>
+                <a class="dropdown-item <?= !$notification['is_read'] ? 'bg-light' : '' ?>" 
+                   href="student_notifications.php" 
+                   title="<?= htmlspecialchars($notification['message']) ?>">
+                  <i class="<?= getStudentHeaderNotificationIcon($notification['message']) ?> me-2 text-primary"></i>
+                  <div class="d-inline-block">
+                    <div class="fw-medium"><?= htmlspecialchars(truncateStudentMessage($notification['message'])) ?></div>
+                    <small class="text-muted">
+                      <?= date('M j, g:i A', strtotime($notification['created_at'])) ?>
+                      <?php if (!$notification['is_read']): ?>
+                        <span class="badge badge-sm bg-primary ms-1">New</span>
+                      <?php endif; ?>
+                    </small>
+                  </div>
+                </a>
+              </li>
+            <?php endforeach; ?>
+          <?php endif; ?>
+          
+          <li><hr class="dropdown-divider"/></li>
+          <li><a class="dropdown-item text-center fw-medium" href="student_notifications.php">
+            <i class="bi bi-bell me-1"></i>View all notifications
+          </a></li>
         </ul>
-        
-        <div class="profile-dropdown">
-          <button class="profile-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <div class="dropdown">
+          <button class="student-icon-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Profile">
             <i class="bi bi-person-circle"></i>
           </button>
-          <ul class="dropdown-menu dropdown-menu-end">
-            <li><h6 class="dropdown-header"><?php echo htmlspecialchars($student_info['first_name'] . ' ' . $student_info['last_name']); ?></h6></li>
+          <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+            <li><h6 class="dropdown-header"><?= htmlspecialchars(trim($student_info['first_name'] . ' ' . $student_info['last_name'])) ?: $studentDisplay ?></h6></li>
             <li><a class="dropdown-item" href="student_profile.php"><i class="bi bi-person me-2"></i>Profile</a></li>
             <li><a class="dropdown-item" href="student_settings.php"><i class="bi bi-gear me-2"></i>Settings</a></li>
-            <li><hr class="dropdown-divider"></li>
+            <li><hr class="dropdown-divider"/></li>
             <li><a class="dropdown-item" href="../../unified_login.php?logout=true"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
           </ul>
         </div>
       </div>
     </div>
   </div>
-</div>
-
-<style>
-/* Main header styles */
-.main-header {
-  background: white;
-  border-bottom: 1px solid #e9ecef;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-  padding: 0.5rem 0;
-  z-index: 1030;
-  position: relative;
+</div><!-- /student-main-header -->
+<?php
+// Pull header theme settings (gracefully fallback to blue theme)
+if (!function_exists('educaid_get_student_header_theme')) {
+  function educaid_get_student_header_theme($connection) {
+    $defaults = [
+      'header_bg_color' => '#ffffff',
+      'header_border_color' => '#e1e7ec',
+      'header_text_color' => '#0d6efd',
+      'header_icon_color' => '#0d6efd',
+      'header_hover_bg' => '#e7f1ff',
+      'header_hover_icon_color' => '#0a58ca'
+    ];
+    if (!$connection) return $defaults;
+    $check = @pg_query_params($connection, "SELECT 1 FROM information_schema.tables WHERE table_name=$1", ['student_header_theme_settings']);
+    if (!$check || !pg_fetch_row($check)) return $defaults;
+    $res = @pg_query($connection, "SELECT header_bg_color, header_border_color, header_text_color, header_icon_color, header_hover_bg, header_hover_icon_color FROM student_header_theme_settings WHERE municipality_id=1 LIMIT 1");
+    if ($res && ($row = pg_fetch_assoc($res))) {
+      return array_merge($defaults, array_filter($row));
+    }
+    return $defaults;
+  }
 }
-.main-header .header-content {
+$__hdr = educaid_get_student_header_theme($connection ?? null);
+?>
+<style>
+.student-main-header {
+  background: <?= htmlspecialchars($__hdr['header_bg_color']) ?>;
+  border-bottom: 1px solid <?= htmlspecialchars($__hdr['header_border_color']) ?>;
+  box-shadow: 0 2px 4px rgba(0,0,0,.06);
+  padding: .55rem 0;
+  z-index: 1030;
+  position: fixed;
+  top: var(--topbar-h, 44px);
+  left: 250px;
+  right: 0;
+  height: 56px;
+  color: <?= htmlspecialchars($__hdr['header_text_color']) ?>;
+  overflow: hidden;
+  max-width: calc(100% - 250px);
+  box-sizing: border-box;
+}
+.sidebar.close ~ .student-main-header { 
+  left: 70px; 
+  max-width: calc(100% - 70px);
+}
+.student-main-header .container-fluid { 
+  height: 100%; 
+  max-width: 100%;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  box-sizing: border-box;
+}
+.student-header-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  height: 100%;
+  max-width: 100%;
+  gap: 1rem;
+  flex-wrap: nowrap;
 }
-.main-header .container-fluid { padding-left: 1rem; padding-right: 1rem; }
-.main-header .header-actions {
+.student-header-left {
+  flex-shrink: 0;
+  min-width: 0;
+}
+.student-header-actions {
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-shrink: 0;
 }
-.notification-btn, .profile-btn {
-  background: none;
-  border: 1px solid #dee2e6;
-  border-radius: 8px;
-  padding: 0.5rem;
-  color: #6c757d;
-  transition: all 0.2s;
+.student-icon-btn {
+  background: #f8f9fb;
+  border: 1px solid #d9dce4;
+  border-radius: 10px;
+  padding: .55rem .65rem;
   position: relative;
-}
-.notification-btn .bi, .profile-btn .bi { font-size: 1rem; }
-.notification-btn:hover, .profile-btn:hover {
-  background: #f8f9fa;
-  border-color: #0068da;
-  color: #0068da;
-}
-.notification-btn .badge {
-  position: absolute;
-  top: -5px;
-  right: -8px;
-}
-.profile-dropdown {
-  position: relative;
-}
-/* Sidebar toggle inside header */
-.header-left .sidebar-toggle { padding: 0.25rem 0.5rem; }
-
-/* Unified burger toggle */
-#menu-toggle {
-  font-size: 28px;
   cursor: pointer;
-  color: #0d6efd;
+  transition: .2s;
+  color: <?= htmlspecialchars($__hdr['header_icon_color']) ?>;
+}
+.student-icon-btn .bi { font-size: 1.05rem; }
+.student-icon-btn:hover {
+  background: <?= htmlspecialchars($__hdr['header_hover_bg']) ?>;
+  border-color: <?= htmlspecialchars($__hdr['header_hover_bg']) ?>;
+  color: <?= htmlspecialchars($__hdr['header_hover_icon_color']) ?>;
+}
+.student-icon-btn .badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: .55rem;
+}
+#menu-toggle {
+  font-size: 30px;
+  cursor: pointer;
+  color: <?= htmlspecialchars($__hdr['header_icon_color']) ?>;
   border-radius: 8px;
-  padding: 6px 8px;
-  transition: all 0.2s ease;
+  padding: 4px 8px;
+  transition: .2s;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 #menu-toggle:hover {
-  background: #f1f5f9;
-  color: #0b5ed7;
+  background: <?= htmlspecialchars($__hdr['header_hover_bg']) ?>;
+  color: <?= htmlspecialchars($__hdr['header_hover_icon_color']) ?>;
+}
+.student-main-header h5 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.student-main-header h5,
+.student-main-header .dropdown-menu,
+.student-main-header .student-header-left span {
+  color: <?= htmlspecialchars($__hdr['header_text_color']) ?>;
+}
+
+/* Enhanced notification dropdown styling */
+.student-header-actions .dropdown-menu {
+  min-width: 320px;
+  max-width: 400px;
+}
+.student-header-actions .dropdown-item {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f0f0f0;
+  white-space: normal;
+}
+.student-header-actions .dropdown-item:last-child { border-bottom: none; }
+.student-header-actions .dropdown-item.bg-light { background-color: #f8f9ff !important; }
+.student-header-actions .dropdown-item .fw-medium {
+  font-size: 0.9rem;
+  line-height: 1.3;
+  margin-bottom: 0.25rem;
+}
+.student-header-actions .dropdown-item small { font-size: 0.8rem; }
+.student-header-actions .dropdown-item:hover { background-color: #f1f7ff; }
+.student-header-actions .dropdown-item-text { font-size: 0.9rem; }
+.badge-sm {
+  font-size: 0.7rem;
+  padding: 0.25em 0.5em;
+}
+
+@media (max-width: 576px) {
+  .student-main-header { 
+    padding: .4rem 0; 
+    left: 0 !important; 
+    right: 0;
+    max-width: 100% !important;
+  }
+  #menu-toggle { font-size: 26px; }
+  .student-header-actions { gap: .65rem; }
+  .student-header-actions .dropdown-menu { min-width: 280px; }
+  .student-main-header h5 { max-width: 150px; }
 }
 </style>
+<script>
+// Fast inline safeguard: if server rendered 0 unread (badge omitted) but a stale badge remains in cached DOM, remove it.
+document.addEventListener('DOMContentLoaded', function(){
+  var serverCount = <?=(int)$unreadNotificationCount?>;
+  if(serverCount === 0){
+    document.querySelectorAll('.student-icon-btn[title="Notifications"] .badge').forEach(b=>{
+      if(b && (b.textContent.trim()==='' || b.textContent.trim()==='0')){
+        b.style.display='none';
+      }
+    });
+  }
+  // Dynamically sync CSS variable for header height (prevents overlap/gaps if style changes)
+  const hdr = document.querySelector('.student-main-header');
+  if(hdr){
+    const setVar = () => {
+      const h = hdr.getBoundingClientRect().height;
+      document.documentElement.style.setProperty('--student-header-h', h + 'px');
+    };
+    setVar();
+    window.addEventListener('resize', setVar);
+  }
+});
+</script>

@@ -6,6 +6,7 @@ if (!isset($_SESSION['admin_username'])) {
 }
 include '../../config/database.php';
 include '../../includes/workflow_control.php';
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 
 // Check workflow status - prevent access if payroll/QR not ready
 $workflow_status = getWorkflowStatus($connection);
@@ -56,6 +57,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 // Handle schedule creation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_schedule'])) {
+    // Validate CSRF token
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('manage_schedules', $token)) {
+        $error_message = "Security validation failed. Please refresh the page and try again.";
+        error_log("CSRF validation failed for create_schedule");
+    } else {
     // Debug: Log the received data with more detail
     error_log("Received POST data: " . print_r($_POST, true));
     error_log("Raw schedule_data: " . ($_POST['schedule_data'] ?? 'NOT SET'));
@@ -224,10 +231,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_schedule'])) {
             }
         }
     }
+    } // Close CSRF validation else block
 }
 
 // Handle publish schedule action
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) {
+    // Validate CSRF token
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('manage_schedules', $token)) {
+        echo "<script>alert('Security validation failed. Please refresh and try again.'); window.location.href='manage_schedules.php';</script>";
+        exit;
+    }
+    
     $settings['schedule_published'] = true;
     file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
     
@@ -241,6 +256,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) 
 
 // Handle unpublish
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unpublish_schedule'])) {
+    // Validate CSRF token
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('manage_schedules', $token)) {
+        echo "<script>alert('Security validation failed. Please refresh and try again.'); window.location.href='manage_schedules.php';</script>";
+        exit;
+    }
+    
     $settings['schedule_published'] = false;
     file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
     
@@ -257,6 +279,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unpublish_schedule'])
 
 // Handle clear schedule data (permanent deletion)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_schedule_data'])) {
+    // Validate CSRF token
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('manage_schedules', $token)) {
+        echo "<script>alert('Security validation failed. Please refresh and try again.'); window.location.href='manage_schedules.php';</script>";
+        exit;
+    }
+    
     // Delete all schedules from database
     pg_query($connection, "DELETE FROM schedules");
     
@@ -276,6 +305,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_schedule_data']
 }
 
 $schedulePublished = !empty($settings['schedule_published']);
+
+// Generate CSRF token for all forms on this page
+$csrfToken = CSRFProtection::generateToken('manage_schedules');
 
 // Get payroll info
 $result = pg_query($connection, "SELECT MAX(payroll_no) AS max_no FROM students");
@@ -473,6 +505,7 @@ if ($usedDatesResult) {
                         <div class="mt-3">
                             <?php if (!$schedulePublished): ?>
                                 <form method="POST" class="d-inline">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                                     <button type="submit" name="publish_schedule" class="btn btn-success">
                                         <i class="bi bi-send"></i> Publish Schedule to Students
                                     </button>
@@ -483,6 +516,7 @@ if ($usedDatesResult) {
                                     <i class="bi bi-check-circle"></i> Schedule Published & Visible to Students
                                 </span>
                                 <form method="POST" class="d-inline">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                                     <button type="submit" name="unpublish_schedule" class="btn btn-outline-warning" 
                                             onclick="return confirm('This will hide the schedule from students but preserve all data. Continue?')">
                                         <i class="bi bi-eye-slash"></i> Hide from Students
@@ -982,6 +1016,13 @@ function createSchedule() {
     dataInput.value = JSON.stringify(scheduleData);
     form.appendChild(dataInput);
     
+    // Add CSRF token
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '<?= htmlspecialchars($csrfToken) ?>';
+    form.appendChild(csrfInput);
+    
     document.body.appendChild(form);
     console.log('Submitting form with data:', dataInput.value);
     form.submit();
@@ -992,7 +1033,7 @@ function clearSchedule() {
         if (confirm('Last confirmation: This will DELETE all schedules permanently. Continue?')) {
             const form = document.createElement('form');
             form.method = 'POST';
-            form.innerHTML = '<input type="hidden" name="clear_schedule_data" value="1">';
+            form.innerHTML = '<input type="hidden" name="clear_schedule_data" value="1"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">';
             document.body.appendChild(form);
             form.submit();
         }

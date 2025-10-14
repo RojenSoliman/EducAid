@@ -239,6 +239,14 @@ if ($activeMunicipality) {
             'view_url' => sprintf('../../website/landingpage.php?municipality_id=%d', $mid)
         ],
         [
+            'label' => 'Login Page Info',
+            'description' => 'Welcome message, features, and trust indicators.',
+            'icon' => 'bi-box-arrow-in-right',
+            'table' => 'login_content_blocks',
+            'editor_url' => '../../unified_login.php?edit=1',
+            'view_url' => '../../unified_login.php'
+        ],
+        [
             'label' => 'How It Works',
             'description' => 'Step-by-step guidance and program workflow.',
             'icon' => 'bi-diagram-3',
@@ -467,7 +475,10 @@ include '../../includes/admin/admin_head.php';
                                         </p>
                                         <div class="mt-auto">
                                             <div class="d-flex flex-wrap gap-2">
-                                                <a href="<?= htmlspecialchars($action['editor_url']) ?>" target="_blank" class="btn btn-success btn-sm flex-grow-1">
+                                                <a href="#" 
+                                                   class="btn btn-success btn-sm flex-grow-1 edit-content-trigger" 
+                                                   data-editor-url="<?= htmlspecialchars($action['editor_url']) ?>"
+                                                   data-label="<?= htmlspecialchars($action['label']) ?>">
                                                     <i class="bi bi-pencil-square me-1"></i>Edit Content
                                                 </a>
                                                 <a href="<?= htmlspecialchars($action['view_url']) ?>" target="_blank" class="btn btn-outline-secondary btn-sm">
@@ -738,7 +749,72 @@ document.addEventListener('DOMContentLoaded', function() {
         uploadLogoBtn.disabled = false;
         uploadLogoBtn.innerHTML = '<i class="bi bi-upload me-1"></i>Upload Logo';
     });
+
+    // Content Editor Warning Modal
+    const editContentModal = new bootstrap.Modal(document.getElementById('editContentWarningModal'));
+    let currentEditorUrl = '';
+    let currentPageLabel = '';
+
+    document.querySelectorAll('.edit-content-trigger').forEach(trigger => {
+        trigger.addEventListener('click', function(e) {
+            e.preventDefault();
+            currentEditorUrl = this.getAttribute('data-editor-url');
+            currentPageLabel = this.getAttribute('data-label');
+            
+            // Update modal content
+            document.getElementById('editContentPageName').textContent = currentPageLabel;
+            
+            // Show modal
+            editContentModal.show();
+        });
+    });
+
+    // Confirm edit button
+    document.getElementById('confirmEditContentBtn').addEventListener('click', function() {
+        if (currentEditorUrl) {
+            window.location.href = currentEditorUrl;
+        }
+    });
 });
 </script>
+
+<!-- Edit Content Warning Modal -->
+<div class="modal fade" id="editContentWarningModal" tabindex="-1" aria-labelledby="editContentWarningModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="editContentWarningModalLabel">
+          <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+          Proceed to <span id="editContentPageName" class="fw-bold">Content</span> Editor?
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-1">
+        <p class="mb-2">You are about to enter the <strong>live content editor</strong> for this page.</p>
+        <ul class="small ps-3 mb-3">
+          <li>Changes you save will <strong>immediately affect</strong> what visitors see.</li>
+          <li>Please review text for <strong>accuracy and professionalism</strong>.</li>
+          <li>Avoid adding <strong>sensitive or internal-only information</strong>.</li>
+          <li>Be mindful of <strong>formatting, grammar, and spelling</strong>.</li>
+        </ul>
+        <div class="alert alert-info small mb-0 d-flex align-items-start gap-2">
+          <i class="bi bi-info-circle flex-shrink-0 mt-1"></i>
+          <div>
+            <strong>Tip:</strong> Edits are logged per block. You can review change history in the database if needed.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+          <i class="bi bi-x-circle me-1"></i>Cancel
+        </button>
+        <button type="button" class="btn btn-primary" id="confirmEditContentBtn">
+          <i class="bi bi-pencil-square me-1"></i>Continue & Edit
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

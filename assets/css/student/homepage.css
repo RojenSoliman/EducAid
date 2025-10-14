@@ -1,7 +1,10 @@
 /* ===========================
   Base Layout
 =========================== */
-:root { --topbar-h: 44px; }
+:root { 
+  --topbar-h: 44px; 
+  --student-header-h: 56px;
+}
 * {
   box-sizing: border-box;
 }
@@ -25,16 +28,26 @@ body {
    Main Content Area
 =========================== */
 .home-section {
-  margin-left: 260px;
-  width: calc(100% - 260px);
-  min-height: calc(100vh - var(--topbar-h)); /* Account for fixed topbar */
+  margin-left: 250px;
+  width: calc(100% - 250px);
+  min-height: calc(100vh - var(--topbar-h));
   background: #f8f9fa;
   padding-top: 0;
+  padding-bottom: 0;
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+}
+
+/* Add space for fixed header inside the container */
+.home-section > .container-fluid {
+  padding-top: calc(var(--student-header-h) + 1rem) !important;
+  padding-bottom: 2rem;
 }
 
 .sidebar.close ~ .home-section {
-  margin-left: 78px;
-  width: calc(100% - 78px);
+  margin-left: 70px;
+  width: calc(100% - 70px);
 }
 
 .sidebar-toggle { padding: 10px 16px; }
@@ -556,6 +569,16 @@ body:not(.js-ready) .sidebar {
   
   .carousel-page .row {
     flex-direction: column;
+  }
+}
+
+/* Mobile Layout Adjustments */
+@media (max-width: 768px) {
+  .home-section {
+    margin-left: 0 !important;
+    width: 100% !important;
+    padding-left: 1rem;
+    padding-right: 1rem;
   }
 }
 

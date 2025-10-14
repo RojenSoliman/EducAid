@@ -1,5 +1,9 @@
 /* EducAid Login System - Light & Bright Theme */
 :root {
+    /* Fixed Header System - CSS Variables */
+    --topbar-height: 0px;
+    --navbar-height: 0px;
+    
     /* General Trias Color Palette - Light Variants */
     --trias-primary: #0068DA;
     --trias-secondary: #00B1C6;
@@ -89,6 +93,11 @@ body {
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+/* Fixed Header Offset System */
+body.has-header-offset {
+    padding-top: calc(var(--topbar-height) + var(--navbar-height));
 }
 
 /* Login Layout */

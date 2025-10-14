@@ -205,10 +205,11 @@ if ($has_qr_code) {
 
   <div id="wrapper" style="padding-top: var(--topbar-h);">
   <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
+  
+    <!-- Student Header -->
+    <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
+    
     <section class="home-section" id="page-content-wrapper">
-      <!-- Student Header -->
-      <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
-      
       <div class="main-content">
         <div class="qr-card">
           <!-- Student Information Header -->
@@ -302,6 +303,6 @@ if ($has_qr_code) {
   </div>
   
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="../../assets/js/homepage.js"></script>
+  <script src="../../assets/js/student/sidebar.js"></script>
 </body>
 </html>

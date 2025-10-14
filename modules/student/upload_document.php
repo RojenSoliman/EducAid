@@ -59,7 +59,7 @@ if (isset($_SESSION['upload_partial'])) {
     unset($_SESSION['upload_partial']);
 }
 
-// Get student ID
+// Get student ID and check if they should even see this page
 $student_id = $_SESSION['student_id'];
 
 // Check if documents were uploaded through upload_document.php (by checking file path pattern)
@@ -67,6 +67,19 @@ $student_id = $_SESSION['student_id'];
 $query = "SELECT COUNT(*) AS total_uploaded FROM documents 
           WHERE student_id = $1 AND type IN ('id_picture') 
           AND file_path LIKE '%/assets/uploads/students/%'";
+// Check if student needs to upload documents (existing students) or redirected here incorrectly (new registrants)
+$student_check_query = "SELECT needs_document_upload, application_date, status FROM students WHERE student_id = $1";
+$student_check_result = pg_query_params($connection, $student_check_query, [$student_id]);
+$student_info = pg_fetch_assoc($student_check_result);
+
+// Redirect new registrants who shouldn't see this page
+if ($student_info && !$student_info['needs_document_upload']) {
+    header("Location: student_homepage.php");
+    exit;
+}
+
+// Check if all required documents are uploaded
+$query = "SELECT COUNT(*) AS total_uploaded FROM documents WHERE student_id = $1 AND type IN ('id_picture')";
 /** @phpstan-ignore-next-line */
 $result = pg_query_params($connection, $query, [$student_id]);
 $row = pg_fetch_assoc($result);
@@ -1258,11 +1271,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
     <!-- Sidebar -->
     <?php include __DIR__ . '/../../includes/student/student_sidebar.php'; ?>
     
+    <!-- Student Header -->
+    <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
+    
     <!-- Main Content Area -->
     <section class="home-section upload-container" id="page-content-wrapper">
-      <!-- Student Header -->
-      <?php include __DIR__ . '/../../includes/student/student_header.php'; ?>
-      
       <div class="container-fluid py-4 px-4">
         <div class="upload-card">
           <!-- Header Section -->
@@ -1272,6 +1285,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
               Upload Documents
             </h1>
             <p>Complete your application by uploading all required documents</p>
+            <?php 
+            // Check if this is after a distribution cycle
+            $last_distribution_query = "SELECT finalized_at FROM distribution_snapshots ORDER BY finalized_at DESC LIMIT 1";
+            $last_distribution_result = pg_query($connection, $last_distribution_query);
+            $last_distribution = pg_fetch_assoc($last_distribution_result);
+            
+            if ($last_distribution && $student_info['application_date'] < $last_distribution['finalized_at']): ?>
+            <div class="alert alert-info mt-3">
+              <i class="bi bi-info-circle me-2"></i>
+              <strong>New Distribution Cycle:</strong> Please upload your documents again for the current academic period. 
+              Your previous documents have been archived and you need to submit fresh copies.
+            </div>
+            <?php endif; ?>
           </div>
 
           <!-- Enhanced Flash Messages -->
@@ -1984,7 +2010,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
   </div>
 
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
-  <script src="../../assets/js/homepage.js"></script>
+  <script src="../../assets/js/student/sidebar.js"></script>
   <script src="../../assets/js/student/upload.js"></script>
   
   <script>
