@@ -716,8 +716,14 @@ if (!$isAjaxRequest) {
         'municipality_logo' => $municipality_logo,
         'municipality_name' => $municipality_name
     ];
-    $custom_nav_links = [
-        ['href' => '../../website/landingpage.php', 'label' => '<i class="bi bi-house me-1"></i>Back to Home', 'active' => false]
+    $custom_nav_links = [];
+    $prepend_navbar_actions = [
+        [
+            'href' => '../../website/landingpage.php',
+            'label' => 'Back to Home',
+            'icon' => 'bi-house',
+            'class' => 'btn btn-outline-secondary btn-sm'
+        ]
     ];
     $simple_nav_style = true;
     include '../../includes/website/navbar.php'; 

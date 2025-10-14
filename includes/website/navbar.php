@@ -442,6 +442,24 @@ nav.navbar.fixed-header .navbar-collapse {
       </ul>
       <?php if (!isset($hide_auth_buttons) || !$hide_auth_buttons): ?>
       <div class="navbar-actions d-flex flex-column flex-lg-row align-items-center gap-2 ms-lg-4 mt-2 mt-lg-0 ms-lg-auto">
+        <?php if (isset($prepend_navbar_actions) && is_array($prepend_navbar_actions)): ?>
+          <?php foreach ($prepend_navbar_actions as $action):
+            $actionHref = htmlspecialchars($action['href'] ?? '#');
+            $actionLabel = htmlspecialchars($action['label'] ?? 'Action');
+            $actionClass = trim($action['class'] ?? 'btn btn-outline-secondary btn-sm');
+            $actionIcon = trim($action['icon'] ?? '');
+            $actionTarget = isset($action['target']) ? htmlspecialchars($action['target']) : '';
+            $actionRel = isset($action['rel']) ? htmlspecialchars($action['rel']) : '';
+          ?>
+          <a href="<?php echo $actionHref; ?>"
+             class="<?php echo $actionClass; ?> d-flex align-items-center justify-content-center gap-2 w-100 w-lg-auto"
+             <?php if ($actionTarget !== ''): ?> target="<?php echo $actionTarget; ?>"<?php endif; ?>
+             <?php if ($actionRel !== ''): ?> rel="<?php echo $actionRel; ?>"<?php endif; ?>>
+            <?php if ($actionIcon !== ''): ?><i class="bi <?php echo htmlspecialchars($actionIcon); ?>"></i><?php endif; ?>
+            <span class="d-none d-sm-inline ms-1"><?php echo $actionLabel; ?></span>
+          </a>
+          <?php endforeach; ?>
+        <?php endif; ?>
         <a href="<?php echo $base_path; ?>unified_login.php" class="btn btn-outline-primary btn-sm d-flex align-items-center justify-content-center gap-2 w-100 w-lg-auto">
           <i class="bi bi-box-arrow-in-right"></i><span class="d-none d-sm-inline ms-1">Sign In</span>
         </a>
