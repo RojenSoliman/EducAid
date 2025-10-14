@@ -275,14 +275,18 @@ class EnhancedUploadManager {
     
     handleSubmit(event) {
         const form = event.target;
-        const submitBtn = document.getElementById('submitBtn');
-        
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `
-            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-            Uploading Documents...
-        `;
-        submitBtn.style.background = `linear-gradient(135deg, ${this.triasColors.secondary} 0%, ${this.triasColors.light} 100%)`;
+        // Support both legacy and current submit button ids
+        let submitBtn = document.getElementById('submitBtn') || document.getElementById('submit-documents');
+        try {
+            if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                Uploading Documents...
+            `;
+            submitBtn.style.background = `linear-gradient(135deg, ${this.triasColors.secondary} 0%, ${this.triasColors.light} 100%)`;
+            }
+        } catch (e) { /* No-op guard */ }
         
         form.classList.add('loading');
     }

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../../includes/CSRFProtection.php';
 session_start();
 if (!isset($_SESSION['admin_username'])) {
     header("Location: ../../unified_login.php");
@@ -212,6 +213,14 @@ function send_migration_email($toEmail, $toName, $passwordPlain) {
 $migration_preview = $_SESSION['migration_preview'] ?? null;
 $migration_result = $_SESSION['migration_result'] ?? null;
 
+// Generate CSRF token for CSV migration
+$csrfMigrationToken = CSRFProtection::generateToken('csv_migration');
+
+// Generate CSRF tokens for applicant approval flows
+$csrfApproveApplicantToken = CSRFProtection::generateToken('approve_applicant');
+$csrfOverrideApplicantToken = CSRFProtection::generateToken('override_applicant');
+$csrfRejectApplicantToken = CSRFProtection::generateToken('reject_applicant');
+
 // Clear migration sessions on GET request to prevent resubmission warnings
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['clear_migration'])) {
     // If a preview still exists, only clear the result so remaining rows persist
@@ -226,6 +235,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['clear_migration'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['migration_action'])) {
+    // CSRF Protection - validate token first
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('csv_migration', $token)) {
+        $_SESSION['error'] = 'Security validation failed. Please refresh the page.';
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    
     if ($_POST['migration_action'] === 'preview' && isset($_FILES['csv_file'])) {
         $municipality_id = intval($adminMunicipalityId ?? 0);
         if (!$municipality_id) { $municipality_id = intval($_POST['municipality_id'] ?? 0); }
@@ -524,18 +541,40 @@ function find_student_documents_by_id($connection, $student_id) {
 // Function to check if all required documents are uploaded
 function check_documents($connection, $student_id) {
     $required = ['eaf', 'letter_to_mayor', 'certificate_of_indigency'];
-    // First check database records
-    $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
-    $uploaded = [];
-    while ($row = pg_fetch_assoc($query)) $uploaded[] = $row['type'];
-    // Also check file system for new structure by student name
-    $found_documents = find_student_documents_by_id($connection, $student_id);
-    $uploaded = array_unique(array_merge($uploaded, array_keys($found_documents)));
     
-    // Check if grades are uploaded
-    $grades_query = pg_query_params($connection, "SELECT COUNT(*) as count FROM grade_uploads WHERE student_id = $1", [$student_id]);
-    $grades_row = pg_fetch_assoc($grades_query);
-    $has_grades = $grades_row['count'] > 0;
+    // Check if student needs upload tab (existing student) or uses registration docs (new student)
+    $student_info_query = pg_query_params($connection, 
+        "SELECT needs_document_upload, application_date FROM students WHERE student_id = $1", 
+        [$student_id]
+    );
+    $student_info = pg_fetch_assoc($student_info_query);
+    $needs_upload_tab = $student_info ? (bool)$student_info['needs_document_upload'] : true;
+    
+    $uploaded = [];
+    
+    if ($needs_upload_tab) {
+        // Existing student: check upload_documents table/system
+        $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
+        while ($row = pg_fetch_assoc($query)) $uploaded[] = $row['type'];
+        
+        // Also check file system for new structure by student name
+        $found_documents = find_student_documents_by_id($connection, $student_id);
+        $uploaded = array_unique(array_merge($uploaded, array_keys($found_documents)));
+        
+        // Check if grades are uploaded via upload system
+        $grades_query = pg_query_params($connection, "SELECT COUNT(*) as count FROM grade_uploads WHERE student_id = $1", [$student_id]);
+        $grades_row = pg_fetch_assoc($grades_query);
+        $has_grades = $grades_row['count'] > 0;
+    } else {
+        // New student: check registration documents (temp files moved to permanent storage)
+        $registration_docs = find_student_documents_by_id($connection, $student_id);
+        $uploaded = array_keys($registration_docs);
+        
+        // For new registrants, check if they have temporary grade files or completed registration
+        // They should have uploaded grades during registration process
+        $has_grades = in_array('grades', $uploaded) || 
+                     file_exists("../../assets/uploads/student/" . $student_id . "/grades/");
+    }
     
     return count(array_diff($required, $uploaded)) === 0 && $has_grades;
 }
@@ -562,6 +601,7 @@ $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query
 
 // Table rendering function with live preview
 function render_table($applicants, $connection) {
+    global $csrfApproveApplicantToken, $csrfRejectApplicantToken, $csrfOverrideApplicantToken;
     ob_start();
     ?>
     <table class="table table-bordered align-middle">
@@ -749,11 +789,13 @@ function render_table($applicants, $connection) {
                                     <form method="POST" class="d-inline" onsubmit="return confirm('Verify this student?');">
                                         <input type="hidden" name="student_id" value="<?= $student_id ?>">
                                         <input type="hidden" name="mark_verified" value="1">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfApproveApplicantToken) ?>">
                                         <button class="btn btn-success btn-sm"><i class="bi bi-check-circle me-1"></i> Verify</button>
                                     </form>
                                     <form method="POST" class="d-inline ms-2" onsubmit="return confirm('Reject and reset uploads?');">
                                         <input type="hidden" name="student_id" value="<?= $student_id ?>">
                                         <input type="hidden" name="reject_applicant" value="1">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfRejectApplicantToken) ?>">
                                         <button class="btn btn-danger btn-sm"><i class="bi bi-x-circle me-1"></i> Reject</button>
                                     </form>
                                 <?php else: ?>
@@ -762,6 +804,7 @@ function render_table($applicants, $connection) {
                                     <form method="POST" class="d-inline ms-2" onsubmit="return confirm('Override verification and mark this student as Active even without complete grades/documents?');">
                                         <input type="hidden" name="student_id" value="<?= $student_id ?>">
                                         <input type="hidden" name="mark_verified_override" value="1">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfOverrideApplicantToken) ?>">
                                         <button class="btn btn-warning btn-sm"><i class="bi bi-exclamation-triangle me-1"></i> Override Verify</button>
                                     </form>
                                     <?php endif; ?>
@@ -815,6 +858,24 @@ function render_pagination($page, $totalPages) {
 
 // Handle verify/reject actions before AJAX or page render
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $applicantCsrfAction = null;
+    if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
+        $applicantCsrfAction = 'approve_applicant';
+    } elseif (!empty($_POST['mark_verified_override']) && isset($_POST['student_id'])) {
+        $applicantCsrfAction = 'override_applicant';
+    } elseif (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
+        $applicantCsrfAction = 'reject_applicant';
+    }
+
+    if ($applicantCsrfAction !== null) {
+        $token = $_POST['csrf_token'] ?? '';
+        if (!CSRFProtection::validateToken($applicantCsrfAction, $token)) {
+            $_SESSION['error'] = 'Security validation failed. Please refresh the page and try again.';
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
+    }
+
     // Verify student
     if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
         $sid = trim($_POST['student_id']); // Remove intval for TEXT student_id
@@ -994,6 +1055,7 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
         <?php /* Migration result is now shown via JS alert after reload; avoid unsetting here to prevent race */ ?>
 
             <form method="POST" enctype="multipart/form-data" class="mb-3" id="migrationUploadForm">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfMigrationToken) ?>">
                     <input type="hidden" name="migration_action" value="preview">
                                             <div class="row g-3 align-items-end">
                                                 <div class="col-12 col-md-6">
@@ -1025,6 +1087,7 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
 
                         <?php if (!empty($_SESSION['migration_preview'])): $mp = $_SESSION['migration_preview']; ?>
                     <form method="POST" id="migrationForm">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfMigrationToken) ?>">
                         <input type="hidden" name="migration_action" value="confirm">
                                                         <div class="d-flex justify-content-end gap-2 mb-2 preview-scroll-controls">
                                                 <button type="button" class="btn btn-outline-secondary btn-sm" id="scrollStartBtn" title="Scroll to start"><i class="bi bi-skip-backward"></i></button>
