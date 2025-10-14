@@ -542,36 +542,29 @@ function find_student_documents_by_id($connection, $student_id) {
 function check_documents($connection, $student_id) {
     $required = ['eaf', 'letter_to_mayor', 'certificate_of_indigency'];
     
-    // Check if student needs upload tab (existing student) or uses registration docs (new student)
-    $student_info_query = pg_query_params($connection, 
-        "SELECT needs_document_upload, application_date FROM students WHERE student_id = $1", 
-        [$student_id]
-    );
-    $student_info = pg_fetch_assoc($student_info_query);
-    $needs_upload_tab = $student_info ? (bool)$student_info['needs_document_upload'] : true;
-    
+    // Check documents table for uploaded documents
     $uploaded = [];
+    $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
+    if ($query) {
+        while ($row = pg_fetch_assoc($query)) {
+            $uploaded[] = $row['type'];
+        }
+    }
     
-    if ($needs_upload_tab) {
-        // Existing student: check upload_documents table/system
-        $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
-        while ($row = pg_fetch_assoc($query)) $uploaded[] = $row['type'];
-        
-        // Also check file system for new structure by student name
-        $found_documents = find_student_documents_by_id($connection, $student_id);
-        $uploaded = array_unique(array_merge($uploaded, array_keys($found_documents)));
-        
-        // Check if grades are uploaded via upload system
-        $grades_query = pg_query_params($connection, "SELECT COUNT(*) as count FROM grade_uploads WHERE student_id = $1", [$student_id]);
+    // Also check file system for documents by student name
+    $found_documents = find_student_documents_by_id($connection, $student_id);
+    $uploaded = array_unique(array_merge($uploaded, array_keys($found_documents)));
+    
+    // Check if grades are uploaded
+    $grades_query = pg_query_params($connection, "SELECT COUNT(*) as count FROM grade_uploads WHERE student_id = $1", [$student_id]);
+    $has_grades = false;
+    if ($grades_query) {
         $grades_row = pg_fetch_assoc($grades_query);
         $has_grades = $grades_row['count'] > 0;
-    } else {
-        // New student: check registration documents (temp files moved to permanent storage)
-        $registration_docs = find_student_documents_by_id($connection, $student_id);
-        $uploaded = array_keys($registration_docs);
-        
-        // For new registrants, check if they have temporary grade files or completed registration
-        // They should have uploaded grades during registration process
+    }
+    
+    // Also check file system for grades
+    if (!$has_grades) {
         $has_grades = in_array('grades', $uploaded) || 
                      file_exists("../../assets/uploads/student/" . $student_id . "/grades/");
     }

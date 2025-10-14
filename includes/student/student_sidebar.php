@@ -24,11 +24,10 @@ if (isset($_SESSION['student_id'])) {
         $uploads_enabled = ($uploads_row['value'] === '1');
     }
     
-    // Fetch student name and registration date
+    // Fetch student name (created_at column doesn't exist yet)
     $studentRes = pg_query_params(
         $connection,
-        "SELECT TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS display_name, 
-                created_at
+        "SELECT TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS display_name
          FROM students WHERE student_id = $1 LIMIT 1",
         [$_SESSION['student_id']]
     );

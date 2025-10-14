@@ -67,16 +67,6 @@ $student_id = $_SESSION['student_id'];
 $query = "SELECT COUNT(*) AS total_uploaded FROM documents 
           WHERE student_id = $1 AND type IN ('id_picture') 
           AND file_path LIKE '%/assets/uploads/students/%'";
-// Check if student needs to upload documents (existing students) or redirected here incorrectly (new registrants)
-$student_check_query = "SELECT needs_document_upload, application_date, status FROM students WHERE student_id = $1";
-$student_check_result = pg_query_params($connection, $student_check_query, [$student_id]);
-$student_info = pg_fetch_assoc($student_check_result);
-
-// Redirect new registrants who shouldn't see this page
-if ($student_info && !$student_info['needs_document_upload']) {
-    header("Location: student_homepage.php");
-    exit;
-}
 
 // Check if all required documents are uploaded
 $query = "SELECT COUNT(*) AS total_uploaded FROM documents WHERE student_id = $1 AND type IN ('id_picture')";

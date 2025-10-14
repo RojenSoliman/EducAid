@@ -57,8 +57,7 @@ if (isset($connection)) {
     if ($muni_id) {
         $muni_result = pg_query_params(
             $connection,
-            "SELECT name, 
-                    COALESCE(custom_logo_image, preset_logo_image) AS active_logo
+            "SELECT name 
              FROM municipalities 
              WHERE municipality_id = $1 
              LIMIT 1",
@@ -68,6 +67,9 @@ if (isset($connection)) {
         if ($muni_result && pg_num_rows($muni_result) > 0) {
             $muni_data = pg_fetch_assoc($muni_result);
             $active_municipality_name = $muni_data['name'];
+            
+            // Use default logo for now (columns custom_logo_image/preset_logo_image don't exist yet)
+            $active_municipality_logo = '/assets/City Logos/General_Trias_City_Logo.png';
             
             // Build logo path
             if (!empty($muni_data['active_logo'])) {
