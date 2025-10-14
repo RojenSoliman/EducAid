@@ -17,12 +17,44 @@ $limit = 10;
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $offset = ($page - 1) * $limit;
 
+// Get academic period from distribution control FIRST
+$distribution_academic_year = '';
+$distribution_semester = '';
+$distribution_status = 'inactive';
+$distribution_query = "SELECT key, value FROM config WHERE key IN ('current_academic_year', 'current_semester', 'distribution_status')";
+$distribution_result = pg_query($connection, $distribution_query);
+if ($distribution_result) {
+    while ($row = pg_fetch_assoc($distribution_result)) {
+        if ($row['key'] === 'current_academic_year') {
+            $distribution_academic_year = $row['value'];
+        } elseif ($row['key'] === 'current_semester') {
+            $distribution_semester = $row['value'];
+        } elseif ($row['key'] === 'distribution_status') {
+            $distribution_status = $row['value'];
+        }
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['slot_count'])) {
         $newSlotCount = intval($_POST['slot_count']);
-        $semester = $_POST['semester'];
-        $academic_year = $_POST['academic_year'];
         $admin_password = $_POST['admin_password'];
+        
+        // Get academic period from distribution config
+        $semester = $distribution_semester;
+        $academic_year = $distribution_academic_year;
+        
+        // Validate that distribution is active
+        if (!in_array($distribution_status, ['preparing', 'active'])) {
+            header("Location: manage_slots.php?error=distribution_inactive");
+            exit;
+        }
+        
+        // Validate academic period is set
+        if (empty($academic_year) || empty($semester)) {
+            header("Location: manage_slots.php?error=no_academic_period");
+            exit;
+        }
 
         if (!preg_match('/^\d{4}-\d{4}$/', $academic_year)) {
             header("Location: manage_slots.php?error=invalid_year");
@@ -55,6 +87,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if ($unfinalizedCount > 0) {
             header("Location: manage_slots.php?error=unfinalized_distributions&count=" . $unfinalizedCount);
+            exit;
+        }
+
+        // Additional check: If distribution status is 'finalized', don't allow new slots until a new distribution is started
+        if ($distribution_status === 'finalized') {
+            header("Location: manage_slots.php?error=distribution_finalized");
             exit;
         }
 
@@ -218,6 +256,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $slotInfo = pg_fetch_assoc(pg_query_params($connection, "
     SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1
 ", [$municipality_id]));
+
+
 
 // Fetch latest slot for validation (used in form hints and JavaScript validation)
 $latestSlotForValidation = null;
@@ -387,6 +427,15 @@ if ($res) {
               case 'session_invalid':
                   $errorMsg = 'Session error. Please log out and log in again.';
                   break;
+              case 'distribution_inactive':
+                  $errorMsg = 'Cannot create slots when distribution is inactive. Please start a distribution in <a href="distribution_control.php" class="alert-link">Distribution Control</a> first.';
+                  break;
+              case 'no_academic_period':
+                  $errorMsg = 'No academic period set. Please set the academic period in <a href="distribution_control.php" class="alert-link">Distribution Control</a> first.';
+                  break;
+              case 'distribution_finalized':
+                  $errorMsg = 'Cannot create slots after distribution is finalized. Please start a new distribution cycle in <a href="distribution_control.php" class="alert-link">Distribution Control</a> first.';
+                  break;
               default:
                   $errorMsg = 'An error occurred. Please try again.';
           }
@@ -500,10 +549,63 @@ if ($res) {
       </div>
       <?php endif; ?>
       
-      <form id="releaseSlotsForm" method="POST" class="card p-4 shadow-sm mb-4" <?php echo $hasUnfinalizedDistributions ? 'style="opacity: 0.6; pointer-events: none;"' : ''; ?>>
+      <?php if (!in_array($distribution_status, ['preparing', 'active'])): ?>
+      <div class="alert alert-info">
+        <h5><i class="bi bi-info-circle-fill me-2"></i>Distribution Not Active</h5>
+        <p class="mb-2">
+          <strong>Distribution Status:</strong> <?= ucfirst($distribution_status) ?>
+        </p>
+        <p class="mb-0">
+          Please start and activate a distribution cycle in 
+          <a href="distribution_control.php" class="alert-link">
+            <i class="bi bi-gear-fill me-1"></i>Distribution Control Center
+          </a>
+          to enable slot management.
+        </p>
+      </div>
+      <?php endif; ?>
+      
+      <?php if (empty($distribution_academic_year) || empty($distribution_semester)): ?>
+      <div class="alert alert-warning">
+        <h5><i class="bi bi-exclamation-triangle-fill me-2"></i>Academic Period Not Set</h5>
+        <p class="mb-0">
+          Academic period has not been configured. Please set it in 
+          <a href="distribution_control.php" class="alert-link fw-bold">Distribution Control Center</a> first.
+        </p>
+      </div>
+      <?php endif; ?>
+      
+      <?php if ($distribution_status === 'finalized'): ?>
+      <div class="alert alert-info">
+        <h5><i class="bi bi-check-circle-fill me-2"></i>Distribution Cycle Complete</h5>
+        <p class="mb-2">
+          <strong>Status:</strong> Current distribution has been finalized
+        </p>
+        <p class="mb-0">
+          To create new slots, please start a new distribution cycle in 
+          <a href="distribution_control.php" class="alert-link">
+            <i class="bi bi-gear-fill me-1"></i>Distribution Control Center
+          </a>
+        </p>
+      </div>
+      <?php endif; ?>
+      
+      <?php 
+      $canCreateSlots = !$hasUnfinalizedDistributions && 
+                        in_array($distribution_status, ['preparing', 'active']) && 
+                        !empty($distribution_academic_year) && 
+                        !empty($distribution_semester) &&
+                        $distribution_status !== 'finalized';
+      ?>
+      
+      <form id="releaseSlotsForm" method="POST" class="card p-4 shadow-sm mb-4" <?php echo !$canCreateSlots ? 'style="opacity: 0.6; pointer-events: none;"' : ''; ?>>
+        <!-- Hidden fields for academic period -->
+        <input type="hidden" name="semester" value="<?= htmlspecialchars($distribution_semester) ?>">
+        <input type="hidden" name="academic_year" value="<?= htmlspecialchars($distribution_academic_year) ?>">
+        
         <h5 class="fw-semibold mb-3 text-secondary">
           <i class="bi bi-plus-circle"></i> Release New Slot
-          <?php if ($hasUnfinalizedDistributions): ?>
+          <?php if (!$canCreateSlots): ?>
             <span class="badge bg-warning ms-2">Blocked</span>
           <?php endif; ?>
         </h5>
@@ -550,18 +652,23 @@ if ($res) {
           </div>
           <div class="col-md-4">
             <label class="form-label">Semester</label>
-            <select name="semester" class="form-select" required>
-              <option value="1st Semester">1st Semester</option>
-              <option value="2nd Semester">2nd Semester</option>
-            </select>
-            <?php if ($latestSlotForValidation): ?>
-              <small class="text-muted">Latest: <?= htmlspecialchars($latestSlotForValidation['semester']) ?> <?= htmlspecialchars($latestSlotForValidation['academic_year']) ?></small>
-            <?php endif; ?>
+            <input type="text" class="form-control" 
+                   value="<?= htmlspecialchars($distribution_semester) ?>" 
+                   readonly style="background-color: #f8f9fa;">
+            <small class="text-muted">
+              <i class="bi bi-info-circle me-1"></i>
+              Set in Distribution Control Center
+            </small>
           </div>
           <div class="col-md-4">
             <label class="form-label">Academic Year</label>
-            <input type="text" name="academic_year" class="form-control" pattern="^\d{4}-\d{4}$" placeholder="2025-2026" required>
-            <small class="text-muted">Format: YYYY-YYYY (e.g., 2025-2026)</small>
+            <input type="text" class="form-control" 
+                   value="<?= htmlspecialchars($distribution_academic_year) ?>" 
+                   readonly style="background-color: #f8f9fa;">
+            <small class="text-muted">
+              <i class="bi bi-info-circle me-1"></i>
+              Managed by Distribution Control
+            </small>
           </div>
         </div>
         <div class="mt-2">
@@ -779,7 +886,7 @@ if ($res) {
   // Comprehensive field validation function
   function validateAllFields() {
     const slotCountInput = document.querySelector('input[name="slot_count"]');
-    const semesterSelect = document.querySelector('select[name="semester"]');
+    const semesterInput = document.querySelector('input[name="semester"]');
     const academicYearInput = document.querySelector('input[name="academic_year"]');
     
     // Check if all fields are filled
@@ -798,23 +905,20 @@ if ($res) {
       }
     }
     
-    if (!semesterSelect.value) {
-      alert('Please select a semester.');
-      semesterSelect.focus();
+    if (!semesterInput.value) {
+      alert('No semester configured. Please set academic period in Distribution Control first.');
       return false;
     }
     
     if (!academicYearInput.value) {
-      alert('Please enter an academic year.');
-      academicYearInput.focus();
+      alert('No academic year configured. Please set academic period in Distribution Control first.');
       return false;
     }
     
     // Validate academic year format
     const academicYearPattern = /^\d{4}-\d{4}$/;
     if (!academicYearPattern.test(academicYearInput.value)) {
-      alert('Please enter a valid academic year format (YYYY-YYYY, e.g., 2025-2026).');
-      academicYearInput.focus();
+      alert('Invalid academic year format from Distribution Control. Please check the configuration.');
       return false;
     }
     
@@ -824,8 +928,7 @@ if ($res) {
     const endYear = parseInt(yearParts[1]);
     
     if (endYear !== startYear + 1) {
-      alert('Academic year format is invalid. End year should be exactly 1 year after start year (e.g., 2025-2026).');
-      academicYearInput.focus();
+      alert('Invalid academic year from Distribution Control. Please check the configuration.');
       return false;
     }
     
@@ -840,10 +943,10 @@ if ($res) {
   // Slot progression validation (moved from existing code)
   function validateSlotProgression() {
     const academicYearInput = document.querySelector('input[name="academic_year"]');
-    const semesterSelect = document.querySelector('select[name="semester"]');
+    const semesterInput = document.querySelector('input[name="semester"]');
     
     const currentAcademicYear = academicYearInput.value;
-    const currentSemester = semesterSelect.value;
+    const currentSemester = semesterInput.value;
     
     // Get latest slot info for validation (already fetched in PHP)
     const latestSlotInfo = {
@@ -876,8 +979,7 @@ if ($res) {
       const latestSemesterNum = semesterOrder[latestSlotInfo.semester] || 0;
       
       if (currentSemesterNum <= latestSemesterNum) {
-        alert(`Cannot create slot for ${currentAcademicYear} ${currentSemester}. Latest slot is for ${latestSlotInfo.academicYear} ${latestSlotInfo.semester}. Please select the next semester or a future academic year.`);
-        semesterSelect.focus();
+        alert(`Cannot create slot for ${currentAcademicYear} ${currentSemester}. Latest slot is for ${latestSlotInfo.academicYear} ${latestSlotInfo.semester}. Please configure a new academic period in Distribution Control.`);
         return false;
       }
     }

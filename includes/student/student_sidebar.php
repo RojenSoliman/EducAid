@@ -24,10 +24,11 @@ if (isset($_SESSION['student_id'])) {
         $uploads_enabled = ($uploads_row['value'] === '1');
     }
     
-    // Fetch student name (created_at query temporarily disabled)
+    // Fetch student name and registration date
     $studentRes = pg_query_params(
         $connection,
-        "SELECT TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS display_name
+        "SELECT TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS display_name, 
+                created_at
          FROM students WHERE student_id = $1 LIMIT 1",
         [$_SESSION['student_id']]
     );
@@ -36,9 +37,6 @@ if (isset($_SESSION['student_id'])) {
         $candidate = trim($studentRow['display_name'] ?? '');
         if ($candidate !== '') { $student_name = $candidate; }
         
-        // Upload tab logic temporarily disabled (depends on created_at column)
-        $needs_upload_tab = false;
-        /*
         if ($uploads_enabled) {
             // Check if student is newly registered (after last distribution)
             $last_distribution_query = "SELECT MAX(distribution_date) as last_date FROM distribution_snapshots";
@@ -60,7 +58,6 @@ if (isset($_SESSION['student_id'])) {
                 }
             }
         }
-        */
     } elseif (!empty($_SESSION['student_username'])) {
         $student_name = $_SESSION['student_username'];
         // For fallback case, check uploads enabled
