@@ -9,19 +9,59 @@ define('STUDENT_SIDEBAR_LOADED', true);
 $student_name = 'Student';
 $student_role = 'Student';
 
+// Check if student needs upload documents tab
+$needs_upload_tab = false;
+
 if (isset($_SESSION['student_id'])) {
     include_once __DIR__ . '/../../config/database.php';
-    // Fetch student name (first_name + last_name)
-    $nameRes = pg_query_params(
+    
+    // Check if uploads are enabled globally
+    $uploads_enabled_query = "SELECT value FROM config WHERE key = 'uploads_enabled'";
+    $uploads_enabled_result = pg_query($connection, $uploads_enabled_query);
+    $uploads_enabled = false;
+
+    if ($uploads_enabled_result && $uploads_row = pg_fetch_assoc($uploads_enabled_result)) {
+        $uploads_enabled = ($uploads_row['value'] === '1');
+    }
+    
+    // Fetch student name and registration date
+    $studentRes = pg_query_params(
         $connection,
-        "SELECT TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS display_name FROM students WHERE student_id = $1 LIMIT 1",
+        "SELECT TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS display_name, 
+                created_at
+         FROM students WHERE student_id = $1 LIMIT 1",
         [$_SESSION['student_id']]
     );
-    if ($nameRes && ($nameRow = pg_fetch_assoc($nameRes))) {
-        $candidate = trim($nameRow['display_name'] ?? '');
+    
+    if ($studentRes && ($studentRow = pg_fetch_assoc($studentRes))) {
+        $candidate = trim($studentRow['display_name'] ?? '');
         if ($candidate !== '') { $student_name = $candidate; }
+        
+        if ($uploads_enabled) {
+            // Check if student is newly registered (after last distribution)
+            $last_distribution_query = "SELECT MAX(distribution_date) as last_date FROM distribution_snapshots";
+            $last_distribution_result = pg_query($connection, $last_distribution_query);
+            
+            if ($last_distribution_result && $last_distribution_row = pg_fetch_assoc($last_distribution_result)) {
+                $last_distribution_date = $last_distribution_row['last_date'];
+                
+                if ($last_distribution_date) {
+                    $registration_date = $studentRow['created_at'];
+                    // If registered after last distribution, they're "new" - don't show Upload tab
+                    if (strtotime($registration_date) <= strtotime($last_distribution_date)) {
+                        $needs_upload_tab = true; // Existing student - needs to re-upload
+                    }
+                    // else: New student - documents from registration, no upload tab
+                } else {
+                    // No previous distributions - all current students are "new"
+                    $needs_upload_tab = false;
+                }
+            }
+        }
     } elseif (!empty($_SESSION['student_username'])) {
         $student_name = $_SESSION['student_username'];
+        // For fallback case, check uploads enabled
+        $needs_upload_tab = $uploads_enabled;
     }
     
     // Fetch theme settings for sidebar colors if table exists
@@ -75,8 +115,10 @@ if (!function_exists('student_menu_link')) {
     <!-- Dashboard -->
     <?= student_menu_link('student_homepage.php', 'bi bi-house-door', 'Dashboard', is_active_student('student_homepage.php', $current)); ?>
 
-    <!-- Upload Documents -->
+    <!-- Upload Documents (only show if student needs to upload documents) -->
+    <?php if ($needs_upload_tab): ?>
     <?= student_menu_link('upload_document.php', 'bi bi-upload', 'Upload Documents', is_active_student('upload_document.php', $current)); ?>
+    <?php endif; ?>
 
     <!-- My QR Code -->
     <?= student_menu_link('qr_code.php', 'bi bi-qr-code-scan', 'My QR Code', is_active_student('qr_code.php', $current)); ?>
