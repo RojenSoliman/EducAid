@@ -309,6 +309,12 @@
     max-width: none !important;
 }
 
+/* Center single-item rows (e.g., when only EAF is on its own row) */
+.upload-form-section:only-child,
+.upload-form-section.single-row {
+    justify-items: center;
+}
+
 /* Upload Items - Optimized for grid */
 .upload-form-item {
     background: linear-gradient(135deg, #f8fbff 0%, #f0f8ff 100%) !important;

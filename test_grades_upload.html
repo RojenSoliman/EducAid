@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Grades Upload</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .test-form { border: 1px solid #ccc; padding: 20px; border-radius: 5px; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Test Academic Grades Upload</h1>
+    
+    <div class="test-form">
+        <h3>Upload Test Form</h3>
+        <form method="POST" action="modules/student/upload_document.php" enctype="multipart/form-data">
+            <p>
+                <label>Select Grades File:</label><br>
+                <input type="file" name="grades_file" accept=".pdf,.jpg,.jpeg,.png" required>
+            </p>
+            <p>
+                <button type="submit" name="upload_grades">Upload Grades</button>
+            </p>
+        </form>
+    </div>
+    
+    <h3>Instructions:</h3>
+    <ul>
+        <li>This form tests the grades upload functionality directly</li>
+        <li>Select a JPG, PNG, PDF, or other supported file</li>
+        <li>Click "Upload Grades" to test the upload</li>
+        <li>Note: You need to be logged in as a student for this to work</li>
+    </ul>
+    
+    <p><a href="modules/student/upload_document.php">← Back to Main Upload Page</a></p>
+</body>
+</html>
