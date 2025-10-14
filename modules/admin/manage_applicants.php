@@ -1314,6 +1314,12 @@ function updateTableData() {
 
 // Start real-time updates when page loads
 document.addEventListener('DOMContentLoaded', function() {
+    // Move all modals to be direct children of body to avoid stacking context issues
+    document.querySelectorAll('.modal').forEach(function(modalEl){
+        if (modalEl.parentElement !== document.body) {
+            document.body.appendChild(modalEl);
+        }
+    });
     setTimeout(updateTableData, 300);
     // Auto-open migration modal if preview/result exists
     <?php if (!empty($_SESSION['migration_preview']) || !empty($_SESSION['migration_result'])): ?>
@@ -1673,6 +1679,9 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <style>
+/* Ensure Bootstrap modal appears above any custom overlay/backdrop from the admin layout */
+.modal { z-index: 200000 !important; }
+.modal-backdrop { z-index: 199999 !important; }
 /* Document grid */
 .doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .doc-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; display: flex; flex-direction: column; }
@@ -1686,7 +1695,7 @@ document.addEventListener('DOMContentLoaded', function() {
 .doc-card-missing .missing-icon { font-size: 28px; margin-bottom: 6px; }
 
 /* Fullscreen viewer */
-.doc-viewer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; z-index: 1060; }
+.doc-viewer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; z-index: 1500; }
 .doc-viewer { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 95vw; max-width: 1280px; height: 85vh; background: #111; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
 .doc-viewer-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; padding: 8px 12px; background: #1f2937; color: #fff; }
 .doc-viewer-toolbar .btn { padding: 4px 8px; }

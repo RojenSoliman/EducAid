@@ -52,34 +52,55 @@ function isStudentListFinalized($connection) {
  * Check current distribution status
  */
 function getDistributionStatus($connection) {
-    $query = "SELECT value FROM config WHERE key = 'distribution_status'";
-    $result = pg_query($connection, $query);
-    $data = pg_fetch_assoc($result);
-    
-    // States: inactive, preparing, active, finalizing, finalized
-    return ($data && $data['value']) ? $data['value'] : 'inactive';
+    try {
+        $query = "SELECT value FROM config WHERE key = 'distribution_status'";
+        $result = pg_query($connection, $query);
+        
+        if (!$result) {
+            error_log("Failed to get distribution status: " . pg_last_error($connection));
+            return 'inactive';
+        }
+        
+        $data = pg_fetch_assoc($result);
+        // States: inactive, preparing, active, finalizing, finalized
+        return ($data && $data['value']) ? $data['value'] : 'inactive';
+    } catch (Exception $e) {
+        error_log("Exception in getDistributionStatus: " . $e->getMessage());
+        return 'inactive';
+    }
 }
 
 /**
  * Check if slots are open for registration
  */
 function areSlotsOpen($connection) {
-    $query = "SELECT value FROM config WHERE key = 'slots_open'";
+    // Check if there's an active signup slot
+    $query = "SELECT COUNT(*) as count FROM signup_slots WHERE is_active = TRUE";
     $result = pg_query($connection, $query);
     $data = pg_fetch_assoc($result);
     
-    return ($data && $data['value'] === '1');
+    return ($data && intval($data['count']) > 0);
 }
 
 /**
  * Check if document uploads are enabled
  */
 function areUploadsEnabled($connection) {
-    $query = "SELECT value FROM config WHERE key = 'uploads_enabled'";
-    $result = pg_query($connection, $query);
-    $data = pg_fetch_assoc($result);
-    
-    return ($data && $data['value'] === '1');
+    try {
+        $query = "SELECT value FROM config WHERE key = 'uploads_enabled'";
+        $result = pg_query($connection, $query);
+        
+        if (!$result) {
+            error_log("Failed to check uploads enabled: " . pg_last_error($connection));
+            return false;
+        }
+        
+        $data = pg_fetch_assoc($result);
+        return ($data && $data['value'] === '1');
+    } catch (Exception $e) {
+        error_log("Exception in areUploadsEnabled: " . $e->getMessage());
+        return false;
+    }
 }
 
 /**
@@ -98,8 +119,7 @@ function getWorkflowStatus($connection) {
         'distribution_status' => $distributionStatus,
         'slots_open' => areSlotsOpen($connection),
         'uploads_enabled' => areUploadsEnabled($connection),
-        'can_start_distribution' => $distributionStatus === 'inactive' || $distributionStatus === 'finalized',
-        'can_open_slots' => in_array($distributionStatus, ['preparing', 'active']),
+        'can_start_distribution' => $distributionStatus === 'inactive',
         'can_finalize_distribution' => $distributionStatus === 'active'
     ];
 }
@@ -108,15 +128,43 @@ function getWorkflowStatus($connection) {
  * Get student counts for workflow decisions
  */
 function getStudentCounts($connection) {
-    $query = "
-        SELECT 
-            COUNT(CASE WHEN status = 'active' THEN 1 END) as active_count,
-            COUNT(CASE WHEN status = 'active' AND payroll_no > 0 THEN 1 END) as with_payroll_count,
-            COUNT(CASE WHEN status = 'applicant' THEN 1 END) as applicant_count
-        FROM students
-    ";
-    
-    $result = pg_query($connection, $query);
-    return pg_fetch_assoc($result);
+    try {
+        $query = "
+            SELECT 
+                COUNT(*) as total_students,
+                COUNT(CASE WHEN status = 'active' THEN 1 END) as active_count,
+                COUNT(CASE WHEN status = 'active' AND payroll_no > 0 THEN 1 END) as with_payroll_count,
+                COUNT(CASE WHEN status = 'applicant' THEN 1 END) as applicant_count,
+                COUNT(CASE WHEN status = 'active' THEN 1 END) as verified_students,
+                COUNT(CASE WHEN status = 'applicant' THEN 1 END) as pending_verification
+            FROM students
+        ";
+        
+        $result = pg_query($connection, $query);
+        
+        if (!$result) {
+            error_log("Failed to get student counts: " . pg_last_error($connection));
+            return [
+                'total_students' => 0,
+                'active_count' => 0,
+                'with_payroll_count' => 0,
+                'applicant_count' => 0,
+                'verified_students' => 0,
+                'pending_verification' => 0
+            ];
+        }
+        
+        return pg_fetch_assoc($result);
+    } catch (Exception $e) {
+        error_log("Exception in getStudentCounts: " . $e->getMessage());
+        return [
+            'total_students' => 0,
+            'active_count' => 0,
+            'with_payroll_count' => 0,
+            'applicant_count' => 0,
+            'verified_students' => 0,
+            'pending_verification' => 0
+        ];
+    }
 }
 ?>
