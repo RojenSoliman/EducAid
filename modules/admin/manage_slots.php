@@ -154,11 +154,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         pg_query_params($connection, "UPDATE signup_slots SET is_active = FALSE WHERE is_active = TRUE AND municipality_id = $1", [$municipality_id]);
-        pg_query_params($connection, "INSERT INTO signup_slots (municipality_id, slot_count, is_active, semester, academic_year) VALUES ($1, $2, TRUE, $3, $4)", [$municipality_id, $newSlotCount, $semester, $academic_year]);
+        $insertResult = pg_query_params($connection, "INSERT INTO signup_slots (municipality_id, slot_count, is_active, semester, academic_year) VALUES ($1, $2, TRUE, $3, $4) RETURNING slot_id", [$municipality_id, $newSlotCount, $semester, $academic_year]);
+        
+        // Get the newly created slot ID
+        $newSlot = pg_fetch_assoc($insertResult);
+        $newSlotId = $newSlot['slot_id'];
 
         // Add admin notification for slot creation
         $notification_msg = "New slot configuration created: " . $newSlotCount . " slots for " . $semester . " " . $academic_year;
         pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        
+        // Log slot creation in audit trail
+        require_once __DIR__ . '/../../services/AuditLogger.php';
+        $auditLogger = new AuditLogger($connection);
+        $auditLogger->logSlotOpened(
+            $_SESSION['admin_id'],
+            $_SESSION['admin_username'],
+            $newSlotId,
+            [
+                'slot_count' => $newSlotCount,
+                'semester' => $semester,
+                'academic_year' => $academic_year,
+                'max_applicants' => $newSlotCount
+            ]
+        );
 
         header("Location: manage_slots.php?status=success");
         exit;
@@ -221,6 +240,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($currentSlotData) {
             $notification_msg = "Slot manually finished: " . $currentSlotData['slot_count'] . " slots for " . $currentSlotData['semester'] . " " . $currentSlotData['academic_year'];
             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+            
+            // Log slot closure in audit trail
+            require_once __DIR__ . '/../../services/AuditLogger.php';
+            $auditLogger = new AuditLogger($connection);
+            
+            // Get total applicants for this slot
+            $applicantCount = pg_query_params($connection, "SELECT COUNT(*) as total FROM students WHERE slot_id IN (SELECT slot_id FROM signup_slots WHERE semester = $1 AND academic_year = $2 AND municipality_id = $3)", [$currentSlotData['semester'], $currentSlotData['academic_year'], $municipality_id]);
+            $applicantData = pg_fetch_assoc($applicantCount);
+            
+            $auditLogger->logSlotClosed(
+                $_SESSION['admin_id'],
+                $_SESSION['admin_username'],
+                null, // slot_id (we don't have it from the select, but could add it)
+                [
+                    'slot_count' => $currentSlotData['slot_count'],
+                    'semester' => $currentSlotData['semester'],
+                    'academic_year' => $currentSlotData['academic_year'],
+                    'total_applicants' => $applicantData['total'] ?? 0
+                ]
+            );
         }
 
         header("Location: manage_slots.php?status=slot_finished");

@@ -1,6 +1,19 @@
 <?php
 session_start();
 
+// Log logout before destroying session
+if (isset($_SESSION['admin_id']) && isset($_SESSION['admin_username'])) {
+    require_once __DIR__ . '/../../config/database.php';
+    require_once __DIR__ . '/../../services/AuditLogger.php';
+    
+    $auditLogger = new AuditLogger($connection);
+    $auditLogger->logLogout(
+        $_SESSION['admin_id'],
+        'admin',
+        $_SESSION['admin_username']
+    );
+}
+
 // Clear all admin-specific session variables
 unset($_SESSION['admin_id']);
 unset($_SESSION['admin_username']);

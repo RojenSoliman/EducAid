@@ -233,6 +233,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_schedule'])) {
                         if ($total_students < $total_requested_capacity) {
                             $success_message .= " Note: Only {$actualStudentCount} students are available in the database (requested capacity: {$total_requested_capacity}).";
                         }
+                        
+                        // Log schedule creation in audit trail
+                        require_once __DIR__ . '/../../services/AuditLogger.php';
+                        $auditLogger = new AuditLogger($connection);
+                        $auditLogger->logScheduleCreated(
+                            $_SESSION['admin_id'],
+                            $_SESSION['admin_username'],
+                            [
+                                'start_date' => $start_date,
+                                'end_date' => $end_date,
+                                'location' => $location,
+                                'total_students' => $total_students,
+                                'batches' => count($batches)
+                            ]
+                        );
                 
                 } catch (Exception $e) {
                     pg_query($connection, "ROLLBACK");
@@ -260,6 +275,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) 
     // Add admin notification
     $notification_msg = "Distribution schedule published";
     pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+    
+    // Log schedule publication in audit trail
+    require_once __DIR__ . '/../../services/AuditLogger.php';
+    $auditLogger = new AuditLogger($connection);
+    $auditLogger->logSchedulePublished($_SESSION['admin_id'], $_SESSION['admin_username']);
     
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
@@ -298,6 +318,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_schedule_data']
     }
     
     // Delete all schedules from database
+    $countResult = pg_query($connection, "SELECT COUNT(*) as total FROM schedules");
+    $countRow = pg_fetch_assoc($countResult);
+    $totalDeleted = $countRow['total'] ?? 0;
+    
     pg_query($connection, "DELETE FROM schedules");
     
     // Reset published state and clear schedule metadata
@@ -310,6 +334,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_schedule_data']
     // Add admin notification
     $notification_msg = "All schedule data permanently deleted";
     pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+    
+    // Log schedule clearing in audit trail
+    require_once __DIR__ . '/../../services/AuditLogger.php';
+    $auditLogger = new AuditLogger($connection);
+    $auditLogger->logScheduleCleared($_SESSION['admin_id'], $_SESSION['admin_username'], $totalDeleted);
     
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
