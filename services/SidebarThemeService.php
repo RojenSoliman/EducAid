@@ -157,6 +157,20 @@ class SidebarThemeService {
      */
     private function logActivity($action, $details) {
         if (!isset($_SESSION['admin_id'])) return;
+        static $activityTableChecked = null;
+
+        if ($activityTableChecked === null) {
+            $check = pg_query_params(
+                $this->connection,
+                "SELECT to_regclass($1)",
+                ['public.admin_activity_log']
+            );
+            $activityTableChecked = $check ? (bool) pg_fetch_result($check, 0, 0) : false;
+        }
+
+        if (!$activityTableChecked) {
+            return;
+        }
         
         $logQuery = "INSERT INTO admin_activity_log (admin_id, action, details, ip_address) VALUES ($1, $2, $3, $4)";
         $logDetails = json_encode($details);

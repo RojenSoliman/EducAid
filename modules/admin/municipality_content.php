@@ -462,8 +462,7 @@ include '../../includes/admin/admin_head.php';
                                     <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editColorsModal">
                                         <i class="bi bi-palette me-1"></i>Edit Colors
                                     </button>
-                                    <button type="button" class="btn btn-success btn-sm" id="generateThemeBtn" 
-                                            data-municipality-id="<?= $activeMunicipality['municipality_id'] ?? '' ?>">
+                                    <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#generateThemeModal">
                                         <i class="bi bi-magic me-1"></i>Generate Theme
                                     </button>
                                 </div>
@@ -888,6 +887,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         <input type="hidden" id="colorCsrfToken" value="<?= htmlspecialchars(CSRFProtection::generateToken('municipality-colors')) ?>">
         <input type="hidden" id="colorMunicipalityId" value="<?= $activeMunicipality['municipality_id'] ?? '' ?>">
+        <input type="hidden" id="generateThemeCsrfToken" value="<?= htmlspecialchars(CSRFProtection::generateToken('generate-theme')) ?>">
         
         <div class="mb-4">
           <label for="primaryColorInput" class="form-label fw-bold">
@@ -1152,76 +1152,43 @@ document.getElementById('saveColorsBtn')?.addEventListener('click', async functi
 });
 </script>
 
-<!-- Theme Preview Modal -->
-<div class="modal fade" id="themePreviewModal" tabindex="-1" aria-labelledby="themePreviewModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+<!-- Generate Theme Confirmation Modal -->
+<div class="modal fade" id="generateThemeModal" tabindex="-1" aria-labelledby="generateThemeModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="themePreviewModalLabel">
-          <i class="bi bi-magic me-2"></i>Theme Preview
+      <div class="modal-header bg-warning bg-opacity-10">
+        <h5 class="modal-title" id="generateThemeModalLabel">
+          <i class="bi bi-exclamation-triangle text-warning me-2"></i>Generate Theme Automatically
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <div id="themePreviewLoading" class="text-center py-5">
-          <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading...</span>
-          </div>
-          <p class="mt-3 text-muted">Generating theme preview...</p>
+        <div class="alert alert-info mb-3">
+          <i class="bi bi-info-circle me-2"></i>
+          <strong>What this does:</strong> This will automatically generate all sidebar and topbar colors based on your Primary and Secondary colors.
         </div>
         
-        <div id="themePreviewContent" style="display: none;">
-          <!-- Validation Info -->
-          <div id="themeValidationInfo" class="alert alert-info mb-4">
-            <h6 class="fw-bold mb-2">
-              <i class="bi bi-info-circle me-2"></i>Theme Validation
-            </h6>
-            <div id="validationDetails"></div>
-          </div>
-          
-          <!-- Color Palette Display -->
-          <div class="card mb-4">
-            <div class="card-header bg-light">
-              <h6 class="mb-0"><i class="bi bi-palette me-2"></i>Generated Color Palette</h6>
-            </div>
-            <div class="card-body">
-              <div class="row g-3" id="colorPaletteGrid"></div>
-            </div>
-          </div>
-          
-          <!-- Sidebar Preview -->
-          <div class="card mb-4">
-            <div class="card-header bg-light">
-              <h6 class="mb-0"><i class="bi bi-layout-sidebar me-2"></i>Sidebar Theme Preview</h6>
-            </div>
-            <div class="card-body">
-              <div id="sidebarPreview" class="border rounded p-3" style="max-width: 300px;">
-                <!-- Sidebar preview will be generated here -->
-              </div>
-            </div>
-          </div>
-          
-          <!-- Topbar Preview -->
-          <div class="card mb-4">
-            <div class="card-header bg-light">
-              <h6 class="mb-0"><i class="bi bi-layout-text-window me-2"></i>Topbar Theme Preview</h6>
-            </div>
-            <div class="card-body">
-              <div id="topbarPreview" class="border rounded p-3">
-                <!-- Topbar preview will be generated here -->
-              </div>
-            </div>
-          </div>
-        </div>
+        <p class="mb-3"><strong>⚠️ Important:</strong> This will:</p>
+        <ul class="mb-3">
+          <li>Generate 19+ colors from your Primary Color (<code><?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?></code>) and Secondary Color (<code><?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?></code>)</li>
+          <li>Apply these colors to the <strong>Sidebar Theme</strong> (all pages)</li>
+          <li>Apply these colors to the <strong>Topbar Theme</strong> (all pages)</li>
+          <li>Override any existing theme colors you've set</li>
+          <li>Follow WCAG accessibility standards for contrast</li>
+        </ul>
         
-        <div id="themePreviewError" style="display: none;" class="alert alert-danger"></div>
+        <div class="alert alert-warning mb-0">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          <strong>This action cannot be undone.</strong> Make sure your Primary and Secondary colors are correct before proceeding.
+        </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
           <i class="bi bi-x-circle me-1"></i>Cancel
         </button>
-        <button type="button" class="btn btn-success" id="applyThemeBtn" style="display: none;">
-          <i class="bi bi-check-circle me-1"></i>Apply Theme
+        <button type="button" class="btn btn-success" id="confirmGenerateThemeBtn" 
+                data-municipality-id="<?= $activeMunicipality['municipality_id'] ?? '' ?>">
+          <i class="bi bi-magic me-1"></i>Generate Theme
         </button>
       </div>
     </div>
@@ -1229,182 +1196,84 @@ document.getElementById('saveColorsBtn')?.addEventListener('click', async functi
 </div>
 
 <script>
-// Generate Theme Button Click Handler
-document.getElementById('generateThemeBtn')?.addEventListener('click', async function() {
+// Confirm Generate Theme Button Click Handler
+document.getElementById('confirmGenerateThemeBtn')?.addEventListener('click', async function() {
     const btn = this;
     const municipalityId = btn.dataset.municipalityId;
     const originalHTML = btn.innerHTML;
+    
+    // Prevent multiple clicks
+    if (btn.disabled) {
+        return;
+    }
+    
+    if (!municipalityId) {
+        alert('Municipality ID not found. Please refresh the page and try again.');
+        return;
+    }
     
     // Disable button and show loading
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating...';
     
     try {
-        // Open modal
-        const modal = new bootstrap.Modal(document.getElementById('themePreviewModal'));
-        modal.show();
+        const csrfToken = document.getElementById('generateThemeCsrfToken')?.value;
+        if (!csrfToken) {
+            throw new Error('Security token not found. Please refresh the page.');
+        }
         
-        // Show loading state
-        document.getElementById('themePreviewLoading').style.display = 'block';
-        document.getElementById('themePreviewContent').style.display = 'none';
-        document.getElementById('themePreviewError').style.display = 'none';
-        
-        // Generate preview
         const formData = new FormData();
-        formData.append('csrf_token', '<?= htmlspecialchars(CSRFProtection::generateToken('generate-theme-preview')) ?>');
+        formData.append('csrf_token', csrfToken);
         formData.append('municipality_id', municipalityId);
         
-        const response = await fetch('generate_theme_preview.php', {
+        const response = await fetch('generate_and_apply_theme.php', {
             method: 'POST',
             body: formData
         });
         
-        const result = await response.json();
+        // Try to get the response as text first to see what we received
+        const responseText = await response.text();
+        
+        if (!response.ok) {
+            console.error('Server response:', responseText);
+            
+            // Try to parse as JSON for error message
+            try {
+                const errorData = JSON.parse(responseText);
+                throw new Error(errorData.message || `Server error: ${response.status}`);
+            } catch (parseError) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+        }
+        
+        // Parse successful response
+        const result = JSON.parse(responseText);
         
         if (result.success) {
-            // Display preview
-            displayThemePreview(result.data);
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('generateThemeModal'));
+            if (modal) {
+                modal.hide();
+            }
             
-            // Show content and apply button
-            document.getElementById('themePreviewLoading').style.display = 'none';
-            document.getElementById('themePreviewContent').style.display = 'block';
-            document.getElementById('applyThemeBtn').style.display = 'block';
-            document.getElementById('applyThemeBtn').dataset.municipalityId = municipalityId;
+            // Show success message
+            alert('✅ Theme generated successfully!\n\n' +
+                  `• ${result.data.colors_applied || 19} colors applied\n` +
+                  '• Sidebar theme updated\n' +
+                  '• Topbar theme updated\n\n' +
+                  'Refresh the page to see changes.');
+            
+            // Reload page after 1 second
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
         } else {
-            throw new Error(result.message || 'Failed to generate theme preview');
+            throw new Error(result.message || 'Failed to generate theme');
         }
         
     } catch (error) {
         console.error('Error generating theme:', error);
-        document.getElementById('themePreviewLoading').style.display = 'none';
-        document.getElementById('themePreviewError').style.display = 'block';
-        document.getElementById('themePreviewError').textContent = error.message;
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalHTML;
-    }
-});
-
-// Display theme preview function
-function displayThemePreview(data) {
-    // Display validation info
-    if (data.validation) {
-        const validationHTML = `
-            <div class="row g-2">
-                <div class="col-md-6">
-                    <strong>Primary Color Contrast:</strong> ${data.validation.primary_contrast_ratio?.toFixed(2) || 'N/A'}:1
-                    ${data.validation.primary_contrast_pass ? '<span class="badge bg-success ms-2">✓ WCAG AA</span>' : '<span class="badge bg-danger ms-2">✗ Fail</span>'}
-                </div>
-                <div class="col-md-6">
-                    <strong>Secondary Color Contrast:</strong> ${data.validation.secondary_contrast_ratio?.toFixed(2) || 'N/A'}:1
-                    ${data.validation.secondary_contrast_pass ? '<span class="badge bg-success ms-2">✓ WCAG AA</span>' : '<span class="badge bg-danger ms-2">✗ Fail</span>'}
-                </div>
-            </div>
-        `;
-        document.getElementById('validationDetails').innerHTML = validationHTML;
-    }
-    
-    // Display color palette
-    if (data.palette) {
-        const paletteHTML = Object.entries(data.palette)
-            .filter(([key]) => !key.startsWith('_'))
-            .slice(0, 12) // Show first 12 colors
-            .map(([name, color]) => `
-                <div class="col-md-3 col-sm-4 col-6">
-                    <div class="d-flex align-items-center gap-2">
-                        <div style="width: 40px; height: 40px; background: ${color}; border: 1px solid #dee2e6; border-radius: 4px;"></div>
-                        <div class="small">
-                            <div class="text-muted" style="font-size: 0.75rem;">${name.replace(/_/g, ' ')}</div>
-                            <div class="font-monospace fw-bold" style="font-size: 0.85rem;">${color}</div>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        document.getElementById('colorPaletteGrid').innerHTML = paletteHTML;
-    }
-    
-    // Display sidebar preview
-    if (data.sidebar_colors) {
-        const sidebarHTML = `
-            <div style="background: linear-gradient(180deg, ${data.sidebar_colors.sidebar_bg_start}, ${data.sidebar_colors.sidebar_bg_end}); padding: 1rem; border-radius: 8px; border: 1px solid ${data.sidebar_colors.sidebar_border_color};">
-                <div style="padding-bottom: 0.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid ${data.sidebar_colors.profile_border_color};">
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <div style="width: 35px; height: 35px; border-radius: 50%; background: linear-gradient(135deg, ${data.sidebar_colors.profile_avatar_bg_start}, ${data.sidebar_colors.profile_avatar_bg_end}); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600;">A</div>
-                        <div>
-                            <div style="font-size: 0.9rem; font-weight: 600; color: ${data.sidebar_colors.profile_name_color};">Admin User</div>
-                            <div style="font-size: 0.75rem; color: ${data.sidebar_colors.profile_role_color};">Super Admin</div>
-                        </div>
-                    </div>
-                </div>
-                <div style="padding: 0.5rem; margin: 0.25rem 0; border-radius: 6px; color: ${data.sidebar_colors.nav_text_color}; display: flex; align-items: center; gap: 0.5rem;">
-                    <i class="bi bi-house-door" style="color: ${data.sidebar_colors.nav_icon_color};"></i>
-                    <span>Dashboard</span>
-                </div>
-                <div style="padding: 0.5rem; margin: 0.25rem 0; border-radius: 6px; background: ${data.sidebar_colors.nav_hover_bg}; color: ${data.sidebar_colors.nav_hover_text}; display: flex; align-items: center; gap: 0.5rem;">
-                    <i class="bi bi-file-text" style="color: ${data.sidebar_colors.nav_icon_color};"></i>
-                    <span>Documents (Hover)</span>
-                </div>
-                <div style="padding: 0.5rem; margin: 0.25rem 0; border-radius: 6px; background: ${data.sidebar_colors.nav_active_bg}; color: ${data.sidebar_colors.nav_active_text}; display: flex; align-items: center; gap: 0.5rem;">
-                    <i class="bi bi-gear"></i>
-                    <span>Settings (Active)</span>
-                </div>
-            </div>
-        `;
-        document.getElementById('sidebarPreview').innerHTML = sidebarHTML;
-    }
-    
-    // Display topbar preview
-    if (data.topbar_colors) {
-        document.getElementById('topbarPreview').innerHTML = '<p class="text-muted mb-0">Topbar preview will be added once topbar colors are generated.</p>';
-    }
-}
-
-// Apply Theme Button Click Handler
-document.getElementById('applyThemeBtn')?.addEventListener('click', async function() {
-    const btn = this;
-    const municipalityId = btn.dataset.municipalityId;
-    const originalHTML = btn.innerHTML;
-    
-    if (!confirm('Apply this theme to sidebar and topbar? This will update all theme colors.')) {
-        return;
-    }
-    
-    // Disable button and show loading
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Applying...';
-    
-    try {
-        const formData = new FormData();
-        formData.append('csrf_token', '<?= htmlspecialchars(CSRFProtection::generateToken('apply-generated-theme')) ?>');
-        formData.append('municipality_id', municipalityId);
-        
-        const response = await fetch('apply_generated_theme.php', {
-            method: 'POST',
-            body: formData
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            // Show success message
-            alert('✅ Theme applied successfully!\n\n' +
-                  '- Sidebar colors updated\n' +
-                  '- Topbar colors updated\n\n' +
-                  'Refresh the page to see changes.');
-            
-            // Close modal
-            const modal = bootstrap.Modal.getInstance(document.getElementById('themePreviewModal'));
-            if (modal) {
-                modal.hide();
-            }
-        } else {
-            throw new Error(result.message || 'Failed to apply theme');
-        }
-        
-    } catch (error) {
-        console.error('Error applying theme:', error);
-        alert('❌ Failed to apply theme: ' + error.message);
-    } finally {
+        alert('❌ Failed to generate theme: ' + error.message);
         btn.disabled = false;
         btn.innerHTML = originalHTML;
     }

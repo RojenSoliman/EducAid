@@ -194,8 +194,9 @@ class ThemeGeneratorService {
      * @return array Topbar theme settings
      */
     public function generateTopbarTheme(array $palette): array {
-        // Note: Adjust these fields based on actual topbar_theme_settings table structure
+        // Include keys that support both legacy topbar_theme_settings table and newer theme_settings table
         return [
+            // Legacy topbar_theme_settings fields
             'topbar_bg' => $palette['primary_base'],
             'topbar_text' => $palette['text_on_primary'],
             'topbar_border' => $palette['primary_dark_10'],
@@ -205,7 +206,13 @@ class ThemeGeneratorService {
             'search_bg' => $palette['primary_dark_05'],
             'search_text' => $palette['text_on_primary'],
             'notification_badge_bg' => $palette['secondary_base'],
-            'notification_badge_text' => $palette['text_on_secondary']
+            'notification_badge_text' => $palette['text_on_secondary'],
+            
+            // Newer theme_settings fields
+            'topbar_bg_color' => $palette['primary_base'],
+            'topbar_bg_gradient' => $palette['primary_dark_05'],
+            'topbar_text_color' => $palette['text_on_primary'],
+            'topbar_link_color_main' => $palette['primary_light_20']
         ];
     }
     
@@ -228,50 +235,135 @@ class ThemeGeneratorService {
      * @return bool Success status
      */
     public function applyTopbarTheme(int $municipalityId, array $topbarSettings): bool {
-        // Check if topbar settings table exists
-        $tableCheck = pg_query($this->connection, 
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'topbar_theme_settings')"
-        );
-        
-        if (!$tableCheck || !pg_fetch_result($tableCheck, 0, 0)) {
-            // Table doesn't exist, skip
+        // Determine which topbar-related table exists (theme_settings or legacy topbar_theme_settings)
+        $tableCandidates = [
+            ['public.theme_settings', 'theme_settings'],
+            ['public.topbar_theme_settings', 'topbar_theme_settings']
+        ];
+
+        $targetTable = null;
+        $tableIdentifier = null;
+
+        foreach ($tableCandidates as [$regclass, $identifier]) {
+            $tableCheck = pg_query_params(
+                $this->connection,
+                "SELECT to_regclass($1)",
+                [$regclass]
+            );
+
+            if ($tableCheck) {
+                $resolved = pg_fetch_result($tableCheck, 0, 0);
+                if ($resolved) {
+                    $targetTable = $resolved;
+                    $tableIdentifier = $identifier;
+                    break;
+                }
+            }
+        }
+
+        if (!$targetTable || !$tableIdentifier) {
+            // No topbar-related table available, treat as success so sidebar changes still apply
             return true;
         }
-        
-        // Check if record exists
-        $existsQuery = "SELECT id FROM topbar_theme_settings WHERE municipality_id = $1";
+
+        // Split schema and table for metadata lookups
+        $schema = 'public';
+        $tableNameOnly = $targetTable;
+        if (strpos($targetTable, '.') !== false) {
+            [$schema, $tableNameOnly] = explode('.', $targetTable, 2);
+        }
+
+        if ($tableIdentifier === 'theme_settings') {
+            // Map generated colors to theme_settings columns
+            $columnMappings = [
+                'topbar_bg_color' => $topbarSettings['topbar_bg_color'] ?? ($topbarSettings['topbar_bg'] ?? null),
+                'topbar_bg_gradient' => $topbarSettings['topbar_bg_gradient'] ?? ($topbarSettings['topbar_border'] ?? null),
+                'topbar_text_color' => $topbarSettings['topbar_text_color'] ?? ($topbarSettings['topbar_text'] ?? null),
+                'topbar_link_color' => $topbarSettings['topbar_link_color_main'] ?? ($topbarSettings['topbar_link_color'] ?? null)
+            ];
+
+            // Keep only columns that actually exist on the table
+            $columnsResult = pg_query_params(
+                $this->connection,
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2",
+                [$schema, $tableNameOnly]
+            );
+
+            $availableColumns = [];
+            if ($columnsResult) {
+                while ($row = pg_fetch_assoc($columnsResult)) {
+                    $availableColumns[] = $row['column_name'];
+                }
+            }
+
+            $updateData = [];
+            foreach ($columnMappings as $column => $value) {
+                if (in_array($column, $availableColumns, true) && $value !== null && $value !== '') {
+                    $updateData[$column] = $value;
+                }
+            }
+
+            if (empty($updateData)) {
+                return true;
+            }
+
+            $existsQuery = "SELECT municipality_id FROM {$targetTable} WHERE municipality_id = $1";
+            $existsResult = pg_query_params($this->connection, $existsQuery, [$municipalityId]);
+
+            if (!$existsResult || pg_num_rows($existsResult) === 0) {
+                // Row does not exist; avoid inserting partial data
+                return true;
+            }
+
+            $values = [];
+            $setClauses = [];
+
+            foreach ($updateData as $column => $value) {
+                $values[] = $value;
+                $setClauses[] = "$column = $" . count($values);
+            }
+
+            $values[] = $municipalityId;
+            $updateQuery = "UPDATE {$targetTable} SET " . implode(', ', $setClauses) . " WHERE municipality_id = $" . count($values);
+
+            $result = pg_query_params($this->connection, $updateQuery, $values);
+            return $result !== false;
+        }
+
+        // Legacy topbar_theme_settings handling
+        $existsQuery = "SELECT id FROM {$targetTable} WHERE municipality_id = $1";
         $existsResult = pg_query_params($this->connection, $existsQuery, [$municipalityId]);
-        
+
+        if (!$existsResult) {
+            return false;
+        }
+
         if (pg_num_rows($existsResult) > 0) {
-            // Update existing
             $updateFields = [];
             $values = [];
-            $paramIndex = 1;
-            
+
             foreach ($topbarSettings as $field => $value) {
-                $updateFields[] = "$field = \$$paramIndex";
                 $values[] = $value;
-                $paramIndex++;
+                $updateFields[] = "$field = $" . count($values);
             }
-            
+
             $values[] = $municipalityId;
-            $updateQuery = "UPDATE topbar_theme_settings SET " . implode(', ', $updateFields) . " WHERE municipality_id = \$$paramIndex";
+            $updateQuery = "UPDATE {$targetTable} SET " . implode(', ', $updateFields) . " WHERE municipality_id = $" . count($values);
             $result = pg_query_params($this->connection, $updateQuery, $values);
         } else {
-            // Insert new
             $topbarSettings['municipality_id'] = $municipalityId;
             $fields = array_keys($topbarSettings);
             $values = array_values($topbarSettings);
             $placeholders = [];
-            
+
             for ($i = 1; $i <= count($values); $i++) {
-                $placeholders[] = "\$$i";
+                $placeholders[] = "$" . $i;
             }
-            
-            $insertQuery = "INSERT INTO topbar_theme_settings (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
+
+            $insertQuery = "INSERT INTO {$targetTable} (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
             $result = pg_query_params($this->connection, $insertQuery, $values);
         }
-        
+
         return $result !== false;
     }
     
