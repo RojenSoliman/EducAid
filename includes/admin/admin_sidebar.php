@@ -77,18 +77,23 @@ if (!function_exists('menu_link')) {
   }
 }
 
-/** Submenu membership for “System Controls” (super_admin) */
-$sysControlsFiles = [
+/** Submenu membership for "Distribution Management" (super_admin) */
+$distributionFiles = [
     'distribution_control.php',
     'manage_slots.php',
     'verify_students.php',
     'manage_schedules.php',
     'scan_qr.php',
     'manage_distributions.php',
+];
+$isDistributionActive = in_array($current, $distributionFiles, true);
+
+/** Submenu membership for "System Controls" (super_admin) */
+$sysControlsFiles = [
     'blacklist_archive.php',
     'document_archives.php',
     'admin_management.php',
-  'municipality_content.php',
+    'municipality_content.php',
     'system_data.php',
     'settings.php',
     'topbar_settings.php',
@@ -128,20 +133,19 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
     <!-- My Profile -->
     <?= menu_link('admin_profile.php', 'bi bi-person-circle', 'My Profile', is_active('admin_profile.php', $current)); ?>
 
-    <!-- System Controls (super_admin only) -->
+    <!-- Distribution Management (super_admin only) -->
     <?php if ($admin_role === 'super_admin'): ?>
-  <li class="nav-item dropdown">
-        <a href="#submenu-sys" data-bs-toggle="collapse" class="dropdown-toggle">
-          <i class="bi bi-gear-wide-connected icon"></i>
-          <span class="links_name">System Controls</span>
+      <li class="nav-item dropdown">
+        <a href="#submenu-distribution" data-bs-toggle="collapse" class="dropdown-toggle">
+          <i class="bi bi-box-seam icon"></i>
+          <span class="links_name">Distribution</span>
           <i class="bi bi-chevron-down ms-auto small"></i>
         </a>
 
-  <ul class="collapse list-unstyled ms-3 <?= $isSysControlsActive ? 'show' : '' ?>" id="submenu-sys">
+        <ul class="collapse list-unstyled ms-3 <?= $isDistributionActive ? 'show' : '' ?>" id="submenu-distribution">
           <li>
             <a class="submenu-link <?= is_active('distribution_control.php', $current) ? 'active' : '' ?>" href="distribution_control.php">
               <i class="bi bi-gear-fill me-2"></i> Distribution Control
-              <span class="badge bg-primary ms-2">New</span>
             </a>
           </li>
           <li>
@@ -184,9 +188,23 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
           </li>
           <li>
             <a class="submenu-link <?= is_active('manage_distributions.php', $current) ? 'active' : '' ?>" href="manage_distributions.php">
-              <i class="bi bi-box-seam me-2"></i> Manage Distributions
+              <i class="bi bi-box-arrow-in-down me-2"></i> Manage Distributions
             </a>
           </li>
+        </ul>
+      </li>
+    <?php endif; ?>
+
+    <!-- System Controls (super_admin only) -->
+    <?php if ($admin_role === 'super_admin'): ?>
+  <li class="nav-item dropdown">
+        <a href="#submenu-sys" data-bs-toggle="collapse" class="dropdown-toggle">
+          <i class="bi bi-gear-wide-connected icon"></i>
+          <span class="links_name">System Controls</span>
+          <i class="bi bi-chevron-down ms-auto small"></i>
+        </a>
+
+  <ul class="collapse list-unstyled ms-3 <?= $isSysControlsActive ? 'show' : '' ?>" id="submenu-sys">
           <li>
             <a class="submenu-link <?= is_active('blacklist_archive.php', $current) ? 'active' : '' ?>" href="blacklist_archive.php">
               <i class="bi bi-person-x-fill me-2"></i> Blacklist Archive
@@ -380,10 +398,17 @@ function adjustColorOpacity($color, $opacity = 0.3) {
     .admin-sidebar .dropdown > a { margin: 4px 8px; }
     .admin-sidebar .nav-item.logout a.logout-link { margin: 6px 8px 8px; }
 }
-/* Collapse behavior for system controls submenu when sidebar collapsed */
-.admin-sidebar.close #submenu-sys { display: none !important; }
-.admin-sidebar.close .dropdown > a { background: transparent; }
-.admin-sidebar.close .dropdown > a .bi-chevron-down { display: none; }
+/* Collapse behavior for submenus when sidebar collapsed */
+.admin-sidebar.close #submenu-sys,
+.admin-sidebar.close #submenu-distribution { 
+    display: none !important; 
+}
+.admin-sidebar.close .dropdown > a { 
+    background: transparent; 
+}
+.admin-sidebar.close .dropdown > a .bi-chevron-down { 
+    display: none; 
+}
 /* Profile block */
 .admin-sidebar .sidebar-profile {
     display: flex;
@@ -433,26 +458,38 @@ function adjustColorOpacity($color, $opacity = 0.3) {
 </style>
 
 <script>
-// Auto-hide System Controls submenu when sidebar collapses; restore if active when expanded
+// Auto-hide dropdowns when sidebar collapses; restore if active when expanded
 document.addEventListener('DOMContentLoaded', function(){
   const sidebar = document.getElementById('sidebar');
   const sysMenu = document.getElementById('submenu-sys');
-  if(!sidebar || !sysMenu) return;
-  const parentLi = sysMenu.parentElement;
-  function hasActiveChild(){
-    return !!sysMenu.querySelector('.submenu-link.active');
+  const distMenu = document.getElementById('submenu-distribution');
+  if(!sidebar) return;
+  
+  function hasActiveChild(menu){
+    if(!menu) return false;
+    return !!menu.querySelector('.submenu-link.active');
   }
-  function syncSysMenu(){
+  
+  function syncMenus(){
     if(sidebar.classList.contains('close')){
-      sysMenu.classList.remove('show');
-    } else if(hasActiveChild()) {
-      if(!sysMenu.classList.contains('show')) sysMenu.classList.add('show');
+      // Hide all submenus when collapsed
+      if(sysMenu) sysMenu.classList.remove('show');
+      if(distMenu) distMenu.classList.remove('show');
+    } else {
+      // Show submenus with active children when expanded
+      if(sysMenu && hasActiveChild(sysMenu) && !sysMenu.classList.contains('show')) {
+        sysMenu.classList.add('show');
+      }
+      if(distMenu && hasActiveChild(distMenu) && !distMenu.classList.contains('show')) {
+        distMenu.classList.add('show');
+      }
     }
   }
+  
   // Observe class changes (JS animation toggles .close)
-  const observer = new MutationObserver(syncSysMenu);
+  const observer = new MutationObserver(syncMenus);
   observer.observe(sidebar,{attributes:true, attributeFilter:['class']});
-  syncSysMenu();
+  syncMenus();
 });
 </script>
 
