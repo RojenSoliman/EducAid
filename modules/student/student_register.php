@@ -5,6 +5,51 @@ include_once '../../config/database.php';
 include_once __DIR__ . '/../../config/recaptcha_config.php';
 session_start();
 
+$municipality_id = $_SESSION['active_municipality_id'] ?? 1;
+$municipality_logo = null;
+$municipality_name = 'General Trias';
+
+if (isset($connection)) {
+    $muni_result = pg_query_params(
+        $connection,
+        "SELECT municipality_id, name, COALESCE(custom_logo_image, preset_logo_image) AS active_logo
+         FROM municipalities
+         WHERE municipality_id = $1
+         LIMIT 1",
+        [$municipality_id]
+    );
+
+    if ($muni_result && pg_num_rows($muni_result) > 0) {
+        $muni_data = pg_fetch_assoc($muni_result);
+        $municipality_id = (int)$muni_data['municipality_id'];
+        $municipality_name = $muni_data['name'] ?: $municipality_name;
+        if (!empty($muni_data['active_logo'])) {
+            $raw_logo = trim($muni_data['active_logo']);
+            if (
+                preg_match('#^data:image/[^;]+;base64,#i', $raw_logo) ||
+                preg_match('#^(?:https?:)?//#i', $raw_logo)
+            ) {
+                $municipality_logo = $raw_logo;
+            } else {
+                $normalized = str_replace('\\', '/', $raw_logo);
+                $normalized = preg_replace('#(?<!:)/{2,}#', '/', $normalized);
+
+                if (strpos($normalized, '../') === 0) {
+                    $municipality_logo = $normalized;
+                } else {
+                    $segments = array_map('rawurlencode', explode('/', ltrim($normalized, '/')));
+                    $municipality_logo = '../../' . implode('/', $segments);
+                }
+            }
+        }
+        pg_free_result($muni_result);
+    } elseif ($muni_result) {
+        pg_free_result($muni_result);
+    }
+}
+
+$_SESSION['active_municipality_id'] = $municipality_id;
+
 // Debug: Test if POST requests work at all
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['debug_test'])) {
     while (ob_get_level() > 0) {
@@ -515,8 +560,6 @@ use PHPMailer\PHPMailer\Exception;
 
 require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 
-$municipality_id = 1;
-
 // Check if this is an AJAX request (OCR, OTP processing, cleanup, or duplicate check)
 $isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) ||
                  isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) ||
@@ -539,6 +582,69 @@ if (!$isAjaxRequest) {
     <link href="../../assets/css/website/landing_page.css" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/registration.css" />
     <style>
+        :root {
+            --thm-primary: #0051f8;
+            --thm-green: #18a54a;
+        }
+
+        body.registration-page {
+            padding-top: var(--navbar-height);
+            overflow-x: hidden;
+            font-family: "Manrope", sans-serif;
+        }
+
+        body.registration-page nav.navbar.fixed-header {
+            isolation: isolate;
+            contain: layout style;
+        }
+
+        body.registration-page .navbar .btn-outline-primary {
+            border: 2px solid var(--thm-primary) !important;
+            color: var(--thm-primary) !important;
+            background: #fff !important;
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: all 0.2s ease;
+        }
+
+        body.registration-page .navbar .btn-outline-primary:hover {
+            background: var(--thm-primary) !important;
+            color: #fff !important;
+            border-color: var(--thm-primary) !important;
+            transform: translateY(-1px);
+        }
+
+        body.registration-page .navbar .btn-primary {
+            background: var(--thm-primary) !important;
+            color: #fff !important;
+            border: 2px solid var(--thm-primary) !important;
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: all 0.2s ease;
+        }
+
+        body.registration-page .navbar .btn-primary:hover {
+            background: var(--thm-green) !important;
+            border-color: var(--thm-green) !important;
+            color: #fff !important;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(24, 165, 74, 0.3);
+        }
+
+        body.registration-page .navbar {
+            font-family: "Manrope", sans-serif;
+        }
+
+        body.registration-page .navbar-brand {
+            font-weight: 700;
+        }
+
+        body.registration-page .nav-link {
+            font-weight: 500;
+        }
+
         .step-panel.d-none { display: none !important; }
         .step-indicator { display: flex; justify-content: center; margin-bottom: 20px; }
         .step {
@@ -598,41 +704,17 @@ if (!$isAjaxRequest) {
             });
         </script>
 </head>
-<body class="registration-page">
-    <!-- Top Info Bar -->
-    <div class="topbar py-2 d-none d-md-block">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-6">
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi bi-telephone"></i>
-                            <span>(046) 509-5555</span>
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi bi-envelope"></i>
-                            <span>educaid@generaltrias.gov.ph</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6 text-end">
-                    <div class="d-flex align-items-center justify-content-end gap-3">
-                        <span>🏛️ Official City Portal</span>
-                        <div class="d-flex gap-2">
-                            <a href="#" class="text-white"><i class="bi bi-facebook"></i></a>
-                            <a href="#" class="text-white"><i class="bi bi-twitter"></i></a>
-                            <a href="#" class="text-white"><i class="bi bi-instagram"></i></a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+<body class="registration-page has-header-offset">
+    <?php include '../../includes/website/topbar.php'; ?>
 
     <?php 
-    // Configure navbar for registration page
     $custom_brand_config = [
-        'href' => '../../website/landingpage.php'
+        'href' => '../../website/landingpage.php',
+        'name' => 'EducAid • ' . $municipality_name,
+        'hide_educaid_logo' => true,
+        'show_municipality' => true,
+        'municipality_logo' => $municipality_logo,
+        'municipality_name' => $municipality_name
     ];
     $custom_nav_links = [
         ['href' => '../../website/landingpage.php', 'label' => '<i class="bi bi-house me-1"></i>Back to Home', 'active' => false]
