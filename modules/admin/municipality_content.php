@@ -924,14 +924,17 @@ document.addEventListener('DOMContentLoaded', function() {
               class="form-control form-control-color" 
               id="secondaryColorInput" 
               value="<?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>"
-              style="width: 80px; height: 50px;">
+              style="width: 80px; height: 50px;"
+              title="Click to open color picker">
             <input 
               type="text" 
               class="form-control font-monospace" 
               id="secondaryColorText" 
               value="<?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>"
-              readonly
-              style="max-width: 120px;">
+              placeholder="#1b5e20"
+              maxlength="7"
+              style="max-width: 120px;"
+              title="Type or paste hex color (e.g., #1b5e20)">
             <div 
               id="secondaryColorPreview" 
               class="border rounded" 
@@ -966,6 +969,92 @@ document.getElementById('secondaryColorInput')?.addEventListener('input', functi
     document.getElementById('secondaryColorText').value = color;
     document.getElementById('secondaryColorPreview').style.background = color;
     document.getElementById('secondaryColorIcon').style.color = color;
+});
+
+// Update color picker when text input changes (bi-directional sync)
+document.getElementById('primaryColorText')?.addEventListener('input', function(e) {
+    let color = e.target.value.trim();
+    
+    // Auto-add # if missing
+    if (color && !color.startsWith('#')) {
+        color = '#' + color;
+        e.target.value = color;
+    }
+    
+    // Validate hex format (allow partial input)
+    const hexPattern = /^#[0-9A-Fa-f]{0,6}$/;
+    if (hexPattern.test(color)) {
+        // Only update if we have a complete hex color
+        if (color.length === 7) {
+            document.getElementById('primaryColorInput').value = color;
+            document.getElementById('primaryColorPreview').style.background = color;
+            document.getElementById('primaryColorIcon').style.color = color;
+            e.target.classList.remove('is-invalid');
+        }
+    } else {
+        // Invalid format - show validation
+        e.target.classList.add('is-invalid');
+    }
+});
+
+document.getElementById('secondaryColorText')?.addEventListener('input', function(e) {
+    let color = e.target.value.trim();
+    
+    // Auto-add # if missing
+    if (color && !color.startsWith('#')) {
+        color = '#' + color;
+        e.target.value = color;
+    }
+    
+    // Validate hex format (allow partial input)
+    const hexPattern = /^#[0-9A-Fa-f]{0,6}$/;
+    if (hexPattern.test(color)) {
+        // Only update if we have a complete hex color
+        if (color.length === 7) {
+            document.getElementById('secondaryColorInput').value = color;
+            document.getElementById('secondaryColorPreview').style.background = color;
+            document.getElementById('secondaryColorIcon').style.color = color;
+            e.target.classList.remove('is-invalid');
+        }
+    } else {
+        // Invalid format - show validation
+        e.target.classList.add('is-invalid');
+    }
+});
+
+// Validate on blur (when user leaves the field)
+document.getElementById('primaryColorText')?.addEventListener('blur', function(e) {
+    const color = e.target.value.trim();
+    const hexPattern = /^#[0-9A-Fa-f]{6}$/;
+    
+    if (color && !hexPattern.test(color)) {
+        // Invalid - revert to last valid color
+        const lastValid = document.getElementById('primaryColorInput').value;
+        e.target.value = lastValid;
+        e.target.classList.remove('is-invalid');
+        
+        // Show tooltip or alert
+        e.target.setCustomValidity('Please enter a valid hex color (e.g., #4caf50)');
+        e.target.reportValidity();
+        setTimeout(() => e.target.setCustomValidity(''), 3000);
+    }
+});
+
+document.getElementById('secondaryColorText')?.addEventListener('blur', function(e) {
+    const color = e.target.value.trim();
+    const hexPattern = /^#[0-9A-Fa-f]{6}$/;
+    
+    if (color && !hexPattern.test(color)) {
+        // Invalid - revert to last valid color
+        const lastValid = document.getElementById('secondaryColorInput').value;
+        e.target.value = lastValid;
+        e.target.classList.remove('is-invalid');
+        
+        // Show tooltip or alert
+        e.target.setCustomValidity('Please enter a valid hex color (e.g., #1b5e20)');
+        e.target.reportValidity();
+        setTimeout(() => e.target.setCustomValidity(''), 3000);
+    }
 });
 
 // AJAX save colors without page refresh
