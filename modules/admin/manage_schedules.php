@@ -8,6 +8,13 @@ include '../../config/database.php';
 include '../../includes/workflow_control.php';
 require_once __DIR__ . '/../../includes/CSRFProtection.php';
 
+// Load documents submission deadline from config (if any)
+$documents_deadline = null;
+$cfgRes = pg_query_params($connection, "SELECT value FROM config WHERE key = $1", ['documents_deadline']);
+if ($cfgRes && pg_num_rows($cfgRes) > 0) {
+    $documents_deadline = pg_fetch_result($cfgRes, 0, 'value');
+}
+
 // Check workflow status - prevent access if payroll/QR not ready
 $workflow_status = getWorkflowStatus($connection);
 if (!$workflow_status['can_schedule']) {
@@ -90,8 +97,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_schedule'])) {
             $location = $schedule_data['location'];
             $batches = $schedule_data['batches'];
             
+            // Enforce start date should not be before the configured documents submission deadline
+            if (!empty($documents_deadline) && $start_date < $documents_deadline) {
+                $error_message = "Schedule start date cannot be before the documents submission deadline (" . htmlspecialchars($documents_deadline) . ").";
+            }
             // Additional validation
-            if (empty($batches) || !is_array($batches)) {
+            elseif (empty($batches) || !is_array($batches)) {
                 $error_message = "No batches were configured. Please select number of batches and configure them.";
             } elseif (strtotime($end_date) < strtotime($start_date)) {
                 $error_message = "End date cannot be before start date.";
@@ -541,6 +552,14 @@ if ($usedDatesResult) {
                         <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Create New Schedule</h5>
                     </div>
                     <div class="card-body">
+                        <?php if (!empty($documents_deadline)): ?>
+                        <div class="alert alert-info d-flex align-items-center" role="alert">
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            <div>
+                                Documents submission deadline is <strong><?= htmlspecialchars($documents_deadline) ?></strong>. Schedules must start on or after this date.
+                            </div>
+                        </div>
+                        <?php endif; ?>
                         <form id="scheduleForm">
                             <!-- Basic Info -->
                             <div class="row mb-4">
@@ -642,6 +661,7 @@ if ($usedDatesResult) {
 <script>
 const maxStudents = <?= $countStudents ?>;
 const usedDates = <?= json_encode($usedDates) ?>;
+const documentsDeadline = <?= !empty($documents_deadline) ? ('\'' . htmlspecialchars($documents_deadline, ENT_QUOTES) . '\'') : 'null' ?>;
 let batches = [];
 
 // Date validation for start date
@@ -658,7 +678,10 @@ document.getElementById('schedule_date')?.addEventListener('change', function() 
     // Set minimum end date
     endDateInput.min = selectedDate;
     
-    if (usedDates.includes(selectedDate)) {
+    if (documentsDeadline && selectedDate < documentsDeadline) {
+        validation.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> Start date cannot be before documents deadline (' + documentsDeadline + ')</span>';
+        this.classList.add('is-invalid');
+    } else if (usedDates.includes(selectedDate)) {
         validation.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> This date has already been used for scheduling</span>';
         this.classList.add('is-invalid');
     } else {
@@ -932,6 +955,10 @@ function createSchedule() {
         return showError('Please select the number of batches');
     }
     
+    if (documentsDeadline && startDateInput.value < documentsDeadline) {
+        return showError('Start date cannot be before the documents submission deadline (' + documentsDeadline + ').');
+    }
+
     if (endDateInput.value < startDateInput.value) {
         return showError('End date cannot be before start date');
     }
