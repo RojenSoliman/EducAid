@@ -109,17 +109,19 @@ if (isset($connection)) {
     }
 }
 ?>
-<div class="admin-topbar">
+<div class="admin-topbar" id="adminTopbar" data-topbar-container>
   <div class="container-fluid d-flex align-items-center justify-content-between gap-3 flex-wrap">
     <div class="d-flex align-items-center gap-3 small">
       <i class="bi bi-shield-lock"></i>
       <span>Administrative Panel</span>
       <span class="vr mx-2 d-none d-md-inline"></span>
       <i class="bi bi-envelope"></i>
-      <a href="mailto:<?= htmlspecialchars($topbar_settings['topbar_email']) ?>"><?= htmlspecialchars($topbar_settings['topbar_email']) ?></a>
+      <a href="mailto:<?= htmlspecialchars($topbar_settings['topbar_email']) ?>" class="admin-topbar-email" data-topbar-email>
+        <?= htmlspecialchars($topbar_settings['topbar_email']) ?>
+      </a>
       <span class="vr mx-2 d-none d-lg-inline"></span>
       <i class="bi bi-telephone"></i>
-      <span class="d-none d-sm-inline"><?= htmlspecialchars($topbar_settings['topbar_phone']) ?></span>
+      <span class="d-none d-sm-inline" data-topbar-phone><?= htmlspecialchars($topbar_settings['topbar_phone']) ?></span>
     </div>
     <div class="d-flex align-items-center gap-3 small">
       <?php if ($active_municipality_logo && $active_municipality_name): ?>
@@ -133,8 +135,8 @@ if (isset($connection)) {
         <span class="vr mx-2 d-none d-md-inline"></span>
       <?php endif; ?>
       <i class="bi bi-clock"></i>
-      <span class="d-none d-md-inline"><?= htmlspecialchars($topbar_settings['topbar_office_hours']) ?></span>
-      <span class="d-md-none">Office Hours</span>
+      <span class="d-none d-md-inline" data-topbar-hours><?= htmlspecialchars($topbar_settings['topbar_office_hours']) ?></span>
+      <span class="d-md-none" data-topbar-hours-mobile>Office Hours</span>
     </div>
   </div>
 </div>

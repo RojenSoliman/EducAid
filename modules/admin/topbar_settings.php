@@ -28,52 +28,104 @@ $headerThemeService = new HeaderThemeService($connection);
 $controller = new TopbarSettingsController($themeService, $_SESSION['admin_id'] ?? 0, $connection);
 
 // Unified form submission (topbar + header)
-$form_result = [ 'success' => false, 'message' => '', 'data' => $themeService->getCurrentSettings() ];
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  // Validate token but don't consume it yet (consume=false)
-  // We'll manually consume it only after successful save
+$form_result = [
+  'success' => false,
+  'message' => '',
+  'data' => $themeService->getCurrentSettings()
+];
+$successMessage = '';
+$errorMessage = '';
+$combinedSuccess = false;
+$isPostRequest = ($_SERVER['REQUEST_METHOD'] === 'POST');
+$isAjaxRequest = $isPostRequest && (
+  (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') ||
+  (isset($_POST['ajax']) && $_POST['ajax'] === '1') ||
+  (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
+);
+
+if ($isPostRequest) {
+  $headerSave = [ 'success' => false, 'message' => '' ];
   if (CSRFProtection::validateToken('topbar_settings', $_POST['csrf_token'] ?? '', false)) {
-    // Save topbar first
     $form_result = $controller->handleFormSubmission();
-    $success = $form_result['success'];
-    $msgTop = $form_result['message'] ?? '';
-    // Save header theme (ignore validation errors merging for simplicity, collect message)
     $headerSave = $headerThemeService->save($_POST, (int)($_SESSION['admin_id'] ?? 0));
-    $msgHeader = $headerSave['success'] ? 'Header theme updated.' : ($headerSave['message'] ?? 'Header theme save failed.');
-    if ($form_result['success'] && $headerSave['success']) {
-      $successMessage = trim($msgTop . ' ' . $msgHeader);
-      $errorMessage = '';
-      // Both saves successful - now consume the token
-      if (isset($_SESSION['csrf_tokens']['topbar_settings'])) {
-        unset($_SESSION['csrf_tokens']['topbar_settings']);
-      }
+
+    $topbarMessage = $form_result['message'] ?? '';
+    $headerMessage = $headerSave['message'] ?? '';
+    if ($headerSave['success'] && $headerMessage === '') {
+      $headerMessage = 'Header theme updated.';
+    }
+    if (!$headerSave['success'] && $headerMessage === '') {
+      $headerMessage = 'Header theme save failed.';
+    }
+
+    $combinedSuccess = ($form_result['success'] && $headerSave['success']);
+
+    $successParts = [];
+    $errorParts = [];
+
+    if ($form_result['success']) {
+      $successParts[] = $topbarMessage !== '' ? $topbarMessage : 'Topbar settings updated.';
+    } elseif ($topbarMessage !== '') {
+      $errorParts[] = $topbarMessage;
+    }
+
+    if ($headerSave['success']) {
+      $successParts[] = $headerMessage;
     } else {
-      $successMessage = ($form_result['success'] ? $msgTop : '') . ($headerSave['success'] ? (' ' . $msgHeader) : '');
-      $errorMessage = (!$form_result['success'] ? $msgTop : '') . (!$headerSave['success'] ? (' ' . $msgHeader) : '');
-      // Don't consume token on error - allow retry
+      $errorParts[] = $headerMessage;
+    }
+
+    $successMessage = trim(implode(' ', array_filter($successParts)));
+    $errorMessage = trim(implode(' ', array_filter($errorParts)));
+
+    if ($combinedSuccess && isset($_SESSION['csrf_tokens']['topbar_settings'])) {
+      unset($_SESSION['csrf_tokens']['topbar_settings']);
     }
   } else {
-    $successMessage = '';
-    // Add debug info to error message
+    $combinedSuccess = false;
+    $form_result['success'] = false;
+    $form_result['message'] = '';
+
     $debug_info = '';
-  if (isset($_POST['csrf_token'])) {
-    $submitted_token = substr($_POST['csrf_token'], 0, 16) . '...';
-    $session_data = $_SESSION['csrf_tokens']['topbar_settings'] ?? null;
-    if (is_array($session_data)) {
-      $session_preview = array_map(function ($token) {
-        return substr($token, 0, 16) . '...';
-      }, $session_data);
-      $session_token = 'MULTI [' . implode(', ', $session_preview) . ']';
-    } elseif (is_string($session_data)) {
-      $session_token = substr($session_data, 0, 16) . '...';
+    if (isset($_POST['csrf_token'])) {
+      $submitted_token = substr($_POST['csrf_token'], 0, 16) . '...';
+      $session_data = $_SESSION['csrf_tokens']['topbar_settings'] ?? null;
+      if (is_array($session_data)) {
+        $session_preview = array_map(function ($token) {
+          return substr($token, 0, 16) . '...';
+        }, $session_data);
+        $session_token = 'MULTI [' . implode(', ', $session_preview) . ']';
+      } elseif (is_string($session_data)) {
+        $session_token = substr($session_data, 0, 16) . '...';
+      } else {
+        $session_token = 'NO TOKEN IN SESSION';
+      }
+      $debug_info = " (Submitted: $submitted_token, Session: $session_token)";
     } else {
-      $session_token = 'NO TOKEN IN SESSION';
+      $debug_info = ' (No csrf_token in POST data)';
     }
-    $debug_info = " (Submitted: $submitted_token, Session: $session_token)";
-    } else {
-        $debug_info = " (No csrf_token in POST data)";
-    }
+    $successMessage = '';
     $errorMessage = 'Security token validation failed. Please try again.' . $debug_info;
+  }
+
+  if ($isAjaxRequest) {
+    if (isset($_SESSION['csrf_tokens']['topbar_settings'])) {
+      unset($_SESSION['csrf_tokens']['topbar_settings']);
+    }
+    $newCsrfToken = CSRFProtection::generateToken('topbar_settings');
+    $latestTopbarSettings = $themeService->getCurrentSettings();
+    $latestHeaderSettings = $headerThemeService->getCurrentSettings();
+
+    header('Content-Type: application/json');
+    echo json_encode([
+      'success' => $combinedSuccess,
+      'message' => $combinedSuccess ? ($successMessage !== '' ? $successMessage : 'Settings updated successfully.') : '',
+      'error' => $combinedSuccess ? '' : ($errorMessage !== '' ? $errorMessage : 'Unable to save settings.'),
+      'topbar_settings' => $latestTopbarSettings,
+      'header_settings' => $latestHeaderSettings,
+      'csrf_token' => $newCsrfToken,
+    ]);
+    exit;
   }
 }
 
@@ -205,7 +257,7 @@ if (empty($preview_text_color)) {
         <!-- (Header preview now moved next to header color changers below) -->
         
         <!-- Unified Settings Form (Topbar + Header) -->
-        <form method="POST" id="settingsForm">
+  <form method="POST" id="settingsForm" action="">
           <?= CSRFProtection::getTokenField('topbar_settings') ?>
           <div class="row">
             <div class="col-lg-8">
@@ -438,7 +490,7 @@ if (empty($preview_text_color)) {
                 <a href="homepage.php" class="btn btn-secondary">
                   <i class="bi bi-x-lg me-2"></i>Cancel
                 </a>
-                <button type="submit" class="btn btn-success">
+                <button type="submit" class="btn btn-success" id="topbarSettingsSubmit">
                   <i class="bi bi-check-lg me-2"></i>Save Changes
                 </button>
               </div>
