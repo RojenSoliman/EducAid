@@ -18,16 +18,9 @@ if (isset($connection) && $studentId) {
     $student_info = pg_fetch_assoc($student_info_result);
   }
 
-  // Get unread notification count (placeholder - can be implemented later)
-  // For now, using static count
-  $unreadNotificationCount = 3;
-    
-  // Get recent notifications (placeholder - can be implemented later)
-  $recentNotifications = [
-    ['message' => 'New announcement available', 'created_at' => date('Y-m-d H:i:s'), 'is_read' => false],
-    ['message' => 'Document review completed', 'created_at' => date('Y-m-d H:i:s', strtotime('-1 hour')), 'is_read' => false],
-    ['message' => 'Deadline reminder: Submit grades', 'created_at' => date('Y-m-d H:i:s', strtotime('-2 hours')), 'is_read' => true]
-  ];
+  // Student notification system temporarily disabled pending schema fix
+  $unreadNotificationCount = 0;
+  $recentNotifications = [];
 }
 
 // Function to get notification icon based on content
@@ -281,25 +274,65 @@ $__hdr = educaid_get_student_header_theme($connection ?? null);
 }
 </style>
 <script>
-// Fast inline safeguard: if server rendered 0 unread (badge omitted) but a stale badge remains in cached DOM, remove it.
+// Student notification JS disabled temporarily (kept minimal for layout syncs).
 document.addEventListener('DOMContentLoaded', function(){
+  // Keep badge hidden if server reports 0 unread.
   var serverCount = <?=(int)$unreadNotificationCount?>;
   if(serverCount === 0){
-    document.querySelectorAll('.student-icon-btn[title="Notifications"] .badge').forEach(b=>{
+    document.querySelectorAll('.student-icon-btn[title="Notifications"] .badge').forEach(function(b){
       if(b && (b.textContent.trim()==='' || b.textContent.trim()==='0')){
         b.style.display='none';
       }
     });
   }
-  // Dynamically sync CSS variable for header height (prevents overlap/gaps if style changes)
-  const hdr = document.querySelector('.student-main-header');
+  // Maintain CSS variable for header height.
+  var hdr = document.querySelector('.student-main-header');
   if(hdr){
-    const setVar = () => {
-      const h = hdr.getBoundingClientRect().height;
+    var setVar = function(){
+      var h = hdr.getBoundingClientRect().height;
       document.documentElement.style.setProperty('--student-header-h', h + 'px');
     };
     setVar();
     window.addEventListener('resize', setVar);
   }
+
+  // Notification polling/commented out pending schema fix.
+  /*
+  function markNotificationAsRead(notificationId) {
+    fetch('/EducAid/services/student_notification_actions.php', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'action=mark_read&notification_id=' + notificationId
+    }).then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          updateNotificationCount();
+        }
+      });
+  }
+
+  function updateNotificationCount() {
+    fetch('/EducAid/services/student_notification_actions.php?action=get_unread_count')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const count = data.count;
+          const badges = document.querySelectorAll('.student-icon-btn[title="Notifications"] .badge');
+          const headerCount = document.getElementById('header-dropdown-unread-count');
+
+          if (count > 0) {
+            badges.forEach(badge => {
+              badge.textContent = count;
+              badge.style.display = '';
+            });
+            if (headerCount) headerCount.textContent = count;
+          } else {
+            badges.forEach(badge => badge.style.display = 'none');
+            if (headerCount) headerCount.style.display = 'none';
+          }
+        }
+      });
+  }
+  */
 });
 </script>

@@ -1,0 +1,348 @@
+<?php
+/**
+ * Student Notification Helper
+ * Provides functions to create and manage student notifications
+ */
+
+class StudentNotificationHelper {
+    private $connection;
+    
+    public function __construct($connection) {
+        $this->connection = $connection;
+    }
+    
+    /**
+     * Create a notification for a student
+     * 
+     * @param int $student_id Student ID
+     * @param string $title Notification title
+     * @param string $message Notification message
+     * @param string $type Notification type (application_status, distribution, announcement, document, security)
+     * @param string $category Category (approved, rejected, schedule_ready, etc.)
+     * @param string $action_url Optional URL to link to
+     * @param string $priority Priority level (low, normal, high, urgent)
+     * @return bool Success status
+     */
+    public function createNotification($student_id, $title, $message, $type, $category = null, $action_url = null, $priority = 'normal') {
+        try {
+            // Validate student_id is an integer
+            $student_id = filter_var($student_id, FILTER_VALIDATE_INT);
+            if ($student_id === false || $student_id <= 0) {
+                error_log("Invalid student_id provided to createNotification: " . print_r(func_get_args(), true));
+                return false;
+            }
+            
+            $query = "INSERT INTO student_notifications 
+                      (student_id, title, message, type, category, action_url, priority, created_at) 
+                      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())";
+            
+            $result = pg_query_params($this->connection, $query, [
+                $student_id,
+                $title,
+                $message,
+                $type,
+                $category,
+                $action_url,
+                $priority
+            ]);
+            
+            if ($result === false) {
+                error_log('[StudentNotificationHelper][createNotification] Query failed: ' . pg_last_error($this->connection));
+                error_log('[StudentNotificationHelper][createNotification] Params: ' . json_encode([
+                    $student_id,
+                    $title,
+                    $message,
+                    $type,
+                    $category,
+                    $action_url,
+                    $priority
+                ]));
+            }
+            
+            return $result !== false;
+        } catch (Exception $e) {
+            error_log("Failed to create student notification: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Create notification for multiple students
+     * 
+     * @param array $student_ids Array of student IDs
+     * @param string $title Notification title
+     * @param string $message Notification message
+     * @param string $type Notification type
+     * @param string $category Category
+     * @param string $action_url Optional URL
+     * @param string $priority Priority level
+     * @return int Number of notifications created
+     */
+    public function createBulkNotification($student_ids, $title, $message, $type, $category = null, $action_url = null, $priority = 'normal') {
+        $count = 0;
+        foreach ($student_ids as $student_id) {
+            if ($this->createNotification($student_id, $title, $message, $type, $category, $action_url, $priority)) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+    
+    /**
+     * Notify when application is approved
+     */
+    public function notifyApplicationApproved($student_id) {
+        return $this->createNotification(
+            $student_id,
+            'Application Approved! 🎉',
+            'Congratulations! Your application has been approved. You will be notified when distribution opens.',
+            'application_status',
+            'approved',
+            'modules/student/student_homepage.php',
+            'high'
+        );
+    }
+    
+    /**
+     * Notify when application is rejected
+     */
+    public function notifyApplicationRejected($student_id, $reason = '') {
+        $message = 'Unfortunately, your application was not approved.';
+        if ($reason) {
+            $message .= ' Reason: ' . $reason;
+        }
+        
+        return $this->createNotification(
+            $student_id,
+            'Application Status Update',
+            $message,
+            'application_status',
+            'rejected',
+            'modules/student/student_homepage.php',
+            'high'
+        );
+    }
+    
+    /**
+     * Notify when distribution opens
+     */
+    public function notifyDistributionOpened($student_ids, $distribution_name = '') {
+        $title = 'Distribution is Now Open 📦';
+        $message = 'The distribution has started. Check your dashboard for your schedule and QR code.';
+        
+        if ($distribution_name) {
+            $message = "The distribution for {$distribution_name} is now open. Check your dashboard for your schedule and QR code.";
+        }
+        
+        return $this->createBulkNotification(
+            $student_ids,
+            $title,
+            $message,
+            'distribution',
+            'distribution_opened',
+            'modules/student/qr_code.php',
+            'high'
+        );
+    }
+    
+    /**
+     * Notify when schedule is assigned
+     */
+    public function notifyScheduleAssigned($student_id, $schedule_date, $schedule_time) {
+        return $this->createNotification(
+            $student_id,
+            'Pickup Schedule Assigned 📅',
+            "Your pickup is scheduled for {$schedule_date} at {$schedule_time}. Please bring your ID and QR code.",
+            'distribution',
+            'schedule_assigned',
+            'modules/student/qr_code.php',
+            'high'
+        );
+    }
+    
+    /**
+     * Notify when QR code is generated
+     */
+    public function notifyQRCodeReady($student_id) {
+        return $this->createNotification(
+            $student_id,
+            'QR Code Ready ✅',
+            'Your QR code has been generated. You can now download it from your dashboard.',
+            'distribution',
+            'qr_generated',
+            'modules/student/qr_code.php',
+            'normal'
+        );
+    }
+    
+    /**
+     * Notify when distribution is complete (student received)
+     */
+    public function notifyDistributionComplete($student_id) {
+        return $this->createNotification(
+            $student_id,
+            'Distribution Complete ✅',
+            'You have successfully received your educational assistance. Thank you!',
+            'distribution',
+            'distribution_complete',
+            null,
+            'normal'
+        );
+    }
+    
+    /**
+     * Notify about new announcement
+     */
+    public function notifyNewAnnouncement($student_ids, $announcement_title, $announcement_excerpt = '') {
+        $message = $announcement_excerpt ?: 'A new announcement has been posted. Click to read more.';
+        
+        return $this->createBulkNotification(
+            $student_ids,
+            '📢 New Announcement: ' . $announcement_title,
+            $message,
+            'announcement',
+            'general',
+            'website/announcements.php',
+            'normal'
+        );
+    }
+    
+    /**
+     * Notify when document is rejected
+     */
+    public function notifyDocumentRejected($student_id, $document_name, $reason = '') {
+        $message = "Your {$document_name} was rejected.";
+        if ($reason) {
+            $message .= " Reason: {$reason}. Please reupload.";
+        }
+        
+        return $this->createNotification(
+            $student_id,
+            'Document Needs Attention ⚠️',
+            $message,
+            'document',
+            'document_rejected',
+            'modules/student/upload_document.php',
+            'high'
+        );
+    }
+    
+    /**
+     * Notify when document is approved
+     */
+    public function notifyDocumentApproved($student_id, $document_name) {
+        return $this->createNotification(
+            $student_id,
+            'Document Verified ✓',
+            "Your {$document_name} has been verified successfully.",
+            'document',
+            'document_approved',
+            'modules/student/upload_document.php',
+            'normal'
+        );
+    }
+    
+    /**
+     * Mark notification as read
+     */
+    public function markAsRead($notification_id, $student_id) {
+        $query = "UPDATE student_notifications 
+                  SET is_read = TRUE, read_at = NOW() 
+                  WHERE notification_id = $1 AND student_id = $2";
+        
+        return pg_query_params($this->connection, $query, [$notification_id, $student_id]) !== false;
+    }
+    
+    /**
+     * Mark all notifications as read for a student
+     */
+    public function markAllAsRead($student_id) {
+        $query = "UPDATE student_notifications 
+                  SET is_read = TRUE, read_at = NOW() 
+                  WHERE student_id = $1 AND is_read = FALSE";
+        
+        return pg_query_params($this->connection, $query, [$student_id]) !== false;
+    }
+    
+    /**
+     * Get unread notification count for a student
+     */
+    public function getUnreadCount($student_id) {
+        // Validate student_id
+        $student_id = filter_var($student_id, FILTER_VALIDATE_INT);
+        if ($student_id === false || $student_id <= 0) {
+            error_log("Invalid student_id in getUnreadCount: " . print_r($student_id, true));
+            return 0;
+        }
+        
+        $query = "SELECT COUNT(*) as count 
+                  FROM student_notifications 
+                  WHERE student_id = $1 AND is_read = FALSE";
+        
+        $result = pg_query_params($this->connection, $query, [$student_id]);
+        if ($result === false) {
+            error_log('[StudentNotificationHelper][getUnreadCount] Query failed: ' . pg_last_error($this->connection));
+            error_log('[StudentNotificationHelper][getUnreadCount] student_id=' . $student_id);
+            return 0;
+        }
+        
+        if ($result) {
+            $row = pg_fetch_assoc($result);
+            return (int)$row['count'];
+        }
+        return 0;
+    }
+    
+    /**
+     * Get recent notifications for a student
+     */
+    public function getRecentNotifications($student_id, $limit = 10) {
+        // Validate student_id
+        $student_id = filter_var($student_id, FILTER_VALIDATE_INT);
+        if ($student_id === false || $student_id <= 0) {
+            error_log("Invalid student_id in getRecentNotifications: " . print_r($student_id, true));
+            return [];
+        }
+        
+        $query = "SELECT * FROM student_notifications 
+                  WHERE student_id = $1 
+                  ORDER BY created_at DESC 
+                  LIMIT $2";
+        
+        $result = pg_query_params($this->connection, $query, [$student_id, $limit]);
+        if ($result === false) {
+            error_log('[StudentNotificationHelper][getRecentNotifications] Query failed: ' . pg_last_error($this->connection));
+            error_log('[StudentNotificationHelper][getRecentNotifications] Params: ' . json_encode([$student_id, $limit]));
+            return [];
+        }
+        $notifications = [];
+        
+        while ($row = pg_fetch_assoc($result)) {
+            $notifications[] = $row;
+        }
+        
+        return $notifications;
+    }
+    
+    /**
+     * Delete old read notifications (cleanup)
+     */
+    public function deleteOldNotifications($days = 90) {
+        $query = "DELETE FROM student_notifications 
+                  WHERE is_read = TRUE 
+                  AND read_at < NOW() - INTERVAL '{$days} days'";
+        
+        return pg_query($this->connection, $query) !== false;
+    }
+}
+
+/**
+ * Helper function to get or create StudentNotificationHelper instance
+ */
+function getStudentNotificationHelper($connection) {
+    static $helper = null;
+    if ($helper === null) {
+        $helper = new StudentNotificationHelper($connection);
+    }
+    return $helper;
+}

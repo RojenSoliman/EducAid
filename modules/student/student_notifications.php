@@ -4,41 +4,16 @@ session_start();
 if (!isset($_SESSION['student_username'])) { header("Location: ../../unified_login.php"); exit; }
 $student_id = $_SESSION['student_id'];
 
-// Detect if is_read column exists
+// Student notifications temporarily disabled while schema mismatch is resolved
 $hasReadColumn = false;
-$colCheck = @pg_query($connection, "SELECT 1 FROM information_schema.columns WHERE table_name='notifications' AND column_name='is_read' LIMIT 1");
-if ($colCheck && pg_num_rows($colCheck) > 0) { $hasReadColumn = true; }
-
-// Filters & pagination similar to admin UI
-$page = isset($_GET['page']) && is_numeric($_GET['page']) && $_GET['page'] > 0 ? (int)$_GET['page'] : 1;
-$limit = 15; // slightly fewer for more open spacing
-$offset = ($page - 1) * $limit;
-$filterType = isset($_GET['filter']) ? $_GET['filter'] : 'all';
-
-$whereFilter = 'WHERE student_id = $1';
-if ($hasReadColumn) {
-  if ($filterType === 'unread') { $whereFilter .= " AND (is_read = FALSE OR is_read IS NULL)"; }
-  elseif ($filterType === 'read') { $whereFilter .= " AND is_read = TRUE"; }
-}
-
-// Count total for current filter
-$countSql = "SELECT COUNT(*) AS total FROM notifications $whereFilter";
-$countRes = @pg_query_params($connection, $countSql, [$student_id]);
-$total = $countRes ? (int)pg_fetch_assoc($countRes)['total'] : 0;
-$lastPage = $total > 0 ? (int)ceil($total / $limit) : 1;
-
-// Main notification query
-$selectCols = $hasReadColumn ? 'notification_id, message, created_at, COALESCE(is_read,FALSE) as is_read' : 'notification_id, message, created_at';
-$notifSql = "SELECT $selectCols FROM notifications $whereFilter ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
-$notifRes = @pg_query_params($connection, $notifSql, [$student_id]);
-$notifications = $notifRes ? pg_fetch_all($notifRes) : [];
-
-// Unread count (independent of filter) if column present
+$page = 1;
+$limit = 15;
+$offset = 0;
+$filterType = 'all';
+$total = 0;
+$lastPage = 1;
+$notifications = [];
 $unreadCount = 0;
-if ($hasReadColumn) {
-  $unreadRes = @pg_query_params($connection, "SELECT COUNT(*) AS c FROM notifications WHERE student_id = $1 AND (is_read = FALSE OR is_read IS NULL)", [$student_id]);
-  if ($unreadRes) { $unreadCount = (int)pg_fetch_assoc($unreadRes)['c']; }
-}
 
 function getNotificationIcon($message) {
   // rudimentary keyword-based icon selection

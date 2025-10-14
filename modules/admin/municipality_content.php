@@ -183,6 +183,47 @@ if (isset($_GET['switched'])) {
     $feedback = ['type' => 'success', 'message' => 'Active municipality updated.'];
 }
 
+// Handle color update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_colors'])) {
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('municipality-colors', $token)) {
+        $feedback = ['type' => 'danger', 'message' => 'Security token expired. Please try again.'];
+    } else {
+        $municipalityId = (int) ($_POST['municipality_id'] ?? 0);
+        $primaryColor = trim($_POST['primary_color'] ?? '');
+        $secondaryColor = trim($_POST['secondary_color'] ?? '');
+        
+        // Validate hex color format
+        $hexPattern = '/^#[0-9A-Fa-f]{6}$/';
+        if (!preg_match($hexPattern, $primaryColor)) {
+            $feedback = ['type' => 'danger', 'message' => 'Invalid primary color format. Use hex format like #2e7d32'];
+        } elseif (!preg_match($hexPattern, $secondaryColor)) {
+            $feedback = ['type' => 'danger', 'message' => 'Invalid secondary color format. Use hex format like #1b5e20'];
+        } elseif ($municipalityId && in_array($municipalityId, $_SESSION['allowed_municipalities'], true)) {
+            $updateResult = pg_query_params(
+                $connection,
+                'UPDATE municipalities SET primary_color = $1, secondary_color = $2 WHERE municipality_id = $3',
+                [$primaryColor, $secondaryColor, $municipalityId]
+            );
+            
+            if ($updateResult) {
+                $feedback = ['type' => 'success', 'message' => 'Colors updated successfully!'];
+                // Refresh the page to show new colors
+                header('Location: municipality_content.php?colors_updated=1');
+                exit;
+            } else {
+                $feedback = ['type' => 'danger', 'message' => 'Failed to update colors. Please try again.'];
+            }
+        } else {
+            $feedback = ['type' => 'warning', 'message' => 'You do not have permission to update this municipality.'];
+        }
+    }
+}
+
+if (isset($_GET['colors_updated'])) {
+    $feedback = ['type' => 'success', 'message' => 'Municipality colors updated successfully!'];
+}
+
 $activeMunicipalityId = $_SESSION['active_municipality_id'] ?? null;
 if (!$activeMunicipalityId && !empty($assignedMunicipalities)) {
     $activeMunicipalityId = $assignedMunicipalities[0]['municipality_id'];
@@ -417,6 +458,9 @@ include '../../includes/admin/admin_head.php';
                                         </div>
                                     </div>
                                 </div>
+                                <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editColorsModal">
+                                    <i class="bi bi-palette me-1"></i>Edit Colors
+                                </button>
                             </div>
                         </div>
                         <div class="col-auto">
@@ -815,6 +859,113 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
   </div>
 </div>
+
+<!-- Edit Colors Modal -->
+<div class="modal fade" id="editColorsModal" tabindex="-1" aria-labelledby="editColorsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editColorsModalLabel">
+          <i class="bi bi-palette me-2"></i>Edit Municipality Colors
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="POST" action="municipality_content.php">
+        <div class="modal-body">
+          <div class="alert alert-info small d-flex align-items-start gap-2 mb-3">
+            <i class="bi bi-info-circle flex-shrink-0 mt-1"></i>
+            <div>
+              Choose your primary and secondary colors. These will be used for the municipality theme throughout the system.
+            </div>
+          </div>
+          
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(CSRFProtection::generateToken('municipality-colors')) ?>">
+          <input type="hidden" name="municipality_id" value="<?= $activeMunicipality['municipality_id'] ?? '' ?>">
+          <input type="hidden" name="update_colors" value="1">
+          
+          <div class="mb-4">
+            <label for="primaryColorInput" class="form-label fw-bold">
+              <i class="bi bi-circle-fill me-1" style="color: <?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>;"></i>
+              Primary Color
+            </label>
+            <div class="d-flex gap-3 align-items-center">
+              <input 
+                type="color" 
+                class="form-control form-control-color" 
+                id="primaryColorInput" 
+                name="primary_color" 
+                value="<?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>"
+                style="width: 80px; height: 50px;">
+              <input 
+                type="text" 
+                class="form-control font-monospace" 
+                id="primaryColorText" 
+                value="<?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>"
+                readonly
+                style="max-width: 120px;">
+              <div 
+                id="primaryColorPreview" 
+                class="border rounded" 
+                style="width: 50px; height: 50px; background: <?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>;"></div>
+            </div>
+            <small class="text-muted">Used for main buttons, headers, and primary UI elements</small>
+          </div>
+          
+          <div class="mb-3">
+            <label for="secondaryColorInput" class="form-label fw-bold">
+              <i class="bi bi-circle-fill me-1" style="color: <?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>;"></i>
+              Secondary Color
+            </label>
+            <div class="d-flex gap-3 align-items-center">
+              <input 
+                type="color" 
+                class="form-control form-control-color" 
+                id="secondaryColorInput" 
+                name="secondary_color" 
+                value="<?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>"
+                style="width: 80px; height: 50px;">
+              <input 
+                type="text" 
+                class="form-control font-monospace" 
+                id="secondaryColorText" 
+                value="<?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>"
+                readonly
+                style="max-width: 120px;">
+              <div 
+                id="secondaryColorPreview" 
+                class="border rounded" 
+                style="width: 50px; height: 50px; background: <?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>;"></div>
+            </div>
+            <small class="text-muted">Used for accents, hover states, and secondary UI elements</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+            <i class="bi bi-x-circle me-1"></i>Cancel
+          </button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-circle me-1"></i>Save Colors
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+// Update color preview and hex text when color picker changes
+document.getElementById('primaryColorInput')?.addEventListener('input', function(e) {
+    const color = e.target.value;
+    document.getElementById('primaryColorText').value = color;
+    document.getElementById('primaryColorPreview').style.background = color;
+});
+
+document.getElementById('secondaryColorInput')?.addEventListener('input', function(e) {
+    const color = e.target.value;
+    document.getElementById('secondaryColorText').value = color;
+    document.getElementById('secondaryColorPreview').style.background = color;
+});
+</script>
 
 </body>
 </html>
