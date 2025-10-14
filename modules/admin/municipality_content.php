@@ -870,84 +870,84 @@ document.addEventListener('DOMContentLoaded', function() {
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="POST" action="municipality_content.php">
-        <div class="modal-body">
-          <div class="alert alert-info small d-flex align-items-start gap-2 mb-3">
-            <i class="bi bi-info-circle flex-shrink-0 mt-1"></i>
-            <div>
-              Choose your primary and secondary colors. These will be used for the municipality theme throughout the system.
-            </div>
-          </div>
-          
-          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(CSRFProtection::generateToken('municipality-colors')) ?>">
-          <input type="hidden" name="municipality_id" value="<?= $activeMunicipality['municipality_id'] ?? '' ?>">
-          <input type="hidden" name="update_colors" value="1">
-          
-          <div class="mb-4">
-            <label for="primaryColorInput" class="form-label fw-bold">
-              <i class="bi bi-circle-fill me-1" style="color: <?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>;"></i>
-              Primary Color
-            </label>
-            <div class="d-flex gap-3 align-items-center">
-              <input 
-                type="color" 
-                class="form-control form-control-color" 
-                id="primaryColorInput" 
-                name="primary_color" 
-                value="<?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>"
-                style="width: 80px; height: 50px;">
-              <input 
-                type="text" 
-                class="form-control font-monospace" 
-                id="primaryColorText" 
-                value="<?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>"
-                readonly
-                style="max-width: 120px;">
-              <div 
-                id="primaryColorPreview" 
-                class="border rounded" 
-                style="width: 50px; height: 50px; background: <?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>;"></div>
-            </div>
-            <small class="text-muted">Used for main buttons, headers, and primary UI elements</small>
-          </div>
-          
-          <div class="mb-3">
-            <label for="secondaryColorInput" class="form-label fw-bold">
-              <i class="bi bi-circle-fill me-1" style="color: <?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>;"></i>
-              Secondary Color
-            </label>
-            <div class="d-flex gap-3 align-items-center">
-              <input 
-                type="color" 
-                class="form-control form-control-color" 
-                id="secondaryColorInput" 
-                name="secondary_color" 
-                value="<?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>"
-                style="width: 80px; height: 50px;">
-              <input 
-                type="text" 
-                class="form-control font-monospace" 
-                id="secondaryColorText" 
-                value="<?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>"
-                readonly
-                style="max-width: 120px;">
-              <div 
-                id="secondaryColorPreview" 
-                class="border rounded" 
-                style="width: 50px; height: 50px; background: <?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>;"></div>
-            </div>
-            <small class="text-muted">Used for accents, hover states, and secondary UI elements</small>
+      <div class="modal-body">
+        <div id="colorUpdateFeedback"></div>
+        
+        <div class="alert alert-info small d-flex align-items-start gap-2 mb-3">
+          <i class="bi bi-info-circle flex-shrink-0 mt-1"></i>
+          <div>
+            Choose your primary and secondary colors. These will be used for the municipality theme throughout the system.
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-            <i class="bi bi-x-circle me-1"></i>Cancel
-          </button>
-          <button type="submit" class="btn btn-primary">
-            <i class="bi bi-check-circle me-1"></i>Save Colors
-          </button>
+        
+        <input type="hidden" id="colorCsrfToken" value="<?= htmlspecialchars(CSRFProtection::generateToken('municipality-colors')) ?>">
+        <input type="hidden" id="colorMunicipalityId" value="<?= $activeMunicipality['municipality_id'] ?? '' ?>">
+        
+        <div class="mb-4">
+          <label for="primaryColorInput" class="form-label fw-bold">
+            <i class="bi bi-circle-fill me-1" id="primaryColorIcon" style="color: <?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>;"></i>
+            Primary Color
+          </label>
+          <div class="d-flex gap-3 align-items-center">
+            <input 
+              type="color" 
+              class="form-control form-control-color" 
+              id="primaryColorInput" 
+              value="<?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>"
+              style="width: 80px; height: 50px;"
+              title="Click to open color picker">
+            <input 
+              type="text" 
+              class="form-control font-monospace" 
+              id="primaryColorText" 
+              value="<?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>"
+              placeholder="#2e7d32"
+              maxlength="7"
+              style="max-width: 120px;"
+              title="Type or paste hex color (e.g., #4caf50)">
+            <div 
+              id="primaryColorPreview" 
+              class="border rounded" 
+              style="width: 50px; height: 50px; background: <?= htmlspecialchars($activeMunicipality['primary_color'] ?? '#2e7d32') ?>;"></div>
+          </div>
+          <small class="text-muted">Used for main buttons, headers, and primary UI elements</small>
         </div>
-      </form>
+        
+        <div class="mb-3">
+          <label for="secondaryColorInput" class="form-label fw-bold">
+            <i class="bi bi-circle-fill me-1" id="secondaryColorIcon" style="color: <?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>;"></i>
+            Secondary Color
+          </label>
+          <div class="d-flex gap-3 align-items-center">
+            <input 
+              type="color" 
+              class="form-control form-control-color" 
+              id="secondaryColorInput" 
+              value="<?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>"
+              style="width: 80px; height: 50px;">
+            <input 
+              type="text" 
+              class="form-control font-monospace" 
+              id="secondaryColorText" 
+              value="<?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>"
+              readonly
+              style="max-width: 120px;">
+            <div 
+              id="secondaryColorPreview" 
+              class="border rounded" 
+              style="width: 50px; height: 50px; background: <?= htmlspecialchars($activeMunicipality['secondary_color'] ?? '#1b5e20') ?>;"></div>
+          </div>
+          <small class="text-muted">Used for accents, hover states, and secondary UI elements</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+          <i class="bi bi-x-circle me-1"></i>Cancel
+        </button>
+        <button type="button" class="btn btn-primary" id="saveColorsBtn">
+          <i class="bi bi-check-circle me-1"></i>Save Colors
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -958,12 +958,102 @@ document.getElementById('primaryColorInput')?.addEventListener('input', function
     const color = e.target.value;
     document.getElementById('primaryColorText').value = color;
     document.getElementById('primaryColorPreview').style.background = color;
+    document.getElementById('primaryColorIcon').style.color = color;
 });
 
 document.getElementById('secondaryColorInput')?.addEventListener('input', function(e) {
     const color = e.target.value;
     document.getElementById('secondaryColorText').value = color;
     document.getElementById('secondaryColorPreview').style.background = color;
+    document.getElementById('secondaryColorIcon').style.color = color;
+});
+
+// AJAX save colors without page refresh
+document.getElementById('saveColorsBtn')?.addEventListener('click', async function() {
+    const btn = this;
+    const originalHTML = btn.innerHTML;
+    const feedbackDiv = document.getElementById('colorUpdateFeedback');
+    
+    // Disable button and show loading
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+    feedbackDiv.innerHTML = '';
+    
+    const primaryColor = document.getElementById('primaryColorInput').value;
+    const secondaryColor = document.getElementById('secondaryColorInput').value;
+    const csrfToken = document.getElementById('colorCsrfToken').value;
+    const municipalityId = document.getElementById('colorMunicipalityId').value;
+    
+    try {
+        const formData = new FormData();
+        formData.append('update_colors', '1');
+        formData.append('csrf_token', csrfToken);
+        formData.append('municipality_id', municipalityId);
+        formData.append('primary_color', primaryColor);
+        formData.append('secondary_color', secondaryColor);
+        
+        const response = await fetch('update_municipality_colors.php', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Show success message
+            feedbackDiv.innerHTML = `
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle me-2"></i>${result.message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            // Update the color chips on the main page WITHOUT refreshing
+            const mainPrimaryChip = document.querySelector('.color-chip');
+            const mainSecondaryChip = document.querySelectorAll('.color-chip')[1];
+            const mainPrimaryText = document.querySelector('.color-chip + div .fw-bold');
+            const mainSecondaryText = document.querySelectorAll('.color-chip + div .fw-bold')[1];
+            
+            if (mainPrimaryChip) {
+                mainPrimaryChip.style.background = primaryColor;
+            }
+            if (mainSecondaryChip) {
+                mainSecondaryChip.style.background = secondaryColor;
+            }
+            if (mainPrimaryText) {
+                mainPrimaryText.textContent = primaryColor;
+            }
+            if (mainSecondaryText) {
+                mainSecondaryText.textContent = secondaryColor;
+            }
+            
+            // Re-enable button
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+            
+            // Auto-close modal after 1.5 seconds
+            setTimeout(() => {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editColorsModal'));
+                if (modal) {
+                    modal.hide();
+                }
+            }, 1500);
+            
+        } else {
+            throw new Error(result.message || 'Unknown error');
+        }
+        
+    } catch (error) {
+        console.error('Error saving colors:', error);
+        feedbackDiv.innerHTML = `
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i>${error.message || 'Failed to save colors. Please try again.'}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    }
 });
 </script>
 
