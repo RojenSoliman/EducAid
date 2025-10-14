@@ -6,6 +6,7 @@ if (!isset($_SESSION['student_username'])) {
 }
 // Include database connection
 include __DIR__ . '/../../config/database.php';
+include __DIR__ . '/../../includes/workflow_control.php';
 
 // Fetch student info including last login
 $studentId = $_SESSION['student_id'];
@@ -267,6 +268,27 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
           </div>
         </div>
         
+        <!-- Global Documents Deadline Banner (if distribution started) -->
+        <?php
+          $workflow = getWorkflowStatus($connection);
+          $distribution_status = $workflow['distribution_status'] ?? 'inactive';
+          $doc_deadline = null;
+          if ($distribution_status === 'preparing' || $distribution_status === 'active') {
+              $cfg = pg_query_params($connection, "SELECT value FROM config WHERE key = $1", ['documents_deadline']);
+              if ($cfg && pg_num_rows($cfg) > 0) {
+                  $doc_deadline = pg_fetch_result($cfg, 0, 'value');
+              }
+          }
+          if (!empty($doc_deadline)):
+        ?>
+          <div class="alert alert-warning d-flex align-items-center" role="alert">
+            <i class="bi bi-hourglass-split me-2"></i>
+            <div>
+              Document submissions are due on <strong><?= htmlspecialchars($doc_deadline) ?></strong>. Please upload required documents before this date.
+            </div>
+          </div>
+        <?php endif; ?>
+
         <!-- Three banners under welcome -->
         <?php
           $result = pg_query_params($connection, "SELECT status FROM students WHERE student_id = $1", [$_SESSION['student_id']]);

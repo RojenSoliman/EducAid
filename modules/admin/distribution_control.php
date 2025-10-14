@@ -112,10 +112,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             // Validate required fields
             $academic_year = trim($_POST['academic_year'] ?? '');
             $semester = trim($_POST['semester'] ?? '');
+            $documents_deadline = trim($_POST['documents_deadline'] ?? '');
             
             if (empty($academic_year) || empty($semester)) {
                 $message = 'Academic year and semester are required to start distribution.';
                 break;
+            }
+            // Validate documents deadline (optional but recommended) - must be a valid date when provided
+            if (!empty($documents_deadline)) {
+                $d = DateTime::createFromFormat('Y-m-d', $documents_deadline);
+                $dateValid = $d && $d->format('Y-m-d') === $documents_deadline;
+                if (!$dateValid) {
+                    $message = 'Invalid documents deadline date. Use a valid date (YYYY-MM-DD).';
+                    break;
+                }
             }
             
             // Validate academic year format
@@ -146,6 +156,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     ['current_semester', $semester],
                     ['uploads_enabled', '1']
                 ];
+                if (!empty($documents_deadline)) {
+                    $config_settings[] = ['documents_deadline', $documents_deadline];
+                }
                 
                 foreach ($config_settings as [$key, $value]) {
                     $query = "INSERT INTO config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2";
@@ -157,7 +170,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 
                 pg_query($connection, "COMMIT");
                 $success = true;
-                $message = "Distribution cycle started for $semester $academic_year! You can now manage slots and scheduling.";
+                $message = "Distribution cycle started for $semester $academic_year!"
+                    . (!empty($documents_deadline) ? " Document deadline set to $documents_deadline." : "")
+                    . " You can now manage slots and scheduling.";
                 
             } catch (Exception $e) {
                 pg_query($connection, "ROLLBACK");
@@ -552,6 +567,11 @@ $history_result = pg_query($connection, $history_query);
                                                                 <option value="1st Semester">1st Semester</option>
                                                                 <option value="2nd Semester">2nd Semester</option>
                                                             </select>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label for="documents_deadline" class="form-label">Documents Submission Deadline</label>
+                                                            <input type="date" class="form-control" name="documents_deadline" id="documents_deadline">
+                                                            <div class="form-text">Students will see this deadline once the distribution is activated. Schedules cannot start before this date.</div>
                                                         </div>
                                                     </div>
                                                     
