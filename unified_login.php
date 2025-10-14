@@ -1,6 +1,7 @@
 <?php
 include __DIR__ . '/config/database.php';
 include __DIR__ . '/config/recaptcha_config.php';
+require_once __DIR__ . '/services/AuditLogger.php';
 session_start();
 
 // Fetch municipality data for navbar (General Trias as default)
@@ -310,6 +311,9 @@ if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
     // OTP OK → finalize login based on role
     $pending = $_SESSION['login_pending'];
     
+    // Initialize audit logger
+    $auditLogger = new AuditLogger($connection);
+    
     if ($pending['role'] === 'student') {
         $_SESSION['student_id'] = $pending['user_id'];
         $_SESSION['student_username'] = $pending['name'];
@@ -328,6 +332,9 @@ if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
             [$pending['user_id']]
         );
         
+        // Log successful student login
+        $auditLogger->logLogin($pending['user_id'], 'student', $pending['name']);
+        
         $redirect = 'modules/student/student_homepage.php';
     } else {
         $_SESSION['admin_id'] = $pending['user_id'];
@@ -339,6 +346,9 @@ if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
             "UPDATE admins SET last_login = NOW() WHERE admin_id = $1", 
             [$pending['user_id']]
         );
+        
+        // Log successful admin login
+        $auditLogger->logLogin($pending['user_id'], 'admin', $pending['name']);
         
         $redirect = 'modules/admin/homepage.php';
     }

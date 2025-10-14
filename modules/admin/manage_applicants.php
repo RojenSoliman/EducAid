@@ -881,7 +881,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sid = trim($_POST['student_id']); // Remove intval for TEXT student_id
         
         // Get student name for notification
-        $studentQuery = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$sid]);
+        $studentQuery = pg_query_params($connection, "SELECT first_name, last_name, email FROM students WHERE student_id = $1", [$sid]);
         $student = pg_fetch_assoc($studentQuery);
         
         /** @phpstan-ignore-next-line */
@@ -892,6 +892,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $student_name = $student['first_name'] . ' ' . $student['last_name'];
             $notification_msg = "Student promoted to active: " . $student_name . " (ID: " . $sid . ")";
             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+            
+            // Log applicant approval in audit trail
+            require_once __DIR__ . '/../../services/AuditLogger.php';
+            $auditLogger = new AuditLogger($connection);
+            $auditLogger->logApplicantApproved(
+                $_SESSION['admin_id'],
+                $_SESSION['admin_username'],
+                $sid,
+                [
+                    'first_name' => $student['first_name'],
+                    'last_name' => $student['last_name'],
+                    'email' => $student['email']
+                ]
+            );
         }
         
         // Redirect to refresh list
@@ -925,7 +939,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sid = trim($_POST['student_id']); // Remove intval for TEXT student_id
         
         // Get student name for notification
-        $studentQuery = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$sid]);
+        $studentQuery = pg_query_params($connection, "SELECT first_name, last_name, email FROM students WHERE student_id = $1", [$sid]);
         $student = pg_fetch_assoc($studentQuery);
         
         // Delete uploaded files
@@ -950,6 +964,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $student_name = $student['first_name'] . ' ' . $student['last_name'];
             $notification_msg = "Documents rejected for applicant: " . $student_name . " (ID: " . $sid . ")";
             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+            
+            // Log applicant rejection in audit trail
+            require_once __DIR__ . '/../../services/AuditLogger.php';
+            $auditLogger = new AuditLogger($connection);
+            $auditLogger->logApplicantRejected(
+                $_SESSION['admin_id'],
+                $_SESSION['admin_username'],
+                $sid,
+                [
+                    'first_name' => $student['first_name'],
+                    'last_name' => $student['last_name'],
+                    'email' => $student['email']
+                ],
+                'Documents rejected by admin'
+            );
         }
         
         // Redirect to refresh list

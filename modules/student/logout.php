@@ -1,6 +1,19 @@
 <?php
 session_start();
 
+// Log logout before destroying session
+if (isset($_SESSION['student_id']) && isset($_SESSION['student_username'])) {
+    require_once __DIR__ . '/../../config/database.php';
+    require_once __DIR__ . '/../../services/AuditLogger.php';
+    
+    $auditLogger = new AuditLogger($connection);
+    $auditLogger->logLogout(
+        $_SESSION['student_id'],
+        'student',
+        $_SESSION['student_username']
+    );
+}
+
 // Only unset student-specific session variables
 unset($_SESSION['student_id']);
 unset($_SESSION['student_username']);

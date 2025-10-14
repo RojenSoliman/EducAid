@@ -254,6 +254,11 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
       <?= menu_link('manage_announcements.php', 'bi bi-megaphone', 'Announcements', is_active('manage_announcements.php', $current)); ?>
     <?php endif; ?>
 
+    <!-- Audit Trail (super_admin only) -->
+    <?php if ($admin_role === 'super_admin'): ?>
+      <?= menu_link('audit_logs.php', 'bi bi-shield-lock-fill', 'Audit Trail', is_active('audit_logs.php', $current)); ?>
+    <?php endif; ?>
+
   
 
     <!-- Filler flex spacer -->
