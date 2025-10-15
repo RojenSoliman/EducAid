@@ -130,6 +130,7 @@
         fetch(url, {
             method: 'POST',
             body: formData,
+            credentials: 'same-origin', // Include cookies for session persistence
             headers: {
                 'X-Requested-With': 'XMLHttpRequest'
             }
@@ -264,9 +265,13 @@
 
         // OTP Form Handler
         const otpForm = document.getElementById('otpForm');
+        let otpSubmitting = false;
+        let lastOtpRequestId = 0;
+        let otpSuccessReceived = false;
         if (otpForm) {
             otpForm.addEventListener('submit', function(e) {
                 e.preventDefault();
+                if (otpSubmitting) { return; }
                 
                 const otp = document.getElementById('login_otp').value.trim();
                 
@@ -283,22 +288,34 @@
                 const originalText = submitBtn.innerHTML;
 
                 setButtonLoading(submitBtn, true);
+                otpSubmitting = true;
+                otpSuccessReceived = false;
+                const requestId = ++lastOtpRequestId;
 
                 makeRequest('unified_login.php', formData,
                     function(data) {
+                        // Ignore stale responses
+                        if (requestId !== lastOtpRequestId) { return; }
                         setButtonLoading(submitBtn, false, originalText);
+                        otpSubmitting = false;
                         
                         if (data.status === 'success') {
+                            otpSuccessReceived = true;
                             showMessage('Login successful! Redirecting...', 'success');
                             setTimeout(() => {
                                 window.location.href = data.redirect;
                             }, 1500);
                         } else {
-                            showMessage(data.message, 'danger');
+                            if (!otpSuccessReceived) {
+                                showMessage(data.message, 'danger');
+                            }
                         }
                     },
                     function(error) {
+                        // Ignore stale or post-success errors
+                        if (requestId !== lastOtpRequestId || otpSuccessReceived) { return; }
                         setButtonLoading(submitBtn, false, originalText);
+                        otpSubmitting = false;
                     }
                 );
             });

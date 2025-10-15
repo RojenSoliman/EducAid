@@ -15,28 +15,34 @@ $topbar_settings = [
 
 if (isset($connection)) {
   $muni_id = isset($_SESSION['active_municipality_id']) ? (int)$_SESSION['active_municipality_id'] : 1;
+  // Only query theme_settings if the table exists
+  $tblCheck = pg_query($connection, "SELECT to_regclass('public.theme_settings') AS tbl");
+  $exists = $tblCheck ? (pg_fetch_assoc($tblCheck)['tbl'] !== null) : false;
+  if ($tblCheck) { pg_free_result($tblCheck); }
 
-  $result = pg_query_params(
-    $connection,
-    "SELECT topbar_email, topbar_phone, topbar_bg_color, topbar_bg_gradient, topbar_text_color, topbar_link_color
-     FROM theme_settings
-     WHERE municipality_id = $1 AND is_active = TRUE
-     LIMIT 1",
-    [$muni_id]
-  );
-
-  if ($result && pg_num_rows($result) > 0) {
-    $db_settings = pg_fetch_assoc($result);
-    foreach ($db_settings as $key => $value) {
-      if ($key === 'topbar_bg_gradient') {
-        $topbar_settings[$key] = $value; // allow null to disable gradient
-        continue;
+  if ($exists) {
+    $result = pg_query_params(
+      $connection,
+      "SELECT topbar_email, topbar_phone, topbar_bg_color, topbar_bg_gradient, topbar_text_color, topbar_link_color
+       FROM theme_settings
+       WHERE municipality_id = $1 AND is_active = TRUE
+       LIMIT 1",
+      [$muni_id]
+    );
+  
+    if ($result && pg_num_rows($result) > 0) {
+      $db_settings = pg_fetch_assoc($result);
+      foreach ($db_settings as $key => $value) {
+        if ($key === 'topbar_bg_gradient') {
+          $topbar_settings[$key] = $value; // allow null to disable gradient
+          continue;
+        }
+        if ($value !== null && $value !== '') {
+          $topbar_settings[$key] = $value;
+        }
       }
-      if ($value !== null && $value !== '') {
-        $topbar_settings[$key] = $value;
-      }
+      pg_free_result($result);
     }
-    pg_free_result($result);
   }
 }
 

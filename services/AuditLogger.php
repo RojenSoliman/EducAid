@@ -18,12 +18,30 @@
 
 class AuditLogger {
     private $connection;
+    private static $auditTableExists = null;
     
     /**
      * Initialize AuditLogger with database connection
      */
     public function __construct($dbConnection) {
         $this->connection = $dbConnection;
+    }
+
+    /**
+     * Check once if audit_logs table exists; cache the result.
+     */
+    private function ensureTableExists() {
+        if (self::$auditTableExists !== null) { return self::$auditTableExists; }
+        if (!$this->connection) { self::$auditTableExists = false; return false; }
+        $res = @pg_query($this->connection, "SELECT to_regclass('public.audit_logs') AS tbl");
+        if ($res) {
+            $row = pg_fetch_assoc($res);
+            @pg_free_result($res);
+            self::$auditTableExists = ($row && $row['tbl'] !== null);
+        } else {
+            self::$auditTableExists = false;
+        }
+        return self::$auditTableExists;
     }
     
     /**
@@ -46,6 +64,10 @@ class AuditLogger {
      */
     public function logEvent($eventType, $eventCategory, $actionDescription, $options = []) {
         try {
+            // If audit table is missing, skip silently
+            if (!$this->ensureTableExists()) {
+                return false;
+            }
             // Extract options with defaults
             $userId = $options['user_id'] ?? null;
             $userType = $options['user_type'] ?? 'system';
@@ -85,7 +107,7 @@ class AuditLogger {
                 )
             ";
             
-            $result = pg_query_params($this->connection, $query, [
+            $result = @pg_query_params($this->connection, $query, [
                 $userId, $userType, $username,
                 $eventType, $eventCategory, $actionDescription,
                 $status, $ipAddress, $userAgent,

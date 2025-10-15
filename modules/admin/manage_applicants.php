@@ -543,12 +543,27 @@ function check_documents($connection, $student_id) {
     $required = ['eaf', 'letter_to_mayor', 'certificate_of_indigency'];
     
     // Check if student needs upload tab (existing student) or uses registration docs (new student)
-    $student_info_query = pg_query_params($connection, 
-        "SELECT needs_document_upload, application_date FROM students WHERE student_id = $1", 
-        [$student_id]
-    );
-    $student_info = pg_fetch_assoc($student_info_query);
-    $needs_upload_tab = $student_info ? (bool)$student_info['needs_document_upload'] : true;
+    // Detect if column exists; if not, default to true (existing flow)
+    $colCheck = pg_query($connection, "SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='needs_document_upload'");
+    $hasNeedsUploadCol = $colCheck ? (pg_num_rows($colCheck) > 0) : false;
+    if ($colCheck) { pg_free_result($colCheck); }
+
+    if ($hasNeedsUploadCol) {
+        $student_info_query = pg_query_params($connection, 
+            "SELECT needs_document_upload, application_date FROM students WHERE student_id = $1", 
+            [$student_id]
+        );
+        $student_info = $student_info_query ? pg_fetch_assoc($student_info_query) : null;
+        $needs_upload_tab = $student_info ? (bool)$student_info['needs_document_upload'] : true;
+    } else {
+        // Column not present, assume existing students require upload tab
+        $student_info_query = pg_query_params($connection, 
+            "SELECT application_date FROM students WHERE student_id = $1", 
+            [$student_id]
+        );
+        $student_info = $student_info_query ? pg_fetch_assoc($student_info_query) : null;
+        $needs_upload_tab = true;
+    }
     
     $uploaded = [];
     

@@ -406,6 +406,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
     $_SESSION['otp'] = $otp;
     $_SESSION['otp_email'] = $email;
     $_SESSION['otp_timestamp'] = time();
+    // Flush session so verify requests immediately see the OTP state
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
 
     $mail = new PHPMailer(true);
 
@@ -473,9 +477,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
         $_SESSION['otp_verified'] = true;
         error_log("OTP verified successfully for email: " . $_SESSION['otp_email'] . ", session set to true");
         unset($_SESSION['otp'], $_SESSION['otp_email'], $_SESSION['otp_timestamp']);
+        if (session_status() === PHP_SESSION_ACTIVE) { session_write_close(); }
         json_response(['status' => 'success', 'message' => 'OTP verified successfully!']);
     } else {
         $_SESSION['otp_verified'] = false;
+        if (session_status() === PHP_SESSION_ACTIVE) { session_write_close(); }
         error_log("OTP verification failed - entered: " . $enteredOtp . ", expected: " . $_SESSION['otp']);
         json_response(['status' => 'error', 'message' => 'Invalid OTP. Please try again.']);
     }
