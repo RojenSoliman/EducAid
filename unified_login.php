@@ -12,7 +12,7 @@ if (isset($connection)) {
     // Fetch General Trias municipality data (assuming municipality_id = 1 or name = 'General Trias')
     $muni_result = pg_query_params(
         $connection,
-        "SELECT name, preset_logo_image 
+        "SELECT name, logo_image 
          FROM municipalities 
          WHERE LOWER(name) LIKE LOWER($1)
          LIMIT 1",
@@ -23,8 +23,8 @@ if (isset($connection)) {
         $muni_data = pg_fetch_assoc($muni_result);
         $municipality_name = $muni_data['name'];
         
-        if (!empty($muni_data['preset_logo_image'])) {
-            $logo_path = trim($muni_data['preset_logo_image']);
+        if (!empty($muni_data['logo_image'])) {
+            $logo_path = trim($muni_data['logo_image']);
             // Remove leading slash if present to make it relative to root
             $municipality_logo = ltrim($logo_path, '/');
         }
