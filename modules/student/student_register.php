@@ -784,14 +784,29 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             <title>$title</title>
             <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
-            <link href="../../assets/css/homepage.css" rel="stylesheet" /> 
             <style>
+                body {
+                    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #4b79a1 100%);
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 1.5rem;
+                    color: #0b1c33;
+                }
                 .alert-container {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
-                    height: 100vh;
+                    max-width: 520px;
+                    width: 100%;
+                    margin: 0 auto;
+                    background: rgba(255, 255, 255, 0.95);
+                    padding: 2.5rem 2rem;
+                    border-radius: 1.5rem;
+                    box-shadow: 0 20px 45px rgba(18, 38, 66, 0.35);
+                    text-align: center;
                 }
                 .spinner {
                     width: 3rem;
@@ -805,7 +820,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
                 }
             </style>
         </head>
-        <body class="bg-light">
+        <body>
             <div class="container alert-container">
                 <div class="text-center">
                     <svg class="spinner $iconColor" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid">

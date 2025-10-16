@@ -287,3 +287,12 @@
 [14-Oct-2025 23:04:52 Europe/Berlin] Attempt model=gemini-2.0-flash-lite-001 ver=v1beta code=429 err=
 [14-Oct-2025 23:04:53 Europe/Berlin] Attempt model=gemini-2.5-pro ver=v1beta code=429 err=
 [14-Oct-2025 23:04:54 Europe/Berlin] Attempt model=gemini-pro-latest ver=v1beta code=429 err=
+[16-Oct-2025 19:52:09 Europe/Berlin] Attempt model=gemini-2.5-flash ver=v1 code=429 err=
+[16-Oct-2025 19:52:10 Europe/Berlin] Attempt model=gemini-2.5-flash-lite ver=v1 code=429 err=
+[16-Oct-2025 19:52:11 Europe/Berlin] Attempt model=gemini-2.0-flash ver=v1 code=429 err=
+[16-Oct-2025 19:52:11 Europe/Berlin] Attempt model=gemini-flash-latest ver=v1beta code=429 err=
+[16-Oct-2025 19:52:12 Europe/Berlin] Attempt model=gemini-2.0-flash-001 ver=v1 code=429 err=
+[16-Oct-2025 19:52:13 Europe/Berlin] Attempt model=gemini-2.0-flash-lite ver=v1 code=429 err=
+[16-Oct-2025 19:52:13 Europe/Berlin] Attempt model=gemini-2.0-flash-lite-001 ver=v1 code=429 err=
+[16-Oct-2025 19:52:14 Europe/Berlin] Attempt model=gemini-2.5-pro ver=v1 code=429 err=
+[16-Oct-2025 19:52:15 Europe/Berlin] Attempt model=gemini-pro-latest ver=v1beta code=429 err=
