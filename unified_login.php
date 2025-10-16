@@ -249,6 +249,33 @@ if (
             ]);
             exit;
         }
+        
+        // Check if student is archived
+        if ($user['status'] === 'archived' || (isset($user['is_archived']) && $user['is_archived'] === true)) {
+            // Get archive reason
+            $archiveQuery = pg_query_params($connection,
+                "SELECT archive_reason, archived_at FROM students WHERE student_id = $1",
+                [$user['id']]
+            );
+            $archiveInfo = pg_fetch_assoc($archiveQuery);
+            
+            $reasonText = 'account inactivity';
+            if ($archiveInfo && $archiveInfo['archive_reason']) {
+                // Extract simple reason from archive_reason
+                if (stripos($archiveInfo['archive_reason'], 'graduated') !== false) {
+                    $reasonText = 'graduation';
+                } elseif (stripos($archiveInfo['archive_reason'], 'inactive') !== false) {
+                    $reasonText = 'prolonged inactivity';
+                }
+            }
+            
+            echo json_encode([
+                'status' => 'error',
+                'message' => "Your account has been archived due to {$reasonText}. If you believe this is an error, please contact the Office of the Mayor for assistance.",
+                'is_archived' => true
+            ]);
+            exit;
+        }
     } elseif ($adminRow = pg_fetch_assoc($adminRes)) {
         $user = $adminRow;
         $user['id'] = $user['admin_id'];
@@ -449,7 +476,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
         $email = trim($_POST['forgot_email']);
         
         // Check both tables (exclude students under registration and blacklisted)
-        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status NOT IN ('under_registration', 'blacklisted')", [$email]);
+        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status NOT IN ('under_registration', 'blacklisted', 'archived')", [$email]);
         $adminRes = pg_query_params($connection, "SELECT admin_id, role FROM admins WHERE email = $1", [$email]);
         
         $user = null;
@@ -472,6 +499,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                 [$email]
             );
             
+            // Check if it's an archived student
+            $archivedCheck = pg_query_params($connection,
+                "SELECT student_id FROM students WHERE email = $1 AND status = 'archived'",
+                [$email]
+            );
+            
             if (pg_fetch_assoc($underRegistrationCheck)) {
                 echo json_encode([
                     'status'=>'error',
@@ -481,6 +514,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                 echo json_encode([
                     'status'=>'error',
                     'message'=>'Account suspended. Please contact the Office of the Mayor for assistance.'
+                ]);
+            } elseif (pg_fetch_assoc($archivedCheck)) {
+                echo json_encode([
+                    'status'=>'error',
+                    'message'=>'Your account has been archived. Please contact the Office of the Mayor if you believe this is an error.'
                 ]);
             } else {
                 echo json_encode(['status'=>'error','message'=>'Email not found.']);

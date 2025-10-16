@@ -91,6 +91,8 @@ $isDistributionActive = in_array($current, $distributionFiles, true);
 /** Submenu membership for "System Controls" (super_admin) */
 $sysControlsFiles = [
     'blacklist_archive.php',
+    'archived_students.php',
+    'run_automatic_archiving_admin.php',
     'document_archives.php',
     'admin_management.php',
     'municipality_content.php',
@@ -208,6 +210,16 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
           <li>
             <a class="submenu-link <?= is_active('blacklist_archive.php', $current) ? 'active' : '' ?>" href="blacklist_archive.php">
               <i class="bi bi-person-x-fill me-2"></i> Blacklist Archive
+            </a>
+          </li>
+          <li>
+            <a class="submenu-link <?= is_active('archived_students.php', $current) ? 'active' : '' ?>" href="archived_students.php">
+              <i class="bi bi-archive-fill me-2"></i> Archived Students
+            </a>
+          </li>
+          <li>
+            <a class="submenu-link <?= is_active('run_automatic_archiving_admin.php', $current) ? 'active' : '' ?>" href="run_automatic_archiving_admin.php">
+              <i class="bi bi-clock-history me-2"></i> Run Auto-Archiving
             </a>
           </li>
           <li>

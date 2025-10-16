@@ -827,6 +827,12 @@ function render_table($applicants, $connection) {
                                 
                                 <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
                                 <div class="ms-auto">
+                                    <button class="btn btn-outline-warning btn-sm me-2" 
+                                            onclick="showArchiveModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>')"
+                                            data-bs-dismiss="modal"
+                                            title="Archive Student">
+                                        <i class="bi bi-archive me-1"></i> Archive Student
+                                    </button>
                                     <button class="btn btn-outline-danger btn-sm" 
                                             onclick="showBlacklistModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
                                                 barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
@@ -1001,6 +1007,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 }
+
+// --------- Archive Student Handler ---------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'archive_student') {
+    header('Content-Type: application/json');
+    
+    // Verify super admin
+    if ($_SESSION['admin_role'] !== 'super_admin') {
+        echo json_encode(['success' => false, 'message' => 'Only super admins can archive students']);
+        exit;
+    }
+    
+    $studentId = $_POST['student_id'] ?? null;
+    $archiveReason = trim($_POST['archive_reason'] ?? '');
+    
+    if (!$studentId || empty($archiveReason)) {
+        echo json_encode(['success' => false, 'message' => 'Student ID and reason are required']);
+        exit;
+    }
+    
+    // Get student data before archiving for audit log
+    $studentQuery = pg_query_params($connection,
+        "SELECT student_id, first_name, last_name, middle_name, email, year_level_id, expected_graduation_year 
+         FROM students WHERE student_id = $1",
+        [$studentId]
+    );
+    
+    if (!$studentQuery || pg_num_rows($studentQuery) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Student not found']);
+        exit;
+    }
+    
+    $student = pg_fetch_assoc($studentQuery);
+    $fullName = trim($student['first_name'] . ' ' . ($student['middle_name'] ?? '') . ' ' . $student['last_name']);
+    
+    // Get year level name
+    $yearLevelName = null;
+    if ($student['year_level_id']) {
+        $ylQuery = pg_query_params($connection, "SELECT name FROM year_levels WHERE year_level_id = $1", [$student['year_level_id']]);
+        if ($ylQuery && pg_num_rows($ylQuery) > 0) {
+            $yearLevelName = pg_fetch_assoc($ylQuery)['name'];
+        }
+    }
+    
+    // Archive student using PostgreSQL function
+    $result = pg_query_params($connection,
+        "SELECT archive_student_manual($1, $2, $3) as success",
+        [$studentId, $_SESSION['admin_id'], $archiveReason]
+    );
+    
+    if ($result && pg_fetch_assoc($result)['success'] === 't') {
+        // Log to audit trail
+        require_once __DIR__ . '/../../services/AuditLogger.php';
+        $auditLogger = new AuditLogger($connection);
+        $auditLogger->logStudentArchived(
+            $_SESSION['admin_id'],
+            $_SESSION['admin_username'],
+            $studentId,
+            [
+                'full_name' => $fullName,
+                'email' => $student['email'],
+                'year_level' => $yearLevelName,
+                'expected_graduation_year' => $student['expected_graduation_year']
+            ],
+            $archiveReason,
+            false // not automatic
+        );
+        
+        echo json_encode(['success' => true, 'message' => 'Student successfully archived']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Failed to archive student']);
+    }
+    exit;
+}
+
 // --------- AJAX handler ---------
 if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET['ajax']) && $_GET['ajax'] === '1')) {
     // Return table content and stats for real-time updates
@@ -1916,6 +1996,136 @@ function openDocumentViewer(src, title) {
 function closeDocumentViewer() {
     const backdrop = document.getElementById('docViewerBackdrop');
     if (backdrop) backdrop.style.display = 'none';
+}
+
+// Archive Student Modal and Functions
+function showArchiveModal(studentId, studentName) {
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('archiveStudentModal');
+    if (!modal) {
+        const modalHtml = `
+            <div class="modal fade" id="archiveStudentModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header bg-warning text-dark">
+                            <h5 class="modal-title">
+                                <i class="bi bi-archive"></i> Archive Student
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                <strong>Warning:</strong> Archiving will prevent this student from logging in and accessing the system.
+                            </div>
+                            <p>You are about to archive: <strong id="archiveStudentName"></strong></p>
+                            <input type="hidden" id="archiveStudentId">
+                            
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Archive Reason: <span class="text-danger">*</span></label>
+                                <select class="form-select mb-2" id="archiveReasonSelect" onchange="handleArchiveReasonChange()">
+                                    <option value="">Select a reason...</option>
+                                    <option value="Graduated">Graduated</option>
+                                    <option value="Did not attend distribution">Did not attend distribution</option>
+                                    <option value="No longer eligible">No longer eligible</option>
+                                    <option value="Withdrew from program">Withdrew from program</option>
+                                    <option value="Duplicate account">Duplicate account</option>
+                                    <option value="custom">Other (specify below)</option>
+                                </select>
+                                <textarea class="form-control" id="archiveReasonText" rows="3" 
+                                          placeholder="Enter detailed reason for archiving..." 
+                                          style="display: none;"></textarea>
+                                <small class="text-muted">This reason will be recorded in the audit trail.</small>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-warning" onclick="confirmArchiveStudent()">
+                                <i class="bi bi-archive"></i> Archive Student
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modal = document.getElementById('archiveStudentModal');
+    }
+    
+    // Set student details
+    document.getElementById('archiveStudentId').value = studentId;
+    document.getElementById('archiveStudentName').textContent = studentName;
+    document.getElementById('archiveReasonSelect').value = '';
+    document.getElementById('archiveReasonText').value = '';
+    document.getElementById('archiveReasonText').style.display = 'none';
+    
+    // Show modal
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+}
+
+function handleArchiveReasonChange() {
+    const select = document.getElementById('archiveReasonSelect');
+    const textarea = document.getElementById('archiveReasonText');
+    
+    if (select.value === 'custom') {
+        textarea.style.display = 'block';
+        textarea.focus();
+    } else {
+        textarea.style.display = 'none';
+        textarea.value = '';
+    }
+}
+
+function confirmArchiveStudent() {
+    const studentId = document.getElementById('archiveStudentId').value;
+    const studentName = document.getElementById('archiveStudentName').textContent;
+    const reasonSelect = document.getElementById('archiveReasonSelect').value;
+    const reasonText = document.getElementById('archiveReasonText').value;
+    
+    let finalReason = '';
+    if (reasonSelect === 'custom') {
+        finalReason = reasonText.trim();
+    } else if (reasonSelect) {
+        finalReason = reasonSelect;
+    }
+    
+    if (!finalReason) {
+        alert('Please select or enter a reason for archiving.');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to archive ${studentName}?\n\nReason: ${finalReason}\n\nThis student will no longer be able to log in.`)) {
+        return;
+    }
+    
+    // Send archive request
+    const formData = new FormData();
+    formData.append('action', 'archive_student');
+    formData.append('student_id', studentId);
+    formData.append('archive_reason', finalReason);
+    
+    fetch('manage_applicants.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('archiveStudentModal'));
+            modal.hide();
+            // Reload page to refresh the list
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('An error occurred. Please try again.');
+        console.error(error);
+    });
 }
 </script>
 </body>

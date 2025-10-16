@@ -665,5 +665,130 @@ class AuditLogger {
         
         return pg_query_params($this->connection, $query, $params);
     }
+    
+    // ============================================
+    // STUDENT ARCHIVING EVENTS
+    // ============================================
+    
+    /**
+     * Log student archived (manual or automatic)
+     */
+    public function logStudentArchived($adminId, $adminUsername, $studentId, $studentData, $reason, $isAutomatic = false) {
+        $eventType = $isAutomatic ? 'student_archived_automatic' : 'student_archived_manual';
+        $description = $isAutomatic 
+            ? "Student automatically archived: {$studentData['full_name']} ({$studentId})" 
+            : "Student manually archived by {$adminUsername}: {$studentData['full_name']} ({$studentId})";
+        
+        $metadata = [
+            'reason' => $reason,
+            'archive_type' => $isAutomatic ? 'automatic' : 'manual',
+            'expected_graduation_year' => $studentData['expected_graduation_year'] ?? null,
+            'year_level' => $studentData['year_level'] ?? null
+        ];
+        
+        return $this->logEvent(
+            $eventType,
+            'archive',
+            $description,
+            [
+                'user_id' => $adminId,
+                'user_type' => $isAutomatic ? 'system' : 'admin',
+                'username' => $isAutomatic ? 'system' : $adminUsername,
+                'status' => 'success',
+                'affected_table' => 'students',
+                'affected_record_id' => $studentId,
+                'old_values' => null,
+                'new_values' => $studentData,
+                'metadata' => $metadata
+            ]
+        );
+    }
+    
+    /**
+     * Log student unarchived
+     */
+    public function logStudentUnarchived($adminId, $adminUsername, $studentId, $studentData) {
+        $description = "Student unarchived by {$adminUsername}: {$studentData['full_name']} ({$studentId})";
+        
+        $metadata = [
+            'previous_archive_reason' => $studentData['archive_reason'] ?? null,
+            'archived_at' => $studentData['archived_at'] ?? null
+        ];
+        
+        return $this->logEvent(
+            'student_unarchived',
+            'archive',
+            $description,
+            [
+                'user_id' => $adminId,
+                'user_type' => 'admin',
+                'username' => $adminUsername,
+                'status' => 'success',
+                'affected_table' => 'students',
+                'affected_record_id' => $studentId,
+                'old_values' => $studentData,
+                'new_values' => null,
+                'metadata' => $metadata
+            ]
+        );
+    }
+    
+    /**
+     * Log bulk automatic archiving
+     */
+    public function logBulkArchiving($totalArchived, $studentIds, $executedBy = null) {
+        $description = "Automatic bulk archiving completed: {$totalArchived} student(s) archived";
+        
+        if ($executedBy) {
+            $description .= " (executed by {$executedBy})";
+        }
+        
+        $metadata = [
+            'total_archived' => $totalArchived,
+            'student_ids' => $studentIds,
+            'execution_type' => $executedBy ? 'manual_trigger' : 'scheduled_task'
+        ];
+        
+        return $this->logEvent(
+            'bulk_archiving_executed',
+            'archive',
+            $description,
+            [
+                'user_id' => null,
+                'user_type' => 'system',
+                'username' => 'system',
+                'status' => 'success',
+                'affected_table' => 'students',
+                'affected_record_id' => null,
+                'old_values' => null,
+                'new_values' => ['count' => $totalArchived],
+                'metadata' => $metadata
+            ]
+        );
+    }
+    
+    /**
+     * Log archiving system initialization
+     */
+    public function logArchivingSystemInitialized($adminId = null, $adminUsername = null) {
+        $description = "Student archiving system initialized";
+        
+        if ($adminId && $adminUsername) {
+            $description .= " by {$adminUsername}";
+        }
+        
+        return $this->logEvent(
+            'archiving_system_initialized',
+            'system',
+            $description,
+            [
+                'user_id' => $adminId,
+                'user_type' => $adminId ? 'admin' : 'system',
+                'username' => $adminUsername ?? 'system',
+                'status' => 'success',
+                'metadata' => ['initialized_at' => date('Y-m-d H:i:s')]
+            ]
+        );
+    }
 }
 ?>
