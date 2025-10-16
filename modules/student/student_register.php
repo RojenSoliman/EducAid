@@ -738,25 +738,14 @@ if (!$isAjaxRequest) {
 
 // --- Distribution Control & Slot check ---
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
-    // First check if registration slots are globally enabled
-    $slots_open_query = "SELECT value FROM config WHERE key = 'slots_open'";
-    $slots_open_result = pg_query($connection, $slots_open_query);
-    $slots_globally_open = false;
-
-    if ($slots_open_result && $slots_row = pg_fetch_assoc($slots_open_result)) {
-        $slots_globally_open = ($slots_row['value'] === '1');
-    }
-    
+    // Check if there's an active slot for this municipality
     $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
     $slotInfo = pg_fetch_assoc($slotRes);
     $slotsLeft = 0;
     $noSlotsAvailable = false;
     $slotsFull = false;
     
-    if (!$slots_globally_open) {
-        // Slots are globally disabled by distribution control
-        $noSlotsAvailable = true;
-    } elseif ($slotInfo) {
+    if ($slotInfo) {
         // There is an active slot, check if it's full
         $countRes = pg_query_params($connection, "
             SELECT COUNT(*) AS total FROM students
@@ -775,21 +764,16 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     
     if ($noSlotsAvailable || $slotsFull) {
         // Determine the appropriate message and styling
-        if (!$slots_globally_open) {
-            $title = "EducAid – Registration Temporarily Closed";
-            $headerText = "Registration is temporarily closed.";
-            $messageText = "Registration will be available when the next distribution cycle begins and slots are opened by administrators.";
-            $iconColor = "text-info";
-        } elseif ($noSlotsAvailable) {
-            $title = "EducAid – Registration Not Available";
-            $headerText = "Registration is currently closed.";
-            $messageText = "Please wait for the next opening of slots.";
-            $iconColor = "text-warning";
-        } else {
+        if ($slotsFull) {
             $title = "EducAid – Registration Closed";
             $headerText = "Slots are full.";
             $messageText = "Please wait for the next announcement before registering again.";
             $iconColor = "text-danger";
+        } else {
+            $title = "EducAid – Registration Not Available";
+            $headerText = "Registration is currently closed.";
+            $messageText = "Please wait for the next opening of slots.";
+            $iconColor = "text-warning";
         }
         
         echo <<<HTML
@@ -4008,25 +3992,6 @@ function resetProcessButton() {
     }
 }
 
-// Debug function to test POST requests
-function testPostRequest() {
-    const formData = new FormData();
-    formData.append('debug_test', '1');
-    
-    fetch(window.location.href, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('POST test result:', data);
-        alert('POST test successful: ' + data.message);
-    })
-    .catch(error => {
-        console.error('POST test failed:', error);
-        alert('POST test failed: ' + error.message);
-    });
-}
 
 // ============================================
 // OTP FUNCTIONALITY
