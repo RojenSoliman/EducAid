@@ -27,8 +27,8 @@ if (isset($_SESSION['student_id'])) {
     // Fetch student name and registration date
     $studentRes = pg_query_params(
         $connection,
-        "SELECT TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS display_name, 
-                created_at
+  "SELECT TRIM(BOTH FROM CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))) AS display_name, 
+    application_date
          FROM students WHERE student_id = $1 LIMIT 1",
         [$_SESSION['student_id']]
     );
@@ -46,7 +46,7 @@ if (isset($_SESSION['student_id'])) {
                 $last_distribution_date = $last_distribution_row['last_date'];
                 
                 if ($last_distribution_date) {
-                    $registration_date = $studentRow['created_at'];
+                    $registration_date = $studentRow['application_date'];
                     // If registered after last distribution, they're "new" - don't show Upload tab
                     if (strtotime($registration_date) <= strtotime($last_distribution_date)) {
                         $needs_upload_tab = true; // Existing student - needs to re-upload
