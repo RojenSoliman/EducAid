@@ -127,11 +127,6 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
     <!-- Manage Applicants -->
     <?= menu_link('manage_applicants.php', 'bi bi-people', 'Manage Applicants', is_active('manage_applicants.php', $current)); ?>
 
-    <!-- Validate Grades -->
-    <?php if ($admin_role === 'super_admin'): ?>
-      <?= menu_link('validate_grades.php', 'bi bi-file-earmark-check', 'Validate Grades', is_active('validate_grades.php', $current)); ?>
-    <?php endif; ?>
-
     <!-- My Profile -->
     <?= menu_link('admin_profile.php', 'bi bi-person-circle', 'My Profile', is_active('admin_profile.php', $current)); ?>
 
