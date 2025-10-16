@@ -169,5 +169,12 @@
         });
     </script>
 </body>
-<?php if (file_exists(__DIR__ . '/../includes/website/cookie_consent.php')) { include __DIR__ . '/../includes/website/cookie_consent.php'; } ?>
+<?php
+if (!defined('EA_DISABLE_COOKIE_BANNER')) {
+    define('EA_DISABLE_COOKIE_BANNER', true);
+}
+if (file_exists(__DIR__ . '/../includes/website/cookie_consent.php')) {
+    include __DIR__ . '/../includes/website/cookie_consent.php';
+}
+?>
 </html>

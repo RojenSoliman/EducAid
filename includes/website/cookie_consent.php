@@ -1,5 +1,8 @@
 <?php
 // Simple cookie consent banner include
+if (defined('EA_DISABLE_COOKIE_BANNER') && constant('EA_DISABLE_COOKIE_BANNER')) {
+  return;
+}
 ?>
 <div id="eaCookieConsent" style="display:none; position:fixed; left:0; right:0; bottom:0; z-index:1100;">
   <div class="container">
