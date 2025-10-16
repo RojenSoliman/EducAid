@@ -738,25 +738,14 @@ if (!$isAjaxRequest) {
 
 // --- Distribution Control & Slot check ---
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
-    // First check if registration slots are globally enabled
-    $slots_open_query = "SELECT value FROM config WHERE key = 'slots_open'";
-    $slots_open_result = pg_query($connection, $slots_open_query);
-    $slots_globally_open = false;
-
-    if ($slots_open_result && $slots_row = pg_fetch_assoc($slots_open_result)) {
-        $slots_globally_open = ($slots_row['value'] === '1');
-    }
-    
+    // Check if there's an active slot for this municipality
     $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
     $slotInfo = pg_fetch_assoc($slotRes);
     $slotsLeft = 0;
     $noSlotsAvailable = false;
     $slotsFull = false;
     
-    if (!$slots_globally_open) {
-        // Slots are globally disabled by distribution control
-        $noSlotsAvailable = true;
-    } elseif ($slotInfo) {
+    if ($slotInfo) {
         // There is an active slot, check if it's full
         $countRes = pg_query_params($connection, "
             SELECT COUNT(*) AS total FROM students
@@ -775,21 +764,16 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     
     if ($noSlotsAvailable || $slotsFull) {
         // Determine the appropriate message and styling
-        if (!$slots_globally_open) {
-            $title = "EducAid – Registration Temporarily Closed";
-            $headerText = "Registration is temporarily closed.";
-            $messageText = "Registration will be available when the next distribution cycle begins and slots are opened by administrators.";
-            $iconColor = "text-info";
-        } elseif ($noSlotsAvailable) {
-            $title = "EducAid – Registration Not Available";
-            $headerText = "Registration is currently closed.";
-            $messageText = "Please wait for the next opening of slots.";
-            $iconColor = "text-warning";
-        } else {
+        if ($slotsFull) {
             $title = "EducAid – Registration Closed";
             $headerText = "Slots are full.";
             $messageText = "Please wait for the next announcement before registering again.";
             $iconColor = "text-danger";
+        } else {
+            $title = "EducAid – Registration Not Available";
+            $headerText = "Registration is currently closed.";
+            $messageText = "Please wait for the next opening of slots.";
+            $iconColor = "text-warning";
         }
         
         echo <<<HTML
@@ -936,6 +920,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
     $_SESSION['otp'] = $otp;
     $_SESSION['otp_email'] = $email;
     $_SESSION['otp_timestamp'] = time();
+    // Immediately flush session changes so subsequent requests (e.g., OTP verify) can see them
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+        // Do not immediately reopen the session here to avoid re-locking.
+        // This branch will respond via json_response after mailing, and does not need further session writes.
+    }
 
     $mail = new PHPMailer(true);
 
@@ -1034,9 +1024,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
         $_SESSION['otp_verified'] = true;
         error_log("OTP verified successfully for email: " . $_SESSION['otp_email'] . ", session set to true");
         unset($_SESSION['otp'], $_SESSION['otp_email'], $_SESSION['otp_timestamp']);
+        // Flush session updates before returning JSON to avoid stale reads from rapid follow-ups
+        if (session_status() === PHP_SESSION_ACTIVE) { session_write_close(); }
         json_response(['status' => 'success', 'message' => 'OTP verified successfully!']);
     } else {
         $_SESSION['otp_verified'] = false;
+        // Flush session state update to reduce risk of duplicate/conflicting attempts
+        if (session_status() === PHP_SESSION_ACTIVE) { session_write_close(); }
         error_log("OTP verification failed - entered: " . $enteredOtp . ", expected: " . $_SESSION['otp']);
         json_response(['status' => 'error', 'message' => 'Invalid OTP. Please try again.']);
     }
@@ -2526,8 +2520,28 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         json_response(['status' => 'error', 'message' => 'This mobile number is already registered.']);
     }
 
-    // Generate unique student ID
-    $student_id = 'TRIAS-' . strtoupper(bin2hex(random_bytes(3)));
+    // Generate system student ID: <MUNICIPALITY>-<YEAR>-<YEARLEVEL>-<SEQUENCE>
+    require_once __DIR__ . '/../../includes/util/student_id.php';
+    $student_id = generateSystemStudentId($connection, $year_level, $municipality_id, intval(date('Y')));
+    if (!$student_id) {
+        // Fallback to avoid blocking registration: generate RANDOM6 with uniqueness check
+        $ylCode = (string)intval($year_level);
+        $muniPrefix = 'MUNI' . intval($municipality_id);
+        $mr = @pg_query_params($connection, "SELECT COALESCE(NULLIF(slug,''), name) AS tag FROM municipalities WHERE municipality_id = $1", [$municipality_id]);
+        if ($mr && pg_num_rows($mr) > 0) { $mrow = pg_fetch_assoc($mr); $muniPrefix = preg_replace('/[^A-Z0-9]/', '', strtoupper((string)($mrow['tag'] ?? $muniPrefix))); }
+        $base = $muniPrefix . '-' . date('Y') . '-' . $ylCode . '-';
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
+        for ($attempt=0;$attempt<25;$attempt++) {
+            $rand = '';
+            for ($i=0;$i<6;$i++) { $rand .= $chars[random_int(0, strlen($chars)-1)]; }
+            $candidate = $base . $rand;
+            $chk = @pg_query_params($connection, "SELECT 1 FROM students WHERE student_id = $1 LIMIT 1", [$candidate]);
+            if ($chk && pg_num_rows($chk) === 0) { $student_id = $candidate; break; }
+        }
+        if (!$student_id) {
+            $student_id = $base . substr(strtoupper(bin2hex(random_bytes(4))), 0, 8);
+        }
+    }
 
     // Get current active slot ID for tracking
     $activeSlotQuery = pg_query_params($connection, "SELECT slot_id FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
@@ -3998,25 +4012,6 @@ function resetProcessButton() {
     }
 }
 
-// Debug function to test POST requests
-function testPostRequest() {
-    const formData = new FormData();
-    formData.append('debug_test', '1');
-    
-    fetch(window.location.href, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('POST test result:', data);
-        alert('POST test successful: ' + data.message);
-    })
-    .catch(error => {
-        console.error('POST test failed:', error);
-        alert('POST test failed: ' + error.message);
-    });
-}
 
 // ============================================
 // OTP FUNCTIONALITY

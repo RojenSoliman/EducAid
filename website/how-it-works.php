@@ -55,6 +55,7 @@ if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_
   
   include '../includes/website/topbar.php';
   include '../includes/website/navbar.php';
+  include '../includes/website/cookie_consent.php';
   ?>
 
   <!-- Hero Section -->

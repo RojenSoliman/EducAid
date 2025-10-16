@@ -62,6 +62,29 @@ if (isset($_SESSION['upload_partial'])) {
 // Get student ID and check if they should even see this page
 $student_id = $_SESSION['student_id'];
 
+// Helper: check if a column exists (case-insensitive)
+if (!function_exists('ea_col_exists')) {
+  function ea_col_exists($conn, string $table, string $column, string $schema = 'public'): bool {
+    $res = @pg_query_params($conn, "SELECT 1 FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 AND column_name=$3", [strtolower($schema), strtolower($table), strtolower($column)]);
+    return $res && (bool)pg_fetch_row($res);
+  }
+}
+
+// Determine a safe student registration/application date
+$student_application_date = null;
+$studentDateCol = null;
+if (ea_col_exists($connection, 'students', 'application_date')) {
+  $studentDateCol = 'application_date';
+} elseif (ea_col_exists($connection, 'students', 'created_at')) {
+  $studentDateCol = 'created_at';
+}
+if ($studentDateCol) {
+  $dateRes = @pg_query_params($connection, "SELECT $studentDateCol AS reg_date FROM students WHERE student_id = $1", [$student_id]);
+  if ($dateRes && ($dateRow = pg_fetch_assoc($dateRes))) {
+    $student_application_date = $dateRow['reg_date'] ?? null;
+  }
+}
+
 // Check if documents were uploaded through upload_document.php (by checking file path pattern)
 // Only count documents uploaded through this interface, not from admin/registration
 $query = "SELECT COUNT(*) AS total_uploaded FROM documents 
@@ -1287,11 +1310,25 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
             <p>Complete your application by uploading all required documents</p>
             <?php 
             // Check if this is after a distribution cycle
-            $last_distribution_query = "SELECT finalized_at FROM distribution_snapshots ORDER BY finalized_at DESC LIMIT 1";
-            $last_distribution_result = pg_query($connection, $last_distribution_query);
-            $last_distribution = pg_fetch_assoc($last_distribution_result);
+            // Determine a safe distribution timestamp column
+            $distDateCol = null;
+            if (ea_col_exists($connection, 'distribution_snapshots', 'finalized_at')) {
+              $distDateCol = 'finalized_at';
+            } elseif (ea_col_exists($connection, 'distribution_snapshots', 'distribution_date')) {
+              $distDateCol = 'distribution_date';
+            } elseif (ea_col_exists($connection, 'distribution_snapshots', 'created_at')) {
+              $distDateCol = 'created_at';
+            }
+            $lastDistTs = null;
+            if ($distDateCol) {
+              $last_distribution_query = "SELECT $distDateCol AS last_ts FROM distribution_snapshots ORDER BY $distDateCol DESC LIMIT 1";
+              $last_distribution_result = @pg_query($connection, $last_distribution_query);
+              if ($last_distribution_result && ($ldRow = pg_fetch_assoc($last_distribution_result))) {
+                $lastDistTs = $ldRow['last_ts'] ?? null;
+              }
+            }
             
-            if ($last_distribution && $student_info['application_date'] < $last_distribution['finalized_at']): ?>
+            if ($lastDistTs && $student_application_date && strtotime($student_application_date) < strtotime($lastDistTs)): ?>
             <div class="alert alert-info mt-3">
               <i class="bi bi-info-circle me-2"></i>
               <strong>New Distribution Cycle:</strong> Please upload your documents again for the current academic period. 

@@ -523,6 +523,8 @@ function lp_block_style($key){
     </div>
   </footer>
 
+  <?php include '../includes/website/cookie_consent.php'; ?>
+
   <!-- Chatbot Widget -->
 <div class="ea-chat">
   <button class="ea-chat__toggle" id="eaToggle">
@@ -574,6 +576,8 @@ function lp_block_style($key){
 
   // Current year
   document.getElementById('year').textContent = new Date().getFullYear();
+
+  // Cookie consent handled by shared include
 
   // Newsletter form handler (no CAPTCHA)
   const newsletterForm = document.getElementById('newsletterForm');

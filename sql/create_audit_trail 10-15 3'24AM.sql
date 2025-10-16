@@ -117,11 +117,18 @@ INSERT INTO audit_logs (
 --   - document_verified, document_rejected
 --   - document_deleted
 --
+-- ARCHIVE (event_category: 'archive')
+--   - student_archived_manual
+--   - student_archived_automatic
+--   - student_unarchived
+--   - bulk_archiving_executed
+--
 -- SYSTEM (event_category: 'system')
 --   - config_changed
 --   - bulk_operation
 --   - data_export
 --   - system_maintenance
+--   - archiving_system_initialized
 --
 -- ============================================
 

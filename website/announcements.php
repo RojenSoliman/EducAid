@@ -151,6 +151,7 @@ $custom_nav_links = [
   // Modular includes placed inside body to mirror landing page structure
   include '../includes/website/topbar.php';
   include '../includes/website/navbar.php';
+  include '../includes/website/cookie_consent.php';
 ?>
 
 <!-- Hero (mirrors landing page hero pattern) -->

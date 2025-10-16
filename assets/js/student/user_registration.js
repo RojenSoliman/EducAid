@@ -42,7 +42,9 @@ async function checkExistingAccount(email, mobile) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
             },
+            credentials: 'same-origin',
             body: new URLSearchParams({
                 'check_existing': '1',
                 'email': email || '',
@@ -63,7 +65,9 @@ async function cleanupTempFiles() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
             },
+            credentials: 'same-origin',
             body: new URLSearchParams({
                 'cleanup_temp': '1'
             })
@@ -768,14 +772,14 @@ document.getElementById("sendOtpBtn").addEventListener("click", function() {
         grecaptcha.ready(function(){
             grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'send_otp'}).then(function(token){
                 formData.append('g-recaptcha-response', token);
-                fetch('student_register.php', { method: 'POST', body: formData })
+                fetch('student_register.php', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                     .then(r=>r.json())
                     .then(handleSendOtpResponse)
                     .catch(handleSendOtpError);
             });
         });
     } else {
-        fetch('student_register.php', { method: 'POST', body: formData })
+        fetch('student_register.php', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(r=>r.json())
             .then(handleSendOtpResponse)
             .catch(handleSendOtpError);
@@ -829,7 +833,7 @@ document.getElementById("resendOtpBtn").addEventListener("click", function() {
         grecaptcha.ready(function(){
             grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'send_otp'}).then(function(token){
                 formData.append('g-recaptcha-response', token);
-                fetch('student_register.php', { method:'POST', body: formData })
+                                fetch('student_register.php', { method:'POST', body: formData, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                   .then(r=>r.json())
                   .then(data => {
                       if (data.status === 'success') {
@@ -853,7 +857,7 @@ document.getElementById("resendOtpBtn").addEventListener("click", function() {
             });
         });
     } else {
-        fetch('student_register.php', { method: 'POST', body: formData })
+        fetch('student_register.php', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(r=>r.json())
             .then(data => {
                 if (data.status === 'success') {
@@ -900,14 +904,14 @@ document.getElementById("verifyOtpBtn").addEventListener("click", function() {
         grecaptcha.ready(function(){
             grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'verify_otp'}).then(function(token){
                 formData.append('g-recaptcha-response', token);
-                fetch('student_register.php', { method:'POST', body: formData })
+                                fetch('student_register.php', { method:'POST', body: formData, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                   .then(r=>r.json())
                   .then(handleVerifyOtpResponse)
                   .catch(handleVerifyOtpError);
             });
         });
     } else {
-        fetch('student_register.php', { method: 'POST', body: formData })
+        fetch('student_register.php', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(r=>r.json())
             .then(handleVerifyOtpResponse)
             .catch(handleVerifyOtpError);
@@ -1433,14 +1437,14 @@ document.getElementById('processOcrBtn').addEventListener('click', function() {
         grecaptcha.ready(function(){
             grecaptcha.execute(window.RECAPTCHA_SITE_KEY, {action:'process_ocr'}).then(function(token){
                 formData.append('g-recaptcha-response', token);
-                fetch('student_register.php', { method:'POST', body: formData })
+                                fetch('student_register.php', { method:'POST', body: formData, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                   .then(r=>r.json())
                   .then(handleProcessOcrResponse)
                   .catch(handleProcessOcrError);
             });
         });
     } else {
-        fetch('student_register.php', { method: 'POST', body: formData })
+        fetch('student_register.php', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(r=>r.json())
             .then(handleProcessOcrResponse)
             .catch(handleProcessOcrError);

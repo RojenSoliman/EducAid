@@ -244,6 +244,23 @@ if ($DEMO_MODE) {
         </div>
         <p class="text-muted mb-0">Here you can manage student registrations, verify applicants, and more.</p>
 
+        <!-- Automatic Archiving Notification (Super Admin Only) -->
+        <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
+        <div id="archivingNotification" class="alert alert-warning alert-dismissible fade show mt-3" style="display: none;">
+          <div class="d-flex align-items-start">
+            <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+            <div class="flex-grow-1">
+              <h6 class="alert-heading mb-1">Automatic Archiving Recommended</h6>
+              <p id="archivingMessage" class="mb-2"></p>
+              <a href="run_automatic_archiving_admin.php" class="btn btn-warning btn-sm">
+                <i class="bi bi-archive"></i> Review & Run Archiving
+              </a>
+            </div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        <?php endif; ?>
+
         <!-- Dashboard Tiles -->
         <div class="dashboard-tile-row">
           <div class="dashboard-tile tile-blue">
@@ -810,6 +827,25 @@ if ($DEMO_MODE) {
           createUnifiedChart(e.target.value);
         });
       }
+
+      // Check for automatic archiving notification (Super Admin only)
+      <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
+      fetch('check_automatic_archiving.php')
+        .then(response => response.json())
+        .then(data => {
+          if (data.should_archive) {
+            const notification = document.getElementById('archivingNotification');
+            const message = document.getElementById('archivingMessage');
+            if (notification && message) {
+              message.innerHTML = data.message;
+              notification.style.display = 'block';
+            }
+          }
+        })
+        .catch(error => {
+          console.error('Error checking archiving status:', error);
+        });
+      <?php endif; ?>
     });
   </script>
 </body>

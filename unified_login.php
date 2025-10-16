@@ -4,6 +4,15 @@ include __DIR__ . '/config/recaptcha_config.php';
 require_once __DIR__ . '/services/AuditLogger.php';
 session_start();
 
+// For AJAX/POST JSON responses, prevent PHP warnings from leaking into output
+if (
+    ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' ||
+    (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+) {
+    @ini_set('display_errors', '0');
+    @ini_set('html_errors', '0');
+}
+
 // Fetch municipality data for navbar (General Trias as default)
 $municipality_logo = null;
 $municipality_name = 'General Trias';
@@ -12,7 +21,7 @@ if (isset($connection)) {
     // Fetch General Trias municipality data (assuming municipality_id = 1 or name = 'General Trias')
     $muni_result = pg_query_params(
         $connection,
-        "SELECT name, preset_logo_image 
+        "SELECT name, logo_image 
          FROM municipalities 
          WHERE LOWER(name) LIKE LOWER($1)
          LIMIT 1",
@@ -23,8 +32,8 @@ if (isset($connection)) {
         $muni_data = pg_fetch_assoc($muni_result);
         $municipality_name = $muni_data['name'];
         
-        if (!empty($muni_data['preset_logo_image'])) {
-            $logo_path = trim($muni_data['preset_logo_image']);
+        if (!empty($muni_data['logo_image'])) {
+            $logo_path = trim($muni_data['logo_image']);
             // Remove leading slash if present to make it relative to root
             $municipality_logo = ltrim($logo_path, '/');
         }
@@ -159,6 +168,8 @@ function verifyRecaptcha($recaptchaResponse, $action = 'login') {
 // Always return JSON for AJAX requests
 if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
     header('Content-Type: application/json');
+    header('X-Content-Type-Options: nosniff');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
 }
 
 // LOGIN PHASE 1: credentials → send login-OTP (SIMPLIFIED)
@@ -169,7 +180,22 @@ if (
 ) {
     // Verify reCAPTCHA v3 first
     $recaptchaResponse = $_POST['g-recaptcha-response'] ?? '';
-    $captchaResult = verifyRecaptcha($recaptchaResponse, 'login');
+    
+    // Development bypass: completely disable reCAPTCHA on localhost for testing
+    $isDevelopment = (
+        strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false ||
+        strpos($_SERVER['HTTP_HOST'] ?? '', '127.0.0.1') !== false ||
+        (getenv('APP_ENV') === 'local') ||
+        (getenv('APP_DEBUG') === 'true')
+    );
+    
+    if ($isDevelopment) {
+        // In development, always allow bypass
+        $captchaResult = ['success' => true, 'score' => 0.9];
+    } else {
+        $captchaResult = verifyRecaptcha($recaptchaResponse, 'login');
+    }
+    
     if (!$captchaResult['success']) {
         echo json_encode(['status'=>'error','message'=>'Security verification failed. Please try again.']);
         exit;
@@ -223,6 +249,33 @@ if (
             ]);
             exit;
         }
+        
+        // Check if student is archived
+        if ($user['status'] === 'archived' || (isset($user['is_archived']) && $user['is_archived'] === true)) {
+            // Get archive reason
+            $archiveQuery = pg_query_params($connection,
+                "SELECT archive_reason, archived_at FROM students WHERE student_id = $1",
+                [$user['id']]
+            );
+            $archiveInfo = pg_fetch_assoc($archiveQuery);
+            
+            $reasonText = 'account inactivity';
+            if ($archiveInfo && $archiveInfo['archive_reason']) {
+                // Extract simple reason from archive_reason
+                if (stripos($archiveInfo['archive_reason'], 'graduated') !== false) {
+                    $reasonText = 'graduation';
+                } elseif (stripos($archiveInfo['archive_reason'], 'inactive') !== false) {
+                    $reasonText = 'prolonged inactivity';
+                }
+            }
+            
+            echo json_encode([
+                'status' => 'error',
+                'message' => "Your account has been archived due to {$reasonText}. If you believe this is an error, please contact the Office of the Mayor for assistance.",
+                'is_archived' => true
+            ]);
+            exit;
+        }
     } elseif ($adminRow = pg_fetch_assoc($adminRes)) {
         $user = $adminRow;
         $user['id'] = $user['admin_id'];
@@ -251,15 +304,50 @@ if (
         exit;
     }
 
-    // Credentials OK → generate OTP
+    // Credentials OK → reuse existing OTP if valid and for same user, else generate new
+    $reuseExisting = false;
+    if (
+        isset($_SESSION['login_otp'], $_SESSION['login_otp_time'], $_SESSION['login_pending']) &&
+        is_array($_SESSION['login_pending']) &&
+        isset($_SESSION['login_pending']['user_id'], $_SESSION['login_pending']['role']) &&
+        $_SESSION['login_pending']['user_id'] == $user['id'] &&
+        $_SESSION['login_pending']['role'] === $user['role'] &&
+        (time() - (int)$_SESSION['login_otp_time'] < 300)
+    ) {
+        // Reuse existing OTP window for same user; don't regenerate or clear
+        $reuseExisting = true;
+        error_log('OTP Generation Debug - Reusing existing pending OTP for same user.');
+    }
+
+    if ($reuseExisting) {
+        echo json_encode(['status' => 'otp_sent', 'message' => 'OTP already sent. Please check your email.']);
+        exit;
+    }
+
+    // Clear any stale login OTP data now that we know the intended user
+    unset($_SESSION['login_otp'], $_SESSION['login_otp_time'], $_SESSION['login_pending']);
+
+    // Generate and set new OTP
     $otp = rand(100000,999999);
     $_SESSION['login_otp'] = $otp;
     $_SESSION['login_otp_time'] = time();
     $_SESSION['login_pending'] = [
         'user_id' => $user['id'],
         'role' => $user['role'],
-        'name' => trim($user['first_name'] . ' ' . $user['last_name'])
+        'name' => trim($user['first_name'] . ' ' . $user['last_name']),
+        'email' => $em
     ];
+
+    // Debug: Log session state after setting OTP data
+    error_log("OTP Generation Debug - Session ID: " . session_id());
+    error_log("OTP Generation Debug - OTP set: " . $otp);
+    error_log("OTP Generation Debug - Session keys after setting: " . implode(', ', array_keys($_SESSION)));
+
+    // IMPORTANT: Flush session data to storage before sending response/mail
+    // to ensure subsequent AJAX requests (OTP verify) can read it immediately
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
 
     // Send via email (using professional template)
     $mail = new PHPMailer(true);
@@ -294,16 +382,34 @@ if (
 // LOGIN PHASE 2: verify login-OTP
 if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
     $userOtp = $_POST['login_otp'] ?? '';
+    // Debug: Inspect session state at verification
+    error_log("OTP Verification Debug - Session ID: " . session_id());
+    error_log("OTP Verification Debug - Session keys: " . implode(', ', array_keys($_SESSION)));
+    error_log('OTP Verification Debug - Has login_otp: ' . (isset($_SESSION['login_otp']) ? 'YES' : 'NO'));
+    error_log('OTP Verification Debug - Has login_otp_time: ' . (isset($_SESSION['login_otp_time']) ? 'YES' : 'NO'));
+    error_log('OTP Verification Debug - Has login_pending: ' . (isset($_SESSION['login_pending']) ? 'YES' : 'NO'));
+    
+    // Prevent double-submission by checking if already processing
+    if (isset($_SESSION['otp_processing'])) {
+        echo json_encode(['status'=>'error','message'=>'Request already processing. Please wait.']);
+        exit;
+    }
+    $_SESSION['otp_processing'] = true;
+    
     if (!isset($_SESSION['login_otp'], $_SESSION['login_otp_time'], $_SESSION['login_pending'])) {
+        unset($_SESSION['otp_processing']);
         echo json_encode(['status'=>'error','message'=>'No login in progress.']);
         exit;
     }
     if (time() - $_SESSION['login_otp_time'] > 300) {
+        unset($_SESSION['otp_processing']);
         session_unset();
         echo json_encode(['status'=>'error','message'=>'OTP expired.']);
         exit;
     }
+    
     if ($userOtp != $_SESSION['login_otp']) {
+        unset($_SESSION['otp_processing']);
         echo json_encode(['status'=>'error','message'=>'Incorrect OTP.']);
         exit;
     }
@@ -353,7 +459,7 @@ if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
         $redirect = 'modules/admin/homepage.php';
     }
     
-    unset($_SESSION['login_otp'], $_SESSION['login_pending']);
+    unset($_SESSION['login_otp'], $_SESSION['login_pending'], $_SESSION['otp_processing']);
 
     echo json_encode([
         'status' => 'success',
@@ -370,7 +476,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
         $email = trim($_POST['forgot_email']);
         
         // Check both tables (exclude students under registration and blacklisted)
-        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status NOT IN ('under_registration', 'blacklisted')", [$email]);
+        $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status NOT IN ('under_registration', 'blacklisted', 'archived')", [$email]);
         $adminRes = pg_query_params($connection, "SELECT admin_id, role FROM admins WHERE email = $1", [$email]);
         
         $user = null;
@@ -393,6 +499,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                 [$email]
             );
             
+            // Check if it's an archived student
+            $archivedCheck = pg_query_params($connection,
+                "SELECT student_id FROM students WHERE email = $1 AND status = 'archived'",
+                [$email]
+            );
+            
             if (pg_fetch_assoc($underRegistrationCheck)) {
                 echo json_encode([
                     'status'=>'error',
@@ -402,6 +514,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                 echo json_encode([
                     'status'=>'error',
                     'message'=>'Account suspended. Please contact the Office of the Mayor for assistance.'
+                ]);
+            } elseif (pg_fetch_assoc($archivedCheck)) {
+                echo json_encode([
+                    'status'=>'error',
+                    'message'=>'Your account has been archived. Please contact the Office of the Mayor if you believe this is an error.'
                 ]);
             } else {
                 echo json_encode(['status'=>'error','message'=>'Email not found.']);
@@ -526,8 +643,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/css/website/landing_page.css" rel="stylesheet">
     
-    <!-- Google reCAPTCHA v3 -->
-    <script src="https://www.google.com/recaptcha/api.js?render=<?php echo RECAPTCHA_SITE_KEY; ?>"></script>
+    <!-- Google reCAPTCHA v2 (visible checkbox) for testing -->
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
     
     <style>
         /* Navbar enabled with isolation fixes applied */
@@ -1097,6 +1214,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                             </div>
                                         </div>
                                         
+                                        <!-- reCAPTCHA v2 (visible checkbox) -->
+                                        <div class="form-group mb-4 text-center">
+                                            <div class="g-recaptcha" data-sitekey="<?php echo getenv('RECAPTCHA_V2_SITE_KEY') ?: '6LcQ9NArAAAAALTbYBJn1b2iG9MJcJ6SnA3b6x53'; ?>"></div>
+                                        </div>
+                                        
                                         <div class="d-grid">
                                             <button type="submit" class="btn btn-primary btn-lg" id="loginSubmitBtn">
                                                 <i class="bi bi-envelope me-2"></i>Send Verification Code
@@ -1283,7 +1405,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             }
         }
         
-        // Override the login form submission to include reCAPTCHA v3
+        // Override the login form submission to include reCAPTCHA v2
         document.addEventListener('DOMContentLoaded', function() {
             const loginForm = document.getElementById('loginForm');
             if (loginForm) {
@@ -1308,42 +1430,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                         return;
                     }
                     
+                    // reCAPTCHA validation disabled for development/testing
+                    const recaptchaResponse = (typeof grecaptcha !== 'undefined' && grecaptcha.getResponse) ? 
+                        grecaptcha.getResponse() : 'development-bypass';
+                    
                     const submitBtn = this.querySelector('button[type="submit"]');
                     const originalText = submitBtn.innerHTML;
                     
                     setButtonLoading(submitBtn, true);
 
-                    // Get reCAPTCHA v3 token
-                    grecaptcha.ready(function() {
-                        grecaptcha.execute('<?php echo RECAPTCHA_SITE_KEY; ?>', {action: 'login'}).then(function(token) {
-                            const formData = new FormData();
-                            formData.append('email', email);
-                            formData.append('password', password);
-                            formData.append('g-recaptcha-response', token);
+                    const formData = new FormData();
+                    formData.append('email', email);
+                    formData.append('password', password);
+                    formData.append('g-recaptcha-response', recaptchaResponse);
 
-                            fetch('unified_login.php', {
-                                method: 'POST',
-                                body: formData,
-                                headers: {
-                                    'X-Requested-With': 'XMLHttpRequest'
-                                }
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                setButtonLoading(submitBtn, false, originalText);
-                                
-                                if (data.status === 'otp_sent') {
-                                    showStep2();
-                                    showMessage('Verification code sent to your email!', 'success');
-                                } else {
-                                    showMessage(data.message, 'danger');
-                                }
-                            })
-                            .catch(error => {
-                                setButtonLoading(submitBtn, false, originalText);
-                                showMessage('Connection error. Please try again.', 'danger');
-                            });
-                        });
+                    fetch('unified_login.php', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin', // Include cookies for session persistence
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        setButtonLoading(submitBtn, false, originalText);
+                        
+                        if (data.status === 'otp_sent') {
+                            showStep2();
+                            showMessage('Verification code sent to your email!', 'success');
+                            // Reset reCAPTCHA for next attempt
+                            grecaptcha.reset();
+                        } else {
+                            showMessage(data.message, 'danger');
+                            // Reset reCAPTCHA on error
+                            grecaptcha.reset();
+                        }
+                    })
+                    .catch(error => {
+                        setButtonLoading(submitBtn, false, originalText);
+                        showMessage('Connection error. Please try again.', 'danger');
+                        // Reset reCAPTCHA on error
+                        grecaptcha.reset();
                     });
                 });
             }
