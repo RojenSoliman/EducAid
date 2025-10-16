@@ -572,25 +572,44 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
 
         <!-- Submission Deadlines & Reminders -->
         <?php
-    // Load deadlines from JSON file
-    $deadlinesPath = __DIR__ . '/../../data/deadlines.json';
-    $deadlines = file_exists($deadlinesPath) ? json_decode(file_get_contents($deadlinesPath), true) : [];
+    // Load deadlines from config table (distribution control settings)
     $todayStr = date('Y-m-d');
     $todayDt = new DateTime('today');
+    
+    // Get documents deadline from config
+    $deadlines = [];
+    $workflow = getWorkflowStatus($connection);
+    $distribution_status = $workflow['distribution_status'] ?? 'inactive';
+    
+    // Only show deadlines if distribution is active or preparing
+    if ($distribution_status === 'preparing' || $distribution_status === 'active') {
+        // Fetch documents deadline
+        $deadline_query = "SELECT value FROM config WHERE key = 'documents_deadline'";
+        $deadline_result = pg_query($connection, $deadline_query);
+        
+        if ($deadline_result && $deadline_row = pg_fetch_assoc($deadline_result)) {
+            $doc_deadline = $deadline_row['value'];
+            if (!empty($doc_deadline)) {
+                $deadlines[] = [
+                    'label' => 'Document Submission',
+                    'deadline_date' => $doc_deadline,
+                    'link' => 'upload_document.php'
+                ];
+            }
+        }
+        
+        // You can add more deadline types here in the future
+        // For example: registration deadline, grades deadline, etc.
+    }
 
     // Build active list + counts
     $activeItems = [];
-    if (is_array($deadlines)) {
-      foreach ($deadlines as $d) {
-        if (!empty($d['active'])) { $activeItems[] = $d; }
-      }
-    }
-    $activeCount = count($activeItems);
+    $activeCount = count($deadlines);
 
     // Separate overdue vs upcoming (overdue first)
     $overdueItems = [];
     $upcomingItems = [];
-    foreach ($activeItems as $d) {
+    foreach ($deadlines as $d) {
       $dueStr = isset($d['deadline_date']) ? $d['deadline_date'] : '';
       $dueDt = null;
       try { if ($dueStr) { $dueDt = new DateTime($dueStr); } } catch (Exception $e) { $dueDt = null; }
@@ -609,6 +628,8 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
       if ($isOverdue) { $overdueItems[] = $item; } else { $upcomingItems[] = $item; }
     }
 
+    // Only show section if there are deadlines
+    if ($activeCount > 0) {
     echo '<section class="section-block section-deadlines section-spacing">';
     echo '  <div class="section-header d-flex justify-content-between align-items-center">';
     echo '    <div><h3 class="section-title mb-0"><i class="bi bi-hourglass-top me-2"></i>Submission Deadlines</h3><p class="section-lead m-0">Upcoming and active requirements.</p></div>';
@@ -665,26 +686,22 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
     }
     echo '  </div>';
 
-    // Merge reminders content here
-    $deadlineData = $deadlines;
+    // Reminders section
     $reminderDate = '';
-    if (is_array($deadlineData)) {
-      foreach ($deadlineData as $d) {
-        if (isset($d['key']) && $d['key'] === 'grades_submission' && !empty($d['active'])) {
-          $rd = isset($d['deadline_date']) ? $d['deadline_date'] : '';
-          if ($rd) { $reminderDate = date('F j', strtotime($rd)); }
-          break;
-        }
-      }
+    if (!empty($deadlines[0]['deadline_date'])) {
+        $reminderDate = date('F j, Y', strtotime($deadlines[0]['deadline_date']));
     }
     echo '  <div class="mt-3 pt-3 border-top">';
     echo '    <h6 class="fw-bold mb-2"><i class="bi bi-bell-fill me-2"></i>Reminders</h6>';
     echo '    <ul class="mb-0">';
-    echo '      <li>Upload your updated grades by <strong>' . htmlspecialchars($reminderDate ?: 'TBD') . '</strong>.</li>';
+    if (!empty($reminderDate)) {
+        echo '      <li>Submit all required documents by <strong>' . htmlspecialchars($reminderDate) . '</strong>.</li>';
+    }
     echo '      <li>Check notifications regularly for city updates.</li>';
     echo '    </ul>';
     echo '  </div>';
     echo '</section>';
+    }
         ?>
         
 
