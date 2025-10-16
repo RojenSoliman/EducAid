@@ -132,14 +132,14 @@ if ($step === 'execute' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 // Get last run information
 $lastRunQuery = "
     SELECT created_at, details
-    FROM audit_trail
+    FROM audit_logs
     WHERE event_category = 'archive' 
       AND event_type = 'bulk_archiving_executed'
     ORDER BY created_at DESC
     LIMIT 1
 ";
 $lastRunResult = pg_query($connection, $lastRunQuery);
-$lastRun = pg_fetch_assoc($lastRunResult);
+$lastRun = $lastRunResult ? pg_fetch_assoc($lastRunResult) : null;
 
 ?>
 <!DOCTYPE html>

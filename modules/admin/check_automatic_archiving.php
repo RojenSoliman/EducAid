@@ -20,7 +20,7 @@ if (!isset($_SESSION['admin_role']) || $_SESSION['admin_role'] !== 'super_admin'
 // Check when archiving was last run
 $lastRunQuery = "
     SELECT MAX(created_at) as last_run
-    FROM audit_trail
+    FROM audit_logs
     WHERE event_category = 'archive' 
       AND event_type = 'bulk_archiving_executed'
 ";

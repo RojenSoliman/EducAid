@@ -298,251 +298,158 @@ $statsQuery = "
 $statsResult = pg_query($connection, $statsQuery);
 $stats = pg_fetch_assoc($statsResult);
 ?>
+<?php $page_title='Archived Students'; $extra_css=['../../assets/css/admin/manage_applicants.css']; include '../../includes/admin/admin_head.php'; ?>
+<style>
+    :root {
+        --primary-color: #2c3e50;
+        --secondary-color: #3498db;
+        --success-color: #27ae60;
+        --warning-color: #f39c12;
+        --danger-color: #e74c3c;
+        --info-color: #3498db;
+        --light-bg: #ecf0f1;
+    }
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Archived Students - EducAid</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    <style>
-        :root {
-            --primary-color: #2c3e50;
-            --secondary-color: #3498db;
-            --success-color: #27ae60;
-            --warning-color: #f39c12;
-            --danger-color: #e74c3c;
-            --info-color: #3498db;
-            --light-bg: #ecf0f1;
-        }
+    .stats-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-bottom: 25px;
+    }
 
-        body {
-            background-color: var(--light-bg);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
+    .stat-card {
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
+        text-align: center;
+    }
 
-        .main-container {
-            padding: 20px;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
 
-        .page-header {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin: 10px 0;
+    }
 
-        .page-header h1 {
-            color: var(--primary-color);
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+    .stat-label {
+        color: #7f8c8d;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 500;
+    }
 
-        .stats-cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
+    .text-primary { color: var(--primary-color) !important; }
+    .text-success { color: var(--success-color) !important; }
+    .text-info { color: var(--info-color) !important; }
+    .text-warning { color: var(--warning-color) !important; }
 
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
+    .filter-card {
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
 
-        .stat-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-        }
+    .table-card {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
 
-        .stat-icon.primary { background: rgba(52, 152, 219, 0.1); color: var(--secondary-color); }
-        .stat-icon.success { background: rgba(39, 174, 96, 0.1); color: var(--success-color); }
-        .stat-icon.warning { background: rgba(243, 156, 18, 0.1); color: var(--warning-color); }
-        .stat-icon.info { background: rgba(52, 152, 219, 0.1); color: var(--info-color); }
+    .table {
+        margin-bottom: 0;
+    }
 
-        .stat-details h3 {
-            margin: 0;
-            font-size: 28px;
-            font-weight: bold;
-            color: var(--primary-color);
-        }
+    .table thead th {
+        background-color: var(--primary-color);
+        color: white;
+        font-weight: 600;
+        border: none;
+        padding: 15px;
+    }
 
-        .stat-details p {
-            margin: 0;
-            color: #7f8c8d;
-            font-size: 14px;
-        }
+    .table tbody tr:hover {
+        background-color: #f8f9fa;
+    }
 
-        .filters-section {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
+    .badge-automatic {
+        background-color: #27ae60;
+    }
 
-        .table-section {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
+    .badge-manual {
+        background-color: #3498db;
+    }
 
-        .table {
-            margin-bottom: 0;
-        }
+    .btn-action {
+        padding: 5px 10px;
+        font-size: 0.875rem;
+    }
 
-        .table thead th {
-            background-color: var(--primary-color);
-            color: white;
-            font-weight: 500;
-            border: none;
-            padding: 12px;
-        }
-
-        .table tbody tr {
-            transition: background-color 0.2s;
-        }
-
-        .table tbody tr:hover {
-            background-color: rgba(52, 152, 219, 0.05);
-        }
-
-        .badge {
-            padding: 6px 12px;
-            font-weight: 500;
-        }
-
-        .badge.automatic {
-            background-color: rgba(52, 152, 219, 0.1);
-            color: var(--secondary-color);
-        }
-
-        .badge.manual {
-            background-color: rgba(243, 156, 18, 0.1);
-            color: var(--warning-color);
-        }
-
-        .btn-unarchive {
-            padding: 4px 12px;
-            font-size: 13px;
-        }
-
-        .pagination {
-            margin-top: 20px;
-            justify-content: center;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #7f8c8d;
-        }
-
-        .empty-state i {
-            font-size: 64px;
-            margin-bottom: 20px;
-            opacity: 0.5;
-        }
-
-        .modal-body .info-row {
-            display: flex;
-            padding: 10px 0;
-            border-bottom: 1px solid #ecf0f1;
-        }
-
-        .modal-body .info-row:last-child {
-            border-bottom: none;
-        }
-
-        .modal-body .info-label {
-            font-weight: 600;
-            width: 200px;
-            color: var(--primary-color);
-        }
-
-        .modal-body .info-value {
-            flex: 1;
-            color: #555;
-        }
-    </style>
-</head>
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        background: white;
+        border-top: 1px solid #dee2e6;
+    }
+</style>
 <body>
+<?php include '../../includes/admin/admin_topbar.php'; ?>
+<div id="wrapper" class="admin-wrapper">
     <?php include '../../includes/admin/admin_sidebar.php'; ?>
+    <?php include '../../includes/admin/admin_header.php'; ?>
 
-    <div class="main-container">
-        <!-- Page Header -->
-        <div class="page-header">
-            <h1>
-                <i class="bi bi-archive"></i>
-                Archived Students
-            </h1>
-            <p class="text-muted mb-0">View and manage archived student accounts</p>
-        </div>
-
-        <!-- Statistics Cards -->
-        <div class="stats-cards">
-            <div class="stat-card">
-                <div class="stat-icon primary">
+    <section class="home-section" id="mainContent">
+        <div class="container-fluid py-4 px-4">
+            <div class="section-header mb-4 d-flex justify-content-between align-items-center">
+                <h2 class="fw-bold text-primary mb-0">
                     <i class="bi bi-archive-fill"></i>
+                    Archived Students
+                </h2>
+                <span class="badge bg-secondary fs-6"><?php echo $stats['total_archived']; ?> Archived</span>
+            </div>
+
+            <!-- Statistics Cards -->
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="stat-icon primary">
+                        <i class="bi bi-archive"></i>
+                    </div>
+                    <div class="stat-details">
+                        <h3><?php echo $stats['total_archived']; ?></h3>
+                        <p>Total Archived</p>
+                    </div>
                 </div>
-                <div class="stat-details">
-                    <h3><?php echo number_format($stats['total_archived']); ?></h3>
-                    <p>Total Archived</p>
+
+                <div class="stat-card">
+                    <div class="stat-number text-success"><?php echo $stats['auto_archived']; ?></div>
+                    <div class="stat-label">Automatic Archives</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-number text-info"><?php echo $stats['manual_archived']; ?></div>
+                    <div class="stat-label">Manual Archives</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-number text-warning"><?php echo $stats['archived_last_30_days']; ?></div>
+                    <div class="stat-label">Last 30 Days</div>
                 </div>
             </div>
 
-            <div class="stat-card">
-                <div class="stat-icon success">
-                    <i class="bi bi-robot"></i>
-                </div>
-                <div class="stat-details">
-                    <h3><?php echo number_format($stats['auto_archived']); ?></h3>
-                    <p>Automatically Archived</p>
-                </div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon warning">
-                    <i class="bi bi-person-fill-check"></i>
-                </div>
-                <div class="stat-details">
-                    <h3><?php echo number_format($stats['manual_archived']); ?></h3>
-                    <p>Manually Archived</p>
-                </div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon info">
-                    <i class="bi bi-calendar-check"></i>
-                </div>
-                <div class="stat-details">
-                    <h3><?php echo number_format($stats['archived_last_30_days']); ?></h3>
-                    <p>Last 30 Days</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Filters Section -->
-        <div class="filters-section">
-            <form method="GET" id="filterForm">
+            <!-- Filter Card -->
+            <div class="filter-card">
+                <form method="GET" id="filterForm">
                 <div class="row g-3">
                     <div class="col-md-3">
                         <label class="form-label">Search</label>
@@ -792,5 +699,9 @@ $stats = pg_fetch_assoc($statsResult);
             });
         }
     </script>
+    </section>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../assets/js/admin/sidebar.js"></script>
 </body>
 </html>
