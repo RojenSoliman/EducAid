@@ -7,6 +7,7 @@ if (!isset($_SESSION['admin_username'])) {
 }
 include '../../config/database.php';
 require_once __DIR__ . '/../../phpmailer/vendor/autoload.php';
+require_once __DIR__ . '/../../includes/util/student_id.php';
 
 // Resolve current admin's municipality context
 $adminMunicipalityId = null;
@@ -105,19 +106,18 @@ function find_best_barangay($needle, $rows) {
 }
 
 function generateUniqueStudentId_admin($connection, $year_level_id) {
-    // Map year_level_id to code number (1..4...), fallback 0
+    // Use the standardized generator: YYYYMMDD-<yearlevel>-<sequence>
+    global $adminMunicipalityId;
+    $id = generateSystemStudentId($connection, intval($year_level_id), intval($adminMunicipalityId), intval(date('Y')));
+    if ($id) return $id;
+    // Fallback (should rarely happen): format MUNICIPALITY-YEAR-YEARLEVEL-SEQ
     $code = '0';
-    $res = pg_query_params($connection, "SELECT code FROM year_levels WHERE year_level_id = $1", [$year_level_id]);
+    $res = pg_query_params($connection, "SELECT code FROM year_levels WHERE year_level_id = $1", [intval($year_level_id)]);
     if ($res && pg_num_rows($res)) { $row = pg_fetch_assoc($res); $code = preg_replace('/[^0-9]/','',$row['code'] ?? '0'); if ($code==='') $code='0'; }
-    $current_year = date('Y');
-    $max_attempts = 100; $attempts = 0; $exists = true; $unique_id = '';
-    while ($exists && $attempts < $max_attempts) {
-        $random_digits = str_pad((string)mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
-        $unique_id = $current_year . '-' . $code . '-' . $random_digits;
-        $check = pg_query_params($connection, "SELECT 1 FROM students WHERE student_id = $1", [$unique_id]);
-        $exists = $check && pg_num_rows($check) > 0; $attempts++;
-    }
-    return $exists ? null : $unique_id;
+    $muniPrefix = 'MUNI' . intval($adminMunicipalityId ?: 0);
+    $mr = @pg_query_params($connection, "SELECT COALESCE(NULLIF(slug,''), name) AS tag FROM municipalities WHERE municipality_id = $1", [intval($adminMunicipalityId)]);
+    if ($mr && pg_num_rows($mr) > 0) { $mrow = pg_fetch_assoc($mr); $muniPrefix = strtoupper(preg_replace('/[^A-Z0-9]/', '', strtoupper((string)($mrow['tag'] ?? $muniPrefix)))); }
+    return $muniPrefix . '-' . date('Y') . '-' . $code . '-' . mt_rand(1, 9999);
 }
 
 function send_migration_email($toEmail, $toName, $passwordPlain) {

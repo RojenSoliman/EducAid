@@ -169,4 +169,5 @@
         });
     </script>
 </body>
+<?php if (file_exists(__DIR__ . '/../includes/website/cookie_consent.php')) { include __DIR__ . '/../includes/website/cookie_consent.php'; } ?>
 </html>

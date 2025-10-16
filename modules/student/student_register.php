@@ -2520,8 +2520,28 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         json_response(['status' => 'error', 'message' => 'This mobile number is already registered.']);
     }
 
-    // Generate unique student ID
-    $student_id = 'TRIAS-' . strtoupper(bin2hex(random_bytes(3)));
+    // Generate system student ID: <MUNICIPALITY>-<YEAR>-<YEARLEVEL>-<SEQUENCE>
+    require_once __DIR__ . '/../../includes/util/student_id.php';
+    $student_id = generateSystemStudentId($connection, $year_level, $municipality_id, intval(date('Y')));
+    if (!$student_id) {
+        // Fallback to avoid blocking registration: generate RANDOM6 with uniqueness check
+        $ylCode = (string)intval($year_level);
+        $muniPrefix = 'MUNI' . intval($municipality_id);
+        $mr = @pg_query_params($connection, "SELECT COALESCE(NULLIF(slug,''), name) AS tag FROM municipalities WHERE municipality_id = $1", [$municipality_id]);
+        if ($mr && pg_num_rows($mr) > 0) { $mrow = pg_fetch_assoc($mr); $muniPrefix = preg_replace('/[^A-Z0-9]/', '', strtoupper((string)($mrow['tag'] ?? $muniPrefix))); }
+        $base = $muniPrefix . '-' . date('Y') . '-' . $ylCode . '-';
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
+        for ($attempt=0;$attempt<25;$attempt++) {
+            $rand = '';
+            for ($i=0;$i<6;$i++) { $rand .= $chars[random_int(0, strlen($chars)-1)]; }
+            $candidate = $base . $rand;
+            $chk = @pg_query_params($connection, "SELECT 1 FROM students WHERE student_id = $1 LIMIT 1", [$candidate]);
+            if ($chk && pg_num_rows($chk) === 0) { $student_id = $candidate; break; }
+        }
+        if (!$student_id) {
+            $student_id = $base . substr(strtoupper(bin2hex(random_bytes(4))), 0, 8);
+        }
+    }
 
     // Get current active slot ID for tracking
     $activeSlotQuery = pg_query_params($connection, "SELECT slot_id FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
