@@ -50,6 +50,7 @@ $custom_nav_links = [
 ];
 include '../includes/website/topbar.php';
 include '../includes/website/navbar.php';
+include '../includes/website/cookie_consent.php';
 ?>
 
   <!-- Hero Section -->
