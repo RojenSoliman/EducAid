@@ -56,10 +56,6 @@ if (!$admin_id && isset($_SESSION['admin_username'])) {
   }
 }
 
-// Path to JSON settings
-$jsonPath = __DIR__ . '/../../data/deadlines.json';
-$deadlines = file_exists($jsonPath) ? json_decode(file_get_contents($jsonPath), true) : [];
-
 // Handle success parameter from redirect
 if (isset($_GET['success']) && isset($_GET['msg'])) {
   $successMessages = [
@@ -139,38 +135,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-  }
-  
-  // Handle deadline updates
-  if (isset($_POST['update_deadlines'])) {
-  $out = [];
-  $keys = $_POST['key'] ?? [];
-  $labels = $_POST['label'] ?? [];
-  $dates = $_POST['deadline_date'] ?? [];
-  $actives = $_POST['active'] ?? [];
-  $originalLinks = array_column($deadlines, 'link', 'key');
-
-  foreach ($keys as $i => $key) {
-    $label = trim($labels[$i] ?? '');
-    $date = trim($dates[$i] ?? '');
-    if ($label === '' || $date === '') continue;
-    $out[] = [
-      'key' => $key,
-      'label' => $label,
-      'deadline_date' => $date,
-      'link' => $originalLinks[$key] ?? '',
-      'active' => in_array($key, $actives, true)
-    ];
-  }
-
-  file_put_contents($jsonPath, json_encode($out, JSON_PRETTY_PRINT));
-  
-  // Add admin notification for deadline changes
-  $notification_msg = "System deadlines and settings updated";
-  pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
-  
-  header('Location: ' . $_SERVER['PHP_SELF'] . '?saved=1');
-  exit;
   }
 }
 
@@ -282,64 +246,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
       </div>
       
-      <!-- Deadlines Management Section -->
-      <div class="card">
-        <div class="card-header bg-info text-white">
-          <h5 class="mb-0"><i class="bi bi-calendar2-week me-2"></i>Deadlines Management</h5>
-        </div>
-        <div class="card-body">
-          <?php if (isset($_GET['saved'])): ?>
-            <div class="alert alert-success">Deadlines updated successfully!</div>
-          <?php endif; ?>
-          
-          <form method="POST">
-            <div class="table-responsive">
-              <table class="table table-bordered table-striped align-middle">
-                <thead class="table-light">
-                  <tr>
-                    <th>Label</th>
-                    <th>Deadline Date</th>
-                    <th class="text-center">Active</th>
-                    <th class="text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                <?php if (empty($deadlines)): ?>
-                  <tr><td colspan="4" class="text-muted text-center">No deadlines configured yet.</td></tr>
-                <?php else: ?>
-                  <?php foreach ($deadlines as $d): ?>
-                    <tr class="<?= !empty($d['active']) ? 'table-success' : '' ?>">
-                      <td>
-                        <input type="hidden" name="key[]" value="<?= htmlspecialchars($d['key']) ?>">
-                        <input type="text" name="label[]" class="form-control form-control-sm" value="<?= htmlspecialchars($d['label']) ?>" required>
-                      </td>
-                      <td>
-                        <input type="date" name="deadline_date[]" class="form-control form-control-sm" value="<?= htmlspecialchars($d['deadline_date']) ?>" required>
-                      </td>
-                      <td class="text-center">
-                        <input type="checkbox" name="active[]" value="<?= htmlspecialchars($d['key']) ?>" <?= !empty($d['active']) ? 'checked' : '' ?>></td>
-                      <td class="text-center">
-                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)">
-                          <i class="bi bi-trash"></i>
-                        </button>
-                      </td>
-                    </tr>
-                  <?php endforeach; ?>
-                <?php endif; ?>
-              </tbody>
-            </table>
-          </div>
-          <div class="d-flex justify-content-end gap-2 mt-3">
-            <button type="button" class="btn btn-outline-secondary" onclick="addDeadlineRow()">
-              <i class="bi bi-plus-circle me-1"></i> Add Deadline
-            </button>
-            <button type="submit" name="update_deadlines" class="btn btn-info">
-              <i class="bi bi-save me-1"></i> Save Deadlines
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
     </div>
   </section>
 </div>
@@ -409,36 +315,6 @@ document.getElementById('modal_capacity').addEventListener('input', function() {
     this.setCustomValidity('');
   }
 });
-
-// Deadline management functions
-function removeRow(btn) {
-  const row = btn.closest('tr');
-  row.remove();
-}
-
-function addDeadlineRow() {
-  const tbody = document.querySelector('table tbody');
-  const row = document.createElement('tr');
-  const key = `key_${Date.now()}`;
-  row.innerHTML = `
-    <td>
-      <input type="hidden" name="key[]" value="${key}">
-      <input type="text" name="label[]" class="form-control form-control-sm" placeholder="Enter label" required>
-    </td>
-    <td>
-      <input type="date" name="deadline_date[]" class="form-control form-control-sm" required>
-    </td>
-    <td class="text-center">
-      <input type="checkbox" name="active[]" value="${key}">
-    </td>
-    <td class="text-center">
-      <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)">
-        <i class="bi bi-trash"></i>
-      </button>
-    </td>
-  `;
-  tbody.appendChild(row);
-}
 
 </script>
 <script src="../../assets/js/admin/sidebar.js"></script>
