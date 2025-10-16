@@ -118,6 +118,7 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
   
   include '../includes/website/topbar.php';
   include '../includes/website/navbar.php';
+  include '../includes/website/cookie_consent.php';
   ?>
 
   <style>
