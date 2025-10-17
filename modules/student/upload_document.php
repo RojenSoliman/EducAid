@@ -412,8 +412,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
     error_log("FILES data: " . print_r($_FILES, true));
     error_log("POST data: " . print_r($_POST, true));
     
-    $student_name = $_SESSION['student_username']; // Assuming student_username is stored in the session
-    $student_id = $_SESSION['student_id']; // Assuming student_id is stored in the session
+  $student_name = $_SESSION['student_username']; // Assuming student_username is stored in the session
+  $student_id = $_SESSION['student_id']; // Assuming student_id is stored in the session
+  // Create a filename-safe version of student_id (keep letters, numbers, dash, underscore)
+  $student_id_safe = preg_replace('/[^A-Za-z0-9_-]/', '', (string)$student_id);
 
     // Allowed file types and sizes
     $allowedTypes = [
@@ -427,7 +429,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
     
     // Create secure student directory
     $baseUploadDir = "../../assets/uploads/students/";
-    $studentDir = $baseUploadDir . preg_replace('/[^a-zA-Z0-9_-]/', '_', $student_name) . "_" . $student_id . "/";
+  $studentDir = $baseUploadDir . preg_replace('/[^a-zA-Z0-9_-]/', '_', $student_name) . "_" . $student_id_safe . "/";
     
     if (!file_exists($studentDir)) {
         if (!mkdir($studentDir, 0755, true)) {
@@ -478,10 +480,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
         }
 
         // Move the uploaded file to the student’s folder
-        // Generate secure filename
+        // Generate secure standardized filename: {student_id}_{document}_{timestamp}.{ext}
         $timestamp = date('Y-m-d_H-i-s');
-        $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', pathinfo($fileName, PATHINFO_FILENAME));
-        $secureFileName = $fileType . "_" . $timestamp . "_" . $sanitizedName . "." . $fileExt;
+        // Map document type to concise filename token
+        $docTokenMap = [
+          'id_picture' => 'id',
+          'letter_to_mayor' => 'letter',
+          'certificate_of_indigency' => 'indigency'
+        ];
+        $docToken = $docTokenMap[$fileType] ?? preg_replace('/[^a-zA-Z0-9_-]/', '_', $fileType);
+        $secureFileName = $student_id_safe . "_" . $docToken . "_" . $timestamp . "." . $fileExt;
         $finalPath = $studentDir . $secureFileName;
     if (move_uploaded_file($fileTmpName, $finalPath)) {
             // Insert into database using prepared statements
@@ -615,10 +623,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
             if ($gradesFileSize <= $maxFileSize) {
                 $gradesFileExt = strtolower(pathinfo($gradesFileName, PATHINFO_EXTENSION));
                 if (in_array($gradesFileExt, ['jpg', 'jpeg', 'png', 'gif', 'pdf'])) {
-                    // Generate secure filename for grades
+                    // Generate secure standardized filename for grades: {student_id}_grades_{timestamp}.{ext}
                     $timestamp = date('Y-m-d_H-i-s');
-                    $sanitizedGradesName = preg_replace('/[^a-zA-Z0-9._-]/', '_', pathinfo($gradesFileName, PATHINFO_FILENAME));
-                    $secureGradesFileName = "grades_" . $timestamp . "_" . $sanitizedGradesName . "." . $gradesFileExt;
+                    $secureGradesFileName = $student_id_safe . "_grades_" . $timestamp . "." . $gradesFileExt;
                     $gradesFinalPath = $studentDir . $secureGradesFileName;
                     
           if (move_uploaded_file($gradesFileTmpName, $gradesFinalPath)) {
@@ -843,10 +850,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
             if ($eafFileSize <= $maxFileSize) {
                 $eafFileExt = strtolower(pathinfo($eafFileName, PATHINFO_EXTENSION));
                 if (in_array($eafFileExt, ['jpg', 'jpeg', 'png', 'gif', 'pdf'])) {
-                    // Generate secure filename for EAF
+                    // Generate secure standardized filename for EAF: {student_id}_eaf_{timestamp}.{ext}
                     $timestamp = date('Y-m-d_H-i-s');
-                    $sanitizedEafName = preg_replace('/[^a-zA-Z0-9._-]/', '_', pathinfo($eafFileName, PATHINFO_FILENAME));
-                    $secureEafFileName = "eaf_" . $timestamp . "_" . $sanitizedEafName . "." . $eafFileExt;
+                    $secureEafFileName = $student_id_safe . "_eaf_" . $timestamp . "." . $eafFileExt;
                     $eafFinalPath = $studentDir . $secureEafFileName;
                     
                     if (move_uploaded_file($eafFileTmpName, $eafFinalPath)) {

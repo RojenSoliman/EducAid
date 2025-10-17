@@ -500,7 +500,8 @@ function find_student_documents($first_name, $last_name) {
     $document_types = [
         'eaf' => 'enrollment_forms',
         'letter_to_mayor' => 'letter_to_mayor',
-        'certificate_of_indigency' => 'indigency'
+        'certificate_of_indigency' => 'indigency',
+        'grades' => 'grades' // Map to 'grades' key for consistency
     ];
 
     $found = [];
@@ -536,6 +537,60 @@ function find_student_documents_by_id($connection, $student_id) {
         return find_student_documents($row['first_name'] ?? '', $row['last_name'] ?? '');
     }
     return [];
+}
+
+// Scan the students upload directory for files following the pattern {student_id}_{token}_{timestamp}.{ext}
+// Supports tokens: eaf, letter, indigency, id, grades (grades handled separately in UI)
+function find_student_documents_in_students_dir($student_id) {
+    $found = [];
+    $server_base = dirname(__DIR__, 2) . '/assets/uploads/students/'; // absolute server path
+    $web_base    = '../../assets/uploads/students/';                   // web path from this PHP file
+
+    if (!is_dir($server_base)) return $found;
+
+    // Iterate each student folder and look for files starting with this student_id
+    foreach (glob($server_base . '*', GLOB_ONLYDIR) as $studentFolder) {
+        $pattern = $studentFolder . '/' . $student_id . '_*.*';
+        $matches = glob($pattern);
+        if (empty($matches)) continue;
+
+        // Map tokens to doc types used in DB/UI
+        $map = [
+            'eaf' => 'eaf',
+            'letter' => 'letter_to_mayor',
+            'indigency' => 'certificate_of_indigency',
+            'id' => 'id_picture',
+            'grades' => 'grades', // Map to 'grades' for consistency
+        ];
+
+        // Keep latest file per type
+        $latest = [];
+        foreach ($matches as $file) {
+            $base = basename($file);
+            // Expect filename like: {student_id}_{token}_{timestamp}.ext
+            if (preg_match('/^' . preg_quote($student_id, '/') . '_([a-zA-Z0-9_-]+)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.[a-z0-9]+$/i', $base, $m)) {
+                $token = strtolower($m[1]);
+                $type = $map[$token] ?? null;
+                if (!$type) continue;
+                $mtime = @filemtime($file) ?: 0;
+                if (!isset($latest[$type]) || $mtime > $latest[$type]['mtime']) {
+                    $latest[$type] = ['file' => $file, 'mtime' => $mtime];
+                }
+            }
+        }
+
+        foreach ($latest as $type => $info) {
+            // Build web path
+            $rel = str_replace($server_base, $web_base, $info['file']);
+            $found[$type] = $rel;
+        }
+
+        // We only need to check the specific student's folder
+        // since student_id is embedded, first match is enough
+        if (!empty($found)) break;
+    }
+
+    return $found;
 }
 
 // Function to check if all required documents are uploaded
@@ -685,12 +740,19 @@ function render_table($applicants, $connection) {
                                 while ($doc = pg_fetch_assoc($docs)) {
                                     $db_documents[$doc['type']] = $doc['file_path'];
                                 }
+                                
+                                // Map academic_grades to grades for consistency with other document lookups
+                                if (isset($db_documents['academic_grades'])) {
+                                    $db_documents['grades'] = $db_documents['academic_grades'];
+                                }
 
                                 // Then, search for documents in new file structure by applicant name
                                 $found_documents = find_student_documents($applicant['first_name'] ?? '', $applicant['last_name'] ?? '');
+                                // Also, scan the students/ directory for files named with student_id prefix
+                                $student_dir_docs = find_student_documents_in_students_dir($student_id);
 
-                                // Merge both sources, prioritizing new file structure
-                                $all_documents = array_merge($db_documents, $found_documents);
+                                // Merge all sources, prioritizing file system results over DB
+                                $all_documents = array_merge($db_documents, $found_documents, $student_dir_docs);
 
                                 $document_labels = [
                                     'eaf' => 'EAF',
@@ -762,41 +824,72 @@ function render_table($applicants, $connection) {
                                     echo "<p class='text-muted'>No documents uploaded.</p>";
                                 }
 
-                                // Check for grades
-                                $grades_query = pg_query_params($connection, "SELECT * FROM grade_uploads WHERE student_id = $1 ORDER BY upload_date DESC LIMIT 1", [$student_id]);
-                                if (pg_num_rows($grades_query) > 0) {
-                                    $grade_upload = pg_fetch_assoc($grades_query);
-                                    echo "<hr><div class='grades-section'>";
-                                    echo "<h6><i class='bi bi-file-earmark-text me-2'></i>Academic Grades</h6>";
-                                    echo "<div class='d-flex justify-content-between align-items-center mb-2'>";
-                                    echo "<span><strong>Status:</strong> <span class='badge bg-" . 
-                                         ($grade_upload['validation_status'] === 'passed' ? 'success' : 
-                                          ($grade_upload['validation_status'] === 'failed' ? 'danger' : 'warning')) . 
-                                         "'>" . ucfirst($grade_upload['validation_status']) . "</span></span>";
-                                    if ($grade_upload['ocr_confidence']) {
-                                        echo "<span><strong>OCR Confidence:</strong> " . round($grade_upload['ocr_confidence'], 1) . "%</span>";
-                                    }
-                                    echo "</div>";
+                                // Add Academic Grades card using same pattern as other documents
+                                $cardTitle = 'Academic Grades';
+                                
+                                // Check if grades exist in all_documents array first
+                                if (isset($all_documents['grades'])) {
+                                    $filePath = $all_documents['grades'];
                                     
-                                    if ($grade_upload['file_path']) {
-                                        $grades_file_path = htmlspecialchars($grade_upload['file_path']);
-                                        if (preg_match('/\.(jpg|jpeg|png|gif)$/i', $grades_file_path)) {
-                                            echo "<img src='$grades_file_path' alt='Grades' class='img-fluid rounded border mb-2' style='max-height: 200px; max-width: 100%;' onclick='openImageZoom(this.src, \"Grades\")'>";
-                                        } elseif (preg_match('/\.pdf$/i', $grades_file_path)) {
-                                            echo "<iframe src='$grades_file_path' width='100%' height='300' style='border: 1px solid #ccc;'></iframe>";
+                                    // Resolve server path for metadata
+                                    $server_root = dirname(__DIR__, 2);
+                                    $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+                                    $server_path = $server_root . '/' . $relative_from_root;
+
+                                    $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $filePath);
+                                    $is_pdf   = preg_match('/\.pdf$/i', $filePath);
+
+                                    $size_str = '';
+                                    $date_str = '';
+                                    if (file_exists($server_path)) {
+                                        $size = filesize($server_path);
+                                        $units = ['B','KB','MB','GB'];
+                                        $pow = $size > 0 ? floor(log($size, 1024)) : 0;
+                                        $size_str = number_format($size / pow(1024, $pow), $pow ? 2 : 0) . ' ' . $units[$pow];
+                                        $date_str = date('M d, Y h:i A', filemtime($server_path));
+                                    }
+
+                                    $thumbHtml = $is_image
+                                        ? "<img src='" . htmlspecialchars($filePath) . "' class='doc-thumb' alt='$cardTitle'>"
+                                        : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
+
+                                    $safeSrc = htmlspecialchars($filePath);
+                                    
+                                    // Check for OCR confidence from documents table
+                                    $ocr_confidence = '';
+                                    $docs_query = pg_query_params($connection, "SELECT ocr_confidence FROM documents WHERE student_id = $1 AND type = 'academic_grades' ORDER BY upload_date DESC LIMIT 1", [$student_id]);
+                                    if ($docs_query && pg_num_rows($docs_query) > 0) {
+                                        $doc_data = pg_fetch_assoc($docs_query);
+                                        if ($doc_data['ocr_confidence']) {
+                                            $ocr_confidence = "<span class='badge bg-info'><i class='bi bi-robot me-1'></i>OCR: " . round($doc_data['ocr_confidence'], 1) . "%</span>";
                                         }
                                     }
                                     
-                                    echo "<div class='mt-2'>";
-                                    echo "<a href='validate_grades.php' class='btn btn-outline-primary btn-sm'>";
-                                    echo "<i class='bi bi-eye me-1'></i>Review in Grades Validator</a>";
-                                    echo "</div>";
-                                    echo "</div>";
+                                    echo "<div class='doc-card'>
+                                            <div class='doc-card-header'>$cardTitle $ocr_confidence</div>
+                                            <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
+                                            <div class='doc-meta'>" .
+                                                ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
+                                                ($size_str ? "<span><i class='bi bi-hdd me-1'></i>$size_str</span>" : "") .
+                                            "</div>
+                                            <div class='doc-actions'>
+                                                <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\"><i class='bi bi-eye me-1'></i>View</button>
+                                                <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank'><i class='bi bi-box-arrow-up-right me-1'></i>Open</a>
+                                                <a class='btn btn-sm btn-outline-success' href='$safeSrc' download><i class='bi bi-download me-1'></i>Download</a>
+                                                <a class='btn btn-sm btn-outline-primary mt-1 w-100' href='validate_grades.php'><i class='bi bi-check2-square me-1'></i>Review in Validator</a>
+                                            </div>
+                                          </div>";
                                 } else {
-                                    echo "<hr><div class='alert alert-warning'>";
-                                    echo "<i class='bi bi-exclamation-triangle me-2'></i>";
-                                    echo "<strong>Missing:</strong> Academic grades not uploaded.";
-                                    echo "</div>";
+                                    echo "<div class='doc-card doc-card-missing'>
+                                            <div class='doc-card-header'>$cardTitle</div>
+                                            <div class='doc-card-body missing'>
+                                                <div class='missing-icon'><i class='bi bi-exclamation-triangle'></i></div>
+                                                <div class='missing-text'>Not uploaded</div>
+                                            </div>
+                                            <div class='doc-actions'>
+                                                <span class='text-muted small'>Awaiting submission</span>
+                                            </div>
+                                          </div>";
                                 }
                                 ?>
                             </div>

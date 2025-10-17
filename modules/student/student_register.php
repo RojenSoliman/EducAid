@@ -2765,6 +2765,63 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             error_log("No certificate temp files found in path: " . $tempIndigencyDir);
         }
 
+        // Save grades to temporary folder (not permanent until approved)
+        $tempGradesDir = '../../assets/uploads/temp/grades/';
+        $allGradesFiles = glob($tempGradesDir . '*');
+        $gradesTempFiles = array_filter($allGradesFiles, function($file) {
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
+        });
+        error_log("Looking for grades files in: " . $tempGradesDir);
+        error_log("Found grades files: " . print_r($gradesTempFiles, true));
+        if (!empty($gradesTempFiles)) {
+            // Create temporary grades directory for pending students
+            if (!file_exists($tempGradesDir)) {
+                mkdir($tempGradesDir, 0777, true);
+            }
+
+            // Process all grades files and rename them with student ID
+            foreach ($gradesTempFiles as $gradesTempFile) {
+                $originalGradesFilename = basename($gradesTempFile);
+                $gradesExtension = pathinfo($originalGradesFilename, PATHINFO_EXTENSION);
+                
+                // Always rename with student ID prefix for consistent naming
+                $newGradesFilename = $student_id . '_' . $namePrefix . '_grades.' . $gradesExtension;
+                $gradesTempPath = $tempGradesDir . $newGradesFilename;
+
+                // Get OCR confidence score from temp file
+                $gradesConfidenceFile = $tempGradesDir . 'grades_confidence.json';
+                $gradesConfidence = 75.0; // default
+                if (file_exists($gradesConfidenceFile)) {
+                    $confidenceData = json_decode(file_get_contents($gradesConfidenceFile), true);
+                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                        $gradesConfidence = $confidenceData['overall_confidence'];
+                    }
+                    unlink($gradesConfidenceFile); // Clean up confidence file
+                }
+
+                if (copy($gradesTempFile, $gradesTempPath)) {
+                    // Save grades record to database with temporary path and OCR confidence
+                    $gradesQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $gradesResult = pg_query_params($connection, $gradesQuery, [$student_id, 'academic_grades', $gradesTempPath, 'false', $gradesConfidence]);
+                    
+                    if (!$gradesResult) {
+                        error_log("Failed to save grades to database: " . pg_last_error($connection));
+                    } else {
+                        error_log("Successfully saved grades to database for student $student_id with confidence $gradesConfidence%");
+                    }
+
+                    // Clean up original temp grades file
+                    unlink($gradesTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy grades file from $gradesTempFile to $gradesTempPath");
+                }
+            }
+        } else {
+            error_log("No grades temp files found in path: " . $tempGradesDir);
+        }
+
         $semester = $slotInfo['semester'];
         $academic_year = $slotInfo['academic_year'];
         $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";

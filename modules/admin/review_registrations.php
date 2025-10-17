@@ -269,6 +269,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $permanentDocDir = __DIR__ . '/../../assets/uploads/student/indigency/';
                     } elseif ($docType === 'eaf') {
                         $permanentDocDir = __DIR__ . '/../../assets/uploads/student/enrollment_forms/';
+                    } elseif ($docType === 'academic_grades') {
+                        $permanentDocDir = __DIR__ . '/../../assets/uploads/student/grades/';
                     } else {
                         continue; // Skip unknown document types
                     }
@@ -297,7 +299,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tempDirs = [
                     __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
                     __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
-                    __DIR__ . '/../../assets/uploads/temp/indigency/'
+                    __DIR__ . '/../../assets/uploads/temp/indigency/',
+                    __DIR__ . '/../../assets/uploads/temp/grades/'
                 ];
                 
                 foreach ($tempDirs as $dir) {
