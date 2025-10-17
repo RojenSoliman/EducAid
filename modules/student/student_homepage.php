@@ -397,24 +397,66 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
                         . 'modal.show();'
                         . '});</script>';
                 }
-                // Render schedule section
-                echo "<section class='section-block section-schedule section-spacing'>";
-                echo "<div class='section-header'><h3 class='section-title mb-0'><i class='bi bi-calendar3 me-2'></i>Your Schedule</h3><p class='section-lead m-0'>Published schedules for your account.</p></div>";
-                // Show location in card
+                // Render schedule section - Modern Design
+                echo "<section class='modern-schedule-section section-spacing'>";
+                echo "<div class='modern-section-header'>";
+                echo "<div class='header-icon-wrapper blue'>";
+                echo "<i class='bi bi-calendar3'></i>";
+                echo "</div>";
+                echo "<div class='header-content'>";
+                echo "<h3 class='modern-section-title'>Your Schedule</h3>";
+                echo "<p class='modern-section-subtitle'>Your upcoming distribution schedule</p>";
+                echo "</div>";
+                echo "</div>";
+                
+                // Show location badge if available
                 if ($location !== '') {
-                    echo '<p><strong>Location:</strong> ' . htmlspecialchars($location) . '</p>';
+                    echo '<div class="location-badge mb-3">';
+                    echo '<i class="bi bi-geo-alt-fill"></i> ';
+                    echo '<span>' . htmlspecialchars($location) . '</span>';
+                    echo '</div>';
                 }
-                echo "<table class='table'><thead><tr><th>Date</th><th>Batch</th><th>Time Slot</th></tr></thead><tbody>";
+                
+                echo "<div class='schedule-timeline'>";
                 foreach ($rows as $s) {
-                    echo '<tr>'
-                         . '<td>' . htmlspecialchars($s['distribution_date']) . '</td>'
-                         . '<td>' . htmlspecialchars($s['batch_no']) . '</td>'
-                         . '<td>' . htmlspecialchars($s['time_slot']) . '</td>'
-                         . '</tr>';
+                    echo '<div class="schedule-item">';
+                    echo '<div class="schedule-date">';
+                    echo '<div class="date-icon"><i class="bi bi-calendar-event"></i></div>';
+                    echo '<div class="date-info">';
+                    echo '<div class="date-day">' . date('l', strtotime($s['distribution_date'])) . '</div>';
+                    echo '<div class="date-full">' . date('F j, Y', strtotime($s['distribution_date'])) . '</div>';
+                    echo '</div>';
+                    echo '</div>';
+                    echo '<div class="schedule-details">';
+                    echo '<div class="detail-row">';
+                    echo '<span class="detail-label"><i class="bi bi-clock"></i> Time</span>';
+                    echo '<span class="detail-value">' . htmlspecialchars($s['time_slot']) . '</span>';
+                    echo '</div>';
+                    echo '<div class="detail-row">';
+                    echo '<span class="detail-label"><i class="bi bi-people"></i> Batch</span>';
+                    echo '<span class="detail-value">Batch ' . htmlspecialchars($s['batch_no']) . '</span>';
+                    echo '</div>';
+                    echo '</div>';
+                    echo '</div>';
                 }
-        echo "</tbody></table></section>";
+                echo "</div>";
+                echo "</section>";
             } else {
-  echo "<section class='section-block section-schedule section-spacing'><div>Your schedule will appear here once published.</div></section>";
+                echo "<section class='modern-schedule-section section-spacing empty-state'>";
+                echo "<div class='modern-section-header'>";
+                echo "<div class='header-icon-wrapper blue'>";
+                echo "<i class='bi bi-calendar3'></i>";
+                echo "</div>";
+                echo "<div class='header-content'>";
+                echo "<h3 class='modern-section-title'>Your Schedule</h3>";
+                echo "<p class='modern-section-subtitle'>Your upcoming distribution schedule</p>";
+                echo "</div>";
+                echo "</div>";
+                echo "<div class='empty-state-content'>";
+                echo "<i class='bi bi-calendar-x empty-icon'></i>";
+                echo "<p class='empty-text'>Your schedule will appear here once published</p>";
+                echo "</div>";
+                echo "</section>";
             }
         }
         ?>
@@ -548,24 +590,151 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
     </section>
         <?php endif; ?>
 
-        <!-- Announcements Section -->
+        <!-- Announcements Section - Modern Design with Advanced Features -->
         <?php
-          // Fetch latest active announcement
+          // Fetch latest active announcement with all fields
           $annRes = pg_query($connection, 
-            "SELECT title, remarks, posted_at FROM announcements WHERE is_active = TRUE ORDER BY posted_at DESC LIMIT 1"
+            "SELECT announcement_id, title, remarks, posted_at, is_active, event_date, event_time, location, image_path 
+             FROM announcements 
+             WHERE is_active = TRUE 
+             ORDER BY posted_at DESC 
+             LIMIT 1"
           );
           if ($annRes && pg_num_rows($annRes) > 0) {
               $ann = pg_fetch_assoc($annRes);
-              echo "<section class='section-block section-announcements section-spacing'>";
-              echo "<div class='section-header'><h3 class='section-title'><i class='bi bi-megaphone me-2'></i>Latest Announcement</h3><p class='section-lead m-0'>Stay updated with news and information.</p></div>";
-              echo "<div><h5 class='fw-bold mb-2'>" . htmlspecialchars($ann['title']) . "</h5>";
-              echo "<p class='mb-2'>" . nl2br(htmlspecialchars($ann['remarks'])) . "</p>";
-              echo "<small class='text-muted'>Posted on: " . date('F j, Y, g:i A', strtotime($ann['posted_at'])) . "</small></div>";
+              
+              // Format event info
+              $event_parts = [];
+              if (!empty($ann['event_date'])) {
+                  $event_date = DateTime::createFromFormat('Y-m-d', $ann['event_date']);
+                  if ($event_date) {
+                      $event_parts[] = $event_date->format('M d, Y');
+                  }
+              }
+              if (!empty($ann['event_time'])) {
+                  $event_time = DateTime::createFromFormat('H:i:s', $ann['event_time']);
+                  if ($event_time) {
+                      $event_parts[] = $event_time->format('g:i A');
+                  }
+              }
+              $event_line = implode(' • ', $event_parts);
+              
+              // Prepare image - use relative path from student module directory
+              // The image_path from database is already relative to project root (e.g., "uploads/announcements/image.jpg")
+              $img_path = !empty($ann['image_path']) ? '../../' . $ann['image_path'] : null;
+              
+              // Prepare remarks (truncate if too long)
+              $full_remarks = trim($ann['remarks']);
+              $short_remarks = mb_strlen($full_remarks) > 400 ? mb_substr($full_remarks, 0, 400) . '…' : $full_remarks;
+              $need_toggle = $short_remarks !== $full_remarks;
+              
+              echo "<section class='modern-announcement-section section-spacing'>";
+              echo "<div class='modern-section-header'>";
+              echo "<div class='header-icon-wrapper orange'>";
+              echo "<i class='bi bi-megaphone'></i>";
+              echo "</div>";
+              echo "<div class='header-content'>";
+              echo "<h3 class='modern-section-title'>Latest Announcement</h3>";
+              echo "<p class='modern-section-subtitle'>Stay updated with news and information</p>";
+              echo "</div>";
+              echo "</div>";
+              
+              // Image section (if available) - Display image without file_exists check
+              // The path is relative to the student module, so ../../ goes back to project root
+              if ($img_path) {
+                  echo "<div class='announcement-image'>";
+                  echo "<img src='" . htmlspecialchars($img_path) . "' alt='Announcement image' onerror=\"this.parentElement.style.display='none';\" />";
+                  echo "</div>";
+              }
+              
+              echo "<div class='announcement-content'>";
+              
+              // Meta information
+              echo "<div class='announcement-meta-row'>";
+              echo "<div class='meta-badges'>";
+              echo "<span class='meta-badge date'>";
+              echo "<i class='bi bi-calendar3'></i>";
+              echo date('M d, Y', strtotime($ann['posted_at']));
+              echo "</span>";
+              
+              if ($event_line) {
+                  echo "<span class='meta-badge event'>";
+                  echo "<i class='bi bi-calendar-event'></i> Event";
+                  echo "</span>";
+              }
+              
+              if ($ann['is_active'] === 't' || $ann['is_active'] === true) {
+                  echo "<span class='meta-badge active'>";
+                  echo "<i class='bi bi-lightning-charge-fill'></i> Active";
+                  echo "</span>";
+              }
+              echo "</div>";
+              echo "</div>";
+              
+              // Title
+              echo "<div class='announcement-header'>";
+              echo "<h4 class='announcement-title'>" . htmlspecialchars($ann['title']) . "</h4>";
+              
+              // Event details
+              if ($event_line || !empty($ann['location'])) {
+                  echo "<div class='event-details'>";
+                  if ($event_line) {
+                      echo "<div class='event-detail-item'>";
+                      echo "<i class='bi bi-calendar2-week'></i>";
+                      echo "<span>" . htmlspecialchars($event_line) . "</span>";
+                      echo "</div>";
+                  }
+                  if (!empty($ann['location'])) {
+                      echo "<div class='event-detail-item'>";
+                      echo "<i class='bi bi-geo-alt-fill'></i>";
+                      echo "<span>" . htmlspecialchars($ann['location']) . "</span>";
+                      echo "</div>";
+                  }
+                  echo "</div>";
+              }
+              echo "</div>";
+              
+              // Remarks body with toggle
+              echo "<div class='announcement-body' id='announcementRemarks'>";
+              if ($need_toggle) {
+                  echo "<div class='remarks-short'>";
+                  echo "<p>" . nl2br(htmlspecialchars($short_remarks)) . "</p>";
+                  echo "</div>";
+                  echo "<div class='remarks-full' style='display: none;'>";
+                  echo "<p>" . nl2br(htmlspecialchars($full_remarks)) . "</p>";
+                  echo "</div>";
+              } else {
+                  echo "<p>" . nl2br(htmlspecialchars($full_remarks)) . "</p>";
+              }
+              echo "</div>";
+              
+              // Read more toggle button
+              if ($need_toggle) {
+                  echo "<div class='announcement-actions'>";
+                  echo "<button class='btn-read-more' id='toggleAnnouncementBtn'>";
+                  echo "<span class='read-more-text'><i class='bi bi-chevron-down'></i> Read full announcement</span>";
+                  echo "<span class='read-less-text' style='display: none;'><i class='bi bi-chevron-up'></i> Show less</span>";
+                  echo "</button>";
+                  echo "</div>";
+              }
+              
+              echo "</div>";
               echo "</section>";
           } else {
-              echo "<section class='section-block section-announcements section-spacing'>";
-              echo "<div class='section-header'><h3 class='section-title'><i class='bi bi-megaphone me-2'></i>Latest Announcement</h3><p class='section-lead m-0'>Stay updated with news and information.</p></div>";
-              echo "<div class='text-muted'>No current announcements.</div>";
+              echo "<section class='modern-announcement-section section-spacing empty-state'>";
+              echo "<div class='modern-section-header'>";
+              echo "<div class='header-icon-wrapper orange'>";
+              echo "<i class='bi bi-megaphone'></i>";
+              echo "</div>";
+              echo "<div class='header-content'>";
+              echo "<h3 class='modern-section-title'>Latest Announcement</h3>";
+              echo "<p class='modern-section-subtitle'>Stay updated with news and information</p>";
+              echo "</div>";
+              echo "</div>";
+              echo "<div class='empty-state-content'>";
+              echo "<i class='bi bi-megaphone-fill empty-icon'></i>";
+              echo "<p class='empty-text'>No current announcements</p>";
+              echo "</div>";
               echo "</section>";
           }
         ?>
@@ -722,5 +891,35 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
   <script src="../../assets/js/student/sidebar.js"></script>
   <script src="../../assets/js/deadline.js"></script>
   <script src="../../assets/js/student/student_homepage.js"></script>
+  
+  <!-- Announcement Read More Toggle -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const toggleBtn = document.getElementById('toggleAnnouncementBtn');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', function() {
+          const remarksContainer = document.getElementById('announcementRemarks');
+          const shortRemarks = remarksContainer.querySelector('.remarks-short');
+          const fullRemarks = remarksContainer.querySelector('.remarks-full');
+          const readMoreText = this.querySelector('.read-more-text');
+          const readLessText = this.querySelector('.read-less-text');
+          
+          if (shortRemarks.style.display !== 'none') {
+            // Expand
+            shortRemarks.style.display = 'none';
+            fullRemarks.style.display = 'block';
+            readMoreText.style.display = 'none';
+            readLessText.style.display = 'inline-flex';
+          } else {
+            // Collapse
+            shortRemarks.style.display = 'block';
+            fullRemarks.style.display = 'none';
+            readMoreText.style.display = 'inline-flex';
+            readLessText.style.display = 'none';
+          }
+        });
+      }
+    });
+  </script>
 </body>
 </html>
