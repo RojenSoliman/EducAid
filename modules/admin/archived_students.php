@@ -120,10 +120,11 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
         $params[] = $_GET['date_to'] . ' 23:59:59';
     }
     
-    // Municipality filter
+    // Municipality filter - include students with NULL municipality (visible to all)
     if ($adminMunicipalityId) {
-        $whereConditions[] = "s.municipality_id = $" . $paramCount++;
+        $whereConditions[] = "(s.municipality_id = $" . $paramCount . " OR s.municipality_id IS NULL)";
         $params[] = $adminMunicipalityId;
+        $paramCount++;
     }
     
     $whereClause = implode(' AND ', $whereConditions);
@@ -230,10 +231,11 @@ if (!empty($dateTo)) {
     $params[] = $dateTo . ' 23:59:59';
 }
 
-// Municipality filter
+// Municipality filter - include students with NULL municipality (they're visible to all)
 if ($adminMunicipalityId) {
-    $whereConditions[] = "s.municipality_id = $" . $paramCount++;
+    $whereConditions[] = "(s.municipality_id = $" . $paramCount . " OR s.municipality_id IS NULL)";
     $params[] = $adminMunicipalityId;
+    $paramCount++;
 }
 
 $whereClause = implode(' AND ', $whereConditions);
@@ -281,6 +283,24 @@ $query = "
 
 $result = pg_query_params($connection, $query, $params);
 
+// Debug: Check for query errors
+if (!$result) {
+    error_log("Archived students query error: " . pg_last_error($connection));
+    error_log("Query: " . $query);
+    error_log("Params: " . print_r($params, true));
+}
+
+// Get row count once and store it
+$resultRowCount = $result ? pg_num_rows($result) : 0;
+
+// TEMPORARY DEBUG - Remove this after fixing
+echo "<!-- DEBUG: Result = " . ($result ? 'true' : 'false') . ", Rows = $resultRowCount -->";
+
+// Reset result pointer to beginning (just in case)
+if ($result && $resultRowCount > 0) {
+    pg_result_seek($result, 0);
+}
+
 // Get year levels for filter
 $yearLevelsQuery = pg_query($connection, "SELECT year_level_id, name FROM year_levels ORDER BY sort_order");
 $yearLevels = pg_fetch_all($yearLevelsQuery);
@@ -293,7 +313,8 @@ $statsQuery = "
         COUNT(CASE WHEN archived_by IS NOT NULL THEN 1 END) as manual_archived,
         COUNT(CASE WHEN archived_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as archived_last_30_days
     FROM students
-    WHERE is_archived = TRUE" . ($adminMunicipalityId ? " AND municipality_id = " . $adminMunicipalityId : "");
+    WHERE is_archived = TRUE" . 
+    ($adminMunicipalityId ? " AND (municipality_id = " . $adminMunicipalityId . " OR municipality_id IS NULL)" : "");
 
 $statsResult = pg_query($connection, $statsQuery);
 $stats = pg_fetch_assoc($statsResult);
@@ -381,12 +402,33 @@ $stats = pg_fetch_assoc($statsResult);
         background-color: #f8f9fa;
     }
 
-    .badge-automatic {
-        background-color: #27ae60;
+    .badge.automatic {
+        background-color: #27ae60 !important;
+        color: white;
     }
 
-    .badge-manual {
-        background-color: #3498db;
+    .badge.manual {
+        background-color: #3498db !important;
+        color: white;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #7f8c8d;
+    }
+    
+    .empty-state i {
+        font-size: 4rem;
+        margin-bottom: 20px;
+        opacity: 0.3;
+    }
+    
+    .table-section {
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 
     .btn-action {
@@ -525,7 +567,7 @@ $stats = pg_fetch_assoc($statsResult);
                 <span class="text-muted">Page <?php echo $page; ?> of <?php echo $totalPages; ?></span>
             </div>
 
-            <?php if (pg_num_rows($result) > 0): ?>
+            <?php if ($result && $resultRowCount > 0): ?>
                 <div class="table-responsive">
                     <table class="table table-hover">
                         <thead>
@@ -542,7 +584,11 @@ $stats = pg_fetch_assoc($statsResult);
                             </tr>
                         </thead>
                         <tbody>
-                            <?php while ($student = pg_fetch_assoc($result)): 
+                            <?php 
+                            $loopCount = 0;
+                            while ($student = pg_fetch_assoc($result)): 
+                                $loopCount++;
+                                echo "<!-- DEBUG LOOP: Iteration $loopCount, Student ID: " . ($student['student_id'] ?? 'NULL') . " -->";
                                 $fullName = trim($student['first_name'] . ' ' . 
                                           ($student['middle_name'] ? $student['middle_name'] . ' ' : '') . 
                                           $student['last_name'] . ' ' . 
@@ -622,6 +668,12 @@ $stats = pg_fetch_assoc($statsResult);
                     </nav>
                 <?php endif; ?>
 
+            <?php elseif (!$result): ?>
+                <div class="alert alert-danger">
+                    <h4><i class="bi bi-exclamation-triangle"></i> Database Error</h4>
+                    <p>Failed to retrieve archived students. Error: <?php echo htmlspecialchars(pg_last_error($connection)); ?></p>
+                    <p><small>Please check the error log or contact system administrator.</small></p>
+                </div>
             <?php else: ?>
                 <div class="empty-state">
                     <i class="bi bi-archive"></i>

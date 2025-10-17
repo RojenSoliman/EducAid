@@ -601,7 +601,8 @@ $offset = ($page - 1) * $perPage;
 $sort = $_GET['sort'] ?? $_POST['sort'] ?? 'asc';
 $search = trim($_GET['search_surname'] ?? $_POST['search_surname'] ?? '');
 
-$where = "status = 'applicant'";
+// Exclude archived students from applicants list
+$where = "status = 'applicant' AND (is_archived = FALSE OR is_archived IS NULL)";
 $params = [];
 if ($search) {
     $where .= " AND last_name ILIKE $1";
@@ -1010,10 +1011,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // --------- Archive Student Handler ---------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'archive_student') {
+    // Start output buffering to catch any errors/warnings
+    ob_start();
+    
     header('Content-Type: application/json');
     
     // Verify super admin
-    if ($_SESSION['admin_role'] !== 'super_admin') {
+    if (!isset($_SESSION['admin_role']) || $_SESSION['admin_role'] !== 'super_admin') {
+        ob_clean(); // Clear any buffered output
         echo json_encode(['success' => false, 'message' => 'Only super admins can archive students']);
         exit;
     }
@@ -1022,6 +1027,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $archiveReason = trim($_POST['archive_reason'] ?? '');
     
     if (!$studentId || empty($archiveReason)) {
+        ob_clean();
         echo json_encode(['success' => false, 'message' => 'Student ID and reason are required']);
         exit;
     }
@@ -1034,6 +1040,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     );
     
     if (!$studentQuery || pg_num_rows($studentQuery) === 0) {
+        ob_clean();
         echo json_encode(['success' => false, 'message' => 'Student not found']);
         exit;
     }
@@ -1050,13 +1057,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
     }
     
+    // Check if archive_student_manual function exists
+    $funcCheck = pg_query($connection, "SELECT proname FROM pg_proc WHERE proname = 'archive_student_manual'");
+    if (!$funcCheck || pg_num_rows($funcCheck) === 0) {
+        ob_clean();
+        echo json_encode(['success' => false, 'message' => 'Database function archive_student_manual not found. Please run the archiving migration SQL first.']);
+        exit;
+    }
+    
     // Archive student using PostgreSQL function
     $result = pg_query_params($connection,
         "SELECT archive_student_manual($1, $2, $3) as success",
         [$studentId, $_SESSION['admin_id'], $archiveReason]
     );
     
-    if ($result && pg_fetch_assoc($result)['success'] === 't') {
+    if (!$result) {
+        $error = pg_last_error($connection);
+        ob_clean();
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . $error]);
+        exit;
+    }
+    
+    $resultRow = pg_fetch_assoc($result);
+    if ($resultRow && $resultRow['success'] === 't') {
         // Log to audit trail
         require_once __DIR__ . '/../../services/AuditLogger.php';
         $auditLogger = new AuditLogger($connection);
@@ -1074,9 +1097,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             false // not automatic
         );
         
+        ob_clean(); // Clear any buffered output
         echo json_encode(['success' => true, 'message' => 'Student successfully archived']);
     } else {
-        echo json_encode(['success' => false, 'message' => 'Failed to archive student']);
+        ob_clean();
+        echo json_encode(['success' => false, 'message' => 'Failed to archive student. The function returned false.']);
     }
     exit;
 }
