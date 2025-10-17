@@ -1,3 +1,19 @@
 {
-    "schedule_published": false
+    "schedule_published": true,
+    "schedule_meta": {
+        "start_date": "2025-10-24",
+        "end_date": "2025-10-24",
+        "location": "asdasda",
+        "batches": [
+            {
+                "start_time": "08:00",
+                "end_time": "17:00",
+                "capacity": 1
+            }
+        ],
+        "total_students": 1,
+        "schedule_dates": [
+            "2025-10-24"
+        ]
+    }
 }

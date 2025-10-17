@@ -317,6 +317,221 @@ $csrf_password_token = CSRFProtection::generateToken('password_otp_request');
 ?>
 
 <?php $page_title = 'My Profile'; include '../../includes/admin/admin_head.php'; ?>
+<style>
+  /* Profile-specific styles */
+  .profile-header {
+    background: linear-gradient(145deg, #f5f7fa 0%, #eef1f4 100%);
+    border: 1px solid #e3e7ec;
+    border-radius: 16px;
+    color: #2f3a49;
+    padding: 2.5rem 1.75rem 2rem 1.75rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+  }
+
+  .profile-header::before,
+  .profile-header::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(0,0,0,0.04), transparent 70%);
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  .profile-header::before { width: 220px; height: 220px; top: -60px; right: -40px; }
+  .profile-header::after { width: 160px; height: 160px; bottom: -50px; left: -30px; }
+
+  .profile-avatar {
+    width: 160px;
+    height: 160px;
+    background: linear-gradient(145deg,#667eea,#5a67d8);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3.25rem;
+    margin: 0 auto 1.25rem auto;
+    border: 1px solid #dcdfe3;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.06) inset;
+    position: relative;
+    z-index: 2;
+    transition: box-shadow .25s ease, transform .25s ease;
+    color: white;
+    font-weight: 600;
+  }
+  .profile-avatar:hover {
+    box-shadow: 0 6px 14px rgba(0,0,0,0.08), 0 0 0 4px rgba(0,0,0,0.03) inset;
+    transform: translateY(-2px);
+  }
+  
+  .profile-info { position: relative; z-index: 2; }
+  .profile-info h2 {
+    margin: 0 0 .35rem 0;
+    font-weight: 600;
+    font-size: 1.95rem;
+    letter-spacing: -.5px;
+    color: #303a44;
+  }
+  .profile-info p {
+    margin: 0;
+    font-size: .95rem;
+    color: #5c6773;
+    font-weight: 500;
+  }
+  
+  .info-card {
+    background: linear-gradient(180deg,#ffffff 0%,#fafbfc 100%);
+    border-radius: 14px;
+    border: 1px solid #e2e6ea;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+    transition: border-color .25s ease, box-shadow .25s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+  }
+  .info-card:hover { border-color:#d5dae0; box-shadow:0 4px 14px rgba(0,0,0,0.06); }
+  .info-card-header {
+    background:#f5f7f9;
+    padding:1.1rem 1.35rem;
+    border-bottom:1px solid #e3e7eb;
+    display:flex; align-items:center; gap:.75rem;
+  }
+  .info-card-header h5 { margin:0; color:#313b44; font-weight:600; font-size:1.02rem; letter-spacing:.25px; }
+  .info-card-header .bi { color:#7c8792; font-size:1.15rem; }
+  .info-card-body { padding:1.35rem 1.4rem 1.25rem 1.4rem; }
+  .info-item { display:flex; align-items:flex-start; justify-content:space-between; padding:.65rem 0; border-top:1px dashed #e4e8ec; gap:1rem; }
+  .info-item:first-of-type { border-top:none; }
+  .info-item:last-child { padding-bottom:.2rem; }
+  .info-label { font-weight:600; color:#46515c; font-size:.78rem; text-transform:uppercase; letter-spacing:.5px; min-width:140px; }
+  .info-value { flex:1; color:#303a44; margin:0 .75rem; font-weight:500; }
+  .info-actions { display:flex; gap:.5rem; align-items:center; }
+  .settings-icon-btn { background:#ffffff; border:1px solid #d5dadf; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%; transition:background .2s ease, border-color .2s ease, box-shadow .2s ease; color:#5e6974; }
+  .settings-icon-btn:hover { background:#f3f5f7; border-color:#c5cbd1; box-shadow:0 2px 6px rgba(0,0,0,0.05); }
+  
+  .btn-edit {
+    background: #667eea;
+    border-color: #667eea;
+    color: white;
+    padding: 0.375rem 1rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+  
+  .btn-edit:hover {
+    background: #5a67d8;
+    border-color: #5a67d8;
+    color: white;
+    transform: translateY(-1px);
+  }
+  
+  .btn-change-pwd {
+    background: #ed8936;
+    border-color: #ed8936;
+    color: white;
+    padding: 0.375rem 1rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+  
+  .btn-change-pwd:hover {
+    background: #dd7724;
+    border-color: #dd7724;
+    color: white;
+    transform: translateY(-1px);
+  }
+  
+  /* Modal Improvements */
+  .modal-content {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+  }
+  
+  .modal-header {
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    border-radius: 12px 12px 0 0;
+    padding: 1.5rem;
+  }
+  
+  .modal-title {
+    font-weight: 600;
+    color: #495057;
+  }
+  
+  .modal-body {
+    padding: 1.5rem;
+  }
+  
+  .modal-footer {
+    border-top: 1px solid #e9ecef;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 0 0 12px 12px;
+  }
+  
+  /* Form Controls */
+  .form-control {
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    padding: 0.75rem 1rem;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+  }
+  
+  .form-control:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  }
+  
+  .form-label {
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 0.5rem;
+  }
+  
+  /* Flash Messages */
+  .alert {
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    border: none;
+  }
+  
+  .alert-success {
+    background: #d1fae5;
+    color: #065f46;
+  }
+  
+  .alert-danger {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  
+  /* Responsive */
+  @media (max-width: 768px) {
+    .profile-header {
+      padding: 1.5rem;
+      text-align: center;
+    }
+    
+    .info-item {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    
+    .info-actions {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>
 <body>
 <?php include '../../includes/admin/admin_topbar.php'; ?>
 <div id="wrapper" class="admin-wrapper">
@@ -324,131 +539,121 @@ $csrf_password_token = CSRFProtection::generateToken('password_otp_request');
   <?php include '../../includes/admin/admin_header.php'; ?>
   
   <section class="home-section" id="page-content-wrapper">
-    <div class="container py-5">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i class="bi bi-person-circle me-2"></i>My Profile</h1>
-      </div>
-
-      <!-- Success/Error Messages -->
+    <div class="container-fluid px-4">
+      <!-- Flash Messages -->
       <?php if (isset($_SESSION['success_message'])): ?>
-        <div class="alert alert-success alert-dismissible fade show">
-          <i class="bi bi-check-circle me-2"></i><?= htmlspecialchars($_SESSION['success_message']) ?>
-          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+          <i class="bi bi-check-circle me-2"></i>
+          <?= htmlspecialchars($_SESSION['success_message']) ?>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
         <?php unset($_SESSION['success_message']); ?>
       <?php endif; ?>
-      
-      <!-- Profile Information Card -->
-      <div class="card mb-4">
-        <div class="card-header bg-primary text-white">
-          <h5 class="mb-0"><i class="bi bi-person-badge me-2"></i>Profile Information</h5>
+
+      <!-- Profile Header -->
+      <div class="profile-header">
+        <div class="profile-avatar position-relative">
+          <?php
+          $fullName = trim(($currentAdmin['first_name'] ?? '') . ' ' . ($currentAdmin['last_name'] ?? ''));
+          $initials = strtoupper(mb_substr($currentAdmin['first_name'] ?? 'A', 0, 1) . mb_substr($currentAdmin['last_name'] ?? 'D', 0, 1));
+          echo htmlspecialchars($initials);
+          ?>
         </div>
-        <div class="card-body">
-          <?php if ($currentAdmin): ?>
-          <div class="row">
-            <!-- Profile Avatar Section -->
-            <div class="col-md-3 text-center mb-4 mb-md-0">
-              <div class="avatar-circle-large mx-auto mb-3" style="width: 120px; height: 120px; background: linear-gradient(135deg, #0d6efd, #0b5ed7); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px; color: white; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.15);">
-                <?php 
-                $fullName = trim(($currentAdmin['first_name'] ?? '') . ' ' . ($currentAdmin['last_name'] ?? ''));
-                $initials = strtoupper(mb_substr($currentAdmin['first_name'] ?? 'A', 0, 1) . mb_substr($currentAdmin['last_name'] ?? 'D', 0, 1));
-                echo htmlspecialchars($initials); 
-                ?>
-              </div>
-              <h5><?= htmlspecialchars($fullName ?: 'Administrator') ?></h5>
-              <p class="text-muted small mb-0">@<?= htmlspecialchars($currentAdmin['username']) ?></p>
-            </div>
-            
-            <!-- Profile Details Section -->
-            <div class="col-md-9">
-              <div class="row g-3">
-                <div class="col-md-6">
-                  <label class="text-muted small mb-1">First Name</label>
-                  <div class="p-2 bg-light rounded">
-                    <strong><?= htmlspecialchars($currentAdmin['first_name'] ?? 'Not set') ?></strong>
-                  </div>
-                </div>
-                <div class="col-md-6">
-                  <label class="text-muted small mb-1">Middle Name</label>
-                  <div class="p-2 bg-light rounded">
-                    <strong><?= htmlspecialchars($currentAdmin['middle_name'] ?? 'Not set') ?></strong>
-                  </div>
-                </div>
-                <div class="col-md-6">
-                  <label class="text-muted small mb-1">Last Name</label>
-                  <div class="p-2 bg-light rounded">
-                    <strong><?= htmlspecialchars($currentAdmin['last_name'] ?? 'Not set') ?></strong>
-                  </div>
-                </div>
-                <div class="col-md-6">
-                  <label class="text-muted small mb-1">Username</label>
-                  <div class="p-2 bg-light rounded">
-                    <strong><?= htmlspecialchars($currentAdmin['username']) ?></strong>
-                  </div>
-                </div>
-                <div class="col-12">
-                  <label class="text-muted small mb-1">Email Address</label>
-                  <div class="p-2 bg-light rounded d-flex justify-content-between align-items-center">
-                    <strong><?= htmlspecialchars($currentAdmin['email'] ?? 'Not set') ?></strong>
-                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="showChangeEmailModal()">
-                      <i class="bi bi-pencil me-1"></i> Change
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <?php else: ?>
-          <div class="alert alert-warning">
-            <i class="bi bi-exclamation-triangle me-2"></i>Unable to load profile information. Please refresh the page.
-          </div>
-          <?php endif; ?>
+        
+        <div class="profile-info">
+          <h2><?= htmlspecialchars($fullName ?: 'Administrator') ?></h2>
+          <p><i class="bi bi-person-badge me-2"></i>Admin ID: <?= htmlspecialchars($currentAdmin['admin_id'] ?? 'N/A') ?> • @<?= htmlspecialchars($currentAdmin['username']) ?></p>
         </div>
       </div>
-      
-      <!-- Security Settings Card -->
-      <div class="card">
-        <div class="card-header bg-warning text-dark">
-          <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Security Settings</h5>
+
+      <!-- Personal & Contact Information Card -->
+      <div class="info-card">
+        <div class="info-card-header d-flex justify-content-between align-items-center">
+          <div>
+            <i class="bi bi-person-lines-fill"></i>
+            <h5 class="d-inline mb-0">Personal & Contact Information</h5>
+          </div>
+          <a href="settings.php" class="settings-icon-btn text-decoration-none" title="Settings">
+            <i class="bi bi-gear" style="font-size:1.05rem;"></i>
+          </a>
         </div>
-        <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <div class="border rounded p-3 h-100">
-                <div class="d-flex align-items-start">
-                  <div class="flex-shrink-0">
-                    <div class="rounded-circle bg-warning bg-opacity-25 p-3">
-                      <i class="bi bi-key-fill text-warning" style="font-size: 24px;"></i>
-                    </div>
-                  </div>
-                  <div class="flex-grow-1 ms-3">
-                    <h6 class="mb-1">Password</h6>
-                    <p class="text-muted small mb-3">Change your account password to keep your account secure</p>
-                    <button type="button" class="btn btn-warning btn-sm" onclick="showChangePasswordModal()">
-                      <i class="bi bi-key me-1"></i> Change Password
-                    </button>
-                  </div>
-                </div>
+        <div class="info-card-body">
+          <!-- Personal Information Section -->
+          <div class="mb-4">
+            <h6 class="text-muted mb-3 fw-bold">
+              <i class="bi bi-person-fill me-2"></i>Personal Information
+            </h6>
+            <div class="info-item">
+              <div class="info-label">First Name</div>
+              <div class="info-value"><?= htmlspecialchars($currentAdmin['first_name'] ?? 'Not set') ?></div>
+              <div class="info-actions">
+                <span class="text-muted small">Read-only</span>
               </div>
             </div>
-            
-            <div class="col-md-6">
-              <div class="border rounded p-3 h-100">
-                <div class="d-flex align-items-start">
-                  <div class="flex-shrink-0">
-                    <div class="rounded-circle bg-info bg-opacity-25 p-3">
-                      <i class="bi bi-shield-fill-check text-info" style="font-size: 24px;"></i>
-                    </div>
-                  </div>
-                  <div class="flex-grow-1 ms-3">
-                    <h6 class="mb-1">Two-Factor Authentication</h6>
-                    <p class="text-muted small mb-3">All profile changes require OTP verification via email</p>
-                    <span class="badge bg-success">
-                      <i class="bi bi-check-circle me-1"></i> Enabled
-                    </span>
-                  </div>
-                </div>
+            <div class="info-item">
+              <div class="info-label">Middle Name</div>
+              <div class="info-value"><?= htmlspecialchars($currentAdmin['middle_name'] ?? 'Not set') ?></div>
+              <div class="info-actions">
+                <span class="text-muted small">Read-only</span>
               </div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Last Name</div>
+              <div class="info-value"><?= htmlspecialchars($currentAdmin['last_name'] ?? 'Not set') ?></div>
+              <div class="info-actions">
+                <span class="text-muted small">Read-only</span>
+              </div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Username</div>
+              <div class="info-value"><?= htmlspecialchars($currentAdmin['username']) ?></div>
+              <div class="info-actions">
+                <span class="text-muted small">Read-only</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Contact Information Section -->
+          <div class="mb-0">
+            <h6 class="text-muted mb-3 fw-bold">
+              <i class="bi bi-envelope-fill me-2"></i>Contact Information
+            </h6>
+            <div class="info-item">
+              <div class="info-label">Email Address</div>
+              <div class="info-value"><?= htmlspecialchars($currentAdmin['email'] ?? 'Not set') ?></div>
+              <div class="info-actions">
+                <button type="button" class="btn btn-edit btn-sm" onclick="showChangeEmailModal()">
+                  <i class="bi bi-pencil me-1"></i> Change
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Security Settings Card -->
+      <div class="info-card">
+        <div class="info-card-header">
+          <i class="bi bi-shield-check"></i>
+          <h5>Security Settings</h5>
+        </div>
+        <div class="info-card-body">
+          <div class="info-item">
+            <div class="info-label">Password</div>
+            <div class="info-value">Change your account password to keep your account secure</div>
+            <div class="info-actions">
+              <button type="button" class="btn btn-change-pwd btn-sm" onclick="showChangePasswordModal()">
+                <i class="bi bi-key me-1"></i> Change Password
+              </button>
+            </div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Two-Factor Auth</div>
+            <div class="info-value">All profile changes require OTP verification via email</div>
+            <div class="info-actions">
+              <span class="badge bg-success">
+                <i class="bi bi-check-circle me-1"></i> Enabled
+              </span>
             </div>
           </div>
         </div>
