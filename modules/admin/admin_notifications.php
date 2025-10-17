@@ -117,14 +117,14 @@ function getNotificationIcon($type) {
               <div class="notification-card <?= $note['is_read'] === 't' || $note['is_read'] === true ? 'read' : 'unread' ?>" 
                    data-notification-id="<?= $note['notification_id'] ?>" 
                    data-notification-type="<?= htmlspecialchars($note['type']) ?>">
-                <div class="d-flex justify-content-between align-items-center notification-header">
-                  <div>
-                    <span class="icon-box text-primary bg-light me-3">
+                <div class="notification-header d-flex align-items-start">
+                  <div class="notification-main d-flex flex-grow-1 align-items-start gap-3">
+                    <span class="icon-box text-primary bg-light">
                       <i class="<?php echo getNotificationIcon($note['type']); ?>"></i>
                     </span>
-                    <?php echo htmlspecialchars($note['message']); ?>
+                    <p class="notification-message mb-0"><?php echo htmlspecialchars($note['message']); ?></p>
                   </div>
-                  <div class="action-buttons">
+                  <div class="action-buttons align-self-start ms-3">
                     <?php if ($note['is_read'] === 'f' || $note['is_read'] === false): ?>
                       <i class="bi bi-envelope mark-read-btn" role="button" title="Mark as Read" 
                          data-notification-id="<?= $note['notification_id'] ?>"></i>

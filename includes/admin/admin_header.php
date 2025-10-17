@@ -87,18 +87,20 @@ if (!function_exists('truncateMessage')) {
           <?php else: ?>
             <?php foreach ($recentNotifications as $notification): ?>
               <li>
-                <a class="dropdown-item <?= ($notification['is_read'] === 'f') ? 'bg-light' : '' ?>" 
+                <a class="dropdown-item notification-preview-item <?= ($notification['is_read'] === 'f') ? 'bg-light' : '' ?>" 
                    href="admin_notifications.php" 
                    title="<?= htmlspecialchars($notification['message']) ?>">
-                  <i class="<?= getHeaderNotificationIcon($notification['message']) ?> me-2 text-primary"></i>
-                  <div class="d-inline-block">
-                    <div class="fw-medium"><?= htmlspecialchars(truncateMessage($notification['message'])) ?></div>
-                    <small class="text-muted">
-                      <?= date('M j, g:i A', strtotime($notification['created_at'])) ?>
-                      <?php if ($notification['is_read'] === 'f'): ?>
-                        <span class="badge badge-sm bg-primary ms-1">New</span>
-                      <?php endif; ?>
-                    </small>
+                  <div class="d-flex align-items-start gap-2">
+                    <i class="<?= getHeaderNotificationIcon($notification['message']) ?> text-primary notification-icon"></i>
+                    <div class="flex-grow-1 notification-content">
+                      <div class="fw-medium"><?= htmlspecialchars(truncateMessage($notification['message'])) ?></div>
+                      <small class="text-muted">
+                        <?= date('M j, g:i A', strtotime($notification['created_at'])) ?>
+                        <?php if ($notification['is_read'] === 'f'): ?>
+                          <span class="badge badge-sm bg-primary ms-1">New</span>
+                        <?php endif; ?>
+                      </small>
+                    </div>
                   </div>
                 </a>
               </li>
@@ -162,10 +164,13 @@ $__hdr = educaid_get_header_theme($connection ?? null);
 
 /* Enhanced notification dropdown styling */
 .admin-header-actions .dropdown-menu {min-width: 320px; max-width: 400px;}
-.admin-header-actions .dropdown-item {padding: 0.75rem 1rem; border-bottom: 1px solid #f0f0f0; white-space: normal;}
+.admin-header-actions .dropdown-item {padding: 0.75rem 1rem; border-bottom: 1px solid #f0f0f0;}
 .admin-header-actions .dropdown-item:last-child {border-bottom: none;}
 .admin-header-actions .dropdown-item.bg-light {background-color: #f8f9ff !important;}
-.admin-header-actions .dropdown-item .fw-medium {font-size: 0.9rem; line-height: 1.3; margin-bottom: 0.25rem;}
+.admin-header-actions .notification-preview-item {white-space: normal;}
+.admin-header-actions .notification-icon {font-size: 1.1rem; flex-shrink: 0; margin-top: 0.15rem;}
+.admin-header-actions .notification-content {min-width: 0; flex: 1;}
+.admin-header-actions .notification-content .fw-medium {font-size: 0.9rem; line-height: 1.3; margin-bottom: 0.25rem; word-wrap: break-word; overflow-wrap: anywhere;}
 .admin-header-actions .dropdown-item small {font-size: 0.8rem;}
 .admin-header-actions .dropdown-item:hover {background-color: #f1f7ff;}
 .admin-header-actions .dropdown-item-text {font-size: 0.9rem;}

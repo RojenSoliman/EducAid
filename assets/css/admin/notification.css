@@ -79,6 +79,20 @@ body {
 
 .notification-header {
   cursor: pointer;
+  gap: 16px;
+}
+
+.notification-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-message {
+  flex: 1;
+  overflow-wrap: anywhere;
 }
 
 .notification-body {
@@ -103,12 +117,15 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .action-buttons {
   margin-left: auto;
   display: flex;
   gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 #unread-count {
