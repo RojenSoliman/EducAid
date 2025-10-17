@@ -1,7 +1,17 @@
 <?php
 // Simple test to check if Gemini API is working
-$API_KEY = 'AIzaSyDzc8HJ7mpbjkftNtzTP3i1u-DeOXpxUUs';
-$url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' . urlencode($API_KEY);
+$envBootstrap = __DIR__ . '/../config/env.php';
+if (is_file($envBootstrap)) {
+    require_once $envBootstrap;
+}
+
+$API_KEY = getenv('GEMINI_API_KEY') ?: '';
+if ($API_KEY === '') {
+    echo "Missing GEMINI_API_KEY in environment\n";
+    exit(1);
+}
+
+$url = 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=' . urlencode($API_KEY);
 
 $payload = [
     'contents' => [[

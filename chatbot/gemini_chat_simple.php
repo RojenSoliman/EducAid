@@ -4,7 +4,17 @@ header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Headers: Content-Type');
 
-$API_KEY = 'AIzaSyCU7iNNvWUQv9-dBflcV-VlpIpBeTiB5dI';
+$envBootstrap = __DIR__ . '/../config/env.php';
+if(is_file($envBootstrap)){
+  require_once $envBootstrap;
+}
+
+$API_KEY = getenv('GEMINI_API_KEY') ?: '';
+if($API_KEY === ''){
+  http_response_code(500);
+  echo json_encode(['error' => 'API key missing']);
+  exit;
+}
 
 // Read JSON POST
 $input = json_decode(file_get_contents('php://input'), true);

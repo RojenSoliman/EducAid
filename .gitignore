@@ -1,4 +1,6 @@
 /.env
+# Gemini cache artifacts
+chatbot/gemini_model_cache.json
 # Ignore real layered env files (examples stay versioned)
 config/env.d/*.env
 # Allow example env fragments
