@@ -159,8 +159,8 @@ if (isset($connection)) {
   padding-bottom: 0.5rem;
 }
 .admin-topbar a{color: <?= htmlspecialchars($topbar_settings['topbar_link_color']) ?>;text-decoration:none;}
-.admin-topbar a:hover{color:#fff;}
-.admin-topbar .bi{color:rgba(255,255,255,.85);}
+.admin-topbar a:hover{color: <?= htmlspecialchars($topbar_settings['topbar_text_color']) ?>;opacity:0.85;}
+.admin-topbar .bi{color: <?= htmlspecialchars($topbar_settings['topbar_text_color']) ?>;opacity:0.9;}
 
 /* Mobile responsive adjustments */
 @media (max-width: 767.98px) {
@@ -187,16 +187,24 @@ if (isset($connection)) {
 }
 
 /* Municipality Badge Styling */
+<?php
+// Create semi-transparent background based on text color
+$text_color = $topbar_settings['topbar_text_color'];
+// Extract RGB from hex
+$r = hexdec(substr($text_color, 1, 2));
+$g = hexdec(substr($text_color, 3, 2));
+$b = hexdec(substr($text_color, 5, 2));
+?>
 .admin-topbar .municipality-badge {
-  background: rgba(255,255,255,.15);
+  background: rgba(<?= "$r,$g,$b" ?>,.15);
   padding: 3px 10px 3px 3px;
   border-radius: 20px;
-  border: 1px solid rgba(255,255,255,.25);
+  border: 1px solid rgba(<?= "$r,$g,$b" ?>,.25);
   transition: all 0.3s ease;
 }
 .admin-topbar .municipality-badge:hover {
-  background: rgba(255,255,255,.25);
-  border-color: rgba(255,255,255,.4);
+  background: rgba(<?= "$r,$g,$b" ?>,.25);
+  border-color: rgba(<?= "$r,$g,$b" ?>,.4);
 }
 .admin-topbar .municipality-logo {
   width: 28px;
@@ -209,7 +217,7 @@ if (isset($connection)) {
 }
 .admin-topbar .municipality-name {
   font-weight: 600;
-  color: #fff;
+  color: <?= htmlspecialchars($topbar_settings['topbar_text_color']) ?>;
   font-size: 0.8rem;
 }
 

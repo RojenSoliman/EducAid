@@ -249,16 +249,23 @@ class ColorGeneratorService {
     
     /**
      * Get contrasting text color (black or white) for a background
-     * Ensures WCAG AA compliance (4.5:1 ratio)
+     * Uses luminance threshold for more reliable results
      * @param string $bgHex Background color hex
      * @return string '#ffffff' or '#000000'
      */
     public static function getContrastText(string $bgHex): string {
-        $whiteContrast = self::getContrastRatio($bgHex, '#ffffff');
-        $blackContrast = self::getContrastRatio($bgHex, '#000000');
+        // Get luminance (0 = darkest, 1 = lightest)
+        $luminance = self::getLuminance($bgHex);
         
-        // Return color with better contrast
-        return $whiteContrast > $blackContrast ? '#ffffff' : '#000000';
+        // Use a more conservative threshold
+        // Luminance < 0.5 = use white text (for darker backgrounds)
+        // Luminance >= 0.5 = use black text (for lighter backgrounds)
+        // This gives better results for medium-tone colors
+        if ($luminance < 0.5) {
+            return '#ffffff';
+        } else {
+            return '#000000';
+        }
     }
     
     /**
