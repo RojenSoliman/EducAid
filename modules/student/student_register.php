@@ -466,6 +466,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processEnrollmentOcr'
     ];
     @file_put_contents($confidenceFile, json_encode($confidenceData));
 
+    // Save full verification data to .verify.json for admin validation view
+    $verifyFile = $targetPath . '.verify.json';
+    @file_put_contents($verifyFile, json_encode($verification, JSON_PRETTY_PRINT));
+
+    // Save OCR text to .ocr.txt for reference
+    $ocrFile = $targetPath . '.ocr.txt';
+    @file_put_contents($ocrFile, $ocrText);
+
     header('Content-Type: application/json');
     echo json_encode(['status' => 'success', 'verification' => $verification]);
     exit;
@@ -1349,6 +1357,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
     ];
     file_put_contents($confidenceFile, json_encode($confidenceData));
     
+    // Save full verification data to .verify.json for admin validation view
+    $verifyFile = $targetPath . '.verify.json';
+    @file_put_contents($verifyFile, json_encode($verification, JSON_PRETTY_PRINT));
+    
+    // Save OCR text to .ocr.txt for reference
+    $ocrFile = $targetPath . '.ocr.txt';
+    @file_put_contents($ocrFile, $ocrText);
+    
     // Note: Letter file is kept in temp directory for final registration step
     // It will be cleaned up during registration completion
     
@@ -1682,6 +1698,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
         'timestamp' => time()
     ];
     file_put_contents($confidenceFile, json_encode($confidenceData));
+    
+    // Save full verification data to .verify.json for admin validation view
+    $verifyFile = $targetPath . '.verify.json';
+    @file_put_contents($verifyFile, json_encode($verification, JSON_PRETTY_PRINT));
+    
+    // Save OCR text to .ocr.txt for reference
+    $ocrFile = $targetPath . '.ocr.txt';
+    @file_put_contents($ocrFile, $ocrText);
     
     // Note: Certificate file is kept in temp directory for final registration step
     // It will be cleaned up during registration completion
@@ -2623,6 +2647,21 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     error_log("Failed to copy EAF file from $tempFile to $tempEnrollmentPath");
                     continue; // Skip this file and try others
                 } else {
+                    // Copy associated .verify.json and .ocr.txt files if they exist
+                    $verifySourceFile = $tempFile . '.verify.json';
+                    $ocrSourceFile = $tempFile . '.ocr.txt';
+                    $verifyDestFile = $tempEnrollmentPath . '.verify.json';
+                    $ocrDestFile = $tempEnrollmentPath . '.ocr.txt';
+                    
+                    if (file_exists($verifySourceFile)) {
+                        copy($verifySourceFile, $verifyDestFile);
+                        unlink($verifySourceFile);
+                    }
+                    if (file_exists($ocrSourceFile)) {
+                        copy($ocrSourceFile, $ocrDestFile);
+                        unlink($ocrSourceFile);
+                    }
+                    
                     unlink($tempFile); // Remove original file
                     
                     // Get OCR confidence score from temp file
@@ -2686,6 +2725,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 }
 
                 if (copy($letterTempFile, $letterTempPath)) {
+                    // Copy verification files (.verify.json and .ocr.txt) if they exist
+                    $letterVerifyFile = $letterTempFile . '.verify.json';
+                    $letterOcrFile = $letterTempFile . '.ocr.txt';
+                    
+                    if (file_exists($letterVerifyFile)) {
+                        @copy($letterVerifyFile, $letterTempPath . '.verify.json');
+                        @unlink($letterVerifyFile);
+                    }
+                    
+                    if (file_exists($letterOcrFile)) {
+                        @copy($letterOcrFile, $letterTempPath . '.ocr.txt');
+                        @unlink($letterOcrFile);
+                    }
+                    
                     // Save letter record to database with temporary path and OCR confidence
                     $letterQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
                     $letterResult = pg_query_params($connection, $letterQuery, [$student_id, 'letter_to_mayor', $letterTempPath, 'false', $letterConfidence]);
@@ -2744,6 +2797,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 }
 
                 if (copy($certificateTempFile, $certificateTempPath)) {
+                    // Copy verification files (.verify.json and .ocr.txt) if they exist
+                    $certificateVerifyFile = $certificateTempFile . '.verify.json';
+                    $certificateOcrFile = $certificateTempFile . '.ocr.txt';
+                    
+                    if (file_exists($certificateVerifyFile)) {
+                        @copy($certificateVerifyFile, $certificateTempPath . '.verify.json');
+                        @unlink($certificateVerifyFile);
+                    }
+                    
+                    if (file_exists($certificateOcrFile)) {
+                        @copy($certificateOcrFile, $certificateTempPath . '.ocr.txt');
+                        @unlink($certificateOcrFile);
+                    }
+                    
                     // Save certificate record to database with temporary path and OCR confidence
                     $certificateQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
                     $certificateResult = pg_query_params($connection, $certificateQuery, [$student_id, 'certificate_of_indigency', $certificateTempPath, 'false', $certificateConfidence]);
@@ -2763,6 +2830,63 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             }
         } else {
             error_log("No certificate temp files found in path: " . $tempIndigencyDir);
+        }
+
+        // Save grades to temporary folder (not permanent until approved)
+        $tempGradesDir = '../../assets/uploads/temp/grades/';
+        $allGradesFiles = glob($tempGradesDir . '*');
+        $gradesTempFiles = array_filter($allGradesFiles, function($file) {
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
+        });
+        error_log("Looking for grades files in: " . $tempGradesDir);
+        error_log("Found grades files: " . print_r($gradesTempFiles, true));
+        if (!empty($gradesTempFiles)) {
+            // Create temporary grades directory for pending students
+            if (!file_exists($tempGradesDir)) {
+                mkdir($tempGradesDir, 0777, true);
+            }
+
+            // Process all grades files and rename them with student ID
+            foreach ($gradesTempFiles as $gradesTempFile) {
+                $originalGradesFilename = basename($gradesTempFile);
+                $gradesExtension = pathinfo($originalGradesFilename, PATHINFO_EXTENSION);
+                
+                // Always rename with student ID prefix for consistent naming
+                $newGradesFilename = $student_id . '_' . $namePrefix . '_grades.' . $gradesExtension;
+                $gradesTempPath = $tempGradesDir . $newGradesFilename;
+
+                // Get OCR confidence score from temp file
+                $gradesConfidenceFile = $tempGradesDir . 'grades_confidence.json';
+                $gradesConfidence = 75.0; // default
+                if (file_exists($gradesConfidenceFile)) {
+                    $confidenceData = json_decode(file_get_contents($gradesConfidenceFile), true);
+                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                        $gradesConfidence = $confidenceData['overall_confidence'];
+                    }
+                    unlink($gradesConfidenceFile); // Clean up confidence file
+                }
+
+                if (copy($gradesTempFile, $gradesTempPath)) {
+                    // Save grades record to database with temporary path and OCR confidence
+                    $gradesQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $gradesResult = pg_query_params($connection, $gradesQuery, [$student_id, 'academic_grades', $gradesTempPath, 'false', $gradesConfidence]);
+                    
+                    if (!$gradesResult) {
+                        error_log("Failed to save grades to database: " . pg_last_error($connection));
+                    } else {
+                        error_log("Successfully saved grades to database for student $student_id with confidence $gradesConfidence%");
+                    }
+
+                    // Clean up original temp grades file
+                    unlink($gradesTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy grades file from $gradesTempFile to $gradesTempPath");
+                }
+            }
+        } else {
+            error_log("No grades temp files found in path: " . $tempGradesDir);
         }
 
         $semester = $slotInfo['semester'];

@@ -412,8 +412,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
     error_log("FILES data: " . print_r($_FILES, true));
     error_log("POST data: " . print_r($_POST, true));
     
-    $student_name = $_SESSION['student_username']; // Assuming student_username is stored in the session
-    $student_id = $_SESSION['student_id']; // Assuming student_id is stored in the session
+  $student_name = $_SESSION['student_username']; // Assuming student_username is stored in the session
+  $student_id = $_SESSION['student_id']; // Assuming student_id is stored in the session
+  // Create a filename-safe version of student_id (keep letters, numbers, dash, underscore)
+  $student_id_safe = preg_replace('/[^A-Za-z0-9_-]/', '', (string)$student_id);
 
     // Allowed file types and sizes
     $allowedTypes = [
@@ -427,7 +429,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
     
     // Create secure student directory
     $baseUploadDir = "../../assets/uploads/students/";
-    $studentDir = $baseUploadDir . preg_replace('/[^a-zA-Z0-9_-]/', '_', $student_name) . "_" . $student_id . "/";
+  $studentDir = $baseUploadDir . preg_replace('/[^a-zA-Z0-9_-]/', '_', $student_name) . "_" . $student_id_safe . "/";
     
     if (!file_exists($studentDir)) {
         if (!mkdir($studentDir, 0755, true)) {
@@ -478,10 +480,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
         }
 
         // Move the uploaded file to the student’s folder
-        // Generate secure filename
+        // Generate secure standardized filename: {student_id}_{document}_{timestamp}.{ext}
         $timestamp = date('Y-m-d_H-i-s');
-        $sanitizedName = preg_replace('/[^a-zA-Z0-9._-]/', '_', pathinfo($fileName, PATHINFO_FILENAME));
-        $secureFileName = $fileType . "_" . $timestamp . "_" . $sanitizedName . "." . $fileExt;
+        // Map document type to concise filename token
+        $docTokenMap = [
+          'id_picture' => 'id',
+          'letter_to_mayor' => 'letter',
+          'certificate_of_indigency' => 'indigency'
+        ];
+        $docToken = $docTokenMap[$fileType] ?? preg_replace('/[^a-zA-Z0-9_-]/', '_', $fileType);
+        $secureFileName = $student_id_safe . "_" . $docToken . "_" . $timestamp . "." . $fileExt;
         $finalPath = $studentDir . $secureFileName;
     if (move_uploaded_file($fileTmpName, $finalPath)) {
             // Insert into database using prepared statements
@@ -540,36 +548,544 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                   ]);
                 }
 
-                // For ID picture, run a light identity verification (name + school in extracted text)
+                // For ID picture, run detailed identity verification matching student_register.php structure
                 if ($fileType === 'id_picture') {
-                  $extracted_norm = normalize_for_match($combinedText);
+                  $ocrTextLower = strtolower($combinedText);
 
-                  // Fetch student profile and university name
+                  // Fetch complete student profile
                   $first = '';
+                  $middle = '';
                   $last = '';
+                  $yearLevelName = '';
+                  $universityName = '';
+                  
                   if (!empty($student_info)) {
-                    $first = strtolower($student_info['first_name'] ?? '');
-                    $last = strtolower($student_info['last_name'] ?? '');
+                    $first = $student_info['first_name'] ?? '';
+                    $middle = $student_info['middle_name'] ?? '';
+                    $last = $student_info['last_name'] ?? '';
                   } else {
-                    $si_res = @pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$student_id]);
-                    if ($si_res) { $si = pg_fetch_assoc($si_res); $first = strtolower($si['first_name'] ?? ''); $last = strtolower($si['last_name'] ?? ''); }
+                    $si_res = @pg_query_params($connection, "SELECT first_name, middle_name, last_name, year_level_id FROM students WHERE student_id = $1", [$student_id]);
+                    if ($si_res) {
+                      $si = pg_fetch_assoc($si_res);
+                      $first = $si['first_name'] ?? '';
+                      $middle = $si['middle_name'] ?? '';
+                      $last = $si['last_name'] ?? '';
+                      
+                      // Get year level name
+                      if (!empty($si['year_level_id'])) {
+                        $yl_res = @pg_query_params($connection, "SELECT name FROM year_levels WHERE year_level_id = $1", [$si['year_level_id']]);
+                        if ($yl_res) {
+                          $yl = pg_fetch_assoc($yl_res);
+                          $yearLevelName = $yl['name'] ?? '';
+                        }
+                      }
+                    }
                   }
 
-                  $school = '';
                   $uni_res = @pg_query_params($connection, "SELECT u.name FROM students s JOIN universities u ON s.university_id = u.university_id WHERE s.student_id = $1", [$student_id]);
-                  if ($uni_res) { $uni = pg_fetch_assoc($uni_res); $school = strtolower($uni['name'] ?? ''); }
+                  if ($uni_res) {
+                    $uni = pg_fetch_assoc($uni_res);
+                    $universityName = $uni['name'] ?? '';
+                  }
 
-                  // Fuzzy name match and token-based school match (supports acronyms like LPU)
-                  $nameMatch = fuzzy_contains_name($extracted_norm, $first, $last);
-                  $schoolMatch = school_match_tokens($extracted_norm, $school);
-                  $score = ($nameMatch ? 55 : 0) + ($schoolMatch ? 45 : 0);
-
-                  $verify = [
-                    'name_match' => $nameMatch,
-                    'school_match' => $schoolMatch,
-                    'verification_score' => $score,
+                  // Enhanced verification with 6 checks matching student_register.php
+                  $verification = [
+                    'first_name_match' => false,
+                    'middle_name_match' => false,
+                    'last_name_match' => false,
+                    'year_level_match' => false,
+                    'university_match' => false,
+                    'document_keywords_found' => false,
+                    'confidence_scores' => [],
+                    'found_text_snippets' => []
                   ];
-                                    @file_put_contents($finalPath . '.verify.json', safe_json_encode($verify));
+                  
+                  // Helper function for similarity
+                  function calculateIDSimilarity($needle, $haystack) {
+                    $needle = strtolower(trim($needle));
+                    $haystack = strtolower(trim($haystack));
+                    if (stripos($haystack, $needle) !== false) return 100;
+                    $words = explode(' ', $haystack);
+                    $maxSimilarity = 0;
+                    foreach ($words as $word) {
+                      if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                        $similarity = 0;
+                        similar_text($needle, $word, $similarity);
+                        $maxSimilarity = max($maxSimilarity, $similarity);
+                      }
+                    }
+                    return $maxSimilarity;
+                  }
+
+                  // Check first name
+                  if (!empty($first)) {
+                    $similarity = calculateIDSimilarity($first, $ocrTextLower);
+                    $verification['confidence_scores']['first_name'] = $similarity;
+                    if ($similarity >= 80) {
+                      $verification['first_name_match'] = true;
+                    }
+                  }
+
+                  // Check middle name
+                  if (empty($middle)) {
+                    $verification['middle_name_match'] = true;
+                    $verification['confidence_scores']['middle_name'] = 100;
+                  } else {
+                    $similarity = calculateIDSimilarity($middle, $ocrTextLower);
+                    $verification['confidence_scores']['middle_name'] = $similarity;
+                    if ($similarity >= 70) {
+                      $verification['middle_name_match'] = true;
+                    }
+                  }
+
+                  // Check last name
+                  if (!empty($last)) {
+                    $similarity = calculateIDSimilarity($last, $ocrTextLower);
+                    $verification['confidence_scores']['last_name'] = $similarity;
+                    if ($similarity >= 80) {
+                      $verification['last_name_match'] = true;
+                    }
+                  }
+
+                  // Check year level
+                  if (!empty($yearLevelName)) {
+                    $selectedYearVariations = [];
+                    if (stripos($yearLevelName, '1st') !== false || stripos($yearLevelName, 'first') !== false) {
+                      $selectedYearVariations = ['1st year', 'first year', '1st yr', 'year 1', 'yr 1', 'freshman'];
+                    } elseif (stripos($yearLevelName, '2nd') !== false || stripos($yearLevelName, 'second') !== false) {
+                      $selectedYearVariations = ['2nd year', 'second year', '2nd yr', 'year 2', 'yr 2', 'sophomore'];
+                    } elseif (stripos($yearLevelName, '3rd') !== false || stripos($yearLevelName, 'third') !== false) {
+                      $selectedYearVariations = ['3rd year', 'third year', '3rd yr', 'year 3', 'yr 3', 'junior'];
+                    } elseif (stripos($yearLevelName, '4th') !== false || stripos($yearLevelName, 'fourth') !== false) {
+                      $selectedYearVariations = ['4th year', 'fourth year', '4th yr', 'year 4', 'yr 4', 'senior'];
+                    } elseif (stripos($yearLevelName, '5th') !== false || stripos($yearLevelName, 'fifth') !== false) {
+                      $selectedYearVariations = ['5th year', 'fifth year', '5th yr', 'year 5', 'yr 5'];
+                    } elseif (stripos($yearLevelName, 'graduate') !== false || stripos($yearLevelName, 'grad') !== false) {
+                      $selectedYearVariations = ['graduate', 'grad student', 'masters', 'phd', 'doctoral'];
+                    }
+                    foreach ($selectedYearVariations as $variation) {
+                      if (stripos($combinedText, $variation) !== false) {
+                        $verification['year_level_match'] = true;
+                        break;
+                      }
+                    }
+                  }
+
+                  // Check university name
+                  if (!empty($universityName)) {
+                    $universityWords = array_filter(explode(' ', strtolower($universityName)));
+                    $foundWords = 0;
+                    $totalWords = count($universityWords);
+                    foreach ($universityWords as $word) {
+                      if (strlen($word) > 2) {
+                        $similarity = calculateIDSimilarity($word, $ocrTextLower);
+                        if ($similarity >= 70) $foundWords++;
+                      }
+                    }
+                    $universityScore = ($foundWords / max($totalWords, 1)) * 100;
+                    $verification['confidence_scores']['university'] = round($universityScore, 1);
+                    if ($universityScore >= 60 || ($totalWords <= 2 && $foundWords >= 1)) {
+                      $verification['university_match'] = true;
+                    }
+                  }
+
+                  // Check document keywords (ID-specific)
+                  $documentKeywords = [
+                    'student', 'id', 'identification', 'university', 'college', 'school',
+                    'name', 'number', 'valid', 'card', 'holder', 'expires'
+                  ];
+                  $keywordMatches = 0;
+                  $keywordScore = 0;
+                  foreach ($documentKeywords as $keyword) {
+                    $similarity = calculateIDSimilarity($keyword, $ocrTextLower);
+                    if ($similarity >= 80) {
+                      $keywordMatches++;
+                      $keywordScore += $similarity;
+                    }
+                  }
+                  $averageKeywordScore = $keywordMatches > 0 ? ($keywordScore / $keywordMatches) : 0;
+                  $verification['confidence_scores']['document_keywords'] = round($averageKeywordScore, 1);
+                  if ($keywordMatches >= 2) {
+                    $verification['document_keywords_found'] = true;
+                  }
+
+                  // Calculate overall success
+                  $requiredChecks = ['first_name_match', 'middle_name_match', 'last_name_match', 'year_level_match', 'university_match', 'document_keywords_found'];
+                  $passedChecks = 0;
+                  foreach ($requiredChecks as $check) {
+                    if ($verification[$check]) $passedChecks++;
+                  }
+                  
+                  $totalConfidence = 0;
+                  $confidenceCount = 0;
+                  foreach ($verification['confidence_scores'] as $score) {
+                    $totalConfidence += $score;
+                    $confidenceCount++;
+                  }
+                  $averageConfidence = $confidenceCount > 0 ? ($totalConfidence / $confidenceCount) : 0;
+                  
+                  $verification['overall_success'] = ($passedChecks >= 4) || ($passedChecks >= 3 && $averageConfidence >= 80);
+                  $verification['summary'] = [
+                    'passed_checks' => $passedChecks,
+                    'total_checks' => 6,
+                    'average_confidence' => round($averageConfidence, 1),
+                    'recommendation' => $verification['overall_success'] ? 
+                      'Document validation successful' : 
+                      'Please ensure the ID clearly shows your name, university, year level'
+                  ];
+
+                  @file_put_contents($finalPath . '.verify.json', safe_json_encode($verification));
+                }
+                
+                // For Letter to Mayor - match student_register.php 4-check structure
+                elseif ($fileType === 'letter_to_mayor') {
+                  $ocrTextLower = strtolower($combinedText);
+                  $ocrTextNormalized = strtolower(preg_replace('/[^\w\s]/', ' ', $combinedText));
+                  
+                  // Fetch student profile
+                  $first = '';
+                  $last = '';
+                  $barangayName = '';
+                  
+                  if (!empty($student_info)) {
+                    $first = $student_info['first_name'] ?? '';
+                    $last = $student_info['last_name'] ?? '';
+                  } else {
+                    $si_res = @pg_query_params($connection, "SELECT first_name, last_name, barangay_id FROM students WHERE student_id = $1", [$student_id]);
+                    if ($si_res) {
+                      $si = pg_fetch_assoc($si_res);
+                      $first = $si['first_name'] ?? '';
+                      $last = $si['last_name'] ?? '';
+                      
+                      // Get barangay name
+                      if (!empty($si['barangay_id'])) {
+                        $brgy_res = @pg_query_params($connection, "SELECT name FROM barangays WHERE barangay_id = $1", [$si['barangay_id']]);
+                        if ($brgy_res) {
+                          $brgy = pg_fetch_assoc($brgy_res);
+                          $barangayName = $brgy['name'] ?? '';
+                        }
+                      }
+                    }
+                  }
+                  
+                  // Helper function for similarity matching student_register.php
+                  function calculateLetterSimilarity($needle, $haystack) {
+                    $needle = strtolower(trim($needle));
+                    $haystack = strtolower(trim($haystack));
+                    if (stripos($haystack, $needle) !== false) return 100;
+                    $words = explode(' ', $haystack);
+                    $maxSimilarity = 0;
+                    foreach ($words as $word) {
+                      if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                        $similarity = 0;
+                        similar_text($needle, $word, $similarity);
+                        $maxSimilarity = max($maxSimilarity, $similarity);
+                      }
+                    }
+                    return $maxSimilarity;
+                  }
+                  
+                  // 4-check verification structure matching student_register.php
+                  $verification = [
+                    'first_name' => false,
+                    'last_name' => false,
+                    'barangay' => false,
+                    'mayor_header' => false,
+                    'confidence_scores' => [],
+                    'found_text_snippets' => []
+                  ];
+                  
+                  // Check first name
+                  if (!empty($first)) {
+                    $similarity = calculateLetterSimilarity($first, $ocrTextNormalized);
+                    $verification['confidence_scores']['first_name'] = $similarity;
+                    if ($similarity >= 80) {
+                      $verification['first_name'] = true;
+                      $pattern = '/\b\w*' . preg_quote(substr($first, 0, 3), '/') . '\w*\b/i';
+                      if (preg_match($pattern, $combinedText, $matches)) {
+                        $verification['found_text_snippets']['first_name'] = $matches[0];
+                      }
+                    }
+                  }
+                  
+                  // Check last name
+                  if (!empty($last)) {
+                    $similarity = calculateLetterSimilarity($last, $ocrTextNormalized);
+                    $verification['confidence_scores']['last_name'] = $similarity;
+                    if ($similarity >= 80) {
+                      $verification['last_name'] = true;
+                      $pattern = '/\b\w*' . preg_quote(substr($last, 0, 3), '/') . '\w*\b/i';
+                      if (preg_match($pattern, $combinedText, $matches)) {
+                        $verification['found_text_snippets']['last_name'] = $matches[0];
+                      }
+                    }
+                  }
+                  
+                  // Check barangay
+                  if (!empty($barangayName)) {
+                    $similarity = calculateLetterSimilarity($barangayName, $ocrTextNormalized);
+                    $verification['confidence_scores']['barangay'] = $similarity;
+                    if ($similarity >= 70) {
+                      $verification['barangay'] = true;
+                      $pattern = '/\b\w*' . preg_quote(substr($barangayName, 0, 4), '/') . '\w*\b/i';
+                      if (preg_match($pattern, $combinedText, $matches)) {
+                        $verification['found_text_snippets']['barangay'] = $matches[0];
+                      }
+                    }
+                  }
+                  
+                  // Check for mayor header
+                  $mayorHeaders = [
+                    'office of the mayor', 'mayor\'s office', 'office mayor',
+                    'municipal mayor', 'city mayor', 'mayor office',
+                    'office of mayor', 'municipal government', 'city government',
+                    'local government unit', 'lgu'
+                  ];
+                  
+                  $mayorHeaderFound = false;
+                  $mayorConfidence = 0;
+                  $foundMayorText = '';
+                  
+                  foreach ($mayorHeaders as $header) {
+                    $similarity = calculateLetterSimilarity($header, $ocrTextNormalized);
+                    if ($similarity > $mayorConfidence) {
+                      $mayorConfidence = $similarity;
+                    }
+                    if ($similarity >= 70) {
+                      $mayorHeaderFound = true;
+                      $pattern = '/[^\n]*' . preg_quote(explode(' ', $header)[0], '/') . '[^\n]*/i';
+                      if (preg_match($pattern, $combinedText, $matches)) {
+                        $foundMayorText = trim($matches[0]);
+                      }
+                      break;
+                    }
+                  }
+                  
+                  $verification['mayor_header'] = $mayorHeaderFound;
+                  $verification['confidence_scores']['mayor_header'] = $mayorConfidence;
+                  if (!empty($foundMayorText)) {
+                    $verification['found_text_snippets']['mayor_header'] = $foundMayorText;
+                  }
+                  
+                  // Calculate overall success (4 checks)
+                  $requiredLetterChecks = ['first_name', 'last_name', 'barangay', 'mayor_header'];
+                  $passedLetterChecks = 0;
+                  $totalConfidence = 0;
+                  
+                  foreach ($requiredLetterChecks as $check) {
+                    if ($verification[$check]) {
+                      $passedLetterChecks++;
+                    }
+                    $totalConfidence += isset($verification['confidence_scores'][$check]) ? 
+                      $verification['confidence_scores'][$check] : 0;
+                  }
+                  
+                  $averageConfidence = $totalConfidence / 4;
+                  
+                  $verification['overall_success'] = ($passedLetterChecks >= 3) || 
+                    ($passedLetterChecks >= 2 && $averageConfidence >= 75);
+                  
+                  $verification['summary'] = [
+                    'passed_checks' => $passedLetterChecks,
+                    'total_checks' => 4,
+                    'average_confidence' => round($averageConfidence, 1),
+                    'recommendation' => $verification['overall_success'] ? 
+                      'Document validation successful' : 
+                      'Please ensure the document contains your name, barangay, and mayor office header clearly'
+                  ];
+                  
+                  @file_put_contents($finalPath . '.verify.json', safe_json_encode($verification));
+                }
+                
+                // For Certificate of Indigency - match student_register.php 5-check structure
+                elseif ($fileType === 'certificate_of_indigency') {
+                  $ocrTextLower = strtolower($combinedText);
+                  $ocrTextNormalized = strtolower(preg_replace('/[^\w\s]/', ' ', $combinedText));
+                  
+                  // Fetch student profile
+                  $first = '';
+                  $last = '';
+                  $barangayName = '';
+                  
+                  if (!empty($student_info)) {
+                    $first = $student_info['first_name'] ?? '';
+                    $last = $student_info['last_name'] ?? '';
+                  } else {
+                    $si_res = @pg_query_params($connection, "SELECT first_name, last_name, barangay_id FROM students WHERE student_id = $1", [$student_id]);
+                    if ($si_res) {
+                      $si = pg_fetch_assoc($si_res);
+                      $first = $si['first_name'] ?? '';
+                      $last = $si['last_name'] ?? '';
+                      
+                      // Get barangay name
+                      if (!empty($si['barangay_id'])) {
+                        $brgy_res = @pg_query_params($connection, "SELECT name FROM barangays WHERE barangay_id = $1", [$si['barangay_id']]);
+                        if ($brgy_res) {
+                          $brgy = pg_fetch_assoc($brgy_res);
+                          $barangayName = $brgy['name'] ?? '';
+                        }
+                      }
+                    }
+                  }
+                  
+                  // Helper function for similarity matching student_register.php
+                  function calculateCertSimilarity($needle, $haystack) {
+                    $needle = strtolower(trim($needle));
+                    $haystack = strtolower(trim($haystack));
+                    if (stripos($haystack, $needle) !== false) return 100;
+                    $words = explode(' ', $haystack);
+                    $maxSimilarity = 0;
+                    foreach ($words as $word) {
+                      if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                        $similarity = 0;
+                        similar_text($needle, $word, $similarity);
+                        $maxSimilarity = max($maxSimilarity, $similarity);
+                      }
+                    }
+                    return $maxSimilarity;
+                  }
+                  
+                  // 5-check verification structure matching student_register.php
+                  $verification = [
+                    'certificate_title' => false,
+                    'first_name' => false,
+                    'last_name' => false,
+                    'barangay' => false,
+                    'general_trias' => false,
+                    'confidence_scores' => [],
+                    'found_text_snippets' => []
+                  ];
+                  
+                  // Check for certificate title
+                  $certificateTitles = [
+                    'certificate of indigency', 'indigency certificate',
+                    'certificate indigency', 'katunayan ng kahirapan',
+                    'indigent certificate', 'poverty certificate'
+                  ];
+                  
+                  $titleFound = false;
+                  $titleConfidence = 0;
+                  $foundTitleText = '';
+                  
+                  foreach ($certificateTitles as $title) {
+                    $similarity = calculateCertSimilarity($title, $ocrTextNormalized);
+                    if ($similarity > $titleConfidence) {
+                      $titleConfidence = $similarity;
+                    }
+                    if ($similarity >= 70) {
+                      $titleFound = true;
+                      $pattern = '/[^\n]*' . preg_quote(explode(' ', $title)[0], '/') . '[^\n]*/i';
+                      if (preg_match($pattern, $combinedText, $matches)) {
+                        $foundTitleText = trim($matches[0]);
+                      }
+                      break;
+                    }
+                  }
+                  
+                  $verification['certificate_title'] = $titleFound;
+                  $verification['confidence_scores']['certificate_title'] = $titleConfidence;
+                  if (!empty($foundTitleText)) {
+                    $verification['found_text_snippets']['certificate_title'] = $foundTitleText;
+                  }
+                  
+                  // Check first name
+                  if (!empty($first)) {
+                    $similarity = calculateCertSimilarity($first, $ocrTextNormalized);
+                    $verification['confidence_scores']['first_name'] = $similarity;
+                    if ($similarity >= 80) {
+                      $verification['first_name'] = true;
+                      $pattern = '/\b\w*' . preg_quote(substr($first, 0, 3), '/') . '\w*\b/i';
+                      if (preg_match($pattern, $combinedText, $matches)) {
+                        $verification['found_text_snippets']['first_name'] = $matches[0];
+                      }
+                    }
+                  }
+                  
+                  // Check last name
+                  if (!empty($last)) {
+                    $similarity = calculateCertSimilarity($last, $ocrTextNormalized);
+                    $verification['confidence_scores']['last_name'] = $similarity;
+                    if ($similarity >= 80) {
+                      $verification['last_name'] = true;
+                      $pattern = '/\b\w*' . preg_quote(substr($last, 0, 3), '/') . '\w*\b/i';
+                      if (preg_match($pattern, $combinedText, $matches)) {
+                        $verification['found_text_snippets']['last_name'] = $matches[0];
+                      }
+                    }
+                  }
+                  
+                  // Check barangay
+                  if (!empty($barangayName)) {
+                    $similarity = calculateCertSimilarity($barangayName, $ocrTextNormalized);
+                    $verification['confidence_scores']['barangay'] = $similarity;
+                    if ($similarity >= 70) {
+                      $verification['barangay'] = true;
+                      $pattern = '/\b\w*' . preg_quote(substr($barangayName, 0, 4), '/') . '\w*\b/i';
+                      if (preg_match($pattern, $combinedText, $matches)) {
+                        $verification['found_text_snippets']['barangay'] = $matches[0];
+                      }
+                    }
+                  }
+                  
+                  // Check for General Trias
+                  $generalTriasVariations = [
+                    'general trias', 'gen trias', 'general trias city',
+                    'municipality of general trias', 'city of general trias'
+                  ];
+                  
+                  $generalTriasFound = false;
+                  $generalTriasConfidence = 0;
+                  $foundGeneralTriasText = '';
+                  
+                  foreach ($generalTriasVariations as $variation) {
+                    $similarity = calculateCertSimilarity($variation, $ocrTextNormalized);
+                    if ($similarity > $generalTriasConfidence) {
+                      $generalTriasConfidence = $similarity;
+                    }
+                    if ($similarity >= 70) {
+                      $generalTriasFound = true;
+                      $pattern = '/[^\n]*' . preg_quote(explode(' ', $variation)[0], '/') . '[^\n]*/i';
+                      if (preg_match($pattern, $combinedText, $matches)) {
+                        $foundGeneralTriasText = trim($matches[0]);
+                      }
+                      break;
+                    }
+                  }
+                  
+                  $verification['general_trias'] = $generalTriasFound;
+                  $verification['confidence_scores']['general_trias'] = $generalTriasConfidence;
+                  if (!empty($foundGeneralTriasText)) {
+                    $verification['found_text_snippets']['general_trias'] = $foundGeneralTriasText;
+                  }
+                  
+                  // Calculate overall success (5 checks)
+                  $requiredCertificateChecks = ['certificate_title', 'first_name', 'last_name', 'barangay', 'general_trias'];
+                  $passedCertificateChecks = 0;
+                  $totalConfidence = 0;
+                  
+                  foreach ($requiredCertificateChecks as $check) {
+                    if ($verification[$check]) {
+                      $passedCertificateChecks++;
+                    }
+                    $totalConfidence += isset($verification['confidence_scores'][$check]) ? 
+                      $verification['confidence_scores'][$check] : 0;
+                  }
+                  
+                  $averageConfidence = $totalConfidence / 5;
+                  
+                  $verification['overall_success'] = ($passedCertificateChecks >= 4) || 
+                    ($passedCertificateChecks >= 3 && $averageConfidence >= 75);
+                  
+                  $verification['summary'] = [
+                    'passed_checks' => $passedCertificateChecks,
+                    'total_checks' => 5,
+                    'average_confidence' => round($averageConfidence, 1),
+                    'recommendation' => $verification['overall_success'] ? 
+                      'Certificate validation successful' : 
+                      'Please ensure the certificate contains your name, barangay, "Certificate of Indigency" title, and "General Trias" clearly'
+                  ];
+                  
+                  @file_put_contents($finalPath . '.verify.json', safe_json_encode($verification));
                 }
               } catch (Throwable $t) {
                 error_log('OCR for ' . $fileType . ' failed: ' . $t->getMessage());
@@ -615,10 +1131,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
             if ($gradesFileSize <= $maxFileSize) {
                 $gradesFileExt = strtolower(pathinfo($gradesFileName, PATHINFO_EXTENSION));
                 if (in_array($gradesFileExt, ['jpg', 'jpeg', 'png', 'gif', 'pdf'])) {
-                    // Generate secure filename for grades
+                    // Generate secure standardized filename for grades: {student_id}_grades_{timestamp}.{ext}
                     $timestamp = date('Y-m-d_H-i-s');
-                    $sanitizedGradesName = preg_replace('/[^a-zA-Z0-9._-]/', '_', pathinfo($gradesFileName, PATHINFO_FILENAME));
-                    $secureGradesFileName = "grades_" . $timestamp . "_" . $sanitizedGradesName . "." . $gradesFileExt;
+                    $secureGradesFileName = $student_id_safe . "_grades_" . $timestamp . "." . $gradesFileExt;
                     $gradesFinalPath = $studentDir . $secureGradesFileName;
                     
           if (move_uploaded_file($gradesFileTmpName, $gradesFinalPath)) {
@@ -843,10 +1358,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
             if ($eafFileSize <= $maxFileSize) {
                 $eafFileExt = strtolower(pathinfo($eafFileName, PATHINFO_EXTENSION));
                 if (in_array($eafFileExt, ['jpg', 'jpeg', 'png', 'gif', 'pdf'])) {
-                    // Generate secure filename for EAF
+                    // Generate secure standardized filename for EAF: {student_id}_eaf_{timestamp}.{ext}
                     $timestamp = date('Y-m-d_H-i-s');
-                    $sanitizedEafName = preg_replace('/[^a-zA-Z0-9._-]/', '_', pathinfo($eafFileName, PATHINFO_FILENAME));
-                    $secureEafFileName = "eaf_" . $timestamp . "_" . $sanitizedEafName . "." . $eafFileExt;
+                    $secureEafFileName = $student_id_safe . "_eaf_" . $timestamp . "." . $eafFileExt;
                     $eafFinalPath = $studentDir . $secureEafFileName;
                     
                     if (move_uploaded_file($eafFileTmpName, $eafFinalPath)) {
@@ -1272,6 +1786,57 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
       display: block;
     }
     
+    /* Validation Modal Styles */
+    .validation-results {
+      padding: 10px 0;
+    }
+    
+    .validation-results .list-group-item {
+      border-left: 3px solid transparent;
+      transition: all 0.2s ease;
+    }
+    
+    .validation-results .list-group-item:hover {
+      background-color: #f8f9fa;
+      border-left-color: #007bff;
+    }
+    
+    .validation-results .badge {
+      font-size: 0.9em;
+      padding: 0.4em 0.8em;
+      min-width: 60px;
+    }
+    
+    .validation-results .alert {
+      border-left: 4px solid currentColor;
+    }
+    
+    .validation-results .card {
+      border: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    
+    .validation-results pre {
+      background: #ffffff;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 15px;
+      font-size: 0.85em;
+      line-height: 1.5;
+    }
+    
+    .validation-results table {
+      font-size: 0.9em;
+    }
+    
+    .validation-results thead th {
+      background-color: #f1f3f5;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75em;
+      letter-spacing: 0.5px;
+    }
+    
     /* Responsive design */
     @media (max-width: 768px) {
       .document-info {
@@ -1282,6 +1847,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
       .document-actions {
         flex-direction: row;
         justify-content: center;
+      }
+      
+      .validation-results table {
+        font-size: 0.8em;
+      }
+      
+      .validation-results .badge {
+        min-width: 50px;
+        font-size: 0.8em;
       }
     }
   </style>
