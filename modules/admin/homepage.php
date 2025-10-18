@@ -589,53 +589,86 @@ if ($DEMO_MODE) {
         <?php if (!empty($pastDistributions)): ?>
         <div class="row g-4 mt-4">
           <div class="col-12">
-            <div class="custom-card">
-              <div class="custom-card-header bg-success text-white d-flex justify-content-between align-items-center">
-                <h5><i class="bi bi-clock-history me-2"></i>Recent Distribution History</h5>
-                <a href="manage_distributions.php" class="btn btn-light btn-sm">
-                  <i class="bi bi-arrow-right me-1"></i>View All
+            <div class="distribution-history-section">
+              <div class="section-header">
+                <div class="header-content">
+                  <div class="header-icon">
+                    <i class="bi bi-clock-history"></i>
+                  </div>
+                  <div>
+                    <h5 class="mb-1">Recent Distribution History</h5>
+                    <p class="text-muted small mb-0">Track and review past distribution events</p>
+                  </div>
+                </div>
+                <a href="manage_distributions.php" class="btn-view-all">
+                  <span>View All</span>
+                  <i class="bi bi-arrow-right ms-2"></i>
                 </a>
               </div>
-              <div class="custom-card-body">
-                <div class="row g-3">
-                  <?php foreach ($pastDistributions as $distribution): ?>
-                  <div class="col-12 col-md-6 col-xl-4">
-                    <div class="border rounded-3 p-3 h-100 shadow-sm">
-                      <div class="d-flex justify-content-between align-items-start mb-2">
-                        <span class="badge bg-primary">
-                          <i class="bi bi-calendar me-1"></i><?php echo date('M d, Y', strtotime($distribution['distribution_date'])); ?>
+              
+              <div class="distribution-timeline">
+                <?php foreach ($pastDistributions as $index => $distribution): ?>
+                <div class="timeline-item">
+                  <div class="timeline-marker">
+                    <div class="marker-dot"></div>
+                    <div class="marker-line"></div>
+                  </div>
+                  
+                  <div class="timeline-content">
+                    <div class="distribution-card">
+                      <div class="card-header-row">
+                        <div class="distribution-date">
+                          <i class="bi bi-calendar-event"></i>
+                          <span><?php echo date('F d, Y', strtotime($distribution['distribution_date'])); ?></span>
+                        </div>
+                        <div class="student-count">
+                          <i class="bi bi-people-fill"></i>
+                          <span><?php echo number_format($distribution['total_students_count']); ?></span>
+                        </div>
+                      </div>
+                      
+                      <div class="location-info">
+                        <i class="bi bi-geo-alt-fill"></i>
+                        <h6><?php echo htmlspecialchars($distribution['location']); ?></h6>
+                      </div>
+                      
+                      <?php if ($distribution['academic_year'] && $distribution['semester']): ?>
+                      <div class="academic-info">
+                        <span class="info-badge">
+                          <i class="bi bi-mortarboard-fill"></i>
+                          <?php echo htmlspecialchars($distribution['academic_year']); ?>
                         </span>
-                        <span class="badge bg-success">
-                          <i class="bi bi-people me-1"></i><?php echo number_format($distribution['total_students_count']); ?> students
+                        <span class="info-badge">
+                          <i class="bi bi-calendar3"></i>
+                          <?php echo htmlspecialchars($distribution['semester']); ?>
                         </span>
                       </div>
-                      <div class="mb-2 text-truncate" title="<?php echo htmlspecialchars($distribution['location']); ?>">
-                        <i class="bi bi-geo-alt text-muted me-1"></i>
-                        <strong><?php echo htmlspecialchars($distribution['location']); ?></strong>
+                      <?php endif; ?>
+                      
+                      <div class="card-footer-row">
+                        <div class="finalized-by">
+                          <i class="bi bi-person-check-fill"></i>
+                          <span><?php echo htmlspecialchars($distribution['finalized_by_name'] ?: 'Unknown'); ?></span>
+                        </div>
+                        <div class="finalized-time">
+                          <i class="bi bi-clock-fill"></i>
+                          <span><?php echo date('M d, Y \a\t H:i', strtotime($distribution['finalized_at'])); ?></span>
+                        </div>
                       </div>
-                      <div class="d-flex flex-wrap small text-muted mb-2">
-                        <?php if ($distribution['academic_year'] && $distribution['semester']): ?>
-                          <span class="me-2"><i class="bi bi-mortarboard me-1"></i><?php echo htmlspecialchars($distribution['academic_year'] . ' - ' . $distribution['semester']); ?></span>
-                        <?php endif; ?>
+                      
+                      <?php if (!empty($distribution['notes']) && $index === 0): ?>
+                      <div class="distribution-notes">
+                        <div class="notes-header">
+                          <i class="bi bi-sticky-fill"></i>
+                          <span>Notes</span>
+                        </div>
+                        <p><?php echo nl2br(htmlspecialchars($distribution['notes'])); ?></p>
                       </div>
-                      <div class="d-flex justify-content-between align-items-center small text-muted">
-                        <span><i class="bi bi-person-check me-1"></i><?php echo htmlspecialchars($distribution['finalized_by_name'] ?: 'Unknown'); ?></span>
-                        <span><i class="bi bi-clock me-1"></i><?php echo date('M d, Y H:i', strtotime($distribution['finalized_at'])); ?></span>
-                      </div>
+                      <?php endif; ?>
                     </div>
                   </div>
-                  <?php endforeach; ?>
                 </div>
-                
-                <?php if (!empty($pastDistributions[0]['notes'])): ?>
-                <div class="mt-3">
-                  <h6 class="text-muted mb-2">Latest Distribution Notes:</h6>
-                  <div class="alert alert-light border">
-                    <i class="bi bi-sticky me-2"></i>
-                    <?php echo nl2br(htmlspecialchars($pastDistributions[0]['notes'])); ?>
-                  </div>
-                </div>
-                <?php endif; ?>
+                <?php endforeach; ?>
               </div>
             </div>
           </div>

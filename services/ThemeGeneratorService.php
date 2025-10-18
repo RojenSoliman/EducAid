@@ -71,11 +71,23 @@ class ThemeGeneratorService {
             'text_on_dark_bg' => '#ffffff',
         ];
         
+        // Validate and log contrast ratios
+        $primaryLuminance = ColorGeneratorService::getLuminance($primary);
+        $textOnPrimary = $palette['text_on_primary'];
+        $primaryContrastRatio = ColorGeneratorService::getContrastRatio($primary, $textOnPrimary);
+        
+        // Log for debugging
+        error_log("Theme Generation - Primary Color: $primary");
+        error_log("Theme Generation - Primary Luminance: $primaryLuminance");
+        error_log("Theme Generation - Text on Primary: $textOnPrimary");
+        error_log("Theme Generation - Contrast Ratio: $primaryContrastRatio");
+        
         // Add contrast ratios for validation
         $palette['_meta'] = [
             'primary_brightness' => ColorGeneratorService::validateBrightness($primary),
             'secondary_brightness' => ColorGeneratorService::validateBrightness($secondary),
-            'primary_contrast_ratio' => ColorGeneratorService::getContrastRatio($primary, $palette['text_on_primary']),
+            'primary_luminance' => $primaryLuminance,
+            'primary_contrast_ratio' => $primaryContrastRatio,
             'secondary_contrast_ratio' => ColorGeneratorService::getContrastRatio($secondary, $palette['text_on_secondary']),
         ];
         

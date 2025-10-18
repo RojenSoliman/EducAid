@@ -487,41 +487,8 @@ function lp_block_style($key){
     </div>
   </section>
 
-  <!-- Footer -->
-  <footer class="pt-5 pb-4">
-    <div class="container">
-      <div class="row g-4 align-items-center">
-        <div class="col-lg-6">
-          <div class="d-flex align-items-center gap-3">
-            <div class="brand-badge">EA</div>
-            <div>
-              <div class="footer-logo" data-lp-key="footer_logo_text"<?php echo lp_block_style('footer_logo_text'); ?>><?php echo lp_block('footer_logo_text','EducAid • General Trias'); ?></div>
-              <small data-lp-key="footer_tagline"<?php echo lp_block_style('footer_tagline'); ?>><?php echo lp_block('footer_tagline','Let\'s join forces for a more progressive GenTrias.'); ?></small>
-            </div>
-          </div>
-        </div>
-        <div class="col-lg-6">
-          <div class="row">
-            <div class="col-6 col-md-4"><h6 data-lp-key="footer_col1_title"<?php echo lp_block_style('footer_col1_title'); ?>><?php echo lp_block('footer_col1_title','Explore'); ?></h6><ul class="list-unstyled small" data-lp-key="footer_col1_links"<?php echo lp_block_style('footer_col1_links'); ?>><?php echo lp_block('footer_col1_links','<li><a href="#about">About</a></li><li><a href="how-it-works.php">Process</a></li><li><a href="#announcements">Announcements</a></li>'); ?></ul></div>
-            <div class="col-6 col-md-4"><h6 data-lp-key="footer_col2_title"<?php echo lp_block_style('footer_col2_title'); ?>><?php echo lp_block('footer_col2_title','Links'); ?></h6><ul class="list-unstyled small" data-lp-key="footer_col2_links"<?php echo lp_block_style('footer_col2_links'); ?>><?php echo lp_block('footer_col2_links','<li><a href="#faq">FAQs</a></li><li><a href="requirements.php">Requirements</a></li><li><a href="#contact">Contact</a></li>'); ?></ul></div>
-            <div class="col-12 col-md-4 mt-3 mt-md-0">
-              <h6 data-lp-key="footer_newsletter_title"<?php echo lp_block_style('footer_newsletter_title'); ?>><?php echo lp_block('footer_newsletter_title','Stay Updated'); ?></h6>
-              <form id="newsletterForm" class="d-flex gap-2">
-                <input type="email" id="emailInput" class="form-control" placeholder="Email address" required />
-                <button class="btn btn-light" type="submit" id="subscribeBtn">Subscribe</button>
-              </form>
-              <div id="newsletterMessage" class="small text-center mt-2" style="display: none;"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <hr class="border-light opacity-25 my-4" />
-      <div class="d-flex justify-content-between flex-wrap gap-2 small">
-  <span data-lp-key="footer_copyright"<?php echo lp_block_style('footer_copyright'); ?>><?php echo lp_block('footer_copyright','© <span id="year"></span> City Government of General Trias • EducAid'); ?></span>
-  <span data-lp-key="footer_powered"<?php echo lp_block_style('footer_powered'); ?>><?php echo lp_block('footer_powered','Powered by the Office of the Mayor • IT'); ?></span>
-      </div>
-    </div>
-  </footer>
+  <!-- Footer - Dynamic CMS Controlled -->
+  <?php include __DIR__ . '/../includes/website/footer.php'; ?>
 
   <?php include '../includes/website/cookie_consent.php'; ?>
 

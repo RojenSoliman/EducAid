@@ -97,11 +97,13 @@ $topbar_background_css = ($bg_gradient && trim($bg_gradient) !== '')
 }
 
 .landing-topbar a:hover {
-  color: #fff;
+  color: <?= htmlspecialchars($topbar_settings['topbar_text_color']) ?>;
+  opacity: 0.85;
 }
 
 .landing-topbar .bi {
-  color: rgba(255, 255, 255, .85);
+  color: <?= htmlspecialchars($topbar_settings['topbar_text_color']) ?>;
+  opacity: 0.9;
 }
 
 @media (max-width: 767.98px) {

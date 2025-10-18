@@ -326,41 +326,8 @@ function esc($v){ return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8'); }
   </div>
 </section>
 
-<!-- Footer (mirrors landing page footer) -->
-<footer class="pt-5 pb-4">
-  <div class="container">
-    <div class="row g-4 align-items-center">
-      <div class="col-lg-6">
-        <div class="d-flex align-items-center gap-3">
-          <div class="brand-badge">EA</div>
-          <div>
-            <div class="footer-logo">EducAid • General Trias</div>
-            <small>Contact & Helpdesk Portal</small>
-          </div>
-        </div>
-      </div>
-      <div class="col-lg-6">
-        <div class="row">
-          <div class="col-6 col-md-4"><h6>Navigate</h6><ul class="list-unstyled small"><li><a href="landingpage.php#about">About</a></li><li><a href="how-it-works.php">Process</a></li><li><a href="announcements.php">Announcements</a></li></ul></div>
-          <div class="col-6 col-md-4"><h6>Help</h6><ul class="list-unstyled small"><li><a href="landingpage.php#faq">FAQs</a></li><li><a href="#inquiry">Inquiry Form</a></li><li><a href="requirements.php">Requirements</a></li></ul></div>
-          <div class="col-12 col-md-4 mt-3 mt-md-0">
-            <h6>Updates</h6>
-            <form id="newsletterForm" class="d-flex gap-2">
-              <input type="email" id="emailInput" class="form-control" placeholder="Email" required />
-              <button class="btn btn-light" type="submit" id="subscribeBtn">Join</button>
-            </form>
-            <div id="newsletterMessage" class="small text-center mt-2" style="display:none;"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <hr class="border-light opacity-25 my-4" />
-    <div class="d-flex justify-content-between flex-wrap gap-2 small">
-      <span>© <span id="year"></span> City Government of General Trias • EducAid</span>
-      <span>Powered by the Office of the Mayor • IT</span>
-    </div>
-  </div>
-</footer>
+<!-- Footer - Dynamic CMS Controlled -->
+<?php include __DIR__ . '/../includes/website/footer.php'; ?>
 
 <!-- Chatbot (mirroring landing page) -->
 <div class="ea-chat">

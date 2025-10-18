@@ -1,4 +1,7 @@
 <?php
+// Start output buffering to prevent any accidental output before JSON response
+ob_start();
+
 session_start();
 
 // Security checks for regular page load
@@ -27,6 +30,15 @@ $themeService = new ThemeSettingsService($connection);
 $headerThemeService = new HeaderThemeService($connection);
 $controller = new TopbarSettingsController($themeService, $_SESSION['admin_id'] ?? 0, $connection);
 
+// Ensure fresh CSRF token on GET requests (clear old tokens)
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    // Clear any existing tokens for this form and generate a fresh one
+    if (isset($_SESSION['csrf_tokens']['topbar_settings'])) {
+        unset($_SESSION['csrf_tokens']['topbar_settings']);
+    }
+    CSRFProtection::generateToken('topbar_settings');
+}
+
 // Unified form submission (topbar + header)
 $form_result = [
   'success' => false,
@@ -45,7 +57,10 @@ $isAjaxRequest = $isPostRequest && (
 
 if ($isPostRequest) {
   $headerSave = [ 'success' => false, 'message' => '' ];
-  if (CSRFProtection::validateToken('topbar_settings', $_POST['csrf_token'] ?? '', false)) {
+  // Validate CSRF token with consume = false to allow resubmissions
+  $csrfValid = CSRFProtection::validateToken('topbar_settings', $_POST['csrf_token'] ?? '', false);
+  
+  if ($csrfValid) {
     $form_result = $controller->handleFormSubmission();
     $headerSave = $headerThemeService->save($_POST, (int)($_SESSION['admin_id'] ?? 0));
 
@@ -109,6 +124,9 @@ if ($isPostRequest) {
   }
 
   if ($isAjaxRequest) {
+    // Clear output buffer to prevent any stray output before JSON
+    ob_end_clean();
+    
     if (isset($_SESSION['csrf_tokens']['topbar_settings'])) {
       unset($_SESSION['csrf_tokens']['topbar_settings']);
     }

@@ -100,6 +100,7 @@ $sysControlsFiles = [
     'settings.php',
     'topbar_settings.php',
     'sidebar_settings.php',
+    'footer_settings.php',
 ];
 $isSysControlsActive = in_array($current, $sysControlsFiles, true);
 ?>
@@ -250,6 +251,11 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
           <li>
             <a class="submenu-link <?= is_active('sidebar_settings.php', $current) ? 'active' : '' ?>" href="sidebar_settings.php">
               <i class="bi bi-layout-sidebar me-2"></i> Sidebar Settings
+            </a>
+          </li>
+          <li>
+            <a class="submenu-link <?= is_active('footer_settings.php', $current) ? 'active' : '' ?>" href="footer_settings.php">
+              <i class="bi bi-layout-text-sidebar-reverse me-2"></i> Footer Settings
             </a>
           </li>
         </ul>
