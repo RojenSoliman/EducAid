@@ -755,6 +755,7 @@ function render_table($applicants, $connection) {
                                 $all_documents = array_merge($db_documents, $found_documents, $student_dir_docs);
 
                                 $document_labels = [
+                                    'id_picture' => 'ID Picture',
                                     'eaf' => 'EAF',
                                     'letter_to_mayor' => 'Letter to Mayor',
                                     'certificate_of_indigency' => 'Certificate of Indigency'
