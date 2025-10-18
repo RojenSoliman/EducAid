@@ -438,7 +438,15 @@ class TopbarSettings {
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
 
-        this.alertContainer.insertBefore(alert, this.alertContainer.firstChild);
+        // Insert alert after the page header section, before the preview
+        const previewCard = document.querySelector('.settings-card');
+        if (previewCard) {
+            previewCard.parentNode.insertBefore(alert, previewCard);
+        } else {
+            // Fallback to inserting at the top
+            this.alertContainer.insertBefore(alert, this.alertContainer.firstChild);
+        }
+        
         alert.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 

@@ -2,10 +2,50 @@
    MUNICIPALITY HUB - ENHANCED STYLING
    ============================================ */
 
+/* CSS Variables - Match other admin pages */
+:root {
+    --admin-topbar-h: 38px;
+    --admin-header-h: 56px;
+}
+
 /* Page Background */
 .municipality-hub-page {
     background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
     min-height: 100vh;
+    font-family: 'Poppins', sans-serif;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 0;
+}
+
+/* Ensure proper wrapper and section styling like other admin pages */
+.municipality-hub-page #wrapper.admin-wrapper {
+    display: flex;
+    min-height: 100vh;
+    position: relative;
+}
+
+.municipality-hub-page .admin-main-header {
+    position: fixed;
+    top: var(--admin-topbar-h);
+    left: 250px;
+    right: 0;
+    height: var(--admin-header-h);
+    z-index: 1030;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.municipality-hub-page .home-section {
+    flex: 1;
+    background: transparent;
+    min-height: calc(100vh - var(--admin-topbar-h));
+    padding: calc(var(--admin-topbar-h) + var(--admin-header-h) + 10px) 20px 40px 20px;
+}
+
+@media (max-width: 768px) {
+    .municipality-hub-page .admin-main-header {
+        left: 0;
+    }
 }
 
 /* Hero Card - Active Municipality */

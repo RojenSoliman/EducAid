@@ -1,8 +1,8 @@
 /* homepage.css - Admin Dashboard Styles */
 
 :root {
-  --admin-topbar-h: 44px;
-  /* Actual header height refined (44px topbar + ~56px header used in layout calc) */
+  --admin-topbar-h: 38px;
+  /* Actual header height refined (38px topbar + ~56px header used in layout calc) */
   --admin-header-h: 56px; /* sync with .admin-main-header padding & content */
 }
 

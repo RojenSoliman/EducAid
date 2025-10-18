@@ -148,15 +148,15 @@ if (isset($connection)) {
   font-size:0.775rem;
   z-index:1050;
   position:fixed;top:0;left:0;right:0;
-  min-height:44px;
+  min-height:38px;
   box-shadow:0 2px 4px rgba(0,0,0,.15);
 }
 .admin-topbar .container-fluid{
-  min-height:44px;
+  min-height:38px;
   display:flex;
   align-items:center;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 .admin-topbar a{color: <?= htmlspecialchars($topbar_settings['topbar_link_color']) ?>;text-decoration:none;}
 .admin-topbar a:hover{color: <?= htmlspecialchars($topbar_settings['topbar_text_color']) ?>;opacity:0.85;}

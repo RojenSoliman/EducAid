@@ -1,4 +1,7 @@
 <?php
+// Start output buffering to prevent any accidental output before JSON response
+ob_start();
+
 session_start();
 
 // Security checks for regular page load
@@ -121,6 +124,9 @@ if ($isPostRequest) {
   }
 
   if ($isAjaxRequest) {
+    // Clear output buffer to prevent any stray output before JSON
+    ob_end_clean();
+    
     if (isset($_SESSION['csrf_tokens']['topbar_settings'])) {
       unset($_SESSION['csrf_tokens']['topbar_settings']);
     }
