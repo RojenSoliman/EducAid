@@ -255,53 +255,8 @@
     </div>
   </section>
 
-  <!-- Footer -->
-  <footer id="contact" class="bg-trias-blue text-white py-5">
-    <div class="container">
-      <div class="row">
-        <div class="col-lg-4 mb-4">
-          <h5 class="fw-bold mb-3 footer-heading"><i class="bi bi-mortarboard-fill me-2"></i>EducAid</h5>
-          <p class="footer-text">Making education accessible throughout General Trias City through innovative scholarship solutions.</p>
-          <div class="d-flex gap-3">
-            <a href="#" class="footer-link"><i class="bi bi-facebook fs-4"></i></a>
-            <a href="#" class="footer-link"><i class="bi bi-twitter fs-4"></i></a>
-            <a href="#" class="footer-link"><i class="bi bi-instagram fs-4"></i></a>
-            <a href="#" class="footer-link"><i class="bi bi-linkedin fs-4"></i></a>
-          </div>
-        </div>
-        <div class="col-lg-2 mb-4">
-          <h6 class="fw-bold mb-3 footer-heading">Quick Links</h6>
-          <ul class="list-unstyled">
-            <li><a href="#home" class="footer-link">Home</a></li>
-            <li><a href="#about" class="footer-link">About</a></li>
-            <li><a href="#programs" class="footer-link">Programs</a></li>
-            <li><a href="#contact" class="footer-link">Contact</a></li>
-          </ul>
-        </div>
-        <div class="col-lg-3 mb-4">
-          <h6 class="fw-bold mb-3 footer-heading">Programs</h6>
-          <ul class="list-unstyled">
-            <li><a href="#" class="footer-link">Academic Excellence</a></li>
-            <li><a href="#" class="footer-link">Community Aid</a></li>
-            <li><a href="#" class="footer-link">Special Talents</a></li>
-            <li><a href="#" class="footer-link">FAQs</a></li>
-          </ul>
-        </div>
-        <div class="col-lg-3 mb-4">
-          <h6 class="fw-bold mb-3 footer-heading">Contact Info</h6>
-          <ul class="list-unstyled">
-            <li class="footer-text mb-2"><i class="bi bi-geo-alt me-2"></i>General Trias City Hall, Cavite</li>
-            <li class="footer-text mb-2"><i class="bi bi-telephone me-2"></i>+63 (046) 123-4567</li>
-            <li class="footer-text mb-2"><i class="bi bi-envelope me-2"></i>info@educaid-gentrias.gov.ph</li>
-          </ul>
-        </div>
-      </div>
-      <hr class="my-4" style="border-color: var(--trias-gold);">
-      <div class="text-center footer-text">
-        <p class="mb-0">&copy; 2025 EducAid - General Trias City. All rights reserved.</p>
-      </div>
-    </div>
-  </footer>
+  <!-- Footer - Dynamic CMS Controlled -->
+  <?php include __DIR__ . '/../../includes/website/footer.php'; ?>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>

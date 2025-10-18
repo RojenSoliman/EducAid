@@ -325,46 +325,8 @@ include '../includes/website/cookie_consent.php';
     </div>
   </section>
 
-  <!-- Footer -->
-  <footer class="pt-5 pb-4">
-    <div class="container">
-      <div class="row g-4 align-items-center">
-        <div class="col-lg-6">
-          <div class="d-flex align-items-center gap-3">
-            <div class="brand-badge">EA</div>
-            <div>
-              <div class="footer-logo" data-lp-key="about_footer_brand"<?php echo about_block_style('about_footer_brand'); ?>><?php echo about_block('about_footer_brand','EducAid • General Trias'); ?></div>
-              <small data-lp-key="about_footer_tagline"<?php echo about_block_style('about_footer_tagline'); ?>><?php echo about_block('about_footer_tagline','Empowering students through accessible educational assistance'); ?></small>
-            </div>
-          </div>
-        </div>
-        <div class="col-lg-6">
-          <div class="row">
-            <div class="col-6 col-md-4">
-              <h6 data-lp-key="about_footer_col1_title"<?php echo about_block_style('about_footer_col1_title'); ?>><?php echo about_block('about_footer_col1_title','Explore'); ?></h6>
-              <ul class="list-unstyled small" data-lp-key="about_footer_col1_links"<?php echo about_block_style('about_footer_col1_links'); ?>><?php echo about_block('about_footer_col1_links','<li><a href="landingpage.php">Home</a></li><li><a href="about.php">About</a></li><li><a href="how-it-works.php">How It Works</a></li>'); ?></ul>
-            </div>
-            <div class="col-6 col-md-4">
-              <h6 data-lp-key="about_footer_col2_title"<?php echo about_block_style('about_footer_col2_title'); ?>><?php echo about_block('about_footer_col2_title','Resources'); ?></h6>
-              <ul class="list-unstyled small" data-lp-key="about_footer_col2_links"<?php echo about_block_style('about_footer_col2_links'); ?>><?php echo about_block('about_footer_col2_links','<li><a href="requirements.php">Requirements</a></li><li><a href="landingpage.php#faq">FAQs</a></li><li><a href="contact.php">Contact</a></li>'); ?></ul>
-            </div>
-            <div class="col-12 col-md-4 mt-3 mt-md-0">
-              <h6 data-lp-key="about_footer_newsletter_title"<?php echo about_block_style('about_footer_newsletter_title'); ?>><?php echo about_block('about_footer_newsletter_title','Stay Updated'); ?></h6>
-              <form class="d-flex gap-2">
-                <input type="email" class="form-control" placeholder="Email address" />
-                <button class="btn btn-light" type="button">Subscribe</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      </div>
-      <hr class="border-light opacity-25 my-4" />
-      <div class="d-flex justify-content-between flex-wrap gap-2 small">
-  <span data-lp-key="about_footer_copyright"<?php echo about_block_style('about_footer_copyright'); ?>><?php echo about_block('about_footer_copyright','© <span id="year"></span> City Government of General Trias • EducAid'); ?></span>
-  <span data-lp-key="about_footer_powered"<?php echo about_block_style('about_footer_powered'); ?>><?php echo about_block('about_footer_powered','Powered by the Office of the Mayor • IT'); ?></span>
-      </div>
-    </div>
-  </footer>
+  <!-- Footer - Dynamic CMS Controlled -->
+  <?php include __DIR__ . '/../includes/website/footer.php'; ?>
 
   <!-- Chatbot Widget -->
 <div class="ea-chat">

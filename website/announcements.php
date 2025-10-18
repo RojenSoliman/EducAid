@@ -228,55 +228,8 @@ $custom_nav_links = [
   </div>
 </section>
 
-<!-- Footer (mirrors landing page style) -->
-<footer class="pt-5 pb-4">
-  <div class="container">
-    <div class="row g-4 align-items-center">
-      <div class="col-lg-6">
-        <div class="d-flex align-items-center gap-3">
-            <div class="brand-badge">EA</div>
-            <div>
-              <div class="footer-logo">EducAid • General Trias</div>
-              <small>Your trusted portal for educational assistance updates</small>
-            </div>
-        </div>
-      </div>
-      <div class="col-lg-6">
-        <div class="row">
-          <div class="col-6 col-md-4">
-            <h6>Explore</h6>
-            <ul class="list-unstyled small">
-              <li><a href="landingpage.php#home">Home</a></li>
-              <li><a href="about.php">About</a></li>
-              <li><a href="how-it-works.php">Process</a></li>
-            </ul>
-          </div>
-          <div class="col-6 col-md-4">
-            <h6>Resources</h6>
-            <ul class="list-unstyled small">
-              <li><a href="requirements.php">Requirements</a></li>
-              <li><a href="landingpage.php#faq">FAQs</a></li>
-              <li><a href="contact.php">Contact</a></li>
-            </ul>
-          </div>
-          <div class="col-12 col-md-4 mt-3 mt-md-0">
-            <h6>Stay Updated</h6>
-            <form id="newsletterForm" class="d-flex gap-2">
-              <input type="email" id="emailInput" class="form-control" placeholder="Email address" required />
-              <button class="btn btn-light" type="submit" id="subscribeBtn">Subscribe</button>
-            </form>
-            <div id="newsletterMessage" class="small text-center mt-2" style="display:none;"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <hr class="border-light opacity-25 my-4" />
-    <div class="d-flex justify-content-between flex-wrap gap-2 small">
-      <span>© <span id="year"></span> City Government of General Trias • EducAid</span>
-      <span>Powered by the Office of the Mayor • IT</span>
-    </div>
-  </div>
-</footer>
+<!-- Footer - Dynamic CMS Controlled -->
+<?php include __DIR__ . '/../includes/website/footer.php'; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
