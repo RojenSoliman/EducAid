@@ -7,14 +7,9 @@ if (!isset($_SESSION['admin_username'])) {
 }
 include '../../config/database.php';
 
-// Check workflow permissions - must have active distribution
+// Get workflow permissions to control approval actions
 require_once __DIR__ . '/../../includes/workflow_control.php';
 $workflow_status = getWorkflowStatus($connection);
-if (!$workflow_status['can_manage_applicants']) {
-    $_SESSION['error_message'] = "Please start a distribution first before managing applicants. Go to Distribution Control to begin.";
-    header("Location: distribution_control.php");
-    exit;
-}
 
 require_once __DIR__ . '/../../phpmailer/vendor/autoload.php';
 require_once __DIR__ . '/../../includes/util/student_id.php';
@@ -682,7 +677,8 @@ $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query
 
 // Table rendering function with live preview
 function render_table($applicants, $connection) {
-    global $csrfApproveApplicantToken, $csrfRejectApplicantToken, $csrfOverrideApplicantToken;
+    global $csrfApproveApplicantToken, $csrfRejectApplicantToken, $csrfOverrideApplicantToken, $workflow_status;
+    $canApprove = $workflow_status['can_manage_applicants'] ?? false;
     ob_start();
     ?>
     <table class="table table-bordered align-middle">
@@ -941,7 +937,13 @@ function render_table($applicants, $connection) {
                                 ?>
                             </div>
                             <div class="modal-footer">
-                                <?php if ($isComplete): ?>
+                                <?php if (!$canApprove): ?>
+                                    <div class="alert alert-warning mb-0 w-100">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>
+                                        <strong>Distribution Not Active:</strong> Please start a distribution first to approve or reject applicants.
+                                        <a href="distribution_control.php" class="alert-link">Go to Distribution Control</a>
+                                    </div>
+                                <?php elseif ($isComplete): ?>
                                     <form method="POST" class="d-inline" onsubmit="return confirm('Verify this student?');">
                                         <input type="hidden" name="student_id" value="<?= $student_id ?>">
                                         <input type="hidden" name="mark_verified" value="1">
@@ -1040,6 +1042,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Verify student
     if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
+        // Check if approval is allowed
+        if (!$workflow_status['can_manage_applicants']) {
+            $_SESSION['error_message'] = "Cannot approve applicants. Please start a distribution first.";
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
+        
         $sid = trim($_POST['student_id']); // Remove intval for TEXT student_id
         
         // Get student name for notification
@@ -1076,6 +1085,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     // Override verify even if incomplete (super_admin only)
     if (!empty($_POST['mark_verified_override']) && isset($_POST['student_id'])) {
+        // Check if approval is allowed
+        if (!$workflow_status['can_manage_applicants']) {
+            $_SESSION['error_message'] = "Cannot override approve applicants. Please start a distribution first.";
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
+        
         if (!empty($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'super_admin') {
             $sid = trim($_POST['student_id']);
             // Get student name for notification

@@ -114,8 +114,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // Finally, revert student status
       pg_query_params($connection, "UPDATE students SET status = 'applicant' WHERE student_id = $1", [$student_id]);
     }
-        // Reset finalized flag
-        pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
+        // Reset finalized flag using UPSERT
+        pg_query($connection, "
+            INSERT INTO config (key, value) VALUES ('student_list_finalized', '0')
+            ON CONFLICT (key) DO UPDATE SET value = '0'
+        ");
         $isFinalized = false;
         
         // Add admin notification
@@ -126,14 +129,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // Finalize list (for payroll generation)
+    // Lock list (for payroll generation)
     if (isset($_POST['finalize_list'])) {
-        pg_query($connection, "UPDATE config SET value = '1' WHERE key = 'student_list_finalized'");
+        // Use UPSERT to ensure the row exists
+        pg_query($connection, "
+            INSERT INTO config (key, value) VALUES ('student_list_finalized', '1')
+            ON CONFLICT (key) DO UPDATE SET value = '1'
+        ");
         $isFinalized = true;
         
         // Add admin notification
-        $notification_msg = "Student list has been finalized";
+        $notification_msg = "Student list has been locked - ready for payroll generation";
         pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        
+        // Redirect to refresh the page and show updated buttons
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
     }
 
     // Revert list (optionally reset payroll numbers)
@@ -144,7 +155,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        pg_query($connection, "UPDATE config SET value = '0' WHERE key = 'student_list_finalized'");
+        // Use UPSERT to ensure the row exists
+        pg_query($connection, "
+            INSERT INTO config (key, value) VALUES ('student_list_finalized', '0')
+            ON CONFLICT (key) DO UPDATE SET value = '0'
+        ");
         $isFinalized = false;
         // Delete all QR code DB records (unconditional wipe)
         $delRes = pg_query($connection, "DELETE FROM qr_codes");
@@ -220,9 +235,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get workflow status after all POST actions
+// Get workflow status and finalized state after all POST actions
 $workflow_status = getWorkflowStatus($connection);
 $student_counts = getStudentCounts($connection);
+
+// Re-read the finalized status after POST actions
+$isFinalized = false;
+$configResult = pg_query($connection, "SELECT value FROM config WHERE key = 'student_list_finalized'");
+if ($configResult && $row = pg_fetch_assoc($configResult)) {
+    $isFinalized = ($row['value'] === '1');
+}
 
 // Generate CSRF token for all forms on this page
 $csrfToken = CSRFProtection::generateToken('verify_students_operation');
@@ -260,15 +282,15 @@ while ($row = pg_fetch_assoc($barangayResult)) {
         <h2 class="fw-bold">
           <i class="bi bi-clipboard-check me-2"></i> Manage Student Status
         </h2>
-        <p class="text-muted mb-0">Finalize the active list for payroll generation, or revert students back to applicants.</p>
+        <p class="text-muted mb-0">Lock the active list for payroll generation, or revert students back to applicants.</p>
         
         <!-- Workflow Status Indicators -->
         <div class="row mt-3">
           <div class="col-md-12">
             <div class="d-flex flex-wrap gap-2">
               <span class="badge <?= $workflow_status['list_finalized'] ? 'bg-success' : 'bg-secondary' ?> p-2">
-                <i class="bi <?= $workflow_status['list_finalized'] ? 'bi-check-circle' : 'bi-clock' ?> me-1"></i>
-                List <?= $workflow_status['list_finalized'] ? 'Finalized' : 'Not Finalized' ?>
+                <i class="bi <?= $workflow_status['list_finalized'] ? 'bi-lock-fill' : 'bi-unlock' ?> me-1"></i>
+                List <?= $workflow_status['list_finalized'] ? 'Locked' : 'Not Locked' ?>
               </span>
               <span class="badge <?= $workflow_status['has_payroll_qr'] ? 'bg-success' : 'bg-secondary' ?> p-2">
                 <i class="bi <?= $workflow_status['has_payroll_qr'] ? 'bi-check-circle' : 'bi-clock' ?> me-1"></i>
@@ -333,7 +355,7 @@ while ($row = pg_fetch_assoc($barangayResult)) {
         <div class="card shadow-sm">
           <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
             <span><i class="bi bi-people-fill me-2"></i>Active Students</span>
-            <span class="badge bg-light text-success"><?= $isFinalized ? 'Finalized' : 'Not finalized' ?></span>
+            <span class="badge bg-light text-success"><?= $isFinalized ? 'Locked' : 'Not Locked' ?></span>
           </div>
           <div class="card-body">
             <div class="table-responsive">
@@ -435,10 +457,9 @@ while ($row = pg_fetch_assoc($barangayResult)) {
                 <?php endif; ?>
               <?php else: ?>
                 <button type="button" class="btn btn-success" id="finalizeTriggerBtn">
-                  <i class="bi bi-check2-circle me-1"></i> Finalize List
+                  <i class="bi bi-lock me-1"></i> Lock List
                 </button>
                 <input type="hidden" name="finalize_list" id="finalizeListInput" value="">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
               <?php endif; ?>
               
               <!-- Next Steps Information -->
@@ -464,7 +485,8 @@ while ($row = pg_fetch_assoc($barangayResult)) {
               <?php elseif (!$isFinalized): ?>
               <div class="alert alert-primary mt-3 w-100">
                 <i class="bi bi-info-circle me-2"></i>
-                <strong>Getting Started:</strong> Finalize the student list first, then generate payroll numbers to unlock all features.
+                <strong>Getting Started:</strong> First, approve applicants in the <a href="manage_applicants.php" class="alert-link">Manage Applicants</a> page. 
+                Once you have verified students, lock the student list here, then generate payroll numbers to unlock all features.
               </div>
               <?php endif; ?>
             </div>
@@ -475,20 +497,22 @@ while ($row = pg_fetch_assoc($barangayResult)) {
   </section>
 </div>
 
-<!-- Finalize Modal -->
+<!-- Lock List Modal -->
 <div class="modal fade" id="finalizeModal" tabindex="-1" aria-labelledby="finalizeModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="finalizeModalLabel">Finalize Student List</h5>
+        <h5 class="modal-title" id="finalizeModalLabel">Lock Student List</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        Are you sure you want to finalize the student list for payroll number generation?
+        Are you sure you want to lock the student list? Once locked, you can generate payroll numbers and QR codes.
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="finalizeConfirmBtnModal">Finalize</button>
+        <button type="button" class="btn btn-success" id="finalizeConfirmBtnModal">
+          <i class="bi bi-lock me-1"></i> Lock List
+        </button>
       </div>
     </div>
   </div>
@@ -564,7 +588,7 @@ while ($row = pg_fetch_assoc($barangayResult)) {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
 <script>
-  // ====== Finalize flow ======
+  // ====== Lock List flow ======
   function finalizeHandler(e) {
     e.preventDefault();
     new bootstrap.Modal(document.getElementById('finalizeModal')).show();

@@ -8,6 +8,15 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 
+// Check workflow permissions - must have active distribution
+require_once __DIR__ . '/../../includes/workflow_control.php';
+$workflow_status = getWorkflowStatus($connection);
+if (!$workflow_status['can_manage_applicants']) {
+    $_SESSION['error_message'] = "Please start a distribution first before managing distributions. Go to Distribution Control to begin.";
+    header("Location: distribution_control.php");
+    exit;
+}
+
 // Handle CSV export
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $query = "

@@ -110,8 +110,8 @@ function areUploadsEnabled($connection) {
 function getWorkflowStatus($connection) {
     $distributionStatus = getDistributionStatus($connection);
     
-    // Distribution must be 'preparing' or 'active' to manage applicants and slots
-    $distributionOpen = in_array($distributionStatus, ['preparing', 'active']);
+    // Distribution must be 'active' to manage applicants and slots (simplified workflow)
+    $distributionActive = ($distributionStatus === 'active');
     
     return [
         'list_finalized' => isStudentListFinalized($connection),
@@ -120,14 +120,14 @@ function getWorkflowStatus($connection) {
         'can_schedule' => hasPayrollAndQR($connection),
         'can_scan_qr' => hasPayrollAndQR($connection),
         'can_revert_payroll' => hasPayrollAndQR($connection) && !hasSchedules($connection),
-        'can_manage_applicants' => $distributionOpen,
-        'can_verify_students' => $distributionOpen,
-        'can_manage_slots' => $distributionOpen,
+        'can_manage_applicants' => $distributionActive,
+        'can_verify_students' => $distributionActive,
+        'can_manage_slots' => $distributionActive,
         'distribution_status' => $distributionStatus,
         'slots_open' => areSlotsOpen($connection),
         'uploads_enabled' => areUploadsEnabled($connection),
         'can_start_distribution' => $distributionStatus === 'inactive',
-        'can_finalize_distribution' => $distributionStatus === 'active'
+        'can_finalize_distribution' => $distributionActive
     ];
 }
 
