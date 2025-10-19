@@ -51,6 +51,160 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     exit;
 }
 
+// Handle Complete Distribution
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution'])) {
+    $token = $_POST['csrf_token'] ?? '';
+    if (!CSRFProtection::validateToken('complete_distribution', $token)) {
+        $_SESSION['error_message'] = 'Security validation failed. Please refresh and try again.';
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    
+    $password = $_POST['admin_password'] ?? '';
+    $location = $_POST['distribution_location'] ?? '';
+    $notes = $_POST['distribution_notes'] ?? '';
+    $academic_year = trim($_POST['academic_year'] ?? '');
+    $semester = trim($_POST['semester'] ?? '');
+    
+    if (empty($password) || empty($location)) {
+        $_SESSION['error_message'] = 'Password and location are required.';
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    
+    // Verify admin password
+    $admin_id = $_SESSION['admin_id'] ?? null;
+    if (!$admin_id) {
+        $username = $_SESSION['admin_username'] ?? null;
+        if ($username) {
+            $admin_lookup = pg_query_params($connection, "SELECT admin_id FROM admins WHERE username = $1", [$username]);
+            if ($admin_lookup && pg_num_rows($admin_lookup) > 0) {
+                $admin_data_lookup = pg_fetch_assoc($admin_lookup);
+                $admin_id = $admin_data_lookup['admin_id'];
+                $_SESSION['admin_id'] = $admin_id;
+            }
+        }
+        if (!$admin_id) {
+            $_SESSION['error_message'] = 'Admin session invalid.';
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
+    }
+    
+    $password_check = pg_query_params($connection, "SELECT password FROM admins WHERE admin_id = $1", [$admin_id]);
+    if (!$password_check || pg_num_rows($password_check) === 0) {
+        $_SESSION['error_message'] = 'Admin not found.';
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    
+    $admin_data = pg_fetch_assoc($password_check);
+    if (!password_verify($password, $admin_data['password'])) {
+        $_SESSION['error_message'] = 'Incorrect password.';
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    
+    try {
+        pg_query($connection, "BEGIN");
+        
+        // Get distribution data
+        $students_query = "
+            SELECT s.student_id, s.payroll_no, s.first_name, s.last_name, s.email, s.mobile,
+                   b.name as barangay, u.name as university, yl.name as year_level,
+                   d.date_given
+            FROM students s
+            LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
+            LEFT JOIN universities u ON s.university_id = u.university_id
+            LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
+            LEFT JOIN distributions d ON s.student_id = d.student_id
+            WHERE s.status = 'given'
+            ORDER BY s.payroll_no
+        ";
+        
+        $schedules_query = "SELECT schedule_id, student_id, payroll_no, batch_no, distribution_date, time_slot, location, status FROM schedules";
+        
+        $students_result = pg_query($connection, $students_query);
+        $schedules_result = pg_query($connection, $schedules_query);
+        
+        $students_data = [];
+        $schedules_data = [];
+        $total_students = 0;
+        
+        if ($students_result) {
+            while ($row = pg_fetch_assoc($students_result)) {
+                $students_data[] = $row;
+                $total_students++;
+            }
+        }
+        
+        if ($schedules_result) {
+            while ($row = pg_fetch_assoc($schedules_result)) {
+                $schedules_data[] = $row;
+            }
+        }
+        
+        // Get active slot info
+        $slot_query = "SELECT slot_id, academic_year, semester FROM signup_slots WHERE is_active = true LIMIT 1";
+        $slot_result = pg_query($connection, $slot_query);
+        $slot_data = $slot_result ? pg_fetch_assoc($slot_result) : null;
+        
+        if (empty($academic_year) && $slot_data) $academic_year = $slot_data['academic_year'] ?? '';
+        if (empty($semester) && $slot_data) $semester = $slot_data['semester'] ?? '';
+        
+        // Fallback to config
+        if (empty($academic_year) || empty($semester)) {
+            $cfg_result = pg_query($connection, "SELECT key, value FROM config WHERE key IN ('current_academic_year','current_semester')");
+            if ($cfg_result) {
+                while ($cfg = pg_fetch_assoc($cfg_result)) {
+                    if ($cfg['key'] === 'current_academic_year' && empty($academic_year)) $academic_year = $cfg['value'];
+                    if ($cfg['key'] === 'current_semester' && empty($semester)) $semester = $cfg['value'];
+                }
+            }
+        }
+        
+        // Create snapshot
+        $snapshot_query = "
+            INSERT INTO distribution_snapshots 
+            (distribution_date, location, total_students_count, active_slot_id, academic_year, semester, 
+             finalized_by, notes, schedules_data, students_data)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ";
+        
+        $snapshot_result = pg_query_params($connection, $snapshot_query, [
+            date('Y-m-d'), $location, $total_students, $slot_data['slot_id'] ?? null,
+            $academic_year, $semester, $admin_id, $notes,
+            json_encode($schedules_data), json_encode($students_data)
+        ]);
+        
+        if ($snapshot_result) {
+            pg_query($connection, "COMMIT");
+            $_SESSION['success_message'] = "Distribution snapshot created successfully! Recorded $total_students students for " . 
+                trim($academic_year . ' ' . ($semester ?? '')) . ". You can now proceed to End Distribution when ready.";
+        } else {
+            $error = pg_last_error($connection);
+            pg_query($connection, "ROLLBACK");
+            error_log("Complete Distribution Failed - Snapshot Result: FAIL | Error: " . $error);
+            $_SESSION['error_message'] = 'Failed to create distribution snapshot. ' . ($error ? 'DB Error: ' . $error : 'Unknown error.');
+        }
+    } catch (Exception $e) {
+        pg_query($connection, "ROLLBACK");
+        $error_details = $e->getMessage() . " | Line: " . $e->getLine();
+        error_log("Complete Distribution Error: " . $error_details);
+        $_SESSION['error_message'] = 'Error: ' . $e->getMessage();
+    }
+    
+    // Log additional debug info if failed
+    if (isset($_SESSION['error_message']) && strpos($_SESSION['error_message'], 'Failed to complete') !== false) {
+        $pg_error = pg_last_error($connection);
+        error_log("PostgreSQL Error: " . $pg_error);
+        $_SESSION['error_message'] .= " (Check logs for details)";
+    }
+    
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
+}
+
 // Handle QR scan confirmation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_distribution'])) {
   $token = $_POST['csrf_token'] ?? '';
@@ -166,10 +320,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_qr'])) {
 $students_query = "
     SELECT s.student_id, s.payroll_no, s.first_name, s.middle_name, s.last_name, 
            s.status, q.unique_id as qr_unique_id,
-           d.date_given
+           d.date_given,
+           a.username as distributed_by_username,
+           a.first_name as admin_first_name,
+           a.last_name as admin_last_name
     FROM students s
     LEFT JOIN qr_codes q ON s.student_id = q.student_id AND s.payroll_no = q.payroll_number
     LEFT JOIN distributions d ON s.student_id = d.student_id
+    LEFT JOIN admins a ON d.verified_by = a.admin_id
     WHERE s.status IN ('active', 'given') AND s.payroll_no IS NOT NULL
     ORDER BY s.payroll_no ASC
 ";
@@ -182,8 +340,37 @@ if ($students_result) {
     }
 }
 
+// Count distributed students
+$count_query = "SELECT COUNT(*) as total FROM students WHERE status = 'given'";
+$count_result = pg_query($connection, $count_query);
+$total_distributed = $count_result ? pg_fetch_assoc($count_result)['total'] : 0;
+
+// Get config for modal prefill
+$config_academic_year = '';
+$config_semester = '';
+$cfg_result = pg_query($connection, "SELECT key, value FROM config WHERE key IN ('current_academic_year','current_semester')");
+if ($cfg_result) {
+    while ($cfg = pg_fetch_assoc($cfg_result)) {
+        if ($cfg['key'] === 'current_academic_year') $config_academic_year = $cfg['value'];
+        if ($cfg['key'] === 'current_semester') $config_semester = $cfg['value'];
+    }
+}
+
+// Get active slot
+$slot_query = "SELECT academic_year, semester FROM signup_slots WHERE is_active = true LIMIT 1";
+$slot_result = pg_query($connection, $slot_query);
+$slot_data = $slot_result ? pg_fetch_assoc($slot_result) : null;
+$prefill_academic_year = $slot_data['academic_year'] ?? $config_academic_year;
+$prefill_semester = $slot_data['semester'] ?? $config_semester;
+
+// Load settings for location
+$settingsPath = __DIR__ . '/../../data/municipal_settings.json';
+$settings = file_exists($settingsPath) ? json_decode(file_get_contents($settingsPath), true) : [];
+$distribution_location = $settings['schedule_meta']['location'] ?? '';
+
 $csrf_lookup_token = CSRFProtection::generateToken('lookup_qr');
 $csrf_confirm_token = CSRFProtection::generateToken('confirm_distribution');
+$csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
 ?>
 
 <?php $page_title='QR Code Scanner'; include '../../includes/admin/admin_head.php'; ?>
@@ -207,10 +394,6 @@ $csrf_confirm_token = CSRFProtection::generateToken('confirm_distribution');
       overflow-y: auto;
       border: 1px solid #dee2e6;
       border-radius: 5px;
-    }
-    .export-section {
-      margin-bottom: 20px;
-      text-align: right;
     }
     .scanner-section {
       background: white;
@@ -239,6 +422,48 @@ $csrf_confirm_token = CSRFProtection::generateToken('confirm_distribution');
           <h1><i class="bi bi-qr-code-scan me-2"></i>QR Code Scanner & Distribution</h1>
         </div>
 
+        <!-- Flash Messages -->
+        <?php if (isset($_SESSION['success_message'])): ?>
+          <div class="alert alert-success alert-dismissible fade show">
+            <i class="bi bi-check-circle me-2"></i>
+            <?php echo htmlspecialchars($_SESSION['success_message']); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+          <?php unset($_SESSION['success_message']); ?>
+        <?php endif; ?>
+
+        <?php if (isset($_SESSION['error_message'])): ?>
+          <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <?php echo htmlspecialchars($_SESSION['error_message']); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+          <?php unset($_SESSION['error_message']); ?>
+        <?php endif; ?>
+
+        <!-- Distribution Statistics Card -->
+        <div class="card mb-4" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none;">
+          <div class="card-body p-4">
+            <div class="row align-items-center">
+              <div class="col-md-8">
+                <h3 class="mb-2"><i class="bi bi-box-seam me-2"></i>Distribution Progress</h3>
+                <p class="mb-0 opacity-75">Students who have received their aid packages</p>
+              </div>
+              <div class="col-md-4 text-end">
+                <h1 class="display-3 mb-0 fw-bold"><?php echo $total_distributed; ?></h1>
+                <p class="mb-0">Distributed</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons Row -->
+        <div class="d-flex justify-content-end align-items-center mb-4">
+          <button type="button" class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#completeDistributionModal">
+            <i class="bi bi-check-circle me-2"></i>Complete Distribution
+          </button>
+        </div>
+
         <!-- Scanner Section -->
         <div class="scanner-section">
           <h3 class="text-center mb-4"><i class="bi bi-camera me-2"></i>Scan Student QR Code</h3>
@@ -260,55 +485,95 @@ $csrf_confirm_token = CSRFProtection::generateToken('confirm_distribution');
           </div>
         </div>
 
-        <!-- Export Section -->
-        <div class="export-section">
-          <a href="?export=csv" class="btn btn-success">
-            <i class="bi bi-download me-2"></i>Export to CSV
-          </a>
-        </div>
-
         <!-- Students Table -->
         <div class="card">
-          <div class="card-header">
-            <h3 class="mb-0"><i class="bi bi-people-fill me-2"></i>Students with Payroll Numbers</h3>
-            <small class="text-muted">Total: <?= count($students) ?> students</small>
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+              <h3 class="mb-0"><i class="bi bi-people-fill me-2"></i>Students with Payroll Numbers</h3>
+              <small class="text-muted">Total: <?= count($students) ?> students</small>
+            </div>
+            <a href="?export=csv" class="btn btn-success">
+              <i class="bi bi-download me-2"></i>Export to CSV
+            </a>
           </div>
           <div class="card-body p-0">
             <div class="table-container">
               <table class="table table-striped table-hover mb-0" id="studentsTable">
                 <thead class="table-dark sticky-top">
                   <tr>
-                    <th>Payroll #</th>
+                    <th>#</th>
+                    <th></th>Payroll #</th>
                     <th>Student Name</th>
                     <th>Student ID</th>
                     <th>Status</th>
-                    <th>Distribution Date</th>
+                    <th>Date & Time</th>
+                    <th>Scanned By</th>
                     <th>QR Code</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <?php foreach ($students as $student): ?>
+                  <?php 
+                  $counter = 1;
+                  foreach ($students as $student): 
+                  ?>
                     <tr id="student-<?= $student['student_id'] ?>">
-                      <td><strong><?= htmlspecialchars($student['payroll_no']) ?></strong></td>
-                      <td><?= htmlspecialchars(trim($student['first_name'] . ' ' . $student['middle_name'] . ' ' . $student['last_name'])) ?></td>
-                      <td><code><?= htmlspecialchars($student['student_id']) ?></code></td>
+                      <td class="fw-semibold text-muted"><?= $counter++ ?></td>
                       <td>
-                        <span class="badge status-<?= $student['status'] ?>">
-                          <?= ucfirst($student['status']) ?>
-                        </span>
+                        <code class="bg-dark text-white px-2 py-1 rounded">#<?= htmlspecialchars($student['payroll_no']) ?></code>
+                      </td>
+                      <td class="fw-semibold">
+                        <?= htmlspecialchars(trim($student['first_name'] . ' ' . $student['middle_name'] . ' ' . $student['last_name'])) ?>
+                      </td>
+                      <td>
+                        <small class="text-muted"><?= htmlspecialchars($student['student_id']) ?></small>
+                      </td>
+                      <td>
+                        <?php if ($student['status'] === 'given'): ?>
+                          <span class="badge bg-success">
+                            <i class="bi bi-check-circle me-1"></i>Given
+                          </span>
+                        <?php else: ?>
+                          <span class="badge bg-warning">
+                            <i class="bi bi-hourglass-split me-1"></i>Active
+                          </span>
+                        <?php endif; ?>
                       </td>
                       <td>
                         <?php if ($student['date_given']): ?>
-                          <?= date('M j, Y', strtotime($student['date_given'])) ?>
+                          <div class="small">
+                            <i class="bi bi-calendar-check text-primary me-1"></i>
+                            <strong><?= date('M d, Y', strtotime($student['date_given'])) ?></strong>
+                          </div>
+                          <div class="small text-muted">
+                            <i class="bi bi-clock me-1"></i>
+                            <?= date('g:i A', strtotime($student['date_given'])) ?>
+                          </div>
                         <?php else: ?>
-                          <span class="text-muted">Not distributed</span>
+                          <span class="text-muted">-</span>
+                        <?php endif; ?>
+                      </td>
+                      <td>
+                        <?php if ($student['distributed_by_username']): ?>
+                          <div class="small">
+                            <i class="bi bi-person-circle text-success me-1"></i>
+                            <strong><?= htmlspecialchars($student['distributed_by_username']) ?></strong>
+                          </div>
+                          <div class="small text-muted">
+                            <?= htmlspecialchars(trim($student['admin_first_name'] . ' ' . $student['admin_last_name'])) ?>
+                          </div>
+                        <?php else: ?>
+                          <span class="text-muted">-</span>
                         <?php endif; ?>
                       </td>
                       <td>
                         <?php if ($student['qr_unique_id']): ?>
-                          <i class="bi bi-qr-code text-success" title="QR Code Available"></i>
+                          <span class="badge bg-info">
+                            <i class="bi bi-qr-code me-1"></i>Has QR
+                          </span>
                         <?php else: ?>
-                          <i class="bi bi-x-circle text-danger" title="No QR Code"></i>
+                          <span class="badge bg-secondary">
+                            <i class="bi bi-x-circle me-1"></i>No QR
+                          </span>
                         <?php endif; ?>
                       </td>
                     </tr>
@@ -850,6 +1115,157 @@ $csrf_confirm_token = CSRFProtection::generateToken('confirm_distribution');
         }
       }, 5000);
     }
+  </script>
+
+  <!-- Complete Distribution Modal -->
+  <div class="modal fade" id="completeDistributionModal" tabindex="-1" aria-labelledby="completeDistributionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header bg-success text-white">
+          <h5 class="modal-title" id="completeDistributionModalLabel">
+            <i class="bi bi-check-circle me-2"></i>Complete Distribution
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form method="POST" id="completeDistributionForm">
+          <input type="hidden" name="csrf_token" value="<?php echo $csrf_complete_token; ?>">
+          <input type="hidden" name="complete_distribution" value="1">
+          
+          <div class="modal-body">
+            <div class="alert alert-info">
+              <i class="bi bi-info-circle me-2"></i>
+              <strong>Create Distribution Snapshot:</strong> This will save a permanent record of your current distribution session.
+              You have distributed aid to <strong><?php echo $total_distributed; ?> student<?php echo $total_distributed != 1 ? 's' : ''; ?></strong>.
+              <br><br>
+              <small><i class="bi bi-arrow-right me-1"></i>After creating the snapshot, you can continue scanning or go to "End Distribution" to close the distribution cycle and compress files.</small>
+            </div>
+
+            <div class="mb-3">
+              <label for="distribution_location" class="form-label fw-bold">
+                <i class="bi bi-geo-alt me-1"></i>Distribution Location *
+                <i class="bi bi-lock text-muted ms-1" title="Locked from settings"></i>
+              </label>
+              <input type="text" class="form-control" id="distribution_location" name="distribution_location" 
+                     value="<?php echo htmlspecialchars($distribution_location); ?>" readonly required>
+              <small class="text-muted">Location is set in Municipal Settings</small>
+            </div>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label for="academic_year" class="form-label fw-bold">
+                  <i class="bi bi-calendar me-1"></i>Academic Year
+                  <?php if (!empty($prefill_academic_year)): ?>
+                    <i class="bi bi-lock text-muted ms-1" title="Locked from config"></i>
+                  <?php endif; ?>
+                </label>
+                <input type="text" class="form-control" id="academic_year" name="academic_year" 
+                       value="<?php echo htmlspecialchars($prefill_academic_year); ?>" 
+                       <?php echo !empty($prefill_academic_year) ? 'readonly' : ''; ?>
+                       placeholder="e.g., 2025-2026">
+                <small class="text-muted">Optional - auto-filled from active slot</small>
+              </div>
+
+              <div class="col-md-6 mb-3">
+                <label for="semester" class="form-label fw-bold">
+                  <i class="bi bi-calendar-check me-1"></i>Semester
+                  <?php if (!empty($prefill_semester)): ?>
+                    <i class="bi bi-lock text-muted ms-1" title="Locked from config"></i>
+                  <?php endif; ?>
+                </label>
+                <select class="form-select" id="semester" name="semester"
+                        <?php echo !empty($prefill_semester) ? 'disabled' : ''; ?>>
+                  <option value="">Select Semester</option>
+                  <option value="1st Semester" <?php echo $prefill_semester === '1st Semester' ? 'selected' : ''; ?>>1st Semester</option>
+                  <option value="2nd Semester" <?php echo $prefill_semester === '2nd Semester' ? 'selected' : ''; ?>>2nd Semester</option>
+                  <option value="Summer" <?php echo $prefill_semester === 'Summer' ? 'selected' : ''; ?>>Summer</option>
+                </select>
+                <?php if (!empty($prefill_semester)): ?>
+                <input type="hidden" name="semester" value="<?php echo htmlspecialchars($prefill_semester); ?>">
+                <?php endif; ?>
+                <small class="text-muted">Optional - auto-filled from active slot</small>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label for="distribution_notes" class="form-label fw-bold">
+                <i class="bi bi-pencil me-1"></i>Notes (Optional)
+              </label>
+              <textarea class="form-control" id="distribution_notes" name="distribution_notes" rows="3" 
+                        placeholder="Any additional notes about this distribution..."></textarea>
+            </div>
+
+            <div class="mb-3">
+              <label for="admin_password" class="form-label fw-bold">
+                <i class="bi bi-shield-lock me-1"></i>Your Password *
+              </label>
+              <div class="input-group">
+                <input type="password" class="form-control" id="admin_password" name="admin_password" required>
+                <button class="btn btn-outline-secondary" type="button" id="toggleCompletePassword">
+                  <i class="bi bi-eye" id="completePasswordIcon"></i>
+                </button>
+              </div>
+              <small class="text-muted">Enter your admin password to confirm</small>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-success">
+              <i class="bi bi-check-circle me-1"></i>Complete Distribution
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Password toggle for complete distribution modal
+    document.addEventListener('DOMContentLoaded', function() {
+      const toggleBtn = document.getElementById('toggleCompletePassword');
+      const passwordInput = document.getElementById('admin_password');
+      const passwordIcon = document.getElementById('completePasswordIcon');
+      
+      if (toggleBtn && passwordInput && passwordIcon) {
+        toggleBtn.addEventListener('click', function() {
+          const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+          passwordInput.setAttribute('type', type);
+          passwordIcon.className = type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+        });
+      }
+
+      // Form validation
+      const form = document.getElementById('completeDistributionForm');
+      if (form) {
+        form.addEventListener('submit', function(e) {
+          const location = document.getElementById('distribution_location').value.trim();
+          const password = document.getElementById('admin_password').value.trim();
+          const totalDistributed = <?php echo (int)$total_distributed; ?>;
+          
+          if (!location || !password) {
+            e.preventDefault();
+            alert('Location and password are required.');
+            return false;
+          }
+          
+          let confirmMsg = '📸 CREATE DISTRIBUTION SNAPSHOT\n\n';
+          confirmMsg += 'You are about to save a permanent record of this distribution session.\n\n';
+          confirmMsg += '• Total students distributed: ' + totalDistributed + '\n';
+          confirmMsg += '• Location: ' + location + '\n\n';
+          if (totalDistributed === 0) {
+            confirmMsg += '⚠️ WARNING: No students have been distributed yet!\n\n';
+          }
+          confirmMsg += 'This will save the snapshot but keep the distribution active.\n';
+          confirmMsg += 'You can continue scanning or go to "End Distribution" when completely done.\n\n';
+          confirmMsg += 'Continue?';
+          
+          if (!confirm(confirmMsg)) {
+            e.preventDefault();
+            return false;
+          }
+        });
+      }
+    });
   </script>
 </body>
 </html>

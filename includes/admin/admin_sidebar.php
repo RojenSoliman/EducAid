@@ -207,20 +207,6 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
               </a>
             <?php endif; ?>
           </li>
-          <li>
-            <?php if ($canManageDistributions): ?>
-              <a class="submenu-link <?= is_active('manage_distributions.php', $current) ? 'active' : '' ?>" href="manage_distributions.php">
-                <i class="bi bi-box-arrow-in-down me-2"></i> Manage Distributions
-                <span class="badge bg-info ms-2">Ready</span>
-              </a>
-            <?php else: ?>
-              <a class="submenu-link text-muted" href="#"
-                 onclick="alert('Please start a distribution first before managing distributions.'); return false;">
-                <i class="bi bi-box-arrow-in-down me-2"></i> Manage Distributions
-                <span class="badge bg-secondary ms-2">Locked</span>
-              </a>
-            <?php endif; ?>
-          </li>
           
           <!-- Divider -->
           <li><hr class="dropdown-divider my-2"></li>

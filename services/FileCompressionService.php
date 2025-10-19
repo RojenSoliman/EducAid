@@ -25,45 +25,90 @@ class FileCompressionService {
             
             $distribution = pg_fetch_assoc($distResult);
             
-            // Get all files for this distribution
-            $filesQuery = "SELECT df.*, s.student_id as lrn, s.first_name, s.last_name, '' as middle_name
-                          FROM distribution_files df
-                          JOIN students s ON df.student_id = s.student_id
-                          WHERE df.distribution_id = $1 
-                          AND df.is_archived = false
-                          ORDER BY df.student_id, df.file_type";
-            $filesResult = pg_query_params($this->conn, $filesQuery, [$distributionId]);
+            // Get all students with 'given' status (they received aid in this distribution)
+            $studentsQuery = "SELECT s.student_id, s.first_name, s.middle_name, s.last_name
+                             FROM students s
+                             WHERE s.status = 'given'
+                             ORDER BY s.student_id";
+            $studentsResult = pg_query($this->conn, $studentsQuery);
             
-            if (!$filesResult || pg_num_rows($filesResult) === 0) {
+            if (!$studentsResult || pg_num_rows($studentsResult) === 0) {
+                throw new Exception("No students found with 'given' status");
+            }
+            
+            $students = pg_fetch_all($studentsResult);
+            
+            // Prepare to scan actual files from shared upload folders
+            $uploadsPath = __DIR__ . '/../assets/uploads';
+            $studentFiles = [];
+            
+            // Initialize array for each student
+            foreach ($students as $student) {
+                $studentId = $student['student_id'];
+                $studentFiles[$studentId] = [
+                    'info' => $student,
+                    'files' => []
+                ];
+            }
+            
+            // Scan shared folders for files belonging to our students
+            $folders = [
+                'student/enrollment_forms' => 'enrollment_forms',
+                'student/indigency' => 'indigency',
+                'student/letter_to_mayor' => 'letter_to_mayor'
+            ];
+            
+            foreach ($folders as $folderPath => $folderType) {
+                $fullPath = $uploadsPath . '/' . $folderPath;
+                if (is_dir($fullPath)) {
+                    $files = glob($fullPath . '/*.*');
+                    foreach ($files as $file) {
+                        if (is_file($file)) {
+                            $filename = basename($file);
+                            $filenameLower = strtolower($filename);
+                            // Check which student this file belongs to
+                            foreach ($students as $student) {
+                                $studentId = $student['student_id'];
+                                $studentIdLower = strtolower($studentId);
+                                // Files are named like: GENERALTRIAS-2025-3-9YW3ST_Soliman_Rojen_...
+                                // Use case-insensitive matching
+                                if (strpos($filenameLower, $studentIdLower) !== false) {
+                                    $studentFiles[$studentId]['files'][] = [
+                                        'path' => $file,
+                                        'type' => $folderType,
+                                        'size' => filesize($file),
+                                        'name' => $filename
+                                    ];
+                                    break; // Move to next file
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Filter out students with no files
+            $studentFiles = array_filter($studentFiles, function($data) {
+                return !empty($data['files']);
+            });
+            
+            if (empty($studentFiles)) {
                 throw new Exception("No files found to compress");
             }
             
-            $files = pg_fetch_all($filesResult);
-            
-            // Group files by student
-            $studentFiles = [];
-            foreach ($files as $file) {
-                $studentId = $file['student_id'];
-                if (!isset($studentFiles[$studentId])) {
-                    $studentFiles[$studentId] = [
-                        'info' => $file,
-                        'files' => []
-                    ];
-                }
-                $studentFiles[$studentId]['files'][] = $file;
+            // Create distribution archive directory named after distribution ID
+            $archiveBaseDir = __DIR__ . '/../uploads/distributions/';
+            if (!file_exists($archiveBaseDir)) {
+                mkdir($archiveBaseDir, 0755, true);
             }
             
-            // Create distribution archive folder
-            $archiveBaseDir = __DIR__ . '/../uploads/distributions/';
-            $distFolderName = sprintf(
-                "Distribution_%s_ID%s", 
-                date('Y-m-d', strtotime($distribution['date_given'] ?? 'now')),
-                $distribution['distribution_id']
-            );
-            $distArchiveDir = $archiveBaseDir . $distFolderName . '/';
+            // Create the main ZIP file named with distribution ID
+            $zipFilename = $distributionId . '.zip';
+            $zipPath = $archiveBaseDir . $zipFilename;
             
-            if (!file_exists($distArchiveDir)) {
-                mkdir($distArchiveDir, 0755, true);
+            $zip = new ZipArchive();
+            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== TRUE) {
+                throw new Exception("Cannot create ZIP file: $zipPath");
             }
             
             $totalOriginalSize = 0;
@@ -71,66 +116,63 @@ class FileCompressionService {
             $filesCompressed = 0;
             $studentsProcessed = 0;
             $compressionLog = [];
+            $filesToDelete = [];
             
-            // Compress files for each student
+            // Add files for each student to the main ZIP
             foreach ($studentFiles as $studentId => $data) {
                 $studentInfo = $data['info'];
                 $studentFilesList = $data['files'];
                 
+                if (empty($studentFilesList)) {
+                    continue; // Skip students with no files
+                }
+                
                 $studentName = sprintf(
                     "%s_%s_%s",
-                    $studentInfo['lrn'],
-                    $studentInfo['last_name'],
-                    $studentInfo['first_name']
+                    $studentId,
+                    preg_replace('/[^A-Za-z0-9]/', '_', $studentInfo['last_name']),
+                    preg_replace('/[^A-Za-z0-9]/', '_', $studentInfo['first_name'])
                 );
-                $studentName = preg_replace('/[^A-Za-z0-9_-]/', '_', $studentName);
-                
-                $zipFilename = $studentName . '.zip';
-                $zipPath = $distArchiveDir . $zipFilename;
-                
-                $zip = new ZipArchive();
-                if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== TRUE) {
-                    throw new Exception("Cannot create ZIP file: $zipPath");
-                }
                 
                 $studentOriginalSize = 0;
                 
+                // Add each file to ZIP under student's folder
                 foreach ($studentFilesList as $file) {
-                    $filePath = __DIR__ . '/../uploads/' . $file['file_path'];
-                    
-                    if (file_exists($filePath)) {
-                        $zipEntryName = $file['file_type'] . '_' . basename($file['file_path']);
-                        $zip->addFile($filePath, $zipEntryName);
-                        $studentOriginalSize += $file['file_size'];
+                    if (file_exists($file['path'])) {
+                        // Create path inside ZIP: StudentName/folder_type/filename
+                        $zipEntryName = $studentName . '/' . $file['type'] . '/' . $file['name'];
+                        $zip->addFile($file['path'], $zipEntryName);
+                        $studentOriginalSize += $file['size'];
+                        $totalOriginalSize += $file['size'];
                         $filesCompressed++;
+                        
+                        // Mark file for deletion after successful compression
+                        $filesToDelete[] = $file['path'];
                     }
-                }
-                
-                $zip->close();
-                
-                $zipSize = filesize($zipPath);
-                $totalOriginalSize += $studentOriginalSize;
-                $totalCompressedSize += $zipSize;
-                
-                // Update distribution_files records
-                foreach ($studentFilesList as $file) {
-                    $updateQuery = "UPDATE distribution_files 
-                                   SET is_compressed = true, 
-                                       compression_date = NOW()
-                                   WHERE file_id = $1";
-                    pg_query_params($this->conn, $updateQuery, [$file['file_id']]);
                 }
                 
                 $studentsProcessed++;
                 $compressionLog[] = sprintf(
-                    "Student %s: %d files, %.2f KB → %.2f KB (%.1f%%)",
+                    "Student %s: %d files, %.2f KB",
                     $studentName,
                     count($studentFilesList),
-                    $studentOriginalSize / 1024,
-                    $zipSize / 1024,
-                    ($zipSize / $studentOriginalSize * 100)
+                    $studentOriginalSize / 1024
                 );
             }
+            
+            $zip->close();
+            
+            $totalCompressedSize = filesize($zipPath);
+            
+            // Delete original files after successful compression
+            $filesDeleted = 0;
+            foreach ($filesToDelete as $filePath) {
+                if (file_exists($filePath) && unlink($filePath)) {
+                    $filesDeleted++;
+                }
+            }
+            $compressionLog[] = "Deleted $filesDeleted original files from uploads";
+
             
             // Update distributions table
             pg_query_params($this->conn,
@@ -149,9 +191,24 @@ class FileCompressionService {
             
             pg_query($this->conn, "COMMIT");
             
+            $spaceSaved = $totalOriginalSize - $totalCompressedSize;
+            
+            // Log the operation (optional, may not have file_archive_log table)
+            try {
+                $this->logOperation(
+                    'compress_distribution', $adminId, $distributionId, null,
+                    $filesCompressed, $totalOriginalSize, $totalCompressedSize, $spaceSaved,
+                    'success', null
+                );
+            } catch (Exception $e) {
+                error_log("Failed to log operation: " . $e->getMessage());
+            }
+            
+            pg_query($this->conn, "COMMIT");
+            
             return [
                 'success' => true,
-                'message' => "Distribution compressed successfully",
+                'message' => "Distribution compressed successfully. Student uploads have been archived and deleted.",
                 'statistics' => [
                     'students_processed' => $studentsProcessed,
                     'files_compressed' => $filesCompressed,
@@ -159,7 +216,7 @@ class FileCompressionService {
                     'compressed_size' => $totalCompressedSize,
                     'space_saved' => $spaceSaved,
                     'compression_ratio' => round(($totalCompressedSize / $totalOriginalSize * 100), 2),
-                    'archive_location' => $distFolderName
+                    'archive_location' => 'uploads/distributions/' . $zipFilename
                 ],
                 'log' => $compressionLog
             ];
@@ -167,16 +224,45 @@ class FileCompressionService {
         } catch (Exception $e) {
             pg_query($this->conn, "ROLLBACK");
             
-            $this->logOperation(
-                'compress_distribution', $adminId, $distributionId, null,
-                0, 0, 0, 0, 'failed', $e->getMessage()
-            );
+            try {
+                $this->logOperation(
+                    'compress_distribution', $adminId, $distributionId, null,
+                    0, 0, 0, 0, 'failed', $e->getMessage()
+                );
+            } catch (Exception $e2) {
+                error_log("Failed to log error: " . $e2->getMessage());
+            }
             
             return [
                 'success' => false,
                 'message' => $e->getMessage()
             ];
         }
+    }
+    
+    /**
+     * Recursively delete a directory and all its contents
+     */
+    private function deleteDirectory($dir) {
+        if (!file_exists($dir)) {
+            return true;
+        }
+        
+        if (!is_dir($dir)) {
+            return unlink($dir);
+        }
+        
+        foreach (scandir($dir) as $item) {
+            if ($item == '.' || $item == '..') {
+                continue;
+            }
+            
+            if (!$this->deleteDirectory($dir . DIRECTORY_SEPARATOR . $item)) {
+                return false;
+            }
+        }
+        
+        return rmdir($dir);
     }
     
     private function logOperation($operationType, $adminId, $distributionId, $studentId, 

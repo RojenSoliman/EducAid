@@ -100,12 +100,8 @@ $pageTitle = "End Distribution";
                                             <td><?php echo number_format($dist['total_size'] / 1024 / 1024, 2); ?> MB</td>
                                             <td><span class="badge badge-active">Active</span></td>
                                             <td class="action-buttons">
-                                                <button class="btn btn-sm btn-warning" 
-                                                        onclick="endDistribution(<?php echo $dist['id']; ?>, false)">
-                                                    <i class="bi bi-stop-circle"></i> End Only
-                                                </button>
                                                 <button class="btn btn-sm btn-danger" 
-                                                        onclick="endDistribution(<?php echo $dist['id']; ?>, true)">
+                                                        onclick="endDistribution('<?php echo $dist['id']; ?>')">
                                                     <i class="bi bi-file-zip"></i> End & Compress
                                                 </button>
                                             </td>
@@ -115,6 +111,147 @@ $pageTitle = "End Distribution";
                             </table>
                         </div>
                     <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- DEBUG SECTION -->
+                <div class="card shadow mb-4 border-warning">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0"><i class="bi bi-bug"></i> DEBUG: File Scanning Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <?php
+                        // DEBUG: Get detailed information
+                        error_log("=== DEBUG: Starting manual file scan ===");
+                        
+                        // 1. Check distribution status (config table uses key-value pairs)
+                        $statusQuery = "SELECT value FROM config WHERE key = 'distribution_status'";
+                        $statusResult = pg_query($connection, $statusQuery);
+                        $distStatus = 'unknown';
+                        if ($statusResult) {
+                            $row = pg_fetch_assoc($statusResult);
+                            $distStatus = $row ? $row['value'] : 'not set';
+                        }
+                        echo "<div class='alert alert-info'><strong>Distribution Status:</strong> " . $distStatus . "</div>";
+                        error_log("DEBUG: Distribution status = " . $distStatus);
+                        
+                        // 2. Get students with 'given' status
+                        $studentsQuery = "SELECT student_id, last_name, first_name FROM students WHERE status = 'given'";
+                        $studentsResult = pg_query($connection, $studentsQuery);
+                        $givenStudents = pg_fetch_all($studentsResult) ?: [];
+                        
+                        echo "<div class='alert alert-primary'><strong>Students with 'given' status:</strong> " . count($givenStudents) . "</div>";
+                        error_log("DEBUG: Found " . count($givenStudents) . " students with 'given' status");
+                        
+                        if (!empty($givenStudents)) {
+                            echo "<div class='mb-3'><strong>Student IDs:</strong><br>";
+                            foreach ($givenStudents as $student) {
+                                echo "- " . htmlspecialchars($student['student_id']) . " (" . 
+                                     htmlspecialchars($student['last_name']) . ", " . 
+                                     htmlspecialchars($student['first_name']) . ")<br>";
+                                error_log("DEBUG: Student: " . $student['student_id']);
+                            }
+                            echo "</div>";
+                        }
+                        
+                        // 3. Check folder structure
+                        $uploadsPath = __DIR__ . '/../../assets/uploads';
+                        $folders = [
+                            'student/enrollment_forms',
+                            'student/indigency', 
+                            'student/letter_to_mayor'
+                        ];
+                        
+                        echo "<div class='alert alert-secondary'><strong>Scanning Folders:</strong></div>";
+                        
+                        $totalFilesFound = 0;
+                        $totalSizeFound = 0;
+                        $matchedFiles = [];
+                        
+                        foreach ($folders as $folder) {
+                            $folderPath = $uploadsPath . '/' . $folder;
+                            $folderExists = is_dir($folderPath);
+                            
+                            echo "<div class='card mb-2'>";
+                            echo "<div class='card-body'>";
+                            echo "<strong>Folder:</strong> " . htmlspecialchars($folder) . "<br>";
+                            echo "<strong>Full Path:</strong> <code>" . htmlspecialchars($folderPath) . "</code><br>";
+                            echo "<strong>Exists:</strong> " . ($folderExists ? "✅ YES" : "❌ NO") . "<br>";
+                            
+                            error_log("DEBUG: Checking folder: " . $folderPath);
+                            error_log("DEBUG: Folder exists: " . ($folderExists ? "YES" : "NO"));
+                            
+                            if ($folderExists) {
+                                $files = glob($folderPath . '/*.*');
+                                echo "<strong>Total files in folder:</strong> " . count($files) . "<br>";
+                                error_log("DEBUG: Found " . count($files) . " files in " . $folder);
+                                
+                                if (!empty($files)) {
+                                    echo "<strong>Files:</strong><br>";
+                                    echo "<ul style='max-height: 200px; overflow-y: auto;'>";
+                                    foreach ($files as $file) {
+                                        if (is_file($file)) {
+                                            $filename = basename($file);
+                                            $filesize = filesize($file);
+                                            
+                                            // Check if file matches any student (case-insensitive)
+                                            $matched = false;
+                                            $matchedStudentId = '';
+                                            $filenameLower = strtolower($filename);
+                                            foreach ($givenStudents as $student) {
+                                                $studentIdLower = strtolower($student['student_id']);
+                                                if (strpos($filenameLower, $studentIdLower) !== false) {
+                                                    $matched = true;
+                                                    $matchedStudentId = $student['student_id'];
+                                                    $totalFilesFound++;
+                                                    $totalSizeFound += $filesize;
+                                                    $matchedFiles[] = [
+                                                        'file' => $filename,
+                                                        'student' => $matchedStudentId,
+                                                        'size' => $filesize,
+                                                        'folder' => $folder
+                                                    ];
+                                                    break;
+                                                }
+                                            }
+                                            
+                                            $matchIcon = $matched ? "✅" : "❌";
+                                            $matchText = $matched ? " (Matched to: $matchedStudentId)" : " (No match)";
+                                            
+                                            echo "<li>$matchIcon <code>" . htmlspecialchars($filename) . "</code> - " . 
+                                                 number_format($filesize / 1024, 2) . " KB" . 
+                                                 "<span style='color: " . ($matched ? "green" : "red") . ";'>" . 
+                                                 htmlspecialchars($matchText) . "</span></li>";
+                                            
+                                            error_log("DEBUG: File: " . $filename . " | Matched: " . ($matched ? "YES to " . $matchedStudentId : "NO"));
+                                        }
+                                    }
+                                    echo "</ul>";
+                                }
+                            }
+                            
+                            echo "</div>";
+                            echo "</div>";
+                        }
+                        
+                        // 4. Summary
+                        echo "<div class='alert alert-success'>";
+                        echo "<h5><strong>SUMMARY:</strong></h5>";
+                        echo "<strong>Total Files Matched:</strong> " . $totalFilesFound . "<br>";
+                        echo "<strong>Total Size:</strong> " . number_format($totalSizeFound / 1024 / 1024, 2) . " MB<br>";
+                        echo "</div>";
+                        
+                        error_log("DEBUG: SUMMARY - Total files matched: " . $totalFilesFound);
+                        error_log("DEBUG: SUMMARY - Total size: " . $totalSizeFound . " bytes");
+                        
+                        // 5. Show what getActiveDistributions() returns
+                        echo "<div class='alert alert-danger'>";
+                        echo "<h5><strong>What getActiveDistributions() Returns:</strong></h5>";
+                        echo "<pre>" . print_r($activeDistributions, true) . "</pre>";
+                        echo "</div>";
+                        
+                        error_log("=== DEBUG: End of manual file scan ===");
+                        ?>
                     </div>
                 </div>
 
@@ -216,12 +353,16 @@ $pageTitle = "End Distribution";
             }
         }
         
-        function endDistribution(distId, compress) {
+        function endDistribution(distId) {
+            if (!confirm('⚠️ END & COMPRESS DISTRIBUTION\n\nThis will:\n- End the distribution cycle\n- Compress all student files into: ' + distId + '.zip\n- Delete original student uploads\n- Set distribution status to inactive\n- Lock the workflow\n\nThis action cannot be undone!\n\nContinue?')) {
+                return;
+            }
+            
             progressModal.show();
             document.getElementById('progressLog').innerHTML = '';
             document.getElementById('closeProgressBtn').disabled = true;
             
-            updateProgress(10, 'Ending distribution...', 'Starting end distribution process...');
+            updateProgress(10, 'Ending distribution...', 'Starting end & compress process...');
             
             fetch('', {
                 method: 'POST',
@@ -232,67 +373,34 @@ $pageTitle = "End Distribution";
             .then(data => {
                 if (data.success) {
                     updateProgress(50, 'Distribution ended successfully', '✓ Distribution marked as ended');
+                    updateProgress(60, 'Starting compression...', 'Compressing and archiving files...');
                     
-                    if (compress) {
-                        updateProgress(60, 'Starting compression...', 'Compressing files...');
-                        compressDistributionInternal(distId);
-                    } else {
-                        updateProgress(100, 'Complete!', '✓ Operation completed successfully');
-                        document.getElementById('statusMessage').className = 'alert alert-success';
-                        document.getElementById('closeProgressBtn').disabled = false;
-                        setTimeout(() => location.reload(), 2000);
-                    }
-                } else {
-                    updateProgress(0, 'Error: ' + data.message, '✗ Failed: ' + data.message);
-                    document.getElementById('statusMessage').className = 'alert alert-danger';
-                    document.getElementById('closeProgressBtn').disabled = false;
-                }
-            })
-            .catch(error => {
-                updateProgress(0, 'Network error', '✗ Error: ' + error);
-                document.getElementById('statusMessage').className = 'alert alert-danger';
-                document.getElementById('closeProgressBtn').disabled = false;
-            });
-        }
-        
-        function compressDistribution(distId) {
-            progressModal.show();
-            document.getElementById('progressLog').innerHTML = '';
-            document.getElementById('closeProgressBtn').disabled = true;
-            updateProgress(10, 'Starting compression...', 'Initializing compression service...');
-            compressDistributionInternal(distId);
-        }
-        
-        function compressDistributionInternal(distId) {
-            fetch('', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'action=compress_distribution&distribution_id=' + distId
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    updateProgress(90, 'Compression completed', '✓ Files compressed successfully');
-                    
-                    if (data.log) {
-                        data.log.forEach(entry => updateProgress(null, null, entry));
+                    // Compression is automatically triggered in endDistribution
+                    if (data.compression) {
+                        if (data.compression.success) {
+                            const stats = data.compression.statistics;
+                            updateProgress(90, 'Compression completed', '✓ Files compressed successfully');
+                            updateProgress(100, 'Complete!', 
+                                `✓ Processed ${stats.students_processed} students, ${stats.files_compressed} files`);
+                            updateProgress(null, null, 
+                                `✓ Space saved: ${(stats.space_saved / 1024 / 1024).toFixed(2)} MB (${stats.compression_ratio}% compression)`);
+                            updateProgress(null, null, 
+                                `✓ Archive: ${stats.archive_location}`);
+                            
+                            document.getElementById('statusMessage').innerHTML = 
+                                '<i class="bi bi-check-circle"></i> <strong>Distribution Ended & Compressed!</strong><br>' +
+                                'Archive location: ' + stats.archive_location + '<br>Student uploads have been deleted.';
+                            document.getElementById('statusMessage').className = 'alert alert-success';
+                        } else {
+                            updateProgress(100, 'Ended but compression failed', '⚠️ ' + data.compression.message);
+                            document.getElementById('statusMessage').className = 'alert alert-warning';
+                        }
                     }
                     
-                    const stats = data.statistics;
-                    updateProgress(100, 'Complete!', 
-                        `✓ Processed ${stats.students_processed} students, ${stats.files_compressed} files`);
-                    updateProgress(null, null, 
-                        `✓ Space saved: ${(stats.space_saved / 1024 / 1024).toFixed(2)} MB (${stats.compression_ratio}% compression)`);
-                    
-                    document.getElementById('statusMessage').innerHTML = 
-                        '<i class="bi bi-check-circle"></i> <strong>Compression Complete!</strong><br>' +
-                        'Archive location: ' + stats.archive_location;
-                    document.getElementById('statusMessage').className = 'alert alert-success';
                     document.getElementById('closeProgressBtn').disabled = false;
-                    
                     setTimeout(() => location.reload(), 3000);
                 } else {
-                    updateProgress(0, 'Compression failed: ' + data.message, '✗ Error: ' + data.message);
+                    updateProgress(0, 'Error: ' + data.message, '✗ Failed: ' + data.message);
                     document.getElementById('statusMessage').className = 'alert alert-danger';
                     document.getElementById('closeProgressBtn').disabled = false;
                 }
