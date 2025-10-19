@@ -163,29 +163,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
             }
         }
         
-        // Create snapshot
-        $snapshot_query = "
-            INSERT INTO distribution_snapshots 
-            (distribution_date, location, total_students_count, active_slot_id, academic_year, semester, 
-             finalized_by, notes, schedules_data, students_data)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        ";
+        // Check if snapshot already exists for this academic period
+        $check_snapshot = pg_query_params($connection, 
+            "SELECT snapshot_id FROM distribution_snapshots WHERE academic_year = $1 AND semester = $2",
+            [$academic_year, $semester]
+        );
         
-        $snapshot_result = pg_query_params($connection, $snapshot_query, [
-            date('Y-m-d'), $location, $total_students, $slot_data['slot_id'] ?? null,
-            $academic_year, $semester, $admin_id, $notes,
-            json_encode($schedules_data), json_encode($students_data)
-        ]);
+        $snapshot_exists = $check_snapshot && pg_num_rows($check_snapshot) > 0;
+        
+        if ($snapshot_exists) {
+            // Update existing snapshot instead of creating a new one
+            $existing_snapshot = pg_fetch_assoc($check_snapshot);
+            $snapshot_query = "
+                UPDATE distribution_snapshots 
+                SET distribution_date = $1, 
+                    location = $2, 
+                    total_students_count = $3, 
+                    active_slot_id = $4,
+                    finalized_by = $5, 
+                    notes = $6,
+                    schedules_data = $7, 
+                    students_data = $8
+                WHERE snapshot_id = $9
+            ";
+            
+            $snapshot_result = pg_query_params($connection, $snapshot_query, [
+                date('Y-m-d'), $location, $total_students, $slot_data['slot_id'] ?? null,
+                $admin_id, $notes,
+                json_encode($schedules_data), json_encode($students_data),
+                $existing_snapshot['snapshot_id']
+            ]);
+        } else {
+            // Create new snapshot
+            $snapshot_query = "
+                INSERT INTO distribution_snapshots 
+                (distribution_date, location, total_students_count, active_slot_id, academic_year, semester, 
+                 finalized_by, notes, schedules_data, students_data)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ";
+            
+            $snapshot_result = pg_query_params($connection, $snapshot_query, [
+                date('Y-m-d'), $location, $total_students, $slot_data['slot_id'] ?? null,
+                $academic_year, $semester, $admin_id, $notes,
+                json_encode($schedules_data), json_encode($students_data)
+            ]);
+        }
         
         if ($snapshot_result) {
             pg_query($connection, "COMMIT");
-            $_SESSION['success_message'] = "Distribution snapshot created successfully! Recorded $total_students students for " . 
+            $action_type = $snapshot_exists ? 'updated' : 'created';
+            $_SESSION['success_message'] = "Distribution snapshot $action_type successfully! Recorded $total_students students for " . 
                 trim($academic_year . ' ' . ($semester ?? '')) . ". You can now proceed to End Distribution when ready.";
         } else {
             $error = pg_last_error($connection);
             pg_query($connection, "ROLLBACK");
             error_log("Complete Distribution Failed - Snapshot Result: FAIL | Error: " . $error);
-            $_SESSION['error_message'] = 'Failed to create distribution snapshot. ' . ($error ? 'DB Error: ' . $error : 'Unknown error.');
+            $_SESSION['error_message'] = 'Failed to ' . ($snapshot_exists ? 'update' : 'create') . ' distribution snapshot. ' . ($error ? 'DB Error: ' . $error : 'Unknown error.');
         }
     } catch (Exception $e) {
         pg_query($connection, "ROLLBACK");

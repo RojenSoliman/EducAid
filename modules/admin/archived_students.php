@@ -61,6 +61,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     );
     
     if ($result && pg_fetch_assoc($result)['success'] === 't') {
+        // Extract archived files back to permanent storage
+        require_once '../../services/FileManagementService.php';
+        $fileService = new FileManagementService($connection);
+        $extractResult = $fileService->extractArchivedStudent($studentId);
+        
         // Log to audit trail
         $auditLogger->logStudentUnarchived(
             $adminId,
@@ -69,11 +74,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             [
                 'full_name' => $fullName,
                 'archive_reason' => $student['archive_reason'],
-                'archived_at' => $student['archived_at']
+                'archived_at' => $student['archived_at'],
+                'files_restored' => $extractResult['files_extracted'] ?? 0
             ]
         );
         
-        echo json_encode(['success' => true, 'message' => 'Student successfully unarchived']);
+        $message = 'Student successfully unarchived';
+        if (($extractResult['files_extracted'] ?? 0) > 0) {
+            $message .= ' and ' . $extractResult['files_extracted'] . ' files restored';
+        }
+        
+        echo json_encode(['success' => true, 'message' => $message]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Failed to unarchive student']);
     }

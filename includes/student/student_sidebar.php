@@ -38,25 +38,9 @@ if (isset($_SESSION['student_id'])) {
         if ($candidate !== '') { $student_name = $candidate; }
         
         if ($uploads_enabled) {
-            // Check if student is newly registered (after last distribution)
-            $last_distribution_query = "SELECT MAX(distribution_date) as last_date FROM distribution_snapshots";
-            $last_distribution_result = pg_query($connection, $last_distribution_query);
-            
-            if ($last_distribution_result && $last_distribution_row = pg_fetch_assoc($last_distribution_result)) {
-                $last_distribution_date = $last_distribution_row['last_date'];
-                
-                if ($last_distribution_date) {
-                    $registration_date = $studentRow['application_date'];
-                    // If registered after last distribution, they're "new" - don't show Upload tab
-                    if (strtotime($registration_date) <= strtotime($last_distribution_date)) {
-                        $needs_upload_tab = true; // Existing student - needs to re-upload
-                    }
-                    // else: New student - documents from registration, no upload tab
-                } else {
-                    // No previous distributions - all current students are "new"
-                    $needs_upload_tab = false;
-                }
-            }
+            // Show upload tab when uploads are enabled
+            // Students need to upload documents during active distribution cycles
+            $needs_upload_tab = true;
         }
     } elseif (!empty($_SESSION['student_username'])) {
         $student_name = $_SESSION['student_username'];

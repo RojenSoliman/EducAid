@@ -774,15 +774,17 @@ function render_table($applicants, $connection) {
                                     $cardTitle = htmlspecialchars($label);
                                     if (isset($all_documents[$type])) {
                                         $has_documents = true;
-                                        $filePath = $all_documents[$type];
+                                        $filePath = trim($all_documents[$type]); // Trim any whitespace
 
                                         // Resolve server path for metadata
                                         $server_root = dirname(__DIR__, 2);
                                         $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
                                         $server_path = $server_root . '/' . $relative_from_root;
 
-                                        $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $filePath);
-                                        $is_pdf   = preg_match('/\.pdf$/i', $filePath);
+                                        // Check extension for image vs PDF (trim filename for safety)
+                                        $cleanPath = basename($filePath);
+                                        $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $cleanPath);
+                                        $is_pdf   = preg_match('/\.pdf$/i', $cleanPath);
 
                                         $size_str = '';
                                         $date_str = '';
@@ -860,15 +862,17 @@ function render_table($applicants, $connection) {
                                 
                                 // Check if grades exist in all_documents array first
                                 if (isset($all_documents['grades'])) {
-                                    $filePath = $all_documents['grades'];
+                                    $filePath = trim($all_documents['grades']); // Trim any whitespace
                                     
                                     // Resolve server path for metadata
                                     $server_root = dirname(__DIR__, 2);
                                     $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
                                     $server_path = $server_root . '/' . $relative_from_root;
 
-                                    $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $filePath);
-                                    $is_pdf   = preg_match('/\.pdf$/i', $filePath);
+                                    // Check extension for image vs PDF (trim filename for safety)
+                                    $cleanPath = basename($filePath);
+                                    $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $cleanPath);
+                                    $is_pdf   = preg_match('/\.pdf$/i', $cleanPath);
 
                                     $size_str = '';
                                     $date_str = '';
@@ -1236,6 +1240,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     
     $resultRow = pg_fetch_assoc($result);
     if ($resultRow && $resultRow['success'] === 't') {
+        // Compress and archive student files
+        require_once __DIR__ . '/../../services/FileManagementService.php';
+        $fileService = new FileManagementService($connection);
+        $compressionResult = $fileService->compressArchivedStudent($studentId);
+        
         // Log to audit trail
         require_once __DIR__ . '/../../services/AuditLogger.php';
         $auditLogger = new AuditLogger($connection);
@@ -1247,14 +1256,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 'full_name' => $fullName,
                 'email' => $student['email'],
                 'year_level' => $yearLevelName,
-                'expected_graduation_year' => $student['expected_graduation_year']
+                'expected_graduation_year' => $student['expected_graduation_year'],
+                'files_archived' => $compressionResult['files_archived'] ?? 0,
+                'space_saved' => $compressionResult['space_saved'] ?? 0
             ],
             $archiveReason,
             false // not automatic
         );
         
+        $message = 'Student successfully archived';
+        if (($compressionResult['files_archived'] ?? 0) > 0) {
+            $spaceSavedMB = round(($compressionResult['space_saved'] ?? 0) / 1024 / 1024, 2);
+            $message .= ' and ' . $compressionResult['files_archived'] . ' files compressed (saved ' . $spaceSavedMB . ' MB)';
+        }
+        
         ob_clean(); // Clear any buffered output
-        echo json_encode(['success' => true, 'message' => 'Student successfully archived']);
+        echo json_encode(['success' => true, 'message' => $message]);
     } else {
         ob_clean();
         echo json_encode(['success' => false, 'message' => 'Failed to archive student. The function returned false.']);
@@ -1296,6 +1313,24 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
     <?php include '../../includes/admin/admin_header.php'; ?>
     <section class="home-section" id="mainContent">
     <div class="container-fluid py-4 px-4">
+            <?php if (!empty($_SESSION['error_message'])): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <?= htmlspecialchars($_SESSION['error_message']) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            <?php unset($_SESSION['error_message']); ?>
+            <?php endif; ?>
+
+            <?php if (!empty($_SESSION['success_message'])): ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="bi bi-check-circle me-2"></i>
+                <?= htmlspecialchars($_SESSION['success_message']) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            <?php unset($_SESSION['success_message']); ?>
+            <?php endif; ?>
+
             <div class="section-header mb-3 d-flex justify-content-between align-items-center">
                 <h2 class="fw-bold text-primary mb-0">
                     <i class="bi bi-person-vcard" ></i>

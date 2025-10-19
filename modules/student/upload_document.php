@@ -89,9 +89,10 @@ if ($studentDateCol) {
 // Only count documents uploaded through this interface, not from admin/registration
 $query = "SELECT COUNT(*) AS total_uploaded FROM documents 
           WHERE student_id = $1 AND type IN ('id_picture') 
-          AND file_path LIKE '%/assets/uploads/students/%'";
+          AND file_path LIKE '%/assets/uploads/student/%'";
 // Check if student needs to upload documents (existing students) or redirected here incorrectly (new registrants)
-$student_check_query = "SELECT needs_document_upload, application_date, status FROM students WHERE student_id = $1";
+$student_check_query = "SELECT needs_document_upload, application_date, status, first_name, last_name, 
+                               uploads_confirmed, uploads_confirmed_at FROM students WHERE student_id = $1";
 $student_check_result = pg_query_params($connection, $student_check_query, [$student_id]);
 $student_info = pg_fetch_assoc($student_check_result);
 
@@ -100,6 +101,10 @@ if ($student_info && !$student_info['needs_document_upload']) {
     header("Location: student_homepage.php");
     exit;
 }
+
+// Check if uploads are already confirmed (locked)
+$uploads_locked = $student_info && $student_info['uploads_confirmed'] === 't';
+$uploads_confirmed_at = $student_info['uploads_confirmed_at'] ?? null;
 
 // Check if all required documents are uploaded
 $query = "SELECT COUNT(*) AS total_uploaded FROM documents WHERE student_id = $1 AND type IN ('id_picture')";
@@ -110,27 +115,27 @@ $row = pg_fetch_assoc($result);
 // Check if grades are uploaded through upload_document.php
 $grades_query = "SELECT COUNT(*) AS grades_uploaded FROM documents 
                 WHERE student_id = $1 AND type = 'academic_grades'
-                AND file_path LIKE '%/assets/uploads/students/%'";
+                AND file_path LIKE '%/assets/uploads/student/%'";
 $grades_result = pg_query_params($connection, $grades_query, [$student_id]);
 $grades_row = pg_fetch_assoc($grades_result);
 
 // Check if EAF is uploaded through upload_document.php
 $eaf_query = "SELECT COUNT(*) AS eaf_uploaded FROM documents 
               WHERE student_id = $1 AND type = 'eaf'
-              AND file_path LIKE '%/assets/uploads/students/%'";
+              AND file_path LIKE '%/assets/uploads/student/%'";
 $eaf_result = pg_query_params($connection, $eaf_query, [$student_id]);
 $eaf_row = pg_fetch_assoc($eaf_result);
 
 // Get latest grade upload status from grade_uploads (only uploads from this page)
 $latest_grades_query = "SELECT * FROM grade_uploads WHERE student_id = $1 
-                       AND file_path LIKE '%/assets/uploads/students/%'
+                       AND file_path LIKE '%/assets/uploads/student/%'
                        ORDER BY upload_date DESC LIMIT 1";
 $latest_grades_result = pg_query_params($connection, $latest_grades_query, [$student_id]);
 $latest_grade_upload = pg_fetch_assoc($latest_grades_result);
 
 // Get uploaded ID picture details (prefer uploads from this page; fallback to any source)
 $id_picture_query = "SELECT * FROM documents WHERE student_id = $1 AND type = 'id_picture' 
-          AND file_path LIKE '%/assets/uploads/students/%' ORDER BY upload_date DESC LIMIT 1";
+          AND file_path LIKE '%/assets/uploads/student/%' ORDER BY upload_date DESC LIMIT 1";
 $id_picture_result = pg_query_params($connection, $id_picture_query, [$student_id]);
 $uploaded_id_picture = pg_fetch_assoc($id_picture_result);
 if (!$uploaded_id_picture) {
@@ -141,7 +146,7 @@ if (!$uploaded_id_picture) {
 
 // Get uploaded grades details (prefer uploads from this page; fallback to any source)
 $uploaded_grades_query = "SELECT * FROM documents WHERE student_id = $1 AND type = 'academic_grades'
-             AND file_path LIKE '%/assets/uploads/students/%' ORDER BY upload_date DESC LIMIT 1";
+             AND file_path LIKE '%/assets/uploads/student/%' ORDER BY upload_date DESC LIMIT 1";
 $uploaded_grades_result = pg_query_params($connection, $uploaded_grades_query, [$student_id]);
 $uploaded_grades = pg_fetch_assoc($uploaded_grades_result);
 if (!$uploaded_grades) {
@@ -152,7 +157,7 @@ if (!$uploaded_grades) {
 
 // Get uploaded EAF details (prefer uploads from this page; fallback to any source)
 $uploaded_eaf_query = "SELECT * FROM documents WHERE student_id = $1 AND type = 'eaf'
-            AND file_path LIKE '%/assets/uploads/students/%' ORDER BY upload_date DESC LIMIT 1";
+            AND file_path LIKE '%/assets/uploads/student/%' ORDER BY upload_date DESC LIMIT 1";
 $uploaded_eaf_result = pg_query_params($connection, $uploaded_eaf_query, [$student_id]);
 $uploaded_eaf = pg_fetch_assoc($uploaded_eaf_result);
 if (!$uploaded_eaf) {
@@ -163,7 +168,7 @@ if (!$uploaded_eaf) {
 
 // Get uploaded Letter to the Mayor (prefer uploads from this page; fallback to any source)
 $uploaded_letter_query = "SELECT * FROM documents WHERE student_id = $1 AND type = 'letter_to_mayor' 
-            AND file_path LIKE '%/assets/uploads/students/%' ORDER BY upload_date DESC LIMIT 1";
+            AND file_path LIKE '%/assets/uploads/student/%' ORDER BY upload_date DESC LIMIT 1";
 $uploaded_letter_result = pg_query_params($connection, $uploaded_letter_query, [$student_id]);
 $uploaded_letter = pg_fetch_assoc($uploaded_letter_result);
 if (!$uploaded_letter) {
@@ -174,7 +179,7 @@ if (!$uploaded_letter) {
 
 // Get uploaded Certificate of Indigency (prefer uploads from this page; fallback to any source)
 $uploaded_cert_query = "SELECT * FROM documents WHERE student_id = $1 AND type = 'certificate_of_indigency' 
-            AND file_path LIKE '%/assets/uploads/students/%' ORDER BY upload_date DESC LIMIT 1";
+            AND file_path LIKE '%/assets/uploads/student/%' ORDER BY upload_date DESC LIMIT 1";
 $uploaded_cert_result = pg_query_params($connection, $uploaded_cert_query, [$student_id]);
 $uploaded_certificate = pg_fetch_assoc($uploaded_cert_result);
 if (!$uploaded_certificate) {
@@ -403,7 +408,38 @@ function school_match_tokens($text, $schoolName) {
 
 // Handle the file uploads
 // Handle document, grades, and EAF uploads in the same request
-if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || isset($_FILES['grades_file']) || isset($_FILES['eaf_file']))) {
+if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || isset($_FILES['grades_file']) || isset($_FILES['eaf_file']) || isset($_POST['confirm_uploads']))) {
+    
+    // Handle upload confirmation (lock uploads)
+    if (isset($_POST['confirm_uploads']) && $_POST['confirm_uploads'] === '1') {
+        if ($uploads_locked) {
+            $_SESSION['upload_fail'] = "Documents already confirmed. Contact admin if changes are needed.";
+        } else {
+            // Verify all required documents are uploaded before allowing confirmation
+            if ($allDocumentsUploaded) {
+                $confirm_query = "UPDATE students SET uploads_confirmed = TRUE, uploads_confirmed_at = NOW() WHERE student_id = $1";
+                $confirm_result = pg_query_params($connection, $confirm_query, [$student_id]);
+                
+                if ($confirm_result) {
+                    $_SESSION['upload_success'] = "Documents confirmed successfully! You can no longer modify uploads. Contact admin if changes are needed.";
+                } else {
+                    $_SESSION['upload_fail'] = "Failed to confirm uploads. Please try again.";
+                }
+            } else {
+                $_SESSION['upload_fail'] = "Please upload all required documents before confirming.";
+            }
+        }
+        header("Location: upload_document.php");
+        exit;
+    }
+    
+    // Block file uploads if already confirmed
+    if ($uploads_locked) {
+        $_SESSION['upload_fail'] = "Documents already confirmed. Contact admin to request changes.";
+        header("Location: upload_document.php");
+        exit;
+    }
+    
     // Debug: Log what was submitted
     log_debug("=== UPLOAD REQUEST RECEIVED ===");
     log_debug("FILES: " . print_r($_FILES, true));
@@ -416,6 +452,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
   $student_id = $_SESSION['student_id']; // Assuming student_id is stored in the session
   // Create a filename-safe version of student_id (keep letters, numbers, dash, underscore)
   $student_id_safe = preg_replace('/[^A-Za-z0-9_-]/', '', (string)$student_id);
+  
+  // Get student's first and last name for filename
+  $first_name = $student_info['first_name'] ?? 'Student';
+  $last_name = $student_info['last_name'] ?? 'Name';
+  $first_name_safe = preg_replace('/[^A-Za-z]/', '', $first_name);
+  $last_name_safe = preg_replace('/[^A-Za-z]/', '', $last_name);
 
     // Allowed file types and sizes
     $allowedTypes = [
@@ -427,16 +469,30 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
     $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'docx', 'doc'];
     $maxFileSize = 5 * 1024 * 1024; // 5MB limit
     
-    // Create secure student directory
-    $baseUploadDir = "../../assets/uploads/students/";
-  $studentDir = $baseUploadDir . preg_replace('/[^a-zA-Z0-9_-]/', '_', $student_name) . "_" . $student_id_safe . "/";
+    // Use shared upload directories organized by document type (NOT per-student)
+    $baseUploadDir = "../../assets/uploads/student/";
     
-    if (!file_exists($studentDir)) {
-        if (!mkdir($studentDir, 0755, true)) {
-            $_SESSION['upload_fail'] = "Failed to create upload directory.";
-            header("Location: upload_document.php");
-            exit;
-        }
+    // Document type to folder mapping
+    $documentTypeToFolder = [
+        'id_picture' => 'id_pictures',
+        'letter_to_mayor' => 'letter_to_mayor',
+        'certificate_of_indigency' => 'indigency',
+        'eaf' => 'enrollment_forms',
+        'academic_grades' => 'grades'
+    ];
+    
+    // Document type to filename token mapping
+    $documentTypeToToken = [
+        'id_picture' => 'id',
+        'letter_to_mayor' => 'lettertomayor',
+        'certificate_of_indigency' => 'indigency',
+        'eaf' => 'EAF',
+        'academic_grades' => 'grades'
+    ];
+    
+    // Ensure base directory exists
+    if (!file_exists($baseUploadDir)) {
+        mkdir($baseUploadDir, 0755, true);
     }
 
   $upload_success = false;
@@ -482,16 +538,32 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
         // Move the uploaded file to the student’s folder
         // Generate secure standardized filename: {student_id}_{document}_{timestamp}.{ext}
         $timestamp = date('Y-m-d_H-i-s');
-        // Map document type to concise filename token
-        $docTokenMap = [
-          'id_picture' => 'id',
-          'letter_to_mayor' => 'letter',
-          'certificate_of_indigency' => 'indigency'
-        ];
-        $docToken = $docTokenMap[$fileType] ?? preg_replace('/[^a-zA-Z0-9_-]/', '_', $fileType);
-        $secureFileName = $student_id_safe . "_" . $docToken . "_" . $timestamp . "." . $fileExt;
-        $finalPath = $studentDir . $secureFileName;
+        // Get directory for this document type
+        $folderName = $documentTypeToFolder[$fileType] ?? 'other';
+        $uploadDir = $baseUploadDir . $folderName . "/";
+        
+        // Ensure directory exists
+        if (!file_exists($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+        
+        // Generate standardized filename: {STUDENT_ID}_{LastName}_{FirstName}_{doctype}.{ext}
+        $docToken = $documentTypeToToken[$fileType] ?? preg_replace('/[^a-zA-Z0-9_-]/', '_', $fileType);
+        $secureFileName = $student_id_safe . "_" . $last_name_safe . "_" . $first_name_safe . "_" . $docToken . "." . $fileExt;
+        $finalPath = $uploadDir . $secureFileName;
+        
+        // Delete old file if it exists (before confirmation, students can reupload)
+        if (file_exists($finalPath)) {
+            unlink($finalPath);
+            // Also delete OCR text file if it exists
+            if (file_exists($finalPath . '.ocr.txt')) {
+                unlink($finalPath . '.ocr.txt');
+            }
+        }
     if (move_uploaded_file($fileTmpName, $finalPath)) {
+            // Normalize path to use forward slashes for database consistency
+            $normalizedPath = str_replace('\\', '/', $finalPath);
+            
             // Insert into database using prepared statements
             try {
         $stmt = pg_prepare($connection, "insert_document_" . $index, 
@@ -502,7 +574,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     $result = pg_execute($connection, "insert_document_" . $index, [
                         $student_id, 
                         $fileType, 
-                        $finalPath
+                        $normalizedPath
                     ]);
                     
                     if ($result) {
@@ -539,12 +611,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                   @file_put_contents($finalPath . '.ocr.txt', $combinedText);
                 }
                 if ($avgConf !== null) {
-                  // Update documents row confidence using unique path
+                  // Update documents row confidence using unique path (use normalized path)
                   @pg_query_params($connection, "UPDATE documents SET ocr_confidence = $1 WHERE student_id = $2 AND type = $3 AND file_path = $4", [
                     $avgConf,
                     $student_id,
                     $fileType,
-                    $finalPath
+                    $normalizedPath
                   ]);
                 }
 
@@ -1096,32 +1168,67 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
             if ($gradesFileSize <= $maxFileSize) {
                 $gradesFileExt = strtolower(pathinfo($gradesFileName, PATHINFO_EXTENSION));
                 if (in_array($gradesFileExt, ['jpg', 'jpeg', 'png', 'gif', 'pdf'])) {
-                    // Generate secure standardized filename for grades: {student_id}_grades_{timestamp}.{ext}
-                    $timestamp = date('Y-m-d_H-i-s');
-                    $secureGradesFileName = $student_id_safe . "_grades_" . $timestamp . "." . $gradesFileExt;
-                    $gradesFinalPath = $studentDir . $secureGradesFileName;
+                    // Get directory for grades
+                    $gradesFolder = $documentTypeToFolder['academic_grades'] ?? 'grades';
+                    $gradesUploadDir = $baseUploadDir . $gradesFolder . "/";
+                    
+                    // Ensure directory exists
+                    if (!file_exists($gradesUploadDir)) {
+                        mkdir($gradesUploadDir, 0755, true);
+                    }
+                    
+                    // Generate standardized filename: {STUDENT_ID}_{LastName}_{FirstName}_grades.{ext}
+                    $gradesToken = $documentTypeToToken['academic_grades'] ?? 'grades';
+                    $secureGradesFileName = $student_id_safe . "_" . $last_name_safe . "_" . $first_name_safe . "_" . $gradesToken . "." . $gradesFileExt;
+                    $gradesFinalPath = $gradesUploadDir . $secureGradesFileName;
+                    
+                    // Delete old file if it exists
+                    if (file_exists($gradesFinalPath)) {
+                        unlink($gradesFinalPath);
+                        if (file_exists($gradesFinalPath . '.ocr.txt')) {
+                            unlink($gradesFinalPath . '.ocr.txt');
+                        }
+                    }
                     
           if (move_uploaded_file($gradesFileTmpName, $gradesFinalPath)) {
-                        // Insert grades into database
+                        // Delete old grades records for this student before inserting new one
                         try {
-                            // For grades, always create a new record (no conflict resolution)
-                            // This ensures resubmits work properly
-                            $timestamp_id = uniqid();
-                            $grades_stmt = pg_prepare($connection, "insert_grades_upload_" . $timestamp_id, 
-                                "INSERT INTO documents (student_id, type, file_path, upload_date) 
-                                 VALUES ($1, $2, $3, NOW())");
+                            $delete_old_grades = pg_query_params($connection,
+                                "DELETE FROM documents WHERE student_id = $1 AND type = 'academic_grades'",
+                                [$student_id]
+                            );
+                            if ($delete_old_grades) {
+                                error_log("Deleted old grades records for student: " . $student_id);
+                            }
+                        } catch (Exception $e) {
+                            error_log("Error deleting old grades: " . $e->getMessage());
+                        }
+                        
+                        // Insert new grades record into database
+                        try {
+                            // Set default confidence score
+                            $gradesConfidence = 75.0;
                             
-                            if ($grades_stmt) {
-                                $grades_result = pg_execute($connection, "insert_grades_upload_" . $timestamp_id, [
+                            // Normalize path to use forward slashes for database consistency
+                            $normalizedGradesPath = str_replace('\\', '/', $gradesFinalPath);
+                            
+                            // Insert into documents table (direct insert without prepare/execute)
+                            $grades_result = pg_query_params($connection,
+                                "INSERT INTO documents (student_id, type, file_path, upload_date, is_valid, ocr_confidence) 
+                                 VALUES ($1, $2, $3, NOW(), $4, $5)",
+                                [
                                     $student_id, 
                                     'academic_grades', 
-                                    $gradesFinalPath
-                                ]);
-                                
-                                if ($grades_result) {
-                                    error_log("Grades uploaded successfully for student: " . $student_id);
-                                    $grades_upload_success = true;
-                                    $uploaded_count++; // Count grades in total uploads
+                                    $normalizedGradesPath,
+                                    'false', // Will be validated later
+                                    $gradesConfidence
+                                ]
+                            );
+                            
+                            if ($grades_result) {
+                                error_log("Grades uploaded successfully for student: " . $student_id);
+                                $grades_upload_success = true;
+                                $uploaded_count++; // Count grades in total uploads
 
                   // Immediately process OCR and validation for the uploaded grades
                   try {
@@ -1200,7 +1307,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     $ins_sql = "INSERT INTO grade_uploads (file_path, file_type, upload_date, ocr_processed, ocr_confidence, extracted_text, validation_status, student_id) 
                           VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7) RETURNING upload_id";
                     $ins_params = [
-                      $gradesFinalPath,
+                      $normalizedGradesPath,
                       $gradesFileExt,
                       $ocrResult['success'],
                       !empty($subjects) ? $avgConfidence : null,
@@ -1247,12 +1354,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                       }
                     }
 
-                    // Optionally update documents row confidence for quick display
+                    // Optionally update documents row confidence for quick display (use normalized path)
                     if (!empty($subjects)) {
                       @pg_query_params($connection, "UPDATE documents SET ocr_confidence = $1 WHERE student_id = $2 AND type = 'academic_grades' AND file_path = $3", [
                         $avgConfidence,
                         $student_id,
-                        $gradesFinalPath
+                        $normalizedGradesPath
                       ]);
                     }
                   } catch (Throwable $ocr_ex) {
@@ -1261,23 +1368,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     $fallback_sql = "INSERT INTO grade_uploads (file_path, file_type, upload_date, ocr_processed, validation_status, student_id) 
                              VALUES ($1, $2, NOW(), $3, $4, $5)";
                     @pg_query_params($connection, $fallback_sql, [
-                      $gradesFinalPath,
+                      $normalizedGradesPath,
                       $gradesFileExt,
                       false,
                       'manual_review',
                       strval($student_id)
                     ]);
                   }
-                                } else {
-                                    error_log("Database execution failed for grades");
-                                    $upload_errors[] = "Database error for grades file";
-                                    if (file_exists($gradesFinalPath)) {
-                                        unlink($gradesFinalPath);
-                                    }
-                                }
                             } else {
-                                error_log("Database preparation failed for grades");
-                                $upload_errors[] = "Database preparation error for grades";
+                                error_log("Database insert failed for grades: " . pg_last_error($connection));
+                                $upload_errors[] = "Database error for grades file";
+                                if (file_exists($gradesFinalPath)) {
+                                    unlink($gradesFinalPath);
+                                }
                             }
                         } catch (Exception $e) {
                             error_log("Exception during grades upload: " . $e->getMessage());
@@ -1323,12 +1426,32 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
             if ($eafFileSize <= $maxFileSize) {
                 $eafFileExt = strtolower(pathinfo($eafFileName, PATHINFO_EXTENSION));
                 if (in_array($eafFileExt, ['jpg', 'jpeg', 'png', 'gif', 'pdf'])) {
-                    // Generate secure standardized filename for EAF: {student_id}_eaf_{timestamp}.{ext}
-                    $timestamp = date('Y-m-d_H-i-s');
-                    $secureEafFileName = $student_id_safe . "_eaf_" . $timestamp . "." . $eafFileExt;
-                    $eafFinalPath = $studentDir . $secureEafFileName;
+                    // Get directory for EAF
+                    $eafFolder = $documentTypeToFolder['eaf'] ?? 'enrollment_forms';
+                    $eafUploadDir = $baseUploadDir . $eafFolder . "/";
+                    
+                    // Ensure directory exists
+                    if (!file_exists($eafUploadDir)) {
+                        mkdir($eafUploadDir, 0755, true);
+                    }
+                    
+                    // Generate standardized filename: {STUDENT_ID}_{LastName}_{FirstName}_EAF.{ext}
+                    $eafToken = $documentTypeToToken['eaf'] ?? 'EAF';
+                    $secureEafFileName = $student_id_safe . "_" . $last_name_safe . "_" . $first_name_safe . "_" . $eafToken . "." . $eafFileExt;
+                    $eafFinalPath = $eafUploadDir . $secureEafFileName;
+                    
+                    // Delete old file if it exists
+                    if (file_exists($eafFinalPath)) {
+                        unlink($eafFinalPath);
+                        if (file_exists($eafFinalPath . '.ocr.txt')) {
+                            unlink($eafFinalPath . '.ocr.txt');
+                        }
+                    }
                     
                     if (move_uploaded_file($eafFileTmpName, $eafFinalPath)) {
+                        // Normalize path to use forward slashes for database consistency
+                        $normalizedEafPath = str_replace('\\', '/', $eafFinalPath);
+                        
                         // Insert EAF into database
                         try {
                             // For EAF, always create a new record (no conflict resolution)
@@ -1342,7 +1465,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                                 $eaf_result = pg_execute($connection, "insert_eaf_upload_" . $timestamp_id, [
                                     $student_id, 
                                     'eaf', 
-                                    $eafFinalPath
+                                    $normalizedEafPath
                                 ]);
                                 
                 if ($eaf_result) {
@@ -1361,7 +1484,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                       @pg_query_params($connection, "UPDATE documents SET ocr_confidence = $1 WHERE student_id = $2 AND type = 'eaf' AND file_path = $3", [
                         $avgConf,
                         $student_id,
-                        $eafFinalPath
+                        $normalizedEafPath
                       ]);
                     }
                   } catch (Throwable $t) {
@@ -2034,6 +2157,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
               <?php endif; ?>
             </div>
           <?php else: ?>
+            <?php if ($uploads_locked): ?>
+              <!-- Uploads Locked Message -->
+              <div class="alert alert-info">
+                <i class="bi bi-lock-fill me-2"></i>
+                <h5>Documents Confirmed & Locked</h5>
+                <p class="mb-0">Your documents were confirmed on <strong><?= date('F d, Y \a\t g:i A', strtotime($uploads_confirmed_at)) ?></strong>.</p>
+                <p class="mb-0">You can no longer modify or resubmit your documents.</p>
+                <p class="mb-0 mt-2"><small>If you need to make changes, please contact the administrator through the chat support.</small></p>
+              </div>
+            <?php else: ?>
             <!-- Upload Form -->
             <form method="POST" enctype="multipart/form-data" id="uploadForm" novalidate>
               <div class="upload-form-section">
@@ -2520,7 +2653,33 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                 $can_submit = true; // Always allow submission if not all documents are uploaded
                 ?>
                 
-                <?php if (!$has_id_picture || !$has_grades || !$has_eaf || !$has_letter || !$has_certificate): ?>
+                <?php if ($uploads_locked): ?>
+                  <!-- Uploads are locked -->
+                  <div class="alert alert-info">
+                    <i class="bi bi-lock-fill me-2"></i>
+                    <strong>Documents Confirmed</strong><br>
+                    Your documents were confirmed on <?= date('F d, Y \a\t g:i A', strtotime($uploads_confirmed_at)) ?>.<br>
+                    You can no longer modify your uploads. If you need to make changes, please contact the admin.
+                  </div>
+                <?php elseif ($has_id_picture && $has_grades && $has_eaf && $has_letter && $has_certificate): ?>
+                  <!-- All documents uploaded, show confirmation options -->
+                  <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Important:</strong> Please review all your uploaded documents carefully. Once you confirm, you will not be able to resubmit or modify your documents without admin assistance.
+                  </div>
+                  <button type="submit" name="confirm_uploads" value="1" class="submit-btn btn-success" onclick="return confirm('Are you sure you want to confirm all uploads? You will NOT be able to modify your documents after this.');">
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    Confirm All Uploads & Lock Submission
+                  </button>
+                  <p class="mt-2 mb-0 text-muted small text-center">
+                    <i class="bi bi-info-circle me-1"></i>
+                    After confirmation, only administrators can reset your uploads if changes are needed.
+                  </p>
+                  <div class="alert alert-success mt-3">
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    <strong>All documents submitted!</strong> You can still resubmit individual documents using the buttons above before confirming.
+                  </div>
+                <?php else: ?>
                   <button type="submit" class="submit-btn" id="submit-documents">
                       <i class="bi bi-cloud-upload me-2"></i>
                       <?php 
@@ -2544,18 +2703,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                         if (!empty($missing)) {
                           echo 'Missing: ' . htmlspecialchars(implode(', ', $missing)) . '.';
                         } else {
-                          echo 'Please upload all required documents before submitting.';
+                          echo 'Please upload all required documents before confirming.';
                         }
                       ?>
                   </p>
-                <?php else: ?>
-                  <div class="alert alert-success">
-                    <i class="bi bi-check-circle-fill me-2"></i>
-                    <strong>All documents submitted!</strong> (ID Picture, Academic Grades, EAF, Letter to the Mayor, Certificate of Indigency). You can resubmit individual documents using the buttons above if needed.
-                  </div>
                 <?php endif; ?>
               </div>
             </form>
+            <?php endif; // End uploads_locked check ?>
           <?php endif; ?>
         </div>
       </div>

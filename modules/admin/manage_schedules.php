@@ -8,13 +8,6 @@ include '../../config/database.php';
 include '../../includes/workflow_control.php';
 require_once __DIR__ . '/../../includes/CSRFProtection.php';
 
-// Load documents submission deadline from config (if any)
-$documents_deadline = null;
-$cfgRes = pg_query_params($connection, "SELECT value FROM config WHERE key = $1", ['documents_deadline']);
-if ($cfgRes && pg_num_rows($cfgRes) > 0) {
-    $documents_deadline = pg_fetch_result($cfgRes, 0, 'value');
-}
-
 // Check workflow status - prevent access if payroll/QR not ready
 $workflow_status = getWorkflowStatus($connection);
 if (!$workflow_status['can_schedule']) {
@@ -28,6 +21,21 @@ $admin_id = $_SESSION['admin_id'] ?? 1;
 // Load settings for publish state
 $settingsPath = __DIR__ . '/../../data/municipal_settings.json';
 $settings = file_exists($settingsPath) ? json_decode(file_get_contents($settingsPath), true) : [];
+
+// Get documents deadline from config
+$documents_deadline = '';
+$deadline_query = pg_query($connection, "SELECT value FROM config WHERE key = 'documents_deadline'");
+if ($deadline_query && $deadline_row = pg_fetch_assoc($deadline_query)) {
+    $documents_deadline = $deadline_row['value'];
+}
+
+// Calculate minimum schedule date (deadline + 5 days)
+$min_schedule_date = '';
+if ($documents_deadline) {
+    $deadline_timestamp = strtotime($documents_deadline);
+    $min_schedule_timestamp = strtotime('+5 days', $deadline_timestamp);
+    $min_schedule_date = date('Y-m-d', $min_schedule_timestamp);
+}
 
 // Handle AJAX requests for date validation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -97,15 +105,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_schedule'])) {
             $location = $schedule_data['location'];
             $batches = $schedule_data['batches'];
             
-            // Enforce start date should not be before the configured documents submission deadline
-            if (!empty($documents_deadline) && $start_date < $documents_deadline) {
-                $error_message = "Schedule start date cannot be before the documents submission deadline (" . htmlspecialchars($documents_deadline) . ").";
-            }
             // Additional validation
-            elseif (empty($batches) || !is_array($batches)) {
+            if (empty($batches) || !is_array($batches)) {
                 $error_message = "No batches were configured. Please select number of batches and configure them.";
             } elseif (strtotime($end_date) < strtotime($start_date)) {
                 $error_message = "End date cannot be before start date.";
+            } elseif ($documents_deadline && strtotime($start_date) < strtotime($min_schedule_date)) {
+                $formatted_deadline = date('F j, Y', strtotime($documents_deadline));
+                $formatted_min_date = date('F j, Y', strtotime($min_schedule_date));
+                $error_message = "Distribution schedules must be at least 5 days after the document submission deadline. " .
+                                "Deadline: {$formatted_deadline}. Earliest schedule date: {$formatted_min_date}.";
             } else {
                 // Check if any dates in the range are already used
                 $conflicting_dates = [];
@@ -233,21 +242,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_schedule'])) {
                         if ($total_students < $total_requested_capacity) {
                             $success_message .= " Note: Only {$actualStudentCount} students are available in the database (requested capacity: {$total_requested_capacity}).";
                         }
-                        
-                        // Log schedule creation in audit trail
-                        require_once __DIR__ . '/../../services/AuditLogger.php';
-                        $auditLogger = new AuditLogger($connection);
-                        $auditLogger->logScheduleCreated(
-                            $_SESSION['admin_id'],
-                            $_SESSION['admin_username'],
-                            [
-                                'start_date' => $start_date,
-                                'end_date' => $end_date,
-                                'location' => $location,
-                                'total_students' => $total_students,
-                                'batches' => count($batches)
-                            ]
-                        );
                 
                 } catch (Exception $e) {
                     pg_query($connection, "ROLLBACK");
@@ -275,11 +269,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['publish_schedule'])) 
     // Add admin notification
     $notification_msg = "Distribution schedule published";
     pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
-    
-    // Log schedule publication in audit trail
-    require_once __DIR__ . '/../../services/AuditLogger.php';
-    $auditLogger = new AuditLogger($connection);
-    $auditLogger->logSchedulePublished($_SESSION['admin_id'], $_SESSION['admin_username']);
     
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
@@ -318,10 +307,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_schedule_data']
     }
     
     // Delete all schedules from database
-    $countResult = pg_query($connection, "SELECT COUNT(*) as total FROM schedules");
-    $countRow = pg_fetch_assoc($countResult);
-    $totalDeleted = $countRow['total'] ?? 0;
-    
     pg_query($connection, "DELETE FROM schedules");
     
     // Reset published state and clear schedule metadata
@@ -334,11 +319,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_schedule_data']
     // Add admin notification
     $notification_msg = "All schedule data permanently deleted";
     pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
-    
-    // Log schedule clearing in audit trail
-    require_once __DIR__ . '/../../services/AuditLogger.php';
-    $auditLogger = new AuditLogger($connection);
-    $auditLogger->logScheduleCleared($_SESSION['admin_id'], $_SESSION['admin_username'], $totalDeleted);
     
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
@@ -581,14 +561,6 @@ if ($usedDatesResult) {
                         <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Create New Schedule</h5>
                     </div>
                     <div class="card-body">
-                        <?php if (!empty($documents_deadline)): ?>
-                        <div class="alert alert-info d-flex align-items-center" role="alert">
-                            <i class="bi bi-info-circle-fill me-2"></i>
-                            <div>
-                                Documents submission deadline is <strong><?= htmlspecialchars($documents_deadline) ?></strong>. Schedules must start on or after this date.
-                            </div>
-                        </div>
-                        <?php endif; ?>
                         <form id="scheduleForm">
                             <!-- Basic Info -->
                             <div class="row mb-4">
@@ -596,14 +568,23 @@ if ($usedDatesResult) {
                                     <label for="schedule_date" class="form-label">
                                         <i class="bi bi-calendar3"></i> Start Date
                                     </label>
-                                    <input type="date" class="form-control" id="schedule_date" name="schedule_date" required>
+                                    <input type="date" class="form-control" id="schedule_date" name="schedule_date" 
+                                           <?php if ($min_schedule_date): ?>min="<?= $min_schedule_date ?>"<?php endif; ?> required>
                                     <div class="validation-message" id="date-validation"></div>
+                                    <?php if ($documents_deadline && $min_schedule_date): ?>
+                                        <small class="text-muted">
+                                            <i class="bi bi-info-circle"></i> 
+                                            Must be at least 5 days after deadline (<?= date('M j', strtotime($documents_deadline)) ?>). 
+                                            Earliest: <strong><?= date('M j, Y', strtotime($min_schedule_date)) ?></strong>
+                                        </small>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="col-md-4">
                                     <label for="end_date" class="form-label">
                                         <i class="bi bi-calendar-check"></i> End Date
                                     </label>
-                                    <input type="date" class="form-control" id="end_date" name="end_date" required>
+                                    <input type="date" class="form-control" id="end_date" name="end_date" 
+                                           <?php if ($min_schedule_date): ?>min="<?= $min_schedule_date ?>"<?php endif; ?> required>
                                     <div class="validation-message" id="end-date-validation"></div>
                                 </div>
                                 <div class="col-md-4">
@@ -690,7 +671,8 @@ if ($usedDatesResult) {
 <script>
 const maxStudents = <?= $countStudents ?>;
 const usedDates = <?= json_encode($usedDates) ?>;
-const documentsDeadline = <?= !empty($documents_deadline) ? ('\'' . htmlspecialchars($documents_deadline, ENT_QUOTES) . '\'') : 'null' ?>;
+const documentsDeadline = <?= $documents_deadline ? "'" . $documents_deadline . "'" : 'null' ?>;
+const minScheduleDate = <?= $min_schedule_date ? "'" . $min_schedule_date . "'" : 'null' ?>;
 let batches = [];
 
 // Date validation for start date
@@ -698,6 +680,15 @@ document.getElementById('schedule_date')?.addEventListener('change', function() 
     const selectedDate = this.value;
     const endDateInput = document.getElementById('end_date');
     const validation = document.getElementById('date-validation');
+    
+    // Check if date is before minimum schedule date
+    if (minScheduleDate && selectedDate < minScheduleDate) {
+        const deadlineFormatted = new Date(documentsDeadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const minDateFormatted = new Date(minScheduleDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        validation.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> Schedule must be at least 5 days after document deadline (${deadlineFormatted}). Earliest: ${minDateFormatted}</span>`;
+        this.classList.add('is-invalid');
+        return;
+    }
     
     // Set end date to same as start date if not set
     if (!endDateInput.value) {
@@ -707,10 +698,7 @@ document.getElementById('schedule_date')?.addEventListener('change', function() 
     // Set minimum end date
     endDateInput.min = selectedDate;
     
-    if (documentsDeadline && selectedDate < documentsDeadline) {
-        validation.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> Start date cannot be before documents deadline (' + documentsDeadline + ')</span>';
-        this.classList.add('is-invalid');
-    } else if (usedDates.includes(selectedDate)) {
+    if (usedDates.includes(selectedDate)) {
         validation.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> This date has already been used for scheduling</span>';
         this.classList.add('is-invalid');
     } else {
@@ -725,6 +713,14 @@ document.getElementById('end_date')?.addEventListener('change', function() {
     const selectedDate = this.value;
     const startDate = document.getElementById('schedule_date').value;
     const validation = document.getElementById('end-date-validation');
+    
+    // Check if date is before minimum schedule date
+    if (minScheduleDate && selectedDate < minScheduleDate) {
+        const minDateFormatted = new Date(minScheduleDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        validation.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> Must be at least ${minDateFormatted}</span>`;
+        this.classList.add('is-invalid');
+        return;
+    }
     
     if (selectedDate < startDate) {
         validation.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> End date cannot be before start date</span>';
@@ -984,12 +980,15 @@ function createSchedule() {
         return showError('Please select the number of batches');
     }
     
-    if (documentsDeadline && startDateInput.value < documentsDeadline) {
-        return showError('Start date cannot be before the documents submission deadline (' + documentsDeadline + ').');
-    }
-
     if (endDateInput.value < startDateInput.value) {
         return showError('End date cannot be before start date');
+    }
+    
+    // Check if start date is before minimum schedule date
+    if (minScheduleDate && startDateInput.value < minScheduleDate) {
+        const deadlineFormatted = new Date(documentsDeadline).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        const minDateFormatted = new Date(minScheduleDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        return showError(`Distribution schedules must be at least 5 days after the document submission deadline (${deadlineFormatted}). Earliest allowed date: ${minDateFormatted}`);
     }
     
     // Check if any date in range is already used
@@ -1128,17 +1127,25 @@ function debugBatches() {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
-    // Set minimum date to today
+    // Set minimum date based on document deadline or today
     const today = new Date().toISOString().split('T')[0];
+    const minDate = minScheduleDate || today;
+    
     const startDateInput = document.getElementById('schedule_date');
     const endDateInput = document.getElementById('end_date');
     
     if (startDateInput) {
-        startDateInput.min = today;
+        startDateInput.min = minDate;
     }
     
     if (endDateInput) {
-        endDateInput.min = today;
+        endDateInput.min = minDate;
+    }
+    
+    // Show info message if deadline is set
+    if (documentsDeadline && minScheduleDate) {
+        console.log(`Document Deadline: ${documentsDeadline}`);
+        console.log(`Minimum Schedule Date (Deadline + 5 days): ${minScheduleDate}`);
     }
 });
 </script>
