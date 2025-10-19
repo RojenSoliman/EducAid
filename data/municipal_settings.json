@@ -15,5 +15,10 @@
         "schedule_dates": [
             "2025-10-24"
         ]
-    }
+    },
+    "archive_file_retention_years": 5,
+    "auto_compress_distributions": true,
+    "compress_after_days": 30,
+    "max_storage_gb": 100,
+    "enable_file_archiving": true
 }

@@ -283,23 +283,16 @@ $query = "
 
 $result = pg_query_params($connection, $query, $params);
 
-// Debug: Check for query errors
+// Check for query errors
 if (!$result) {
     error_log("Archived students query error: " . pg_last_error($connection));
     error_log("Query: " . $query);
     error_log("Params: " . print_r($params, true));
 }
 
-// Get row count once and store it
-$resultRowCount = $result ? pg_num_rows($result) : 0;
-
-// TEMPORARY DEBUG - Remove this after fixing
-echo "<!-- DEBUG: Result = " . ($result ? 'true' : 'false') . ", Rows = $resultRowCount -->";
-
-// Reset result pointer to beginning (just in case)
-if ($result && $resultRowCount > 0) {
-    pg_result_seek($result, 0);
-}
+// Fetch all results into an array to avoid pointer issues later
+$students = $result ? pg_fetch_all($result) : [];
+$resultRowCount = $students ? count($students) : 0;
 
 // Get year levels for filter
 $yearLevelsQuery = pg_query($connection, "SELECT year_level_id, name FROM year_levels ORDER BY sort_order");
@@ -444,6 +437,15 @@ $stats = pg_fetch_assoc($statsResult);
         background: white;
         border-top: 1px solid #dee2e6;
     }
+
+    /* Fix modal z-index to appear above sidebar/topbar */
+    .modal {
+        z-index: 9999 !important;
+    }
+    
+    .modal-backdrop {
+        z-index: 9998 !important;
+    }
 </style>
 <body>
 <?php include '../../includes/admin/admin_topbar.php'; ?>
@@ -585,10 +587,7 @@ $stats = pg_fetch_assoc($statsResult);
                         </thead>
                         <tbody>
                             <?php 
-                            $loopCount = 0;
-                            while ($student = pg_fetch_assoc($result)): 
-                                $loopCount++;
-                                echo "<!-- DEBUG LOOP: Iteration $loopCount, Student ID: " . ($student['student_id'] ?? 'NULL') . " -->";
+                            foreach ($students as $student):
                                 $fullName = trim($student['first_name'] . ' ' . 
                                           ($student['middle_name'] ? $student['middle_name'] . ' ' : '') . 
                                           $student['last_name'] . ' ' . 
@@ -611,16 +610,16 @@ $stats = pg_fetch_assoc($statsResult);
                                     <td><?php echo $student['archived_by_name'] ?? '<em>System</em>'; ?></td>
                                     <td>
                                         <button class="btn btn-sm btn-info" 
-                                                onclick="viewDetails('<?php echo htmlspecialchars($student['student_id']); ?>')">
+                                                onclick="viewDetails('<?php echo htmlspecialchars($student['student_id'], ENT_QUOTES); ?>')">
                                             <i class="bi bi-eye"></i>
                                         </button>
                                         <button class="btn btn-sm btn-success btn-unarchive" 
-                                                onclick="unarchiveStudent('<?php echo htmlspecialchars($student['student_id']); ?>', '<?php echo htmlspecialchars($fullName); ?>')">
+                                                onclick="unarchiveStudent('<?php echo htmlspecialchars($student['student_id'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($fullName, ENT_QUOTES); ?>')">
                                             <i class="bi bi-arrow-counterclockwise"></i> Unarchive
                                         </button>
                                     </td>
                                 </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
@@ -682,32 +681,49 @@ $stats = pg_fetch_assoc($statsResult);
                 </div>
             <?php endif; ?>
         </div>
-    </div>
+    </section>
+</body>div>
 
-    <!-- Student Details Modal -->
-    <div class="modal fade" id="detailsModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-info-circle"></i> Student Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="detailsContent">
-                    <!-- Content loaded via AJAX -->
-                </div>
+<!-- Student Details Modal - MUST BE OUTSIDE WRAPPER -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-info-circle"></i> Student Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailsContent">
+                <!-- Content loaded via AJAX -->
             </div>
         </div>
     </div>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         function clearFilters() {
             window.location.href = 'archived_students.php';
         }
 
         function viewDetails(studentId) {
-            const modal = new bootstrap.Modal(document.getElementById('detailsModal'));
+            const modalEl = document.getElementById('detailsModal');
             const content = document.getElementById('detailsContent');
+            
+            // Clean up any existing modal instances and backdrops
+            const existingBackdrops = document.querySelectorAll('.modal-backdrop');
+            existingBackdrops.forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+            
+            // Dispose of any existing modal instance
+            const existingModal = bootstrap.Modal.getInstance(modalEl);
+            if (existingModal) {
+                existingModal.dispose();
+            }
+            
+            // Create fresh modal instance
+            const modal = new bootstrap.Modal(modalEl);
             
             content.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div><p>Loading...</p></div>';
             modal.show();
@@ -722,6 +738,21 @@ $stats = pg_fetch_assoc($statsResult);
                     content.innerHTML = '<div class="alert alert-danger">Error loading student details.</div>';
                 });
         }
+        
+        // Clean up modal on close
+        document.addEventListener('DOMContentLoaded', function() {
+            const modalEl = document.getElementById('detailsModal');
+            if (modalEl) {
+                modalEl.addEventListener('hidden.bs.modal', function() {
+                    // Clean up any lingering backdrops
+                    const backdrops = document.querySelectorAll('.modal-backdrop');
+                    backdrops.forEach(backdrop => backdrop.remove());
+                    document.body.classList.remove('modal-open');
+                    document.body.style.removeProperty('overflow');
+                    document.body.style.removeProperty('padding-right');
+                });
+            }
+        });
 
         function unarchiveStudent(studentId, studentName) {
             if (!confirm(`Are you sure you want to unarchive ${studentName}?\n\nThis will restore their account and they will be able to log in again.`)) {
@@ -751,9 +782,7 @@ $stats = pg_fetch_assoc($statsResult);
             });
         }
     </script>
-    </section>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 <script src="../../assets/js/admin/sidebar.js"></script>
 </body>
 </html>
