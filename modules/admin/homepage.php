@@ -270,7 +270,8 @@ if ($DEMO_MODE) {
                 if ($DEMO_MODE) {
                   $totalStudents = array_sum($genderVerified ?? []) + array_sum($genderApplicant ?? []);
                 } else {
-                  $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status IN ('applicant', 'active')");
+                  // Include 'given' students in capacity calculation (exclude only blacklisted and archived)
+                  $result = pg_query($connection, "SELECT COUNT(*) AS total FROM students WHERE status IN ('applicant', 'active', 'given')");
                   $row = pg_fetch_assoc($result);
                   $totalStudents = (int)$row['total'];
                 }

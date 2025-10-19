@@ -9,7 +9,7 @@ class DistributionManager {
         $this->conn = $connection;
     }
     
-    public function endDistribution($distributionId, $adminId, $compressNow = false) {
+    public function endDistribution($distributionId, $adminId, $compressNow = true) {
         try {
             pg_query($this->conn, "BEGIN");
             
@@ -27,18 +27,26 @@ class DistributionManager {
                 throw new Exception("Distribution is already ended");
             }
             
+            // Update distribution status to ended
             pg_query_params($this->conn,
                 "UPDATE distributions SET status = 'ended', ended_at = NOW() WHERE distribution_id = $1",
                 [$distributionId]);
+            
+            // Set global distribution status to inactive
+            pg_query($this->conn, "
+                INSERT INTO config (key, value) VALUES ('distribution_status', 'inactive')
+                ON CONFLICT (key) DO UPDATE SET value = 'inactive'
+            ");
             
             pg_query($this->conn, "COMMIT");
             
             $result = [
                 'success' => true,
-                'message' => 'Distribution ended successfully',
+                'message' => 'Distribution ended successfully and status set to inactive',
                 'distribution_id' => $distributionId
             ];
             
+            // Always compress files when ending distribution
             if ($compressNow) {
                 require_once __DIR__ . '/FileCompressionService.php';
                 $compressionService = new FileCompressionService();
@@ -66,41 +74,109 @@ class DistributionManager {
             return [];
         }
         
-        // Get current academic period from config
-        $periodQuery = "SELECT key, value FROM config WHERE key IN ('current_academic_year', 'current_semester')";
-        $periodResult = pg_query($this->conn, $periodQuery);
-        $academicYear = null;
-        $semester = null;
-        while ($row = pg_fetch_assoc($periodResult)) {
-            if ($row['key'] === 'current_academic_year') $academicYear = $row['value'];
-            if ($row['key'] === 'current_semester') $semester = $row['value'];
+        // Get current academic period from config or active slot
+        $slotQuery = "SELECT academic_year, semester FROM signup_slots WHERE is_active = true LIMIT 1";
+        $slotResult = pg_query($this->conn, $slotQuery);
+        $slot = $slotResult ? pg_fetch_assoc($slotResult) : null;
+        
+        $academicYear = $slot['academic_year'] ?? null;
+        $semester = $slot['semester'] ?? null;
+        
+        if (!$academicYear || !$semester) {
+            $periodQuery = "SELECT key, value FROM config WHERE key IN ('current_academic_year', 'current_semester')";
+            $periodResult = pg_query($this->conn, $periodQuery);
+            while ($row = pg_fetch_assoc($periodResult)) {
+                if ($row['key'] === 'current_academic_year' && !$academicYear) $academicYear = $row['value'];
+                if ($row['key'] === 'current_semester' && !$semester) $semester = $row['value'];
+            }
         }
         
-        // Return ONE logical distribution representing the current distribution cycle
-        // Count all students with 'given' status (distributed aid) in this cycle
-        $query = "SELECT 
-                    0 as id,  -- Using 0 as the current cycle ID
-                    NOW() as created_at,
-                    'active' as status,
-                    NULL::text as year_level,
-                    NULL::text as semester,
-                    COUNT(DISTINCT s.student_id) as student_count,
-                    0 as file_count,
-                    0 as total_size
-                 FROM students s
-                 WHERE s.status = 'given'";
-        
-        $result = pg_query($this->conn, $query);
-        $data = $result ? pg_fetch_all($result) : [];
-        
-        // Only return the distribution if there are students with 'given' status
-        if ($data && isset($data[0]) && $data[0]['student_count'] > 0) {
-            $data[0]['year_level'] = $academicYear;
-            $data[0]['semester'] = $semester;
-            return $data;
+        // Get all students with 'given' status (distributed aid)
+        $studentsQuery = "SELECT student_id FROM students WHERE status = 'given'";
+        $studentsResult = pg_query($this->conn, $studentsQuery);
+        $studentIds = [];
+        while ($row = pg_fetch_assoc($studentsResult)) {
+            $studentIds[] = $row['student_id'];
         }
         
-        return [];
+        if (empty($studentIds)) {
+            return []; // No distributed students yet
+        }
+        
+        // Scan actual files in uploads directory
+        // Files are stored in shared folders, not per-student folders
+        $uploadsPath = __DIR__ . '/../assets/uploads';
+        $totalFiles = 0;
+        $totalSize = 0;
+        
+        // Scan the enrollment_forms, indigency, letter_to_mayor folders for files matching our students
+        $folders = ['student/enrollment_forms', 'student/indigency', 'student/letter_to_mayor'];
+        
+        error_log("DistributionManager: Scanning uploads for " . count($studentIds) . " students with 'given' status");
+        
+        foreach ($folders as $folder) {
+            $folderPath = $uploadsPath . '/' . $folder;
+            if (is_dir($folderPath)) {
+                $files = glob($folderPath . '/*.*');
+                error_log("DistributionManager: Found " . count($files) . " files in $folder");
+                
+                foreach ($files as $file) {
+                    if (is_file($file)) {
+                        // Check if file belongs to any of our 'given' students
+                        $filename = basename($file);
+                        $filenameLower = strtolower($filename);
+                        foreach ($studentIds as $studentId) {
+                            $studentIdLower = strtolower($studentId);
+                            // Files are named like: GENERALTRIAS-2025-3-9YW3ST_Soliman_Rojen_...
+                            // Use case-insensitive matching
+                            if (strpos($filenameLower, $studentIdLower) !== false) {
+                                $totalFiles++;
+                                $size = filesize($file);
+                                $totalSize += $size;
+                                error_log("DistributionManager: Matched file $filename to student $studentId ($size bytes)");
+                                break; // Move to next file
+                            }
+                        }
+                    }
+                }
+            } else {
+                error_log("DistributionManager: Folder $folder NOT FOUND");
+            }
+        }
+        
+        error_log("DistributionManager: Total files: $totalFiles, Total size: $totalSize bytes");
+
+        
+        // Get a unique distribution ID (or create one if needed)
+        // Check if there's an existing active distribution record
+        $distQuery = "SELECT distribution_id FROM distributions WHERE status = 'active' LIMIT 1";
+        $distResult = pg_query($this->conn, $distQuery);
+        
+        if ($distResult && pg_num_rows($distResult) > 0) {
+            $distRow = pg_fetch_assoc($distResult);
+            $distributionId = $distRow['distribution_id'];
+        } else {
+            // Create a new distribution record for this cycle
+            require_once __DIR__ . '/DistributionIdGenerator.php';
+            $idGenerator = new DistributionIdGenerator($this->conn, 'GENERALTRIAS');
+            $distributionId = $idGenerator->generateDistributionId();
+            
+            // Insert the distribution record
+            $insertQuery = "INSERT INTO distributions (distribution_id, status, date_given) VALUES ($1, 'active', NOW())";
+            pg_query_params($this->conn, $insertQuery, [$distributionId]);
+        }
+        
+        // Return ONE distribution representing the current active cycle
+        return [[
+            'id' => $distributionId,
+            'created_at' => date('Y-m-d H:i:s'),
+            'status' => 'active',
+            'year_level' => $academicYear,
+            'semester' => $semester,
+            'student_count' => count($studentIds),
+            'file_count' => $totalFiles,
+            'total_size' => $totalSize
+        ]];
     }
     
     public function getEndedDistributions($includeArchived = true) {

@@ -326,7 +326,7 @@ if ($capacityResult && pg_num_rows($capacityResult) > 0) {
     $maxCapacity = $capacityRow['max_capacity'];
 }
 
-// Get current total students count for capacity management
+// Get current total students count for capacity management (exclude only blacklisted and archived)
 $currentTotalStudentsQuery = pg_query_params($connection, "
     SELECT COUNT(*) as total FROM students 
     WHERE municipality_id = $1 AND status IN ('under_registration', 'applicant', 'verified', 'active', 'given')

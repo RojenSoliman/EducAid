@@ -1,9 +1,25 @@
 {
-    "schedule_published": false,
+    "schedule_published": true,
     "archive_file_retention_years": 5,
     "auto_compress_distributions": true,
     "compress_after_days": 30,
     "archive_compression_level": 6,
     "max_storage_gb": 100,
-    "enable_file_archiving": true
+    "enable_file_archiving": true,
+    "schedule_meta": {
+        "start_date": "2025-10-20",
+        "end_date": "2025-10-20",
+        "location": "People's Park, Barangay Biclatan, General Trias, Cavite",
+        "batches": [
+            {
+                "start_time": "08:00",
+                "end_time": "10:00",
+                "capacity": 1
+            }
+        ],
+        "total_students": 1,
+        "schedule_dates": [
+            "2025-10-20"
+        ]
+    }
 }
