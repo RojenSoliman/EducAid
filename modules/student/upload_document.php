@@ -556,7 +556,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                   $first = '';
                   $middle = '';
                   $last = '';
-                  $yearLevelName = '';
                   $universityName = '';
                   
                   if (!empty($student_info)) {
@@ -564,21 +563,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     $middle = $student_info['middle_name'] ?? '';
                     $last = $student_info['last_name'] ?? '';
                   } else {
-                    $si_res = @pg_query_params($connection, "SELECT first_name, middle_name, last_name, year_level_id FROM students WHERE student_id = $1", [$student_id]);
+                    $si_res = @pg_query_params($connection, "SELECT first_name, middle_name, last_name FROM students WHERE student_id = $1", [$student_id]);
                     if ($si_res) {
                       $si = pg_fetch_assoc($si_res);
                       $first = $si['first_name'] ?? '';
                       $middle = $si['middle_name'] ?? '';
                       $last = $si['last_name'] ?? '';
-                      
-                      // Get year level name
-                      if (!empty($si['year_level_id'])) {
-                        $yl_res = @pg_query_params($connection, "SELECT name FROM year_levels WHERE year_level_id = $1", [$si['year_level_id']]);
-                        if ($yl_res) {
-                          $yl = pg_fetch_assoc($yl_res);
-                          $yearLevelName = $yl['name'] ?? '';
-                        }
-                      }
                     }
                   }
 
@@ -588,12 +578,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     $universityName = $uni['name'] ?? '';
                   }
 
-                  // Enhanced verification with 6 checks matching student_register.php
+                  // Enhanced verification with 5 checks (removed year_level)
                   $verification = [
                     'first_name_match' => false,
                     'middle_name_match' => false,
                     'last_name_match' => false,
-                    'year_level_match' => false,
                     'university_match' => false,
                     'document_keywords_found' => false,
                     'confidence_scores' => [],
@@ -647,30 +636,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     }
                   }
 
-                  // Check year level
-                  if (!empty($yearLevelName)) {
-                    $selectedYearVariations = [];
-                    if (stripos($yearLevelName, '1st') !== false || stripos($yearLevelName, 'first') !== false) {
-                      $selectedYearVariations = ['1st year', 'first year', '1st yr', 'year 1', 'yr 1', 'freshman'];
-                    } elseif (stripos($yearLevelName, '2nd') !== false || stripos($yearLevelName, 'second') !== false) {
-                      $selectedYearVariations = ['2nd year', 'second year', '2nd yr', 'year 2', 'yr 2', 'sophomore'];
-                    } elseif (stripos($yearLevelName, '3rd') !== false || stripos($yearLevelName, 'third') !== false) {
-                      $selectedYearVariations = ['3rd year', 'third year', '3rd yr', 'year 3', 'yr 3', 'junior'];
-                    } elseif (stripos($yearLevelName, '4th') !== false || stripos($yearLevelName, 'fourth') !== false) {
-                      $selectedYearVariations = ['4th year', 'fourth year', '4th yr', 'year 4', 'yr 4', 'senior'];
-                    } elseif (stripos($yearLevelName, '5th') !== false || stripos($yearLevelName, 'fifth') !== false) {
-                      $selectedYearVariations = ['5th year', 'fifth year', '5th yr', 'year 5', 'yr 5'];
-                    } elseif (stripos($yearLevelName, 'graduate') !== false || stripos($yearLevelName, 'grad') !== false) {
-                      $selectedYearVariations = ['graduate', 'grad student', 'masters', 'phd', 'doctoral'];
-                    }
-                    foreach ($selectedYearVariations as $variation) {
-                      if (stripos($combinedText, $variation) !== false) {
-                        $verification['year_level_match'] = true;
-                        break;
-                      }
-                    }
-                  }
-
                   // Check university name
                   if (!empty($universityName)) {
                     $universityWords = array_filter(explode(' ', strtolower($universityName)));
@@ -710,7 +675,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                   }
 
                   // Calculate overall success
-                  $requiredChecks = ['first_name_match', 'middle_name_match', 'last_name_match', 'year_level_match', 'university_match', 'document_keywords_found'];
+                  $requiredChecks = ['first_name_match', 'middle_name_match', 'last_name_match', 'university_match', 'document_keywords_found'];
                   $passedChecks = 0;
                   foreach ($requiredChecks as $check) {
                     if ($verification[$check]) $passedChecks++;
@@ -724,14 +689,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                   }
                   $averageConfidence = $confidenceCount > 0 ? ($totalConfidence / $confidenceCount) : 0;
                   
-                  $verification['overall_success'] = ($passedChecks >= 4) || ($passedChecks >= 3 && $averageConfidence >= 80);
+                  $verification['overall_success'] = ($passedChecks >= 3) || ($passedChecks >= 2 && $averageConfidence >= 80);
                   $verification['summary'] = [
                     'passed_checks' => $passedChecks,
-                    'total_checks' => 6,
+                    'total_checks' => 5,
                     'average_confidence' => round($averageConfidence, 1),
                     'recommendation' => $verification['overall_success'] ? 
                       'Document validation successful' : 
-                      'Please ensure the ID clearly shows your name, university, year level'
+                      'Please ensure the ID clearly shows your name and university'
                   ];
 
                   @file_put_contents($finalPath . '.verify.json', safe_json_encode($verification));

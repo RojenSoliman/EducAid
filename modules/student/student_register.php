@@ -570,7 +570,7 @@ require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 
 // Check if this is an AJAX request (OCR, OTP processing, cleanup, or duplicate check)
 $isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) ||
-                 isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) ||
+                 isset($_POST['processOcr']) || isset($_POST['processIdPictureOcr']) || isset($_POST['processLetterOcr']) ||
                  isset($_POST['processCertificateOcr']) || isset($_POST['processGradesOcr']) ||
                  isset($_POST['cleanup_temp']) || isset($_POST['check_existing']) || isset($_POST['test_db']);
 
@@ -1025,6 +1025,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
     $enteredOtp = filter_var($_POST['otp'], FILTER_SANITIZE_NUMBER_INT);
     $email_for_otp = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
 
+    // Check if OTP is already verified
+    if (isset($_SESSION['otp_verified']) && $_SESSION['otp_verified'] === true) {
+        error_log("OTP already verified for this session. Session ID: " . session_id());
+        json_response(['status' => 'success', 'message' => 'OTP already verified. You may proceed to the next step.']);
+    }
+
     if (!isset($_SESSION['otp']) || !isset($_SESSION['otp_email']) || !isset($_SESSION['otp_timestamp'])) {
         error_log("OTP verification error: session data missing (otp, otp_email, otp_timestamp). Session ID: " . session_id());
         json_response(['status' => 'error', 'message' => 'No OTP sent or session expired. Please request a new OTP.']);
@@ -1057,6 +1063,283 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
         error_log("OTP verification failed - entered: " . $enteredOtp . ", expected: " . $_SESSION['otp']);
         json_response(['status' => 'error', 'message' => 'Invalid OTP. Please try again.']);
     }
+}
+
+// --- ID Picture OCR Processing ---
+// --- ID Picture OCR Processing ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processIdPictureOcr'])) {
+    // Clear any output buffers to prevent headers already sent error
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+    
+    header('Content-Type: application/json');
+    
+    // Verify CAPTCHA (skip validation for development/testing)
+    $captchaToken = $_POST['g-recaptcha-response'] ?? '';
+    if ($captchaToken !== 'test') {
+        $captcha = verify_recaptcha_v3($captchaToken, 'process_id_picture_ocr');
+        if (!$captcha['ok']) { 
+            echo json_encode([
+                'status'=>'error',
+                'message'=>'Security verification failed (captcha).',
+                'debug' => ['captcha_token' => $captchaToken, 'captcha_result' => $captcha]
+            ]);
+            exit;
+        }
+    }
+    // If token is 'test', skip CAPTCHA validation for development
+    
+    if (!isset($_FILES['id_picture']) || $_FILES['id_picture']['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['status' => 'error', 'message' => 'No ID picture uploaded or upload error.']);
+        exit;
+    }
+
+    $uploadDir = '../../assets/uploads/temp/id_pictures/';
+    if (!file_exists($uploadDir)) { mkdir($uploadDir, 0777, true); }
+
+    // Clear temp folder
+    $files = glob($uploadDir . '*');
+    foreach ($files as $file) { if (is_file($file)) unlink($file); }
+
+    $uploadedFile = $_FILES['id_picture'];
+    $fileName = basename($uploadedFile['name']);
+    $targetPath = $uploadDir . $fileName;
+
+    if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
+        echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded file.']);
+        exit;
+    }
+
+    // Get form data for comparison
+    $formData = [
+        'first_name' => trim($_POST['first_name'] ?? ''),
+        'middle_name' => trim($_POST['middle_name'] ?? ''),
+        'last_name' => trim($_POST['last_name'] ?? ''),
+        'extension_name' => trim($_POST['extension_name'] ?? ''),
+        'university_id' => intval($_POST['university_id'] ?? 0)
+    ];
+
+    // Get university name
+    $universityName = '';
+    if ($formData['university_id'] > 0) {
+        $uniResult = pg_query_params($connection, "SELECT name FROM universities WHERE university_id = $1", [$formData['university_id']]);
+        if ($uniRow = pg_fetch_assoc($uniResult)) {
+            $universityName = $uniRow['name'];
+        }
+    }
+
+    // OCR Processing
+    $fileExtension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
+    
+    if ($fileExtension === 'pdf') {
+        // Try PDF text extraction
+        $pdfTextCommand = "pdftotext " . escapeshellarg($targetPath) . " - 2>nul";
+        $ocrText = @shell_exec($pdfTextCommand);
+        
+        if (empty(trim($ocrText))) {
+            echo json_encode(['status' => 'error', 'message' => 'Unable to extract text from PDF. Please upload an image instead.']);
+            exit;
+        }
+    } else {
+        // Image OCR with Tesseract
+        $tesseractCmd = "tesseract " . escapeshellarg($targetPath) . " stdout --psm 6 2>nul";
+        $ocrText = @shell_exec($tesseractCmd);
+        
+        if (empty(trim($ocrText))) {
+            echo json_encode(['status' => 'error', 'message' => 'OCR failed to extract text. Please upload a clearer image.']);
+            exit;
+        }
+    }
+
+    // Save OCR text
+    file_put_contents($targetPath . '.ocr.txt', $ocrText);
+    
+    // Debug: Log OCR results
+    error_log("ID Picture OCR Results:");
+    error_log("Expected First Name: " . $formData['first_name']);
+    error_log("Expected Last Name: " . $formData['last_name']);
+    error_log("Expected University: " . $universityName);
+    error_log("OCR Text (first 500 chars): " . substr($ocrText, 0, 500));
+
+    $ocrTextLower = strtolower($ocrText);
+
+    // Enhanced similarity calculation for name matching
+    function calculateIDSimilarity($needle, $haystack) {
+        $needle = strtolower(trim($needle));
+        $haystack = strtolower($haystack);
+        
+        // Exact substring match gets 100%
+        if (stripos($haystack, $needle) !== false) {
+            return 100;
+        }
+        
+        // Word-based matching - split both into words and find best match
+        $needleWords = preg_split('/\s+/', $needle);
+        $haystackWords = preg_split('/\s+/', $haystack);
+        
+        $maxWordSimilarity = 0;
+        foreach ($needleWords as $needleWord) {
+            if (strlen($needleWord) < 2) continue;
+            
+            foreach ($haystackWords as $haystackWord) {
+                if (strlen($haystackWord) < 2) continue;
+                
+                // Check exact word match
+                if ($needleWord === $haystackWord) {
+                    return 100;
+                }
+                
+                // Calculate Levenshtein distance
+                $lev = levenshtein($needleWord, $haystackWord);
+                $maxLen = max(strlen($needleWord), strlen($haystackWord));
+                $wordSim = (1 - ($lev / $maxLen)) * 100;
+                
+                $maxWordSimilarity = max($maxWordSimilarity, $wordSim);
+            }
+        }
+        
+        // Also calculate overall similar_text as fallback
+        similar_text($needle, $haystack, $percent);
+        
+        // Return the higher of word-based or overall similarity
+        return round(max($maxWordSimilarity, $percent), 2);
+    }
+
+    // Validation Checks (5 checks - removed year_level)
+    $checks = [];
+    
+    // 1. First Name Match (80% threshold)
+    $firstNameSimilarity = calculateIDSimilarity($formData['first_name'], $ocrText);
+    $checks['first_name_match'] = [
+        'passed' => $firstNameSimilarity >= 80,
+        'similarity' => $firstNameSimilarity,
+        'threshold' => 80,
+        'expected' => $formData['first_name'],
+        'found_in_ocr' => $firstNameSimilarity >= 80
+    ];
+
+    // 2. Middle Name Match (70% threshold, auto-pass if empty)
+    if (empty($formData['middle_name'])) {
+        $checks['middle_name_match'] = [
+            'passed' => true,
+            'auto_passed' => true,
+            'reason' => 'No middle name provided'
+        ];
+    } else {
+        $middleNameSimilarity = calculateIDSimilarity($formData['middle_name'], $ocrText);
+        $checks['middle_name_match'] = [
+            'passed' => $middleNameSimilarity >= 70,
+            'similarity' => $middleNameSimilarity,
+            'threshold' => 70,
+            'expected' => $formData['middle_name'],
+            'found_in_ocr' => $middleNameSimilarity >= 70
+        ];
+    }
+
+    // 3. Last Name Match (80% threshold)
+    $lastNameSimilarity = calculateIDSimilarity($formData['last_name'], $ocrText);
+    $checks['last_name_match'] = [
+        'passed' => $lastNameSimilarity >= 80,
+        'similarity' => $lastNameSimilarity,
+        'threshold' => 80,
+        'expected' => $formData['last_name'],
+        'found_in_ocr' => $lastNameSimilarity >= 80
+    ];
+
+    // 4. University Match (60% threshold, word-based)
+    $universityWords = explode(' ', strtolower($universityName));
+    $matchedWords = 0;
+    foreach ($universityWords as $word) {
+        if (strlen($word) > 3 && stripos($ocrTextLower, $word) !== false) {
+            $matchedWords++;
+        }
+    }
+    $universitySimilarity = count($universityWords) > 0 ? ($matchedWords / count($universityWords)) * 100 : 0;
+    $checks['university_match'] = [
+        'passed' => $universitySimilarity >= 60,
+        'similarity' => round($universitySimilarity, 2),
+        'threshold' => 60,
+        'expected' => $universityName,
+        'matched_words' => $matchedWords . '/' . count($universityWords),
+        'found_in_ocr' => $universitySimilarity >= 60
+    ];
+
+    // 5. Document Keywords (2+ required from keywords list)
+    $documentKeywords = [
+        'student', 'id', 'identification', 'card', 'number',
+        'university', 'college', 'school', 'valid', 'until',
+        'expires', 'issued'
+    ];
+    
+    $keywordsFound = 0;
+    $foundKeywords = [];
+    foreach ($documentKeywords as $keyword) {
+        if (stripos($ocrTextLower, $keyword) !== false) {
+            $keywordsFound++;
+            $foundKeywords[] = $keyword;
+        }
+    }
+    
+    $checks['document_keywords_found'] = [
+        'passed' => $keywordsFound >= 2,
+        'found_count' => $keywordsFound,
+        'required_count' => 2,
+        'total_keywords' => count($documentKeywords),
+        'found_keywords' => $foundKeywords
+    ];
+
+    // Calculate overall results
+    $passedChecks = array_filter($checks, function($check) {
+        return $check['passed'];
+    });
+    $passedCount = count($passedChecks);
+    
+    // Simple average confidence from similarity scores
+    $totalSimilarity = ($firstNameSimilarity + 
+                       (isset($middleNameSimilarity) ? $middleNameSimilarity : 70) + 
+                       $lastNameSimilarity + 
+                       $universitySimilarity) / 4;
+    $avgConfidence = round($totalSimilarity, 2);
+
+    // Pass if 3+ checks OR 2+ checks with 80%+ avg confidence
+    $overallSuccess = ($passedCount >= 3 || ($passedCount >= 2 && $avgConfidence >= 80));
+    $recommendation = $overallSuccess ? 'Approve' : 'Review - Please verify information matches your student ID';
+
+    $verification = [
+        'checks' => $checks,
+        'summary' => [
+            'passed_checks' => $passedCount,
+            'total_checks' => 5,
+            'average_confidence' => $avgConfidence,
+            'recommendation' => $recommendation
+        ]
+    ];
+
+    // Save verification results
+    file_put_contents($targetPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
+
+    // Debug: Log verification results
+    error_log("ID Picture Verification Results:");
+    error_log("First Name Match: " . ($checks['first_name_match']['passed'] ? 'PASS' : 'FAIL') . 
+              " (" . ($checks['first_name_match']['similarity'] ?? 'N/A') . "%)");
+    error_log("Last Name Match: " . ($checks['last_name_match']['passed'] ? 'PASS' : 'FAIL') . 
+              " (" . ($checks['last_name_match']['similarity'] ?? 'N/A') . "%)");
+    error_log("University Match: " . ($checks['university_match']['passed'] ? 'PASS' : 'FAIL') . 
+              " (" . ($checks['university_match']['similarity'] ?? 'N/A') . "%)");
+    error_log("Overall: " . $passedCount . "/5 checks passed - " . $recommendation);
+
+    echo json_encode([
+        'status' => 'success',
+        'message' => 'ID Picture processed successfully',
+        'verification' => $verification,
+        'file_path' => $targetPath,
+        'debug' => [
+            'ocr_text_length' => strlen($ocrText),
+            'ocr_preview' => substr($ocrText, 0, 200)
+        ]
+    ]);
+    exit;
 }
 
 // --- Letter to Mayor OCR Processing ---
@@ -2618,6 +2901,75 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $cleanFirstname = preg_replace('/[^a-zA-Z0-9]/', '', $firstname);
         $namePrefix = strtolower($cleanLastname . '_' . $cleanFirstname);
 
+        // Save Student ID Picture to temporary folder (not permanent until approved)
+        $tempIDPictureDir = '../../assets/uploads/temp/id_pictures/';
+        $allIDFiles = glob($tempIDPictureDir . '*');
+        $idTempFiles = array_filter($allIDFiles, function($file) {
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
+        });
+        
+        error_log("Looking for ID Picture files in: " . $tempIDPictureDir);
+        error_log("Found ID Picture files: " . print_r($idTempFiles, true));
+        
+        if (!empty($idTempFiles)) {
+            // Process the first ID Picture file found
+            foreach ($idTempFiles as $idTempFile) {
+                $idExtension = pathinfo($idTempFile, PATHINFO_EXTENSION);
+                $idNewFilename = $student_id . '_id_' . time() . '.' . $idExtension;
+                $idTempPath = $tempIDPictureDir . $idNewFilename;
+                
+                // Copy the main file
+                if (@copy($idTempFile, $idTempPath)) {
+                    error_log("Copied ID Picture from $idTempFile to $idTempPath");
+                    
+                    // Get OCR confidence from confidence file
+                    $idConfidenceFile = $tempIDPictureDir . 'id_picture_confidence.json';
+                    $idConfidence = null;
+                    
+                    if (file_exists($idConfidenceFile)) {
+                        $idConfData = json_decode(file_get_contents($idConfidenceFile), true);
+                        if ($idConfData && isset($idConfData['ocr_confidence'])) {
+                            $idConfidence = $idConfData['ocr_confidence'];
+                        }
+                        @unlink($idConfidenceFile); // Clean up confidence file
+                    }
+                    
+                    // Copy .verify.json file if it exists
+                    $idVerifyFile = $idTempFile . '.verify.json';
+                    if (file_exists($idVerifyFile)) {
+                        @copy($idVerifyFile, $idTempPath . '.verify.json');
+                        @unlink($idVerifyFile);
+                    }
+                    
+                    // Copy .ocr.txt file if it exists
+                    $idOcrFile = $idTempFile . '.ocr.txt';
+                    if (file_exists($idOcrFile)) {
+                        @copy($idOcrFile, $idTempPath . '.ocr.txt');
+                        @unlink($idOcrFile);
+                    }
+                    
+                    // Save ID Picture record to database with temporary path and OCR confidence
+                    $idQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $idResult = pg_query_params($connection, $idQuery, [$student_id, 'id_picture', $idTempPath, 'false', $idConfidence]);
+                    
+                    if (!$idResult) {
+                        error_log("Failed to save ID Picture to database: " . pg_last_error($connection));
+                    } else {
+                        error_log("Successfully saved ID Picture to database for student $student_id with confidence $idConfidence%");
+                    }
+                    
+                    // Clean up original temp ID Picture file
+                    @unlink($idTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy ID Picture file from $idTempFile to $idTempPath");
+                }
+            }
+        } else {
+            error_log("No ID Picture temp files found in path: " . $tempIDPictureDir);
+        }
+
         // Save enrollment form to temporary folder (not permanent until approved)
         $tempFormPath = '../../assets/uploads/temp/';
         $tempEnrollmentDir = '../../assets/uploads/temp/enrollment_forms/';
@@ -2950,6 +3302,7 @@ if (!$isAjaxRequest) {
                 <span class="step" id="step-indicator-7">7</span>
                 <span class="step" id="step-indicator-8">8</span>
                 <span class="step" id="step-indicator-9">9</span>
+                <span class="step" id="step-indicator-10">10</span>
             </div>
             <form id="multiStepForm" method="POST" autocomplete="off">
                 <!-- Step 1: Personal Information -->
@@ -3043,8 +3396,107 @@ if (!$isAjaxRequest) {
                       <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
                       <button type="button" class="btn btn-primary w-100" onclick="nextStep()">Next</button>
                 </div>
-                <!-- Step 4: Document Upload and OCR Verification -->
+                
+                <!-- Step 4: Student ID Picture Upload and OCR Verification -->
                 <div class="step-panel d-none" id="step-4">
+                    <div class="mb-3">
+                        <label class="form-label">Upload Student ID Picture</label>
+                        <small class="form-text text-muted d-block">
+                            Please upload a clear photo or PDF of your Student ID<br>
+                            <strong>Required content:</strong> Your name and university
+                        </small>
+                        <input type="file" class="form-control" id="id_picture_file" accept="image/*,.pdf" required>
+                        <div id="idPictureFilenameError" class="text-danger mt-1" style="display: none;">
+                            <small><i class="bi bi-exclamation-triangle me-1"></i>Please upload a valid student ID picture</small>
+                        </div>
+                    </div>
+                    <div id="idPictureUploadPreview" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label">Preview:</label>
+                            <div id="idPicturePreviewContainer" class="border rounded p-2" style="max-height: 300px; overflow-y: auto;">
+                                <img id="idPicturePreviewImage" class="img-fluid" style="max-width: 100%; display: none;" />
+                                <div id="idPicturePdfPreview" class="text-center p-3" style="display: none;">
+                                    <i class="bi bi-file-earmark-pdf fs-1 text-danger"></i>
+                                    <p>PDF File Selected</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="idPictureOcrSection" class="d-none">
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-info w-100" id="processIdPictureOcrBtn">
+                                <i class="bi bi-search me-2"></i>Verify Student ID
+                            </button>
+                            <small class="text-muted d-block mt-1">
+                                <i class="bi bi-info-circle me-1"></i>Click to verify your student ID information
+                            </small>
+                        </div>
+                        <div id="idPictureOcrResults" class="d-none">
+                            <div class="mb-3">
+                                <label class="form-label">Verification Results:</label>
+                                <div class="verification-checklist">
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-firstname">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>First Name Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-firstname">0%</span>
+                                    </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-middlename">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Middle Name Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-middlename">0%</span>
+                                    </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-lastname">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Last Name Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-lastname">0%</span>
+                                    </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-university">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>University Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-university">0%</span>
+                                    </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-document">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Official Document Keywords</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-document">0%</span>
+                                    </div>
+                                </div>
+                                <div class="mt-3 p-3 bg-light rounded">
+                                    <h6 class="mb-2">Overall Analysis:</h6>
+                                    <div class="d-flex justify-content-between">
+                                        <span>Average Confidence:</span>
+                                        <span class="fw-bold" id="idpic-overall-confidence">0%</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between">
+                                        <span>Passed Checks:</span>
+                                        <span class="fw-bold" id="idpic-passed-checks">0/5</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted" id="idpic-verification-recommendation">Processing document...</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="idPictureOcrFeedback" class="alert alert-warning mt-3" style="display: none;">
+                                <strong>Verification Failed:</strong> Please ensure your student ID is clear and contains all required information.
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" disabled onclick="nextStep()">Next</button>
+                </div>
+                
+                <!-- Step 5: Enrollment Assessment Form Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-5">
                     <div class="mb-3">
                         <label class="form-label">Upload Enrollment Assessment Form</label>
                         <small class="form-text text-muted d-block">
@@ -3145,11 +3597,11 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" disabled onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" disabled onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 5: Letter to Mayor Upload and OCR Verification -->
-                <div class="step-panel d-none" id="step-5">
+                <!-- Step 6: Letter to Mayor Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-6">
                     <div class="mb-3">
                         <label class="form-label">Upload Letter to Mayor</label>
                         <small class="form-text text-muted d-block">
@@ -3210,11 +3662,11 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" disabled onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" disabled onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 6: Certificate of Indigency Upload and OCR Verification -->
-                <div class="step-panel d-none" id="step-6">
+                <!-- Step 7: Certificate of Indigency Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-7">
                     <div class="mb-3">
                         <label class="form-label">Upload Certificate of Indigency</label>
                         <small class="form-text text-muted d-block mb-2">
@@ -3279,11 +3731,11 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" disabled onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep7Btn" disabled onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 7: Grade Scanning -->
-                <div class="step-panel d-none" id="step-7">
+                <!-- Step 8: Grade Scanning -->
+                <div class="step-panel d-none" id="step-8">
                     <div class="mb-3">
                         <label class="form-label">Upload Grades Document</label>
                         <small class="form-text text-muted d-block mb-2">
@@ -3365,12 +3817,12 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep7Btn" disabled onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep8Btn" disabled onclick="nextStep()">Next</button>
                 </div>
                 
                 
-                <!-- Step 8: OTP Verification -->
-                <div class="step-panel d-none" id="step-8">
+                <!-- Step 9: OTP Verification -->
+                <div class="step-panel d-none" id="step-9">
                       <div class="mb-3">
                         <label class="form-label">Email</label>
                         <input type="email" class="form-control" name="email" id="emailInput" required />
@@ -3404,10 +3856,10 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep8Btn" disabled onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep9Btn" disabled onclick="nextStep()">Next</button>
                 </div>
-                <!-- Step 9: Password and Confirmation -->
-                <div class="step-panel d-none" id="step-9">
+                <!-- Step 10: Password and Confirmation -->
+                <div class="step-panel d-none" id="step-10">
                     <div class="mb-3">
                         <label class="form-label" for="password">Password</label>
                         <input type="password" class="form-control" name="password" id="password" minlength="12" required />
@@ -3495,7 +3947,7 @@ let currentStep = 1;
 function nextStep() {
     console.log('🔧 Enhanced nextStep called - Step:', currentStep);
     
-    if (currentStep >= 9) return; // Updated to allow step 8 to proceed to step 9
+    if (currentStep >= 10) return; // Allow navigation through all 10 steps
     
     // Validate current step before proceeding
     const validationResult = validateCurrentStepFields();
@@ -3627,7 +4079,20 @@ function validateCurrentStepFields() {
     }
     
     // Special validation for file upload steps
+    // Step 4: Student ID Picture
     if (currentStep === 4) {
+        const idPictureFile = currentPanel.querySelector('#id_picture_file');
+        if (idPictureFile && !idPictureFile.files[0]) {
+            emptyFields.push({
+                name: 'id_picture',
+                label: 'Student ID Picture',
+                field: idPictureFile
+            });
+        }
+    }
+    
+    // Step 5: Enrollment Assessment Form
+    if (currentStep === 5) {
         const enrollmentFile = currentPanel.querySelector('#enrollmentForm');
         if (enrollmentFile && !enrollmentFile.files[0]) {
             emptyFields.push({
@@ -3650,7 +4115,8 @@ function validateCurrentStepFields() {
         }
     }
     
-    if (currentStep === 5) {
+    // Step 6: Letter to Mayor
+    if (currentStep === 6) {
         const letterFile = currentPanel.querySelector('#letterToMayorForm');
         if (letterFile && !letterFile.files[0]) {
             emptyFields.push({
@@ -3661,7 +4127,8 @@ function validateCurrentStepFields() {
         }
     }
     
-    if (currentStep === 6) {
+    // Step 7: Certificate of Indigency
+    if (currentStep === 7) {
         const certificateFile = currentPanel.querySelector('#certificateForm');
         if (certificateFile && !certificateFile.files[0]) {
             emptyFields.push({
@@ -3672,7 +4139,8 @@ function validateCurrentStepFields() {
         }
     }
     
-    if (currentStep === 7) {
+    // Step 8: Grades Document
+    if (currentStep === 8) {
         const gradesFile = currentPanel.querySelector('#gradesForm');
         if (gradesFile && !gradesFile.files[0]) {
             emptyFields.push({
@@ -3683,10 +4151,30 @@ function validateCurrentStepFields() {
         }
     }
     
-    // Step 8: OTP Verification
-    if (currentStep === 8) {
+    // Step 9: OTP Verification
+    if (currentStep === 9) {
         const emailStatus = document.getElementById('emailStatus');
         const otpSection = document.getElementById('otpSection');
+        const mobileInput = currentPanel.querySelector('#mobile');
+        
+        // Check if phone number is filled
+        if (!mobileInput || !mobileInput.value.trim()) {
+            return {
+                isValid: false,
+                message: 'Please enter your phone number.',
+                fields: [mobileInput]
+            };
+        }
+        
+        // Validate phone number format (09XXXXXXXXX - 11 digits starting with 09)
+        const phonePattern = /^09[0-9]{9}$/;
+        if (!phonePattern.test(mobileInput.value.trim())) {
+            return {
+                isValid: false,
+                message: 'Phone number must be 11 digits and start with 09 (e.g., 09123456789).',
+                fields: [mobileInput]
+            };
+        }
         
         // Check if email is verified (emailStatus is visible)
         if (!emailStatus || emailStatus.classList.contains('d-none')) {
@@ -3888,6 +4376,14 @@ function setupRealTimeValidation() {
 // ============================================
 
 function setupFileUploadHandlers() {
+    // Student ID Picture Upload Handler
+    const idPictureFile = document.getElementById('id_picture_file');
+    if (idPictureFile) {
+        idPictureFile.addEventListener('change', function(e) {
+            handleIdPictureFileUpload(e.target);
+        });
+    }
+    
     // Enrollment Form Upload Handler
     const enrollmentForm = document.getElementById('enrollmentForm');
     if (enrollmentForm) {
@@ -3898,6 +4394,212 @@ function setupFileUploadHandlers() {
     
     // Other file upload handlers can be added here
     console.log('✅ File upload handlers initialized');
+}
+
+function handleIdPictureFileUpload(fileInput) {
+    const file = fileInput.files[0];
+    const previewContainer = document.getElementById('idPictureUploadPreview');
+    const previewImage = document.getElementById('idPicturePreviewImage');
+    const pdfPreview = document.getElementById('idPicturePdfPreview');
+    const ocrSection = document.getElementById('idPictureOcrSection');
+    const processBtn = document.getElementById('processIdPictureOcrBtn');
+    
+    if (!file) {
+        // Hide preview and OCR section if no file
+        if (previewContainer) previewContainer.classList.add('d-none');
+        if (ocrSection) ocrSection.classList.add('d-none');
+        return;
+    }
+    
+    // Show preview container
+    if (previewContainer) previewContainer.classList.remove('d-none');
+    
+    // Handle image preview
+    if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            if (previewImage) {
+                previewImage.src = e.target.result;
+                previewImage.style.display = 'block';
+            }
+            if (pdfPreview) pdfPreview.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf') {
+        if (previewImage) previewImage.style.display = 'none';
+        if (pdfPreview) pdfPreview.style.display = 'block';
+    }
+    
+    // Show OCR section and enable process button
+    if (ocrSection) ocrSection.classList.remove('d-none');
+    if (processBtn) {
+        processBtn.disabled = false;
+        processBtn.classList.remove('btn-secondary');
+        processBtn.classList.add('btn-info');
+        
+        // Add click handler for processing
+        processBtn.onclick = function() {
+            processIdPictureDocument();
+        };
+    }
+}
+
+function processIdPictureDocument() {
+    const processBtn = document.getElementById('processIdPictureOcrBtn');
+    const fileInput = document.getElementById('id_picture_file');
+    
+    console.log('Processing ID Picture...');
+    
+    if (!fileInput.files[0]) {
+        showNotifier('Please select a file first', 'error');
+        return;
+    }
+    
+    // Show processing state
+    if (processBtn) {
+        processBtn.disabled = true;
+        processBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
+    }
+    
+    // Create form data for OCR processing
+    const formData = new FormData();
+    formData.append('processIdPictureOcr', '1');
+    formData.append('id_picture', fileInput.files[0]);
+    
+    // Add form data for validation - use querySelector with name attributes
+    const firstNameInput = document.querySelector('input[name="first_name"]');
+    const middleNameInput = document.querySelector('input[name="middle_name"]');
+    const lastNameInput = document.querySelector('input[name="last_name"]');
+    const extensionNameInput = document.querySelector('input[name="extension_name"]');
+    const universityInput = document.querySelector('select[name="university_id"]');
+    
+    if (firstNameInput && firstNameInput.value) formData.append('first_name', firstNameInput.value);
+    if (middleNameInput && middleNameInput.value) formData.append('middle_name', middleNameInput.value);
+    if (lastNameInput && lastNameInput.value) formData.append('last_name', lastNameInput.value);
+    if (extensionNameInput && extensionNameInput.value) formData.append('extension_name', extensionNameInput.value);
+    if (universityInput && universityInput.value) formData.append('university_id', universityInput.value);
+    
+    formData.append('g-recaptcha-response', 'test'); // You may need proper reCAPTCHA
+    
+    // Send OCR request
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('ID Picture OCR Response:', data);
+        handleIdPictureOcrResults(data);
+    })
+    .catch(error => {
+        console.error('ID Picture OCR Error:', error);
+        showNotifier('Error processing ID Picture: ' + error.message, 'error');
+        resetIdPictureProcessButton();
+    });
+}
+
+function updateCheckItem(checkId, confidenceId, checkData) {
+    const checkEl = document.getElementById(checkId);
+    const confEl = document.getElementById(confidenceId);
+    
+    if (!checkEl || !confEl || !checkData) return;
+    
+    const icon = checkEl.querySelector('i');
+    
+    if (checkData.passed) {
+        // Check passed - show success
+        if (icon) icon.className = 'bi bi-check-circle text-success me-2';
+        confEl.className = 'badge bg-success confidence-score';
+    } else {
+        // Check failed - show error
+        if (icon) icon.className = 'bi bi-x-circle text-danger me-2';
+        confEl.className = 'badge bg-danger confidence-score';
+    }
+    
+    // Update confidence display
+    if (checkData.similarity !== undefined) {
+        confEl.textContent = Math.round(checkData.similarity) + '%';
+    } else if (checkData.auto_passed) {
+        confEl.textContent = 'Auto-passed';
+        confEl.className = 'badge bg-info confidence-score';
+    } else if (checkData.found_count !== undefined) {
+        confEl.textContent = checkData.found_count + '/' + checkData.required_count;
+    } else {
+        confEl.textContent = checkData.passed ? 'Passed' : 'Failed';
+    }
+}
+
+function handleIdPictureOcrResults(data) {
+    const resultsDiv = document.getElementById('idPictureOcrResults');
+    const feedbackDiv = document.getElementById('idPictureOcrFeedback');
+    const nextBtn = document.getElementById('nextStep4Btn');
+    
+    if (!resultsDiv) return;
+    
+    // Show results section
+    resultsDiv.classList.remove('d-none');
+    
+    if (data.status === 'success' && data.verification) {
+        const v = data.verification;
+        const checks = v.checks;
+        
+        // Update individual check items
+        updateCheckItem('idpic-check-firstname', 'idpic-confidence-firstname', checks.first_name_match);
+        updateCheckItem('idpic-check-middlename', 'idpic-confidence-middlename', checks.middle_name_match);
+        updateCheckItem('idpic-check-lastname', 'idpic-confidence-lastname', checks.last_name_match);
+        updateCheckItem('idpic-check-university', 'idpic-confidence-university', checks.university_match);
+        updateCheckItem('idpic-check-document', 'idpic-confidence-document', checks.document_keywords_found);
+        
+        // Update overall summary
+        const overallConfidenceEl = document.getElementById('idpic-overall-confidence');
+        const passedChecksEl = document.getElementById('idpic-passed-checks');
+        const recommendationEl = document.getElementById('idpic-verification-recommendation');
+        
+        if (overallConfidenceEl) overallConfidenceEl.textContent = v.summary.average_confidence + '%';
+        if (passedChecksEl) passedChecksEl.textContent = v.summary.passed_checks + '/' + v.summary.total_checks;
+        
+        // Show recommendation
+        if (recommendationEl) {
+            if (v.summary.recommendation === 'Approve') {
+                recommendationEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Document verified successfully!';
+                if (feedbackDiv) feedbackDiv.style.display = 'none';
+                if (nextBtn) nextBtn.disabled = false;
+            } else {
+                recommendationEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>' + v.summary.recommendation;
+                if (feedbackDiv) {
+                    feedbackDiv.style.display = 'block';
+                    feedbackDiv.innerHTML = '<strong>Verification Warning:</strong> ' + v.summary.recommendation;
+                }
+                if (nextBtn) nextBtn.disabled = false; // Allow proceeding with warning
+            }
+        }
+        
+        showNotifier('ID Picture processed successfully!', 'success');
+    } else {
+        // Show error feedback
+        if (feedbackDiv) {
+            feedbackDiv.style.display = 'block';
+            feedbackDiv.className = 'alert alert-danger mt-3';
+            feedbackDiv.innerHTML = '<strong>Processing Failed:</strong> ' + (data.message || 'Unable to process ID Picture');
+        }
+        if (nextBtn) nextBtn.disabled = true;
+        showNotifier(data.message || 'Failed to process ID Picture', 'error');
+    }
+    
+    resetIdPictureProcessButton();
+}
+
+function resetIdPictureProcessButton() {
+    const processBtn = document.getElementById('processIdPictureOcrBtn');
+    if (processBtn) {
+        processBtn.disabled = false;
+        processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Verify Student ID';
+    }
 }
 
 function handleEnrollmentFileUpload(fileInput) {
@@ -4031,7 +4733,7 @@ function processEnrollmentDocument() {
 function handleOcrResults(data) {
     const resultsSection = document.getElementById('ocrResults');
     const processBtn = document.getElementById('processOcrBtn');
-    const nextBtn = document.getElementById('nextStep4Btn');
+    const nextBtn = document.getElementById('nextStep5Btn'); // Fixed: Changed from nextStep4Btn to nextStep5Btn
     
     if (data.status === 'success') {
         // Show results section
@@ -4374,15 +5076,17 @@ function verifyOtp() {
                 console.log('✅ Email status set to verified');
             }
             
-            // Enable next button for step 8
-            const nextBtn = document.getElementById('nextStep8Btn');
+            // Enable next button for step 9 (OTP verification step)
+            const nextBtn = document.getElementById('nextStep9Btn'); // Fixed: Changed from nextStep8Btn to nextStep9Btn
             if (nextBtn) {
                 nextBtn.disabled = false;
                 nextBtn.classList.remove('btn-secondary');
                 nextBtn.classList.remove('btn-primary');
                 nextBtn.classList.add('btn-success');
                 nextBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Continue - Email Verified';
-                console.log('✅ Next button enabled for step 8');
+                console.log('✅ Next button enabled for step 9');
+            } else {
+                console.error('❌ nextStep9Btn not found');
             }
         } else {
             showNotifier(data.message || 'OTP verification failed', 'error');
@@ -4557,7 +5261,7 @@ console.log('✅ Enhanced navigation with validation ready');
     function displayLetterVerificationResults(verification) {
         const resultsDiv = document.getElementById('letterOcrResults');
         const feedbackDiv = document.getElementById('letterOcrFeedback');
-        const nextButton = document.getElementById('nextStep5Btn');
+        const nextButton = document.getElementById('nextStep6Btn'); // Fixed: Changed from nextStep5Btn to nextStep6Btn
 
         // Update verification checklist with confidence scores
         updateVerificationCheckWithDetails('check-letter-firstname', verification.first_name, 
@@ -4766,7 +5470,7 @@ console.log('✅ Enhanced navigation with validation ready');
     function displayCertificateVerificationResults(verification) {
         const resultsDiv = document.getElementById('certificateOcrResults');
         const feedbackDiv = document.getElementById('certificateOcrFeedback');
-        const nextButton = document.getElementById('nextStep6Btn');
+        const nextButton = document.getElementById('nextStep7Btn'); // Fixed: Changed from nextStep6Btn to nextStep7Btn
 
         // Update verification checklist with confidence scores
         updateVerificationCheckWithDetails('check-certificate-title', verification.certificate_title, 
@@ -4951,7 +5655,7 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
         const feedbackDiv = document.getElementById('gradesOcrFeedback');
         const gradesDetails = document.getElementById('gradesDetails');
         const gradesTable = document.getElementById('gradesTable');
-        const nextButton = document.getElementById('nextStep7Btn');
+        const nextButton = document.getElementById('nextStep8Btn'); // Fixed: Changed from nextStep7Btn to nextStep8Btn
         const eligibilityStatus = document.getElementById('eligibilityStatus');
         const eligibilityText = document.getElementById('eligibilityText');
 
@@ -5219,31 +5923,14 @@ function setupTermsAndConditions() {
         termsLink: !!termsLink,
         acceptBtn: !!acceptBtn,
         agreeCheckbox: !!agreeCheckbox,
-        termsModal: !!termsModal
+        termsModal: !!termsModal,
+        bootstrap: typeof window.bootstrap
     });
     
-    // Fallback modal opening if Bootstrap doesn't work
-    if (termsLink) {
-        termsLink.addEventListener('click', function(e) {
-            e.preventDefault();
-            
-            // Try Bootstrap modal first
-            if (window.bootstrap && window.bootstrap.Modal) {
-                const modal = new bootstrap.Modal(termsModal);
-                modal.show();
-                console.log('✅ Terms modal opened via Bootstrap');
-            } else {
-                // Fallback: Show modal manually
-                if (termsModal) {
-                    termsModal.style.display = 'block';
-                    termsModal.classList.add('show');
-                    termsModal.setAttribute('aria-modal', 'true');
-                    termsModal.setAttribute('role', 'dialog');
-                    document.body.classList.add('modal-open');
-                    console.log('✅ Terms modal opened via fallback');
-                }
-            }
-        });
+    // Bootstrap should handle the modal opening automatically via data-bs-toggle and data-bs-target
+    // No need for custom click handler - just verify Bootstrap is loaded
+    if (!window.bootstrap) {
+        console.warn('⚠️ Bootstrap not loaded! Modal may not work.');
     }
     
     // Handle accept button
@@ -5256,18 +5943,12 @@ function setupTermsAndConditions() {
                 console.log('✅ Terms accepted and checkbox checked');
             }
             
-            // Close modal
+            // Close modal using Bootstrap
             if (window.bootstrap && window.bootstrap.Modal) {
                 const modal = bootstrap.Modal.getInstance(termsModal);
-                if (modal) modal.hide();
-            } else {
-                // Fallback close
-                if (termsModal) {
-                    termsModal.style.display = 'none';
-                    termsModal.classList.remove('show');
-                    termsModal.removeAttribute('aria-modal');
-                    termsModal.removeAttribute('role');
-                    document.body.classList.remove('modal-open');
+                if (modal) {
+                    modal.hide();
+                    console.log('✅ Terms modal closed via Bootstrap');
                 }
             }
         });

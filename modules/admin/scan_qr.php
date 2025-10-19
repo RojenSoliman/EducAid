@@ -72,9 +72,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_distribution'
     $update_result = pg_query_params($connection, $update_query, [$student_id]);
     
     if ($update_result) {
-        // Record distribution
-        $dist_query = "INSERT INTO distributions (student_id, date_given, verified_by) VALUES ($1, NOW(), $2)";
-        pg_query_params($connection, $dist_query, [$student_id, $admin_id]);
+        // Generate identifiable distribution ID
+        require_once __DIR__ . '/../../services/DistributionIdGenerator.php';
+        $idGenerator = new DistributionIdGenerator($connection, 'GENERALTRIAS');
+        $distribution_id = $idGenerator->generateDistributionId();
+        
+        // Record distribution with identifiable ID
+        $dist_query = "INSERT INTO distributions (distribution_id, student_id, date_given, verified_by, status) 
+                       VALUES ($1, $2, NOW(), $3, 'active')";
+        pg_query_params($connection, $dist_query, [$distribution_id, $student_id, $admin_id]);
         
         // Add notification to student
         $notif_query = "INSERT INTO notifications (student_id, message) VALUES ($1, $2)";

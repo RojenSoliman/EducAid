@@ -150,8 +150,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             try {
                 // Store academic period for this distribution
+                // Set status directly to 'active' for simplified workflow
                 $config_settings = [
-                    ['distribution_status', 'preparing'],
+                    ['distribution_status', 'active'],
                     ['current_academic_year', $academic_year],
                     ['current_semester', $semester],
                     ['uploads_enabled', '1']
@@ -172,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $success = true;
                 $message = "Distribution cycle started for $semester $academic_year!"
                     . (!empty($documents_deadline) ? " Document deadline set to $documents_deadline." : "")
-                    . " You can now manage slots and scheduling.";
+                    . " The distribution is now active and all features are unlocked!";
                 
             } catch (Exception $e) {
                 pg_query($connection, "ROLLBACK");
@@ -821,27 +822,7 @@ $history_result = pg_query($connection, $history_query);
                                     </div>
                                 <?php endif; ?>
                                 
-                                <?php if ($workflow_status['distribution_status'] === 'preparing'): ?>
-                                    <div class="col-md-6">
-                                        <div class="card border-primary">
-                                            <div class="card-body">
-                                                <h5 class="card-title text-primary">
-                                                    <i class="bi bi-check-circle me-2"></i>Activate Distribution
-                                                </h5>
-                                                <p class="card-text">Activate the distribution to make all systems operational.</p>
-                                                <form method="POST" class="d-inline">
-                                                    <input type="hidden" name="action" value="activate_distribution">
-                                                    <?= CSRFProtection::getTokenField('distribution_control') ?>
-                                                    <button type="submit" class="btn btn-primary">
-                                                        <i class="bi bi-lightning-fill me-1"></i>Activate
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        </div>
-                                    </div>
-                                <?php endif; ?>
-                                
-                                <?php if (in_array($workflow_status['distribution_status'], ['preparing', 'active'])): ?>
+                                <?php if ($workflow_status['distribution_status'] === 'active'): ?>
                                     <div class="col-md-6">
                                         <div class="card border-info">
                                             <div class="card-body">
@@ -862,25 +843,19 @@ $history_result = pg_query($connection, $history_query);
                                     </div>
                                 <?php endif; ?>
                                 
-                                <?php if ($workflow_status['can_finalize_distribution']): ?>
+                                <?php if ($workflow_status['distribution_status'] === 'active'): ?>
                                     <div class="col-md-12">
-                                        <div class="card border-danger">
-                                            <div class="card-body">
-                                                <h5 class="card-title text-danger">
-                                                    <i class="bi bi-check2-square me-2"></i>Finalize Distribution
-                                                </h5>
-                                                <p class="card-text">
-                                                    <strong>Warning:</strong> This will archive all current documents, close registration and uploads, 
-                                                    and prepare the system for the next cycle. This action cannot be undone.
+                                        <div class="alert alert-info d-flex align-items-center">
+                                            <i class="bi bi-info-circle-fill me-3" style="font-size: 1.5rem;"></i>
+                                            <div class="flex-grow-1">
+                                                <h6 class="mb-1">Distribution Active</h6>
+                                                <p class="mb-0">
+                                                    When you're ready to end this distribution cycle, go to the 
+                                                    <a href="end_distribution.php" class="alert-link fw-bold">
+                                                        <i class="bi bi-box-arrow-right me-1"></i>End Distribution
+                                                    </a> 
+                                                    page to finalize and archive all data.
                                                 </p>
-                                                <form method="POST" class="d-inline">
-                                                    <input type="hidden" name="action" value="finalize_distribution">
-                                                    <?= CSRFProtection::getTokenField('distribution_control') ?>
-                                                    <button type="submit" class="btn btn-danger" 
-                                                            onclick="return confirm('Are you sure you want to finalize this distribution? All documents will be archived and the system will reset.')">
-                                                        <i class="bi bi-archive me-1"></i>Finalize Distribution
-                                                    </button>
-                                                </form>
                                             </div>
                                         </div>
                                     </div>

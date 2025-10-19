@@ -1,19 +1,9 @@
 {
-    "schedule_published": true,
-    "schedule_meta": {
-        "start_date": "2025-10-24",
-        "end_date": "2025-10-24",
-        "location": "asdasda",
-        "batches": [
-            {
-                "start_time": "08:00",
-                "end_time": "17:00",
-                "capacity": 1
-            }
-        ],
-        "total_students": 1,
-        "schedule_dates": [
-            "2025-10-24"
-        ]
-    }
+    "schedule_published": false,
+    "archive_file_retention_years": 5,
+    "auto_compress_distributions": true,
+    "compress_after_days": 30,
+    "archive_compression_level": 6,
+    "max_storage_gb": 100,
+    "enable_file_archiving": true
 }
