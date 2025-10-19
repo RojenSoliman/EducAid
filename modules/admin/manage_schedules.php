@@ -466,126 +466,171 @@ if ($usedDatesResult) {
             <?php endif; ?>
 
             <!-- Stats Card -->
-            <div class="row mb-4">
+            <div class="row mb-4 g-4">
                 <div class="col-md-4">
-                    <div class="card border-primary">
-                        <div class="card-body text-center">
-                            <h5 class="card-title text-primary">Total Students</h5>
-                            <h3 class="text-primary"><?= number_format($countStudents) ?></h3>
+                    <div class="card border-0 shadow-sm h-100" style="border-radius: 12px; overflow: hidden; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <div class="card-body text-center text-white" style="padding: 2rem;">
+                            <div style="font-size: 3rem; margin-bottom: 0.5rem;">
+                                <i class="bi bi-people-fill"></i>
+                            </div>
+                            <h5 class="mb-2" style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.9;">Total Students</h5>
+                            <h2 class="mb-0 fw-bold" style="font-size: 2.5rem;"><?= number_format($countStudents) ?></h2>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div class="card border-success">
-                        <div class="card-body text-center">
-                            <h5 class="card-title text-success">Max Payroll Number</h5>
-                            <h3 class="text-success"><?= number_format($maxPayroll) ?></h3>
+                    <div class="card border-0 shadow-sm h-100" style="border-radius: 12px; overflow: hidden; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+                        <div class="card-body text-center text-white" style="padding: 2rem;">
+                            <div style="font-size: 3rem; margin-bottom: 0.5rem;">
+                                <i class="bi bi-hash"></i>
+                            </div>
+                            <h5 class="mb-2" style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.9;">Max Payroll Number</h5>
+                            <h2 class="mb-0 fw-bold" style="font-size: 2.5rem;"><?= number_format($maxPayroll) ?></h2>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div class="card border-info">
-                        <div class="card-body text-center">
-                            <h5 class="card-title text-info">Used Dates</h5>
-                            <h3 class="text-info"><?= count($usedDates) ?></h3>
+                    <div class="card border-0 shadow-sm h-100" style="border-radius: 12px; overflow: hidden; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                        <div class="card-body text-center text-white" style="padding: 2rem;">
+                            <div style="font-size: 3rem; margin-bottom: 0.5rem;">
+                                <i class="bi bi-calendar-check"></i>
+                            </div>
+                            <h5 class="mb-2" style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.9;">Used Dates</h5>
+                            <h2 class="mb-0 fw-bold" style="font-size: 2.5rem;"><?= count($usedDates) ?></h2>
                         </div>
                     </div>
                 </div>
             </div>
             <?php if ($scheduleExists && !empty($currentSchedule)): ?>
                 <!-- Current Schedule Display -->
-                <div class="card border-<?= $schedulePublished ? 'success' : 'warning' ?> mb-4">
-                    <div class="card-header bg-<?= $schedulePublished ? 'success' : 'warning' ?> text-white">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">
-                                <i class="bi bi-calendar-check"></i> Current Schedule
-                                <?php if ($schedulePublished): ?>
-                                    <span class="badge bg-light text-success ms-2">
-                                        <i class="bi bi-eye"></i> Visible to Students
-                                    </span>
+                <div class="card border-0 shadow-sm mb-4" style="border-radius: 12px; overflow: hidden; border-left: 5px solid <?= $schedulePublished ? '#10b981' : '#f59e0b' ?>;">
+                    <div class="card-header" style="background: <?= $schedulePublished ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' ?>; padding: 1.25rem;">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                            <div>
+                                <h5 class="mb-0 text-white fw-bold">
+                                    <i class="bi bi-calendar-check me-2"></i> Current Schedule
+                                    <?php if ($schedulePublished): ?>
+                                        <span class="badge bg-white text-success ms-2" style="padding: 0.5rem 1rem; font-size: 0.85rem; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+                                            <i class="bi bi-eye me-1"></i> Visible to Students
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge bg-white text-warning ms-2" style="padding: 0.5rem 1rem; font-size: 0.85rem; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+                                            <i class="bi bi-eye-slash me-1"></i> Hidden from Students
+                                        </span>
+                                    <?php endif; ?>
+                                </h5>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2 align-items-center">
+                                <?php if (!$schedulePublished): ?>
+                                    <form method="POST" class="mb-0">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                                        <button type="submit" name="publish_schedule" class="btn btn-light fw-bold" 
+                                                style="padding: 0.6rem 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: all 0.3s ease; color: <?= $schedulePublished ? '#059669' : '#d97706' ?>;"
+                                                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.25)';"
+                                                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';">
+                                            <i class="bi bi-send me-2"></i> Publish
+                                        </button>
+                                    </form>
                                 <?php else: ?>
-                                    <span class="badge bg-light text-warning ms-2">
-                                        <i class="bi bi-eye-slash"></i> Hidden from Students
-                                    </span>
+                                    <form method="POST" class="mb-0">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                                        <button type="submit" name="unpublish_schedule" class="btn btn-light fw-bold" 
+                                                style="padding: 0.6rem 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: all 0.3s ease; color: #059669;"
+                                                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.25)';"
+                                                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
+                                                onclick="return confirm('This will hide the schedule from students but preserve all data. Continue?')">
+                                            <i class="bi bi-eye-slash me-2"></i> Hide
+                                        </button>
+                                    </form>
                                 <?php endif; ?>
-                            </h5>
+                                <button type="button" class="btn btn-light fw-bold" 
+                                        onclick="clearSchedule()"
+                                        style="padding: 0.6rem 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: all 0.3s ease; color: #dc2626;"
+                                        onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.25)';"
+                                        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';">
+                                    <i class="bi bi-trash me-2"></i> Clear Data
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <div class="card-body">
-                        <div class="row mb-3">
+                    <div class="card-body" style="background: #f8f9fa; padding: 1.75rem;">
+                        <div class="row mb-4">
                             <div class="col-md-6">
-                                <strong>Date:</strong> <?= htmlspecialchars($currentSchedule[0]['distribution_date'] ?? 'N/A') ?>
+                                <div class="info-box" style="background: white; padding: 1.25rem; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                                    <div class="d-flex align-items-center">
+                                        <div class="icon-wrapper me-3" style="width: 50px; height: 50px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                                            <i class="bi bi-calendar3 text-white" style="font-size: 1.5rem;"></i>
+                                        </div>
+                                        <div>
+                                            <small class="text-muted text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Distribution Date</small>
+                                            <h6 class="mb-0 fw-bold text-dark"><?= htmlspecialchars($currentSchedule[0]['distribution_date'] ?? 'N/A') ?></h6>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div class="col-md-6">
-                                <strong>Location:</strong> <?= htmlspecialchars($currentSchedule[0]['location'] ?? 'N/A') ?>
+                                <div class="info-box" style="background: white; padding: 1.25rem; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                                    <div class="d-flex align-items-center">
+                                        <div class="icon-wrapper me-3" style="width: 50px; height: 50px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                                            <i class="bi bi-geo-alt text-white" style="font-size: 1.5rem;"></i>
+                                        </div>
+                                        <div>
+                                            <small class="text-muted text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.5px;">Location</small>
+                                            <h6 class="mb-0 fw-bold text-dark"><?= htmlspecialchars($currentSchedule[0]['location'] ?? 'N/A') ?></h6>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         
-                        <div class="table-responsive">
-                            <table class="table table-striped">
-                                <thead>
+                        <div class="table-responsive" style="background: white; border-radius: 10px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                            <table class="table table-hover mb-0">
+                                <thead style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
                                     <tr>
-                                        <th>Batch #</th>
-                                        <th>Time Slot</th>
-                                        <th>Students</th>
+                                        <th style="border: none; padding: 1rem; font-weight: 600; color: #374151;">Batch #</th>
+                                        <th style="border: none; padding: 1rem; font-weight: 600; color: #374151;">Time Slot</th>
+                                        <th style="border: none; padding: 1rem; font-weight: 600; color: #374151;">Students</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php foreach ($currentSchedule as $batch): ?>
-                                        <tr>
-                                            <td><span class="badge bg-primary">Batch <?= htmlspecialchars($batch['batch_no'] ?? '') ?></span></td>
-                                            <td><?= htmlspecialchars($batch['time_slot'] ?? 'N/A') ?></td>
-                                            <td><?= number_format($batch['student_count'] ?? 0) ?> students</td>
+                                        <tr style="border-bottom: 1px solid #e5e7eb;">
+                                            <td style="padding: 1rem;">
+                                                <span class="badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 0.5rem 1rem; font-size: 0.9rem; border-radius: 8px;">
+                                                    Batch <?= htmlspecialchars($batch['batch_no'] ?? '') ?>
+                                                </span>
+                                            </td>
+                                            <td style="padding: 1rem; color: #374151; font-weight: 500;">
+                                                <i class="bi bi-clock me-2 text-primary"></i><?= htmlspecialchars($batch['time_slot'] ?? 'N/A') ?>
+                                            </td>
+                                            <td style="padding: 1rem; color: #374151; font-weight: 500;">
+                                                <i class="bi bi-people me-2 text-success"></i><?= number_format($batch['student_count'] ?? 0) ?> students
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
                         </div>
-                        
-                        <div class="mt-3">
-                            <?php if (!$schedulePublished): ?>
-                                <form method="POST" class="d-inline">
-                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
-                                    <button type="submit" name="publish_schedule" class="btn btn-success">
-                                        <i class="bi bi-send"></i> Publish Schedule to Students
-                                    </button>
-                                </form>
-                                <small class="text-muted ms-2">Schedule will be visible to students</small>
-                            <?php else: ?>
-                                <span class="badge bg-success fs-6 me-2">
-                                    <i class="bi bi-check-circle"></i> Schedule Published & Visible to Students
-                                </span>
-                                <form method="POST" class="d-inline">
-                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
-                                    <button type="submit" name="unpublish_schedule" class="btn btn-outline-warning" 
-                                            onclick="return confirm('This will hide the schedule from students but preserve all data. Continue?')">
-                                        <i class="bi bi-eye-slash"></i> Hide from Students
-                                    </button>
-                                </form>
-                                <small class="text-muted ms-2">Data will be preserved</small>
-                            <?php endif; ?>
-                            
-                            <div class="mt-2">
-                                <button type="button" class="btn btn-danger" onclick="clearSchedule()">
-                                    <i class="bi bi-trash"></i> Clear All Schedule Data
-                                </button>
-                                <small class="text-muted ms-2">This will permanently delete all schedules</small>
-                            </div>
-                        </div>
                     </div>
                 </div>
             <?php else: ?>
                 <!-- Create New Schedule -->
-                <div class="card border-primary">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Create New Schedule</h5>
+                <div class="card border-0 shadow-sm" style="border-radius: 12px; overflow: hidden;">
+                    <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.25rem;">
+                        <h5 class="mb-0 text-white fw-bold"><i class="bi bi-plus-circle me-2"></i> Create New Schedule</h5>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" style="background: #f8f9fa; padding: 2rem;">
                         <?php if (!empty($documents_deadline)): ?>
-                        <div class="alert alert-info d-flex align-items-center" role="alert">
-                            <i class="bi bi-info-circle-fill me-2"></i>
-                            <div>
-                                Documents submission deadline is <strong><?= htmlspecialchars($documents_deadline) ?></strong>. Schedules must start on or after this date.
+                        <div class="alert d-flex align-items-start mb-4" style="background: white; border-left: 4px solid #3b82f6; border-radius: 8px; box-shadow: 0 2px 8px rgba(59,130,246,0.1);">
+                            <div class="me-3" style="font-size: 1.5rem; color: #3b82f6;">
+                                <i class="bi bi-info-circle-fill"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h6 class="fw-bold text-primary mb-1">Documents Submission Deadline</h6>
+                                <p class="mb-0 text-dark">
+                                    Documents submission deadline is <strong class="text-primary"><?= htmlspecialchars($documents_deadline) ?></strong>. 
+                                    Schedules must start on or after this date.
+                                </p>
                             </div>
                         </div>
                         <?php endif; ?>
@@ -651,11 +696,15 @@ if ($usedDatesResult) {
 
                             <!-- Submit Button -->
                             <div class="text-center mt-4" id="submit-container" style="display: none;">
-                                <button type="button" class="btn btn-success btn-lg me-2" onclick="createSchedule()">
-                                    <i class="bi bi-calendar-plus"></i> Create Schedule
+                                <button type="button" class="btn btn-lg me-2 fw-bold" onclick="createSchedule()"
+                                        style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; color: white; padding: 0.75rem 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(16,185,129,0.3); transition: all 0.3s ease;"
+                                        onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(16,185,129,0.4)';"
+                                        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(16,185,129,0.3)';">
+                                    <i class="bi bi-calendar-plus me-2"></i> Create Schedule
                                 </button>
-                                <button type="button" class="btn btn-info btn-sm" onclick="debugBatches()">
-                                    <i class="bi bi-bug"></i> Debug Info
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="debugBatches()"
+                                        style="padding: 0.5rem 1.5rem; border-radius: 8px;">
+                                    <i class="bi bi-bug me-2"></i> Debug Info
                                 </button>
                             </div>
                         </form>
@@ -665,15 +714,17 @@ if ($usedDatesResult) {
 
             <!-- Used Dates Display -->
             <?php if (!empty($usedDates)): ?>
-                <div class="card border-warning mt-4">
-                    <div class="card-header bg-warning text-dark">
-                        <h6 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Previously Used Dates</h6>
+                <div class="card border-0 shadow-sm mt-4" style="border-radius: 12px; overflow: hidden; border-left: 5px solid #f59e0b;">
+                    <div class="card-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 1.25rem;">
+                        <h6 class="mb-0 text-white fw-bold"><i class="bi bi-exclamation-triangle me-2"></i> Previously Used Dates</h6>
                     </div>
-                    <div class="card-body">
-                        <div class="row">
+                    <div class="card-body" style="background: white; padding: 1.75rem;">
+                        <div class="row g-3">
                             <?php foreach ($usedDates as $date): ?>
-                                <div class="col-md-2 mb-2">
-                                    <span class="badge bg-secondary"><?= htmlspecialchars($date) ?></span>
+                                <div class="col-md-2 col-sm-3 col-6">
+                                    <span class="badge w-100" style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); padding: 0.75rem; font-size: 0.9rem; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);">
+                                        <i class="bi bi-calendar-x me-1"></i><?= htmlspecialchars($date) ?>
+                                    </span>
                                 </div>
                             <?php endforeach; ?>
                         </div>

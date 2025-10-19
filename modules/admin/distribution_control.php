@@ -893,32 +893,78 @@ $history_result = pg_query($connection, $history_query);
                             </div>
                         <?php endif; ?>
                         
-                        <!-- Debug Information -->
-                        <div class="card border-info mt-4">
-                            <div class="card-header bg-light">
-                                <h6 class="card-title mb-0">
+                        <!-- System Information -->
+                        <div class="card border-0 shadow-sm mt-4" style="border-radius: 12px; overflow: hidden;">
+                            <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.25rem;">
+                                <h5 class="mb-0 text-white fw-bold">
                                     <i class="fas fa-info-circle me-2"></i>
                                     System Information
-                                </h6>
+                                </h5>
                             </div>
-                            <div class="card-body">
-                                <div class="row">
+                            <div class="card-body" style="background: #f8f9fa; padding: 1.75rem;">
+                                <div class="row g-4">
+                                    <!-- Configuration Status Column -->
                                     <div class="col-md-6">
-                                        <small class="text-muted">Configuration Status:</small>
-                                        <ul class="list-unstyled small">
-                                            <li><strong>Distribution Status:</strong> <?= htmlspecialchars($distribution_status) ?></li>
-                                            <li><strong>Uploads Enabled:</strong> <?= htmlspecialchars($uploads_enabled ? 'Yes' : 'No') ?></li>
-                                            <li><strong>Academic Year:</strong> <?= htmlspecialchars($current_academic_year ?: 'Not Set') ?></li>
-                                            <li><strong>Semester:</strong> <?= htmlspecialchars($current_semester ?: 'Not Set') ?></li>
-                                        </ul>
+                                        <div class="info-section" style="background: white; padding: 1.5rem; border-radius: 10px; height: 100%; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                                            <h6 class="fw-bold text-primary mb-3" style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                <i class="fas fa-cog me-2"></i>Configuration Status
+                                            </h6>
+                                            <div class="info-grid">
+                                                <div class="info-item d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
+                                                    <span class="text-muted" style="font-size: 0.9rem;">Distribution Status:</span>
+                                                    <span class="badge <?= $distribution_status === 'active' ? 'bg-success' : ($distribution_status === 'preparing' ? 'bg-warning text-dark' : ($distribution_status === 'finalized' ? 'bg-info' : 'bg-secondary')) ?>" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
+                                                        <?= ucfirst(htmlspecialchars($distribution_status)) ?>
+                                                    </span>
+                                                </div>
+                                                <div class="info-item d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
+                                                    <span class="text-muted" style="font-size: 0.9rem;">Uploads Status:</span>
+                                                    <span class="badge <?= $uploads_enabled ? 'bg-success' : 'bg-danger' ?>" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
+                                                        <?= $uploads_enabled ? 'Enabled' : 'Disabled' ?>
+                                                    </span>
+                                                </div>
+                                                <div class="info-item d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
+                                                    <span class="text-muted" style="font-size: 0.9rem;">Academic Year:</span>
+                                                    <span class="fw-bold text-dark" style="font-size: 0.9rem;">
+                                                        <?= htmlspecialchars($current_academic_year ?: 'Not Set') ?>
+                                                    </span>
+                                                </div>
+                                                <div class="info-item d-flex justify-content-between align-items-center">
+                                                    <span class="text-muted" style="font-size: 0.9rem;">Semester:</span>
+                                                    <span class="fw-bold text-dark" style="font-size: 0.9rem;">
+                                                        <?= htmlspecialchars($current_semester ?: 'Not Set') ?>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
+                                    
+                                    <!-- Student Counts Column -->
                                     <div class="col-md-6">
-                                        <small class="text-muted">Student Counts:</small>
-                                        <ul class="list-unstyled small">
-                                            <li><strong>Total Students:</strong> <?= $student_counts['total_students'] ?></li>
-                                            <li><strong>Verified Students:</strong> <?= $student_counts['verified_students'] ?></li>
-                                            <li><strong>Pending Verification:</strong> <?= $student_counts['pending_verification'] ?></li>
-                                        </ul>
+                                        <div class="info-section" style="background: white; padding: 1.5rem; border-radius: 10px; height: 100%; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                                            <h6 class="fw-bold text-success mb-3" style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                <i class="fas fa-users me-2"></i>Student Statistics
+                                            </h6>
+                                            <div class="info-grid">
+                                                <div class="info-item d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
+                                                    <span class="text-muted" style="font-size: 0.9rem;">Total Students:</span>
+                                                    <span class="badge bg-primary" style="font-size: 1rem; padding: 0.4rem 0.8rem; min-width: 50px;">
+                                                        <?= number_format($student_counts['total_students']) ?>
+                                                    </span>
+                                                </div>
+                                                <div class="info-item d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
+                                                    <span class="text-muted" style="font-size: 0.9rem;">Verified Students:</span>
+                                                    <span class="badge bg-success" style="font-size: 1rem; padding: 0.4rem 0.8rem; min-width: 50px;">
+                                                        <?= number_format($student_counts['verified_students']) ?>
+                                                    </span>
+                                                </div>
+                                                <div class="info-item d-flex justify-content-between align-items-center">
+                                                    <span class="text-muted" style="font-size: 0.9rem;">Pending Verification:</span>
+                                                    <span class="badge bg-warning text-dark" style="font-size: 1rem; padding: 0.4rem 0.8rem; min-width: 50px;">
+                                                        <?= number_format($student_counts['pending_verification']) ?>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -926,27 +972,44 @@ $history_result = pg_query($connection, $history_query);
                         
                         <!-- Emergency Reset Option -->
                         <?php if ($distribution_status === 'active' || $distribution_status === 'finalized'): ?>
-                            <div class="card border-warning mt-4">
-                                <div class="card-header bg-warning text-dark">
-                                    <h5 class="card-title mb-0">
+                            <div class="card border-0 shadow-sm mt-4" style="border-radius: 12px; overflow: hidden; border-left: 5px solid #dc3545;">
+                                <div class="card-header" style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); padding: 1.25rem;">
+                                    <h5 class="mb-0 text-white fw-bold">
                                         <i class="fas fa-exclamation-triangle me-2"></i>
                                         Emergency Reset
                                     </h5>
                                 </div>
-                                <div class="card-body">
-                                    <div class="alert alert-warning">
-                                        <i class="fas fa-exclamation-triangle me-2"></i>
-                                        <strong>Warning:</strong> This will reset the distribution system to inactive state. 
-                                        Use only if the system is stuck or experiencing errors.
+                                <div class="card-body" style="background: #fff5f5; padding: 1.75rem;">
+                                    <div class="alert alert-danger d-flex align-items-start" style="border-left: 4px solid #dc3545; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(220,53,69,0.1);">
+                                        <div class="me-3" style="font-size: 2rem; color: #dc3545;">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <h6 class="fw-bold text-danger mb-2">⚠️ Critical Action Warning</h6>
+                                            <p class="mb-0 text-dark" style="font-size: 0.95rem;">
+                                                This will <strong>immediately reset</strong> the distribution system to inactive state. 
+                                                Use only if the system is stuck, experiencing critical errors, or requires emergency intervention.
+                                            </p>
+                                            <p class="mb-0 mt-2 text-muted small">
+                                                <i class="fas fa-info-circle me-1"></i>
+                                                This action cannot be undone. All active distribution workflows will be terminated.
+                                            </p>
+                                        </div>
                                     </div>
-                                    <form method="POST" class="d-inline">
-                                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
-                                        <button type="submit" name="action" value="reset_distribution" 
-                                                class="btn btn-warning"
-                                                onclick="return confirm('Are you sure you want to reset the distribution system? This will deactivate the current distribution.')">
-                                            Reset Distribution System
-                                        </button>
-                                    </form>
+                                    <div class="d-flex justify-content-end mt-3">
+                                        <form method="POST" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
+                                            <button type="submit" name="action" value="reset_distribution" 
+                                                    class="btn btn-danger btn-lg fw-bold" 
+                                                    style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); border: none; padding: 0.75rem 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(220,53,69,0.3); transition: all 0.3s ease;"
+                                                    onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(220,53,69,0.4)';"
+                                                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(220,53,69,0.3)';"
+                                                    onclick="return confirm('⚠️ CRITICAL WARNING ⚠️\n\nAre you absolutely sure you want to reset the distribution system?\n\nThis will:\n• Deactivate the current distribution\n• Stop all active workflows\n• Reset system to inactive state\n\nThis action CANNOT be undone!\n\nClick OK to proceed or Cancel to abort.')">
+                                                <i class="fas fa-power-off me-2"></i>
+                                                Reset Distribution System
+                                            </button>
+                                        </form>
+                                    </div>
                                 </div>
                             </div>
                         <?php endif; ?>
