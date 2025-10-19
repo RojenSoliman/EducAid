@@ -8,6 +8,14 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 
+// Check workflow permissions - must have active distribution
+$workflow_status = getWorkflowStatus($connection);
+if (!$workflow_status['can_verify_students']) {
+    $_SESSION['error_message'] = "Please start a distribution first before verifying students. Go to Distribution Control to begin.";
+    header("Location: distribution_control.php");
+    exit;
+}
+
 /* ---------------------------
    CONFIG / STATE
 ----------------------------*/
@@ -17,8 +25,7 @@ if ($configResult && $row = pg_fetch_assoc($configResult)) {
     $isFinalized = ($row['value'] === '1');
 }
 
-// Get workflow status
-$workflow_status = getWorkflowStatus($connection);
+// Get student counts
 $student_counts = getStudentCounts($connection);
 
 /* ---------------------------

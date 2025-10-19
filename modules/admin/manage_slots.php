@@ -7,6 +7,15 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 
+// Check workflow permissions - must have active distribution
+require_once __DIR__ . '/../../includes/workflow_control.php';
+$workflow_status = getWorkflowStatus($connection);
+if (!$workflow_status['can_manage_slots']) {
+    $_SESSION['error_message'] = "Please start a distribution first before managing slots. Go to Distribution Control to begin.";
+    header("Location: distribution_control.php");
+    exit;
+}
+
 $municipality_id = 1;
 
 function formatName($last, $first, $middle) {
@@ -352,19 +361,30 @@ if ($slotInfo) {
     ", [$slot_id, $municipality_id]);
     $pendingCount = intval(pg_fetch_result($pendingCountResult, 0, 0));
 
-    // Count approved registrations for this slot (applicant, verified, given)
+    // Count approved registrations for this slot (applicant, verified, given, active)
     $approvedCountResult = pg_query_params($connection, "
         SELECT COUNT(*) FROM students 
-        WHERE slot_id = $1 AND status IN ('applicant', 'verified', 'given') AND municipality_id = $2
+        WHERE slot_id = $1 AND status IN ('applicant', 'verified', 'active', 'given') AND municipality_id = $2
     ", [$slot_id, $municipality_id]);
     $approvedCount = intval(pg_fetch_result($approvedCountResult, 0, 0));
 
+    // Get applicants list - include all relevant statuses
     $res = pg_query_params($connection, "
         SELECT s.first_name, s.middle_name, s.last_name, s.application_date, s.status, a.semester, a.academic_year
         FROM students s
         LEFT JOIN applications a ON s.student_id = a.student_id
-        WHERE s.slot_id = $1 AND (s.status = 'under_registration' OR s.status = 'applicant') AND s.municipality_id = $2
-        ORDER BY s.status DESC, s.application_date DESC
+        WHERE s.slot_id = $1 
+        AND s.status IN ('under_registration', 'applicant', 'verified', 'active')
+        AND s.municipality_id = $2
+        ORDER BY 
+            CASE 
+                WHEN s.status = 'under_registration' THEN 1
+                WHEN s.status = 'applicant' THEN 2
+                WHEN s.status = 'verified' THEN 3
+                WHEN s.status = 'active' THEN 4
+                ELSE 5
+            END,
+            s.application_date DESC
         LIMIT $3 OFFSET $4
     ", [$slot_id, $municipality_id, $limit, $offset]);
 
@@ -800,6 +820,12 @@ if ($res) {
                             <span class="badge bg-warning">Pending Approval</span>
                           <?php elseif ($a['status'] === 'applicant'): ?>
                             <span class="badge bg-success">Approved</span>
+                          <?php elseif ($a['status'] === 'verified'): ?>
+                            <span class="badge bg-info">Verified</span>
+                          <?php elseif ($a['status'] === 'active'): ?>
+                            <span class="badge bg-primary">Active</span>
+                          <?php else: ?>
+                            <span class="badge bg-secondary"><?php echo htmlspecialchars(ucfirst($a['status'])); ?></span>
                           <?php endif; ?>
                         </td>
                       </tr>

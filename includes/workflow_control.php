@@ -6,14 +6,15 @@
  * Check if payroll numbers and QR codes have been generated
  */
 function hasPayrollAndQR($connection) {
-    // Check if there are active students with payroll numbers and QR codes
+    // Check if there are active OR given students with payroll numbers and QR codes
+    // Include 'given' status to prevent locking during active distribution
     $query = "
         SELECT COUNT(*) as total,
                COUNT(CASE WHEN s.payroll_no > 0 THEN 1 END) as with_payroll,
                COUNT(q.qr_id) as with_qr
         FROM students s
         LEFT JOIN qr_codes q ON q.student_id = s.student_id
-        WHERE s.status = 'active'
+        WHERE s.status IN ('active', 'given')
     ";
     
     $result = pg_query($connection, $query);
@@ -109,6 +110,9 @@ function areUploadsEnabled($connection) {
 function getWorkflowStatus($connection) {
     $distributionStatus = getDistributionStatus($connection);
     
+    // Distribution must be 'preparing' or 'active' to manage applicants and slots
+    $distributionOpen = in_array($distributionStatus, ['preparing', 'active']);
+    
     return [
         'list_finalized' => isStudentListFinalized($connection),
         'has_payroll_qr' => hasPayrollAndQR($connection),
@@ -116,6 +120,9 @@ function getWorkflowStatus($connection) {
         'can_schedule' => hasPayrollAndQR($connection),
         'can_scan_qr' => hasPayrollAndQR($connection),
         'can_revert_payroll' => hasPayrollAndQR($connection) && !hasSchedules($connection),
+        'can_manage_applicants' => $distributionOpen,
+        'can_verify_students' => $distributionOpen,
+        'can_manage_slots' => $distributionOpen,
         'distribution_status' => $distributionStatus,
         'slots_open' => areSlotsOpen($connection),
         'uploads_enabled' => areUploadsEnabled($connection),

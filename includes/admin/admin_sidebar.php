@@ -50,6 +50,9 @@ $role_label = match($admin_role) {
 $current = basename($_SERVER['PHP_SELF']);
 $canSchedule = (bool)($workflow_status['can_schedule'] ?? false);
 $canScanQR   = (bool)($workflow_status['can_scan_qr'] ?? false);
+$canManageApplicants = (bool)($workflow_status['can_manage_applicants'] ?? false);
+$canVerifyStudents = (bool)($workflow_status['can_verify_students'] ?? false);
+$canManageSlots = (bool)($workflow_status['can_manage_slots'] ?? false);
 
 /** Helpers */
 if (!function_exists('is_active')) {
@@ -126,7 +129,17 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
     <?= menu_link('review_registrations.php', 'bi bi-clipboard-check', 'Review Registrations', is_active('review_registrations.php', $current)); ?>
 
     <!-- Manage Applicants -->
-    <?= menu_link('manage_applicants.php', 'bi bi-people', 'Manage Applicants', is_active('manage_applicants.php', $current)); ?>
+    <?php if ($canManageApplicants): ?>
+      <?= menu_link('manage_applicants.php', 'bi bi-people', 'Manage Applicants', is_active('manage_applicants.php', $current)); ?>
+    <?php else: ?>
+      <li class="nav-item">
+        <a href="#" class="text-muted" onclick="alert('Please start a distribution first before managing applicants.'); return false;">
+          <i class="bi bi-people icon"></i>
+          <span class="links_name">Manage Applicants</span>
+          <span class="badge bg-secondary ms-auto">Locked</span>
+        </a>
+      </li>
+    <?php endif; ?>
 
     <!-- My Profile -->
     <?= menu_link('admin_profile.php', 'bi bi-person-circle', 'My Profile', is_active('admin_profile.php', $current)); ?>
@@ -147,14 +160,32 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
             </a>
           </li>
           <li>
-            <a class="submenu-link <?= is_active('manage_slots.php', $current) ? 'active' : '' ?>" href="manage_slots.php">
-              <i class="bi bi-sliders me-2"></i> Signup Slots
-            </a>
+            <?php if ($canManageSlots): ?>
+              <a class="submenu-link <?= is_active('manage_slots.php', $current) ? 'active' : '' ?>" href="manage_slots.php">
+                <i class="bi bi-sliders me-2"></i> Signup Slots
+                <span class="badge bg-info ms-2">Ready</span>
+              </a>
+            <?php else: ?>
+              <a class="submenu-link text-muted" href="#"
+                 onclick="alert('Please start a distribution first before managing slots.'); return false;">
+                <i class="bi bi-sliders me-2"></i> Signup Slots
+                <span class="badge bg-secondary ms-2">Locked</span>
+              </a>
+            <?php endif; ?>
           </li>
           <li>
-            <a class="submenu-link <?= is_active('verify_students.php', $current) ? 'active' : '' ?>" href="verify_students.php">
-              <i class="bi bi-person-check me-2"></i> Verify Students
-            </a>
+            <?php if ($canVerifyStudents): ?>
+              <a class="submenu-link <?= is_active('verify_students.php', $current) ? 'active' : '' ?>" href="verify_students.php">
+                <i class="bi bi-person-check me-2"></i> Verify Students
+                <span class="badge bg-info ms-2">Ready</span>
+              </a>
+            <?php else: ?>
+              <a class="submenu-link text-muted" href="#"
+                 onclick="alert('Please start a distribution first before verifying students.'); return false;">
+                <i class="bi bi-person-check me-2"></i> Verify Students
+                <span class="badge bg-secondary ms-2">Locked</span>
+              </a>
+            <?php endif; ?>
           </li>
           <li>
             <?php if ($canSchedule): ?>
@@ -187,6 +218,35 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
           <li>
             <a class="submenu-link <?= is_active('manage_distributions.php', $current) ? 'active' : '' ?>" href="manage_distributions.php">
               <i class="bi bi-box-arrow-in-down me-2"></i> Manage Distributions
+            </a>
+          </li>
+          
+          <!-- Divider -->
+          <li><hr class="dropdown-divider my-2"></li>
+          
+          <li>
+            <a class="submenu-link <?= is_active('end_distribution.php', $current) ? 'active' : '' ?>" href="end_distribution.php">
+              <i class="bi bi-stop-circle me-2"></i> End Distribution
+            </a>
+          </li>
+          <li>
+            <a class="submenu-link <?= is_active('distribution_archives.php', $current) ? 'active' : '' ?>" href="distribution_archives.php">
+              <i class="bi bi-archive me-2"></i> Distribution Archives
+            </a>
+          </li>
+          <li>
+            <a class="submenu-link <?= is_active('storage_dashboard.php', $current) ? 'active' : '' ?>" href="storage_dashboard.php">
+              <i class="bi bi-hdd me-2"></i> Storage Dashboard
+            </a>
+          </li>
+          
+          <!-- Divider -->
+          <li><hr class="dropdown-divider my-2"></li>
+          
+          <li>
+            <a class="submenu-link <?= is_active('reset_distribution.php', $current) ? 'active' : '' ?>" href="reset_distribution.php">
+              <i class="bi bi-arrow-counterclockwise me-2"></i> Reset Distribution
+              <span class="badge bg-warning ms-2">DEV</span>
             </a>
           </li>
         </ul>
