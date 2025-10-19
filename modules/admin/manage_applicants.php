@@ -740,11 +740,19 @@ function render_table($applicants, $connection) {
                             </div>
                             <div class="modal-body">
                                 <?php
-                                // First, get documents from database
+                                // First, get documents from database (only those with valid file paths that exist)
                                 $docs = pg_query_params($connection, "SELECT * FROM documents WHERE student_id = $1", [$student_id]);
                                 $db_documents = [];
                                 while ($doc = pg_fetch_assoc($docs)) {
-                                    $db_documents[$doc['type']] = $doc['file_path'];
+                                    // Only include documents where the file actually exists
+                                    $filePath = $doc['file_path'];
+                                    $server_root = dirname(__DIR__, 2);
+                                    $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+                                    $server_path = $server_root . '/' . $relative_from_root;
+                                    
+                                    if (file_exists($server_path)) {
+                                        $db_documents[$doc['type']] = $doc['file_path'];
+                                    }
                                 }
                                 
                                 // Map academic_grades to grades for consistency with other document lookups
@@ -780,6 +788,10 @@ function render_table($applicants, $connection) {
                                         $server_root = dirname(__DIR__, 2);
                                         $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
                                         $server_path = $server_root . '/' . $relative_from_root;
+                                        
+                                        // Convert to web-root relative path for browser (not file system)
+                                        // From modules/admin/, ../../ goes to root, so just use the path after ../../
+                                        $webPath = '../../' . $relative_from_root;
 
                                         // Check extension for image vs PDF (trim filename for safety)
                                         $cleanPath = basename($filePath);
@@ -811,10 +823,10 @@ function render_table($applicants, $connection) {
                                         }
 
                                         $thumbHtml = $is_image
-                                            ? "<img src='" . htmlspecialchars($filePath) . "' class='doc-thumb' alt='$cardTitle'>"
+                                            ? "<img src='" . htmlspecialchars($webPath) . "' class='doc-thumb' alt='$cardTitle' onerror=\"console.error('Failed to load:', this.src); this.parentElement.innerHTML='<div class=\\'doc-thumb doc-thumb-pdf\\'><i class=\\'bi bi-exclamation-triangle\\'></i></div>';\">"
                                             : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
 
-                                        $safeSrc = htmlspecialchars($filePath);
+                                        $safeSrc = htmlspecialchars($webPath);
                                         echo "<div class='doc-card'>
                                                 <div class='doc-card-header'>$cardTitle $ocr_confidence_badge</div>
                                                 <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
@@ -823,13 +835,14 @@ function render_table($applicants, $connection) {
                                                     ($size_str ? "<span><i class='bi bi-hdd me-1'></i>$size_str</span>" : "") .
                                                 "</div>
                                                 <div class='doc-actions'>
-                                                    <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\"><i class='bi bi-eye me-1'></i>View</button>
-                                                    <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank'><i class='bi bi-box-arrow-up-right me-1'></i>Open</a>
-                                                    <a class='btn btn-sm btn-outline-success' href='$safeSrc' download><i class='bi bi-download me-1'></i>Download</a>";
+                                                    <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\" title='View Document'><i class='bi bi-eye'></i></button>
+                                                    <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank' title='Open in New Tab'><i class='bi bi-box-arrow-up-right'></i></a>
+                                                    <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>";
                                         
-                                        // Add validation details button if OCR data exists
+                                        // Add validation details button if OCR data exists (full width, new row)
                                         if ($ocr_confidence_badge) {
-                                            echo "<button type='button' class='btn btn-sm btn-outline-info mt-1 w-100' 
+                                            echo "</div><div class='doc-actions' style='border-top: 0; padding-top: 0;'>
+                                                  <button type='button' class='btn btn-sm btn-outline-info w-100' 
                                                   data-bs-toggle='modal' data-bs-target='#validationModal' 
                                                   onclick=\"loadValidationData('$type', '$student_id')\">
                                                   <i class='bi bi-clipboard-data me-1'></i>View Validation
@@ -868,6 +881,9 @@ function render_table($applicants, $connection) {
                                     $server_root = dirname(__DIR__, 2);
                                     $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
                                     $server_path = $server_root . '/' . $relative_from_root;
+                                    
+                                    // Convert to web-root relative path for browser
+                                    $webPath = '../../' . $relative_from_root;
 
                                     // Check extension for image vs PDF (trim filename for safety)
                                     $cleanPath = basename($filePath);
@@ -885,10 +901,10 @@ function render_table($applicants, $connection) {
                                     }
 
                                     $thumbHtml = $is_image
-                                        ? "<img src='" . htmlspecialchars($filePath) . "' class='doc-thumb' alt='$cardTitle'>"
+                                        ? "<img src='" . htmlspecialchars($webPath) . "' class='doc-thumb' alt='$cardTitle' onerror=\"console.error('Failed to load:', this.src); this.parentElement.innerHTML='<div class=\\'doc-thumb doc-thumb-pdf\\'><i class=\\'bi bi-exclamation-triangle\\'></i></div>';\">"
                                         : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
 
-                                    $safeSrc = htmlspecialchars($filePath);
+                                    $safeSrc = htmlspecialchars($webPath);
                                     
                                     // Check for OCR confidence from documents table
                                     $ocr_confidence = '';
@@ -910,21 +926,25 @@ function render_table($applicants, $connection) {
                                                 ($size_str ? "<span><i class='bi bi-hdd me-1'></i>$size_str</span>" : "") .
                                             "</div>
                                             <div class='doc-actions'>
-                                                <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\"><i class='bi bi-eye me-1'></i>View</button>
-                                                <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank'><i class='bi bi-box-arrow-up-right me-1'></i>Open</a>
-                                                <a class='btn btn-sm btn-outline-success' href='$safeSrc' download><i class='bi bi-download me-1'></i>Download</a>";
+                                                <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\" title='View Document'><i class='bi bi-eye'></i></button>
+                                                <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank' title='Open in New Tab'><i class='bi bi-box-arrow-up-right'></i></a>
+                                                <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>
+                                            </div>";
                                     
-                                    // Add validation details button if OCR data exists
+                                    // Add validation and review buttons on separate rows (full width)
                                     if ($ocr_confidence) {
-                                        echo "<button type='button' class='btn btn-sm btn-outline-info mt-1 w-100' 
+                                        echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
+                                              <button type='button' class='btn btn-sm btn-outline-info w-100' 
                                               data-bs-toggle='modal' data-bs-target='#validationModal' 
                                               onclick=\"loadValidationData('grades', '$student_id')\">
                                               <i class='bi bi-clipboard-data me-1'></i>View Validation
-                                              </button>";
+                                              </button>
+                                              </div>";
                                     }
                                     
-                                    echo "<a class='btn btn-sm btn-outline-primary mt-1 w-100' href='validate_grades.php'><i class='bi bi-check2-square me-1'></i>Review in Validator</a>
-                                            </div>
+                                    echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
+                                          <a class='btn btn-sm btn-outline-primary w-100' href='validate_grades.php'><i class='bi bi-check2-square me-1'></i>Review in Validator</a>
+                                          </div>
                                           </div>";
                                 } else {
                                     echo "<div class='doc-card doc-card-missing'>
@@ -2030,7 +2050,8 @@ document.addEventListener('DOMContentLoaded', function() {
 .doc-thumb { max-width: 100%; max-height: 150px; border-radius: 4px; }
 .doc-thumb-pdf { font-size: 48px; color: #d32f2f; display: flex; align-items: center; justify-content: center; height: 150px; width: 100%; }
 .doc-meta { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; color: #6b7280; font-size: 12px; border-top: 1px dashed #eee; }
-.doc-actions { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #f0f0f0; }
+.doc-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-top: 1px solid #f0f0f0; }
+.doc-actions .btn { flex: 1 1 auto; min-width: 70px; font-size: 0.75rem; padding: 4px 8px; }
 .doc-card-missing .missing { background: #fff7e6; color: #8a6d3b; min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .doc-card-missing .missing-icon { font-size: 28px; margin-bottom: 6px; }
 

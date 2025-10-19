@@ -171,6 +171,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
         
         $snapshot_exists = $check_snapshot && pg_num_rows($check_snapshot) > 0;
         
+        // Generate distribution ID for archive linking
+        $municipality_name = 'GENERALTRIAS'; // Can be fetched from config
+        $distribution_id = $municipality_name . '-DISTR-' . date('Y-m-d-His');
+        $archive_filename = $distribution_id . '.zip';
+        
         if ($snapshot_exists) {
             // Update existing snapshot instead of creating a new one
             $existing_snapshot = pg_fetch_assoc($check_snapshot);
@@ -183,14 +188,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
                     finalized_by = $5, 
                     notes = $6,
                     schedules_data = $7, 
-                    students_data = $8
-                WHERE snapshot_id = $9
+                    students_data = $8,
+                    distribution_id = $9,
+                    archive_filename = $10
+                WHERE snapshot_id = $11
             ";
             
             $snapshot_result = pg_query_params($connection, $snapshot_query, [
                 date('Y-m-d'), $location, $total_students, $slot_data['slot_id'] ?? null,
                 $admin_id, $notes,
                 json_encode($schedules_data), json_encode($students_data),
+                $distribution_id, $archive_filename,
                 $existing_snapshot['snapshot_id']
             ]);
         } else {
@@ -198,14 +206,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
             $snapshot_query = "
                 INSERT INTO distribution_snapshots 
                 (distribution_date, location, total_students_count, active_slot_id, academic_year, semester, 
-                 finalized_by, notes, schedules_data, students_data)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 finalized_by, notes, schedules_data, students_data, distribution_id, archive_filename)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ";
             
             $snapshot_result = pg_query_params($connection, $snapshot_query, [
                 date('Y-m-d'), $location, $total_students, $slot_data['slot_id'] ?? null,
                 $academic_year, $semester, $admin_id, $notes,
-                json_encode($schedules_data), json_encode($students_data)
+                json_encode($schedules_data), json_encode($students_data),
+                $distribution_id, $archive_filename
             ]);
         }
         

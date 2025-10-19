@@ -10,8 +10,43 @@ require_once __DIR__ . '/../../services/DistributionManager.php';
 require_once __DIR__ . '/../../services/FileCompressionService.php';
 
 /**
- * Reset students who received aid back to applicant status, clearing payroll numbers and QR codes.
+ * Delete all student uploaded documents from the file system
+ */
+function deleteAllStudentUploads() {
+    $uploadsPath = __DIR__ . '/../../assets/uploads/student';
+    $documentTypes = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_to_mayor'];
+    
+    $totalDeleted = 0;
+    $errors = [];
+    
+    foreach ($documentTypes as $type) {
+        $folderPath = $uploadsPath . '/' . $type;
+        if (is_dir($folderPath)) {
+            $files = glob($folderPath . '/*.*');
+            foreach ($files as $file) {
+                if (is_file($file)) {
+                    if (unlink($file)) {
+                        $totalDeleted++;
+                    } else {
+                        $errors[] = "Failed to delete: " . basename($file);
+                    }
+                }
+            }
+        }
+    }
+    
+    error_log("Deleted $totalDeleted student upload files during distribution end");
+    if (!empty($errors)) {
+        error_log("File deletion errors: " . implode(', ', $errors));
+    }
+    
+    return $totalDeleted;
+}
+
+/**
+ * Reset students who received aid back to applicant status, clearing payroll numbers, QR codes, and uploaded documents.
  * Handles schema differences (payroll_no vs payroll_number, qr_code vs qr_code_path).
+ * Dynamically discovers document path column names.
  */
 function resetGivenStudents($connection) {
     static $columnCache = null;
@@ -24,6 +59,7 @@ function resetGivenStudents($connection) {
             'qr_code' => false,
         ];
 
+        // Check for payroll and QR code columns
         $columnQuery = "SELECT column_name FROM information_schema.columns WHERE table_name = 'students' AND column_name IN ('payroll_no','payroll_number','qr_code_path','qr_code')";
         $columnResult = pg_query($connection, $columnQuery);
         if ($columnResult) {
@@ -34,8 +70,47 @@ function resetGivenStudents($connection) {
                 }
             }
         }
+        
+        // Find all columns that likely contain document paths
+        // Look for columns ending in _path, _file, or containing 'document', 'upload', etc.
+        $docColumnsQuery = "SELECT column_name FROM information_schema.columns 
+                           WHERE table_name = 'students' 
+                           AND (column_name LIKE '%_path' 
+                                OR column_name LIKE '%_file' 
+                                OR column_name LIKE '%document%'
+                                OR column_name LIKE '%upload%')";
+        $docColumnsResult = pg_query($connection, $docColumnsQuery);
+        $columnCache['document_columns'] = [];
+        if ($docColumnsResult) {
+            while ($row = pg_fetch_assoc($docColumnsResult)) {
+                $columnCache['document_columns'][] = $row['column_name'];
+            }
+        }
     }
 
+    // IMPORTANT: Clear document records BEFORE changing status
+    // Delete document records for students who have 'given' status (they're about to be reset)
+    // This ensures upload pages show clean slate for next cycle
+    $deleteDocuments = pg_query($connection, "DELETE FROM documents WHERE student_id IN (SELECT student_id FROM students WHERE status = 'given')");
+    if ($deleteDocuments === false) {
+        error_log('Warning: Failed to clear document records: ' . pg_last_error($connection));
+        $docsDeleted = 0;
+    } else {
+        $docsDeleted = pg_affected_rows($deleteDocuments);
+        error_log("Cleared $docsDeleted document records from documents table");
+    }
+    
+    // Clear grade_uploads table records as well (before status change)
+    $deleteGradeUploads = pg_query($connection, "DELETE FROM grade_uploads WHERE student_id IN (SELECT student_id FROM students WHERE status = 'given')");
+    if ($deleteGradeUploads === false) {
+        error_log('Warning: Failed to clear grade_uploads records: ' . pg_last_error($connection));
+        $gradesDeleted = 0;
+    } else {
+        $gradesDeleted = pg_affected_rows($deleteGradeUploads);
+        error_log("Cleared $gradesDeleted grade upload records from grade_uploads table");
+    }
+
+    // Build SET clause for resetting student data
     $setParts = ["status = 'applicant'"];
 
     if ($columnCache['payroll_no']) {
@@ -49,6 +124,11 @@ function resetGivenStudents($connection) {
     } elseif ($columnCache['qr_code']) {
         $setParts[] = 'qr_code = NULL';
     }
+    
+    // Reset all discovered document path columns
+    foreach ($columnCache['document_columns'] as $docColumn) {
+        $setParts[] = pg_escape_identifier($connection, $docColumn) . " = NULL";
+    }
 
     $query = "UPDATE students SET " . implode(', ', $setParts) . " WHERE status = 'given'";
     $result = pg_query($connection, $query);
@@ -57,13 +137,21 @@ function resetGivenStudents($connection) {
         throw new Exception('Failed to reset students: ' . pg_last_error($connection));
     }
 
+    $affectedRows = pg_affected_rows($result);
+
     // Remove generated QR codes for all students
     $deleteQr = pg_query($connection, "DELETE FROM qr_codes");
     if ($deleteQr === false) {
         throw new Exception('Failed to clear QR codes: ' . pg_last_error($connection));
     }
+    
+    // Delete all uploaded files from the file system
+    // Note: This happens AFTER compression, so files are already archived
+    $filesDeleted = deleteAllStudentUploads();
+    
+    error_log("Reset $affectedRows students, cleared " . count($columnCache['document_columns']) . " document columns, deleted $docsDeleted document records, $gradesDeleted grade records, and $filesDeleted upload files");
 
-    return pg_affected_rows($result);
+    return $affectedRows;
 }
 
 /**

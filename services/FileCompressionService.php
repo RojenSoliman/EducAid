@@ -190,6 +190,16 @@ class FileCompressionService {
                  WHERE distribution_id = $1",
                 [$distributionId]);
             
+            // Update distribution_snapshots if exists
+            // Match by distribution_id or archive_filename
+            @pg_query_params($this->conn,
+                "UPDATE distribution_snapshots 
+                 SET files_compressed = true, 
+                     compression_date = NOW(),
+                     archive_filename = $2
+                 WHERE distribution_id = $1 OR archive_filename = $2",
+                [$distributionId, $zipFilename]);
+            
             // Log the operation
             $spaceSaved = $totalOriginalSize - $totalCompressedSize;
             $this->logOperation(

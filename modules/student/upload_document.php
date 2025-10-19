@@ -1,6 +1,7 @@
 <?php
 include '../../config/database.php';
 include 'debug_logger.php';
+include '../../includes/workflow_control.php';
 // Lightweight JSON wrappers in case ext/json is unavailable in some environments
 if (!function_exists('safe_json_encode')) {
   function safe_json_encode($data) {
@@ -34,6 +35,63 @@ $studentId = $_SESSION['student_id'];
 $student_info_query = "SELECT last_login, first_name, last_name FROM students WHERE student_id = $1";
 $student_info_result = pg_query_params($connection, $student_info_query, [$studentId]);
 $student_info = pg_fetch_assoc($student_info_result);
+
+// Distribution workflow status determines whether uploads are globally available
+$workflow_status = getWorkflowStatus($connection);
+$distribution_status = $workflow_status['distribution_status'] ?? 'inactive';
+$uploads_feature_enabled = $workflow_status['uploads_enabled'] ?? false;
+$uploads_suspended = !$uploads_feature_enabled || $distribution_status !== 'active';
+$distribution_status_label = ucwords(str_replace('_', ' ', $distribution_status));
+$distribution_status_label_lower = strtolower($distribution_status_label);
+
+// REDIRECT if distribution is not active - uploads page should not be accessible at all
+if ($uploads_suspended) {
+    $_SESSION['error_message'] = "Document uploads are currently unavailable. The distribution cycle is {$distribution_status_label_lower}. Please check back when a new distribution cycle begins.";
+    header("Location: student_homepage.php");
+    exit;
+}
+
+// Block upload actions when distribution is closed, while informing AJAX callers cleanly
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $uploads_suspended) {
+  $ajaxPostKeys = [
+    'debug_test',
+    'processEnrollmentOcr',
+    'processOcr',
+    'processIdPictureOcr',
+    'processLetterOcr',
+    'processCertificateOcr',
+    'processGradesOcr',
+    'cleanup_temp',
+    'check_existing',
+    'sendOtp',
+    'verifyOtp',
+    'test_db'
+  ];
+
+  $isAjaxPostAttempt = false;
+  foreach ($ajaxPostKeys as $ajaxKey) {
+    if (isset($_POST[$ajaxKey])) {
+      $isAjaxPostAttempt = true;
+      break;
+    }
+  }
+
+  $closureMessage = 'Document uploads are currently closed because the distribution cycle is ' . $distribution_status_label_lower . '. Please wait until the next cycle opens.';
+
+  if ($isAjaxPostAttempt) {
+    header('Content-Type: application/json');
+    echo json_encode([
+      'status' => 'error',
+      'message' => $closureMessage,
+      'distribution_status' => $distribution_status
+    ]);
+    exit;
+  }
+
+  $_SESSION['upload_fail'] = $closureMessage;
+  header('Location: upload_document.php');
+  exit;
+}
 
 // Enhanced flash messaging for upload status
 $flash_success = false;
@@ -204,6 +262,14 @@ $allDocumentsUploaded = (
   $has_letter_any &&
   $has_certificate_any
 );
+
+$missing_documents = [];
+if (!$has_id_any) { $missing_documents[] = 'ID Picture'; }
+if (!$has_grades_any) { $missing_documents[] = 'Academic Grades'; }
+if (!$has_eaf_any) { $missing_documents[] = 'Enrollment Assessment Form'; }
+if (!$has_letter_any) { $missing_documents[] = 'Letter to the Mayor'; }
+if (!$has_certificate_any) { $missing_documents[] = 'Certificate of Indigency'; }
+
 // If documents are not complete, clear any flash so form shows cleanly after a rejection
 if (!$allDocumentsUploaded) {
   $flash_success = false;
@@ -410,6 +476,21 @@ function school_match_tokens($text, $schoolName) {
 // Handle document, grades, and EAF uploads in the same request
 if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || isset($_FILES['grades_file']) || isset($_FILES['eaf_file']) || isset($_POST['confirm_uploads']))) {
     
+    // CRITICAL DEBUG: Log immediately when POST received
+    error_log("========================================");
+    error_log("UPLOAD_DOCUMENT.PHP: POST REQUEST RECEIVED!");
+    error_log("Timestamp: " . date('Y-m-d H:i:s'));
+    error_log("documents isset: " . (isset($_FILES['documents']) ? 'YES' : 'NO'));
+    error_log("grades_file isset: " . (isset($_FILES['grades_file']) ? 'YES' : 'NO'));
+    error_log("eaf_file isset: " . (isset($_FILES['eaf_file']) ? 'YES' : 'NO'));
+    error_log("confirm_uploads isset: " . (isset($_POST['confirm_uploads']) ? 'YES' : 'NO'));
+    if (isset($_FILES['grades_file'])) {
+        error_log("grades_file ERROR CODE: " . $_FILES['grades_file']['error']);
+        error_log("grades_file NAME: " . $_FILES['grades_file']['name']);
+        error_log("grades_file SIZE: " . $_FILES['grades_file']['size']);
+    }
+    error_log("========================================");
+    
     // Handle upload confirmation (lock uploads)
     if (isset($_POST['confirm_uploads']) && $_POST['confirm_uploads'] === '1') {
         if ($uploads_locked) {
@@ -466,8 +547,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'application/msword'
     ];
-    $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'docx', 'doc'];
-    $maxFileSize = 5 * 1024 * 1024; // 5MB limit
+  $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'docx', 'doc'];
+  $generalMaxFileSize = 5 * 1024 * 1024; // 5MB limit for standard documents
+  $gradesMaxFileSize = 10 * 1024 * 1024; // 10MB limit to match registration flow
+  $generalMaxFileSizeMb = intval($generalMaxFileSize / (1024 * 1024));
+  $gradesMaxFileSizeMb = intval($gradesMaxFileSize / (1024 * 1024));
     
     // Use shared upload directories organized by document type (NOT per-student)
     $baseUploadDir = "../../assets/uploads/student/";
@@ -523,8 +607,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
         }
         
         // Validate file size
-        if ($fileSize > $maxFileSize) {
-            $upload_errors[] = "File too large: " . htmlspecialchars($fileName) . " (max 5MB)";
+    if ($fileSize > $generalMaxFileSize) {
+      $upload_errors[] = "File too large: " . htmlspecialchars($fileName) . " (max {$generalMaxFileSizeMb}MB)";
             continue;
         }
         
@@ -1158,39 +1242,53 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
         
   if ($_FILES['grades_file']['error'] === UPLOAD_ERR_OK) {
             log_debug("Processing grades file upload - no upload errors");
+            error_log("=== GRADES UPLOAD DEBUG START ===");
             error_log("Processing grades file upload");
             $gradesFileName = $_FILES['grades_file']['name'];
             $gradesFileTmpName = $_FILES['grades_file']['tmp_name'];
             $gradesFileSize = $_FILES['grades_file']['size'];
+            error_log("Student ID: " . $student_id);
             error_log("Grades file: " . $gradesFileName . ", Size: " . $gradesFileSize);
+            error_log("Max allowed size: " . $gradesMaxFileSize . " bytes (" . $gradesMaxFileSizeMb . "MB)");
             
             // Validate grades file
-            if ($gradesFileSize <= $maxFileSize) {
+            if ($gradesFileSize <= $gradesMaxFileSize) {
                 $gradesFileExt = strtolower(pathinfo($gradesFileName, PATHINFO_EXTENSION));
                 if (in_array($gradesFileExt, ['jpg', 'jpeg', 'png', 'gif', 'pdf'])) {
                     // Get directory for grades
                     $gradesFolder = $documentTypeToFolder['academic_grades'] ?? 'grades';
                     $gradesUploadDir = $baseUploadDir . $gradesFolder . "/";
+                    error_log("Grades folder name: " . $gradesFolder);
+                    error_log("Grades upload directory: " . $gradesUploadDir);
+                    error_log("Directory exists: " . (file_exists($gradesUploadDir) ? 'YES' : 'NO'));
                     
                     // Ensure directory exists
                     if (!file_exists($gradesUploadDir)) {
-                        mkdir($gradesUploadDir, 0755, true);
+                        $created = mkdir($gradesUploadDir, 0755, true);
+                        error_log("Created grades directory: " . ($created ? 'SUCCESS' : 'FAILED'));
+                    } else {
+                        error_log("Directory already exists, checking if writable...");
+                        error_log("Directory is writable: " . (is_writable($gradesUploadDir) ? 'YES' : 'NO'));
                     }
                     
                     // Generate standardized filename: {STUDENT_ID}_{LastName}_{FirstName}_grades.{ext}
                     $gradesToken = $documentTypeToToken['academic_grades'] ?? 'grades';
                     $secureGradesFileName = $student_id_safe . "_" . $last_name_safe . "_" . $first_name_safe . "_" . $gradesToken . "." . $gradesFileExt;
                     $gradesFinalPath = $gradesUploadDir . $secureGradesFileName;
+                    error_log("Final grades file path: " . $gradesFinalPath);
                     
                     // Delete old file if it exists
                     if (file_exists($gradesFinalPath)) {
+                        error_log("Old grades file exists, deleting...");
                         unlink($gradesFinalPath);
                         if (file_exists($gradesFinalPath . '.ocr.txt')) {
                             unlink($gradesFinalPath . '.ocr.txt');
                         }
                     }
                     
+                    error_log("Attempting to move uploaded file from temp to final location...");
           if (move_uploaded_file($gradesFileTmpName, $gradesFinalPath)) {
+                        error_log("SUCCESS: File moved successfully to: " . $gradesFinalPath);
                         // Delete old grades records for this student before inserting new one
                         try {
                             $delete_old_grades = pg_query_params($connection,
@@ -1396,7 +1494,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     $upload_errors[] = "Invalid grades file type: " . htmlspecialchars($gradesFileName);
                 }
             } else {
-                $upload_errors[] = "Grades file too large (max 5MB): " . htmlspecialchars($gradesFileName);
+        $upload_errors[] = "Grades file too large (max {$gradesMaxFileSizeMb}MB): " . htmlspecialchars($gradesFileName);
             }
     } else if ($_FILES['grades_file']['error'] !== UPLOAD_ERR_NO_FILE) {
       // Only record a problem if it wasn't simply 'no file selected'
@@ -1423,7 +1521,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
             error_log("EAF file: " . $eafFileName . ", Size: " . $eafFileSize);
             
             // Validate EAF file
-            if ($eafFileSize <= $maxFileSize) {
+            if ($eafFileSize <= $generalMaxFileSize) {
                 $eafFileExt = strtolower(pathinfo($eafFileName, PATHINFO_EXTENSION));
                 if (in_array($eafFileExt, ['jpg', 'jpeg', 'png', 'gif', 'pdf'])) {
                     // Get directory for EAF
@@ -1515,7 +1613,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     $upload_errors[] = "Invalid EAF file type: " . htmlspecialchars($eafFileName);
                 }
             } else {
-                $upload_errors[] = "EAF file too large (max 5MB): " . htmlspecialchars($eafFileName);
+        $upload_errors[] = "EAF file too large (max {$generalMaxFileSizeMb}MB): " . htmlspecialchars($eafFileName);
             }
     } else if ($_FILES['eaf_file']['error'] !== UPLOAD_ERR_NO_FILE) {
       // Only record a problem if it wasn't simply 'no file selected'
@@ -2021,6 +2119,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
             </div>
           <?php endif; ?>
 
+          <?php if ($uploads_suspended): ?>
+            <div class="alert alert-warning mx-4 mt-4">
+              <i class="bi bi-pause-circle-fill me-2"></i>
+              <strong>Uploads Unavailable:</strong>
+              Document uploads are currently closed because the distribution cycle is <?= htmlspecialchars($distribution_status_label_lower) ?>.
+              Please wait until the next distribution is opened.
+            </div>
+          <?php endif; ?>
+
           <!-- Progress Section -->
           <div class="progress-section">
             <h3 class="progress-title">Upload Progress</h3>
@@ -2234,9 +2341,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                                   onclick="viewDocument('<?php echo htmlspecialchars($uploaded_id_picture['file_path']); ?>', 'ID Picture')">
                             <i class="bi bi-eye"></i> View
                           </button>
-                          <button type="button" class="btn btn-outline-warning btn-sm" onclick="enableResubmit('id_picture')">
-                            <i class="bi bi-arrow-repeat"></i> Resubmit
-                          </button>
+                          <?php if (!$uploads_suspended): ?>
+                            <button type="button" class="btn btn-outline-warning btn-sm" onclick="enableResubmit('id_picture')">
+                              <i class="bi bi-arrow-repeat"></i> Resubmit
+                            </button>
+                          <?php endif; ?>
                         </div>
                       </div>
                       <div class="status-badge status-submitted">
@@ -2245,31 +2354,37 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     </div>
                     
                     <!-- Hidden resubmit form -->
-                    <div class="resubmit-form" id="resubmit_id_picture" style="display: none;">
+                    <?php if (!$uploads_suspended): ?>
+                      <div class="resubmit-form" id="resubmit_id_picture" style="display: none;">
+                        <div class="custom-file-input">
+                          <input type="file" name="documents[]" id="id_picture_input" accept=".pdf,.jpg,.jpeg,.png">
+                          <input type="hidden" name="document_type[]" value="id_picture">
+                          <div class="file-input-label">
+                            <i class="bi bi-cloud-upload"></i>
+                            <span>Choose new file or drag and drop</span>
+                          </div>
+                        </div>
+                        <div class="resubmit-actions mt-2">
+                          <button type="button" class="btn btn-secondary btn-sm" onclick="cancelResubmit('id_picture')">Cancel</button>
+                        </div>
+                        <div class="file-preview" id="preview_id_picture"></div>
+                      </div>
+                    <?php endif; ?>
+                  <?php else: ?>
+                    <!-- Upload Form -->
+                    <?php if (!$uploads_suspended): ?>
                       <div class="custom-file-input">
                         <input type="file" name="documents[]" id="id_picture_input" accept=".pdf,.jpg,.jpeg,.png">
                         <input type="hidden" name="document_type[]" value="id_picture">
                         <div class="file-input-label">
                           <i class="bi bi-cloud-upload"></i>
-                          <span>Choose new file or drag and drop</span>
+                          <span>Choose file or drag and drop</span>
                         </div>
                       </div>
-                      <div class="resubmit-actions mt-2">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="cancelResubmit('id_picture')">Cancel</button>
-                      </div>
                       <div class="file-preview" id="preview_id_picture"></div>
-                    </div>
-                  <?php else: ?>
-                    <!-- Upload Form -->
-                    <div class="custom-file-input">
-                      <input type="file" name="documents[]" id="id_picture_input" accept=".pdf,.jpg,.jpeg,.png">
-                      <input type="hidden" name="document_type[]" value="id_picture">
-                      <div class="file-input-label">
-                        <i class="bi bi-cloud-upload"></i>
-                        <span>Choose file or drag and drop</span>
-                      </div>
-                    </div>
-                    <div class="file-preview" id="preview_id_picture"></div>
+                    <?php else: ?>
+                      <p class="text-muted small mb-0">Uploads are currently closed for this document.</p>
+                    <?php endif; ?>
                   <?php endif; ?>
                 </div>
 
@@ -2322,9 +2437,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                                   onclick="viewDocument('<?php echo htmlspecialchars($uploaded_grades['file_path']); ?>', 'Academic Grades')">
                             <i class="bi bi-eye"></i> View
                           </button>
-                          <button type="button" class="btn btn-outline-warning btn-sm" onclick="enableResubmit('grades')">
-                            <i class="bi bi-arrow-repeat"></i> Resubmit
-                          </button>
+                          <?php if (!$uploads_suspended): ?>
+                            <button type="button" class="btn btn-outline-warning btn-sm" onclick="enableResubmit('grades')">
+                              <i class="bi bi-arrow-repeat"></i> Resubmit
+                            </button>
+                          <?php endif; ?>
                         </div>
                       </div>
                       <div class="status-badge status-submitted">
@@ -2333,39 +2450,47 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
                     </div>
                     
                     <!-- Hidden resubmit form -->
-                    <div class="resubmit-form" id="resubmit_grades" style="display: none;">
-                      <form method="POST" enctype="multipart/form-data" id="gradesResubmitForm" action="upload_document.php">
-                        <div class="custom-file-input">
-                          <input type="file" name="grades_file" id="grades_resubmit_input" accept=".pdf,.jpg,.jpeg,.png" required>
-                          <div class="file-input-label">
-                            <i class="bi bi-cloud-upload"></i>
-                            <span>Choose new grades file or drag and drop</span>
+                    <?php if (!$uploads_suspended): ?>
+                      <div class="resubmit-form" id="resubmit_grades" style="display: none;">
+                        <form method="POST" enctype="multipart/form-data" id="gradesResubmitForm" action="upload_document.php">
+                          <div class="custom-file-input">
+                            <input type="file" name="grades_file" id="grades_resubmit_input" accept=".pdf,.jpg,.jpeg,.png" data-max-mb="10" required>
+                            <div class="file-input-label">
+                              <i class="bi bi-cloud-upload"></i>
+                              <span>Choose new grades file or drag and drop</span>
+                            </div>
                           </div>
-                        </div>
-                        <div class="resubmit-actions mt-2">
-                          <button type="button" class="btn btn-secondary btn-sm" onclick="cancelResubmit('grades')">Cancel</button>
-                          <button type="submit" class="btn btn-primary btn-sm">Upload New Grades</button>
-                        </div>
-                        <div class="file-preview" id="preview_grades_resubmit"></div>
-                      </form>
-                    </div>
+                          <div class="resubmit-actions mt-2">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="cancelResubmit('grades')">Cancel</button>
+                            <button type="submit" class="btn btn-primary btn-sm">Upload New Grades</button>
+                          </div>
+                          <div class="file-preview" id="preview_grades_resubmit"></div>
+                        </form>
+                      </div>
+                    <?php endif; ?>
                   <?php else: ?>
                     <!-- Upload Form -->
-                    <div class="custom-file-input">
-                      <input type="file" name="grades_file" id="grades_input" accept=".pdf,.jpg,.jpeg,.png">
-                      <div class="file-input-label">
-                        <i class="bi bi-cloud-upload"></i>
-                        <span>Choose file or drag and drop</span>
+                    <?php if (!$uploads_suspended): ?>
+                      <div class="custom-file-input">
+                        <input type="file" name="grades_file" id="grades_input" accept=".pdf,.jpg,.jpeg,.png" data-max-mb="10">
+                        <div class="file-input-label">
+                          <i class="bi bi-cloud-upload"></i>
+                          <span>Choose file or drag and drop</span>
+                        </div>
                       </div>
-                    </div>
-                    <div class="file-preview" id="preview_grades"></div>
+                      <div class="file-preview" id="preview_grades"></div>
+                    <?php else: ?>
+                      <p class="text-muted small mb-0">Uploads are currently closed for this document.</p>
+                    <?php endif; ?>
                   <?php endif; ?>
                   
-                  <div id="grades_processing" style="display: none;" class="processing-indicator">
-                    <div class="spinner-border" role="status"></div>
-                    <div><strong>Processing grades with OCR...</strong></div>
-                    <small class="text-muted">Analyzing Philippine grading system formats</small>
-                  </div>
+                  <?php if (!$uploads_suspended): ?>
+                    <div id="grades_processing" style="display: none;" class="processing-indicator">
+                      <div class="spinner-border" role="status"></div>
+                      <div><strong>Processing grades with OCR...</strong></div>
+                      <small class="text-muted">Analyzing Philippine grading system formats</small>
+                    </div>
+                  <?php endif; ?>
                   
                   <div id="grades_results" style="display: none;"></div>
                 </div>
@@ -2745,8 +2870,95 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
   <script src="../../assets/js/student/upload.js"></script>
   
   <script>
+    // CRITICAL DEBUG: Check if JavaScript is loading
+    console.log('============================================');
+    console.log('UPLOAD_DOCUMENT.PHP: JavaScript file loaded!');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('⚠️ DEBUGGING MODE ACTIVE - Check console carefully!');
+    console.log('============================================');
+    
     // Initialize upload manager when page loads
     document.addEventListener('DOMContentLoaded', function() {
+        console.log('============================================');
+        console.log('DOMContentLoaded event fired!');
+        console.log('Checking form elements...');
+        
+        const form = document.getElementById('uploadForm');
+        const gradesInput = document.getElementById('grades_input');
+        const submitBtn = document.getElementById('submit-documents');
+        
+        console.log('Form found:', !!form);
+        console.log('Grades input found:', !!gradesInput);
+        console.log('Submit button found:', !!submitBtn);
+        
+        if (form) {
+            console.log('Form ID:', form.id);
+            console.log('Form action:', form.action);
+            console.log('Form method:', form.method);
+            console.log('Form enctype:', form.enctype);
+        }
+        
+        if (gradesInput) {
+            console.log('Grades input ID:', gradesInput.id);
+            console.log('Grades input name:', gradesInput.name);
+            console.log('Grades input type:', gradesInput.type);
+            console.log('Grades input is inside form:', form && form.contains(gradesInput));
+        }
+        console.log('============================================');
+        
+        // Add click handler to submit button for debugging
+        if (submitBtn) {
+            console.log('★★★ ATTACHING CLICK HANDLER TO SUBMIT BUTTON ★★★');
+            submitBtn.addEventListener('click', function(e) {
+                console.log('╔════════════════════════════════════════╗');
+                console.log('║   SUBMIT BUTTON CLICKED!!!            ║');
+                console.log('╚════════════════════════════════════════╝');
+                console.log('Button element:', this);
+                console.log('Button type:', this.type);
+                console.log('Button disabled:', this.disabled);
+                console.log('Event defaultPrevented:', e.defaultPrevented);
+                
+                // Check grades file at the moment of click
+                if (gradesInput) {
+                    console.log('Grades files at click time:', gradesInput.files.length);
+                    if (gradesInput.files.length > 0) {
+                        console.log('Grades file name:', gradesInput.files[0].name);
+                    }
+                }
+                
+                // CRITICAL DEBUG: Check if something is preventing submission
+                console.log('★★★ DIAGNOSING SUBMISSION BLOCK ★★★');
+                console.log('Button form attribute:', this.form ? 'has form' : 'NO FORM');
+                console.log('Form ID:', form ? form.id : 'NO FORM');
+                console.log('Button is inside form DOM:', form && form.contains(this));
+                
+                // Check if there are any validation attributes preventing submission
+                console.log('Form noValidate:', form ? form.noValidate : 'N/A');
+                console.log('Button formNoValidate:', this.formNoValidate);
+                
+                // CRITICAL FIX: If submit event doesn't fire within 50ms, FORCE it
+                let submitFired = false;
+                window.addEventListener('submit', function tempListener(e) {
+                    if (e.target === form) {
+                        submitFired = true;
+                        console.log('✅ Submit event DID fire!');
+                        window.removeEventListener('submit', tempListener);
+                    }
+                }, { once: true, capture: true });
+                
+                setTimeout(function() {
+                    if (!submitFired) {
+                        console.error('❌ CRITICAL: Submit event did NOT fire after button click!');
+                        console.error('This means the button click is not triggering form submission.');
+                        console.error('Attempting to manually submit form...');
+                        if (form && confirm('DEBUG: Form did not submit automatically. Force submit now?')) {
+                            form.submit();
+                        }
+                    }
+                }, 50);
+            });
+        }
+        
         // The upload.js file automatically handles the grades file preview
         // since it binds to all .upload-form-item elements
         console.log('Upload manager initialized for all file inputs');
@@ -2973,8 +3185,21 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
       // Add form submission handler to show loading state
       const form = document.getElementById('uploadForm');
       if (form) {
+        console.log('★★★ ATTACHING SUBMIT HANDLER TO FORM ★★★');
+        
+        // CRITICAL: Add submit handler as CAPTURING (runs first!)
         form.addEventListener('submit', function(e) {
-          console.log('Form submission started');
+          console.log('╔════════════════════════════════════════╗');
+          console.log('║   FORM SUBMIT EVENT TRIGGERED!!!      ║');
+          console.log('╚════════════════════════════════════════╝');
+          console.log('Event object:', e);
+          console.log('Form being submitted:', this);
+          console.log('Event defaultPrevented:', e.defaultPrevented);
+          console.log('Form action:', this.action);
+          console.log('Form method:', this.method);
+          
+          // SUPER VISIBLE DEBUG - Show alert
+          alert('🔍 DEBUG: Form submit handler triggered!\ndefaultPrevented: ' + e.defaultPrevented);
           
           // Check what files are selected
           const gradesInput = document.getElementById('grades_input');
@@ -2983,6 +3208,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_FILES['documents']) || iss
           
           console.log('Grades input found:', !!gradesInput);
           console.log('Grades files selected:', gradesInput ? gradesInput.files.length : 0);
+          
+          if (gradesInput && gradesInput.files.length > 0) {
+            console.log('★★★ GRADES FILE DETAILS ★★★');
+            console.log('File name:', gradesInput.files[0].name);
+            console.log('File size:', gradesInput.files[0].size);
+            console.log('File type:', gradesInput.files[0].type);
+          }
           console.log('Document inputs found:', documentInputs.length);
           const docsSelectedCount = documentInputs.reduce((acc, inp) => acc + (inp.files ? inp.files.length : 0), 0);
           console.log('Documents files selected total:', docsSelectedCount);
