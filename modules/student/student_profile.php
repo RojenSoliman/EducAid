@@ -487,26 +487,6 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
     .settings-icon-btn { background:#ffffff; border:1px solid #d5dadf; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%; transition:background .2s ease, border-color .2s ease, box-shadow .2s ease; color:#5e6974; }
     .settings-icon-btn:hover { background:#f3f5f7; border-color:#c5cbd1; box-shadow:0 2px 6px rgba(0,0,0,0.05); }
     .avatar-initials { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:2.9rem; font-weight:600; color:#5c6773; user-select:none; }
-
-    /* Municipality palette section */
-    .municipality-colors {
-      margin-top: 1.25rem;
-      padding: .9rem 1rem .85rem 1rem;
-      border: 1px solid #e2e6ea;
-      border-radius: 10px;
-      background: linear-gradient(180deg,#f9fafb 0%, #f2f4f6 100%);
-    }
-    .municipality-colors-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:.55rem; }
-    .municipality-colors-header .label { font-size:.72rem; letter-spacing:.7px; font-weight:600; text-transform:uppercase; color:#56616b; display:flex; align-items:center; gap:.4rem; }
-    .color-chips { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-    .color-chip { width:42px; height:32px; border-radius:8px; position:relative; overflow:hidden; border:1px solid rgba(0,0,0,0.06); box-shadow:0 1px 2px rgba(0,0,0,0.04); display:flex; align-items:center; justify-content:center; font-size:.6rem; font-weight:600; color:#1f2429; mix-blend-mode:luminosity; }
-    .color-chip[data-on-dark="true"] { color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,0.35); mix-blend-mode:normal; }
-    .color-chip span { position:absolute; inset:0; }
-    .color-chip .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
-    .color-bar { display:flex; width:100%; height:100%; }
-    .color-bar div { flex:1; }
-    /* Accessibility focus */
-    .color-chip:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
     
     .btn-edit {
       background: #667eea;
@@ -733,23 +713,6 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
             <div class="info-actions">
               <span class="text-muted small">Editable in settings</span>
             </div>
-          </div>
-        </div>
-
-        <!-- Municipality Colors (General Trias) -->
-        <div class="municipality-colors" aria-labelledby="municipalityColorsLabel">
-          <div class="municipality-colors-header">
-            <div class="label" id="municipalityColorsLabel">
-              <i class="bi bi-palette2"></i> Municipality Palette
-            </div>
-          </div>
-          <div class="color-chips" role="list">
-            <!-- Approximate palette: Green, Gold, White, Deep Green accent, Neutral base -->
-            <div class="color-chip" role="listitem" tabindex="0" title="#2f6f3a" data-on-dark="true" style="background:#2f6f3a;"><span class="sr-only">Primary Green</span></div>
-            <div class="color-chip" role="listitem" tabindex="0" title="#caa431" style="background:#caa431;"><span class="sr-only">Heritage Gold</span></div>
-            <div class="color-chip" role="listitem" tabindex="0" title="#ffffff" style="background:#ffffff;">WHT</div>
-            <div class="color-chip" role="listitem" tabindex="0" title="#0f3d1c" data-on-dark="true" style="background:#0f3d1c;"><span class="sr-only">Deep Accent</span></div>
-            <div class="color-chip" role="listitem" tabindex="0" title="#e3e7eb" style="background:#e3e7eb;">LT</div>
           </div>
         </div>
       </div>
