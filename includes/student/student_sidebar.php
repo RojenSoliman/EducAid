@@ -14,15 +14,15 @@ $needs_upload_tab = false;
 
 if (isset($_SESSION['student_id'])) {
     include_once __DIR__ . '/../../config/database.php';
+    include_once __DIR__ . '/../workflow_control.php';
     
-    // Check if uploads are enabled globally
-    $uploads_enabled_query = "SELECT value FROM config WHERE key = 'uploads_enabled'";
-    $uploads_enabled_result = pg_query($connection, $uploads_enabled_query);
-    $uploads_enabled = false;
-
-    if ($uploads_enabled_result && $uploads_row = pg_fetch_assoc($uploads_enabled_result)) {
-        $uploads_enabled = ($uploads_row['value'] === '1');
-    }
+    // Check if distribution is active and uploads are enabled
+    $workflow = getWorkflowStatus($connection);
+    $distribution_status = $workflow['distribution_status'] ?? 'inactive';
+    $uploads_enabled = $workflow['uploads_enabled'] ?? false;
+    
+    // Only show upload tab if distribution is preparing or active AND uploads are enabled
+    $show_uploads = in_array($distribution_status, ['preparing', 'active']) && $uploads_enabled;
     
     // Fetch student name and registration date
     $studentRes = pg_query_params(
@@ -37,31 +37,12 @@ if (isset($_SESSION['student_id'])) {
         $candidate = trim($studentRow['display_name'] ?? '');
         if ($candidate !== '') { $student_name = $candidate; }
         
-        if ($uploads_enabled) {
-            // Check if student is newly registered (after last distribution)
-            $last_distribution_query = "SELECT MAX(distribution_date) as last_date FROM distribution_snapshots";
-            $last_distribution_result = pg_query($connection, $last_distribution_query);
-            
-            if ($last_distribution_result && $last_distribution_row = pg_fetch_assoc($last_distribution_result)) {
-                $last_distribution_date = $last_distribution_row['last_date'];
-                
-                if ($last_distribution_date) {
-                    $registration_date = $studentRow['application_date'];
-                    // If registered after last distribution, they're "new" - don't show Upload tab
-                    if (strtotime($registration_date) <= strtotime($last_distribution_date)) {
-                        $needs_upload_tab = true; // Existing student - needs to re-upload
-                    }
-                    // else: New student - documents from registration, no upload tab
-                } else {
-                    // No previous distributions - all current students are "new"
-                    $needs_upload_tab = false;
-                }
-            }
-        }
+        // Show upload tab only when distribution is active
+        $needs_upload_tab = $show_uploads;
     } elseif (!empty($_SESSION['student_username'])) {
         $student_name = $_SESSION['student_username'];
-        // For fallback case, check uploads enabled
-        $needs_upload_tab = $uploads_enabled;
+        // For fallback case, check distribution status
+        $needs_upload_tab = $show_uploads;
     }
     
     // Fetch theme settings for sidebar colors if table exists

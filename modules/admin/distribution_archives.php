@@ -182,11 +182,14 @@ $pageTitle = "Distribution Archives";
                                                 : 0;
                                         ?>
                                         <tr>
-                                            <td><strong>#<?php echo $dist['id']; ?></strong></td>
+                                            <td>
+                                                <strong><?php echo $dist['distribution_id'] ?: '#' . $dist['id']; ?></strong>
+                                                <br><small class="text-muted">Snapshot #<?php echo $dist['id']; ?></small>
+                                            </td>
                                             <td><?php echo date('M d, Y', strtotime($dist['created_at'])); ?></td>
                                             <td>
-                                                Year <?php echo $dist['year_level'] ?: 'N/A'; ?> - 
-                                                Sem <?php echo $dist['semester'] ?: 'N/A'; ?>
+                                                <strong>AY <?php echo htmlspecialchars($dist['year_level'] ?: 'N/A'); ?></strong><br>
+                                                <small class="text-muted">Semester <?php echo htmlspecialchars($dist['semester'] ?: 'N/A'); ?></small>
                                             </td>
                                             <td><?php echo $dist['student_count']; ?></td>
                                             <td>
@@ -277,6 +280,7 @@ $pageTitle = "Distribution Archives";
             }, 500);
         }
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     </section>
     </div>
 </body>

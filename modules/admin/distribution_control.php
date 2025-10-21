@@ -81,10 +81,11 @@ $student_counts = array_merge([
 $distribution_status = $workflow_status['distribution_status'] ?? 'inactive';
 $uploads_enabled = $workflow_status['uploads_enabled'] ?? false;
 
-// Get current academic period
+// Get current academic period and documents deadline
 $current_academic_year = '';
 $current_semester = '';
-$period_query = "SELECT key, value FROM config WHERE key IN ('current_academic_year', 'current_semester')";
+$documents_deadline = '';
+$period_query = "SELECT key, value FROM config WHERE key IN ('current_academic_year', 'current_semester', 'documents_deadline')";
 $period_result = pg_query($connection, $period_query);
 if ($period_result) {
     while ($row = pg_fetch_assoc($period_result)) {
@@ -92,6 +93,8 @@ if ($period_result) {
             $current_academic_year = $row['value'];
         } elseif ($row['key'] === 'current_semester') {
             $current_semester = $row['value'];
+        } elseif ($row['key'] === 'documents_deadline') {
+            $documents_deadline = $row['value'];
         }
     }
 }
@@ -269,7 +272,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $archived_count = 0;
                 }
                 
-                // Step 2: Create distribution snapshot (optional)
+                // Step 2: Create or update distribution snapshot (optional)
                 try {
                     // First check if snapshot table exists
                     $snapshot_table_check = pg_query($connection, "
@@ -288,28 +291,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 $student_count = intval($student_data['total']);
                             }
                             
-                            // Create snapshot
-                            $snapshot_result = pg_query_params($connection, "
-                                INSERT INTO distribution_snapshots (
-                                    distribution_date, academic_year, semester, 
-                                    total_students_count, location, notes
-                                ) VALUES (
-                                    CURRENT_DATE, $1, $2, $3, $4, $5
-                                )
-                            ", [
-                                $academic_year, 
-                                $semester, 
-                                $student_count,
-                                'Main Distribution Center',
-                                'Distribution finalized via Distribution Control Center'
-                            ]);
+                            // Check if snapshot already exists for this academic period
+                            $check_snapshot = pg_query_params($connection, 
+                                "SELECT snapshot_id FROM distribution_snapshots WHERE academic_year = $1 AND semester = $2",
+                                [$academic_year, $semester]
+                            );
+                            
+                            $snapshot_exists = $check_snapshot && pg_num_rows($check_snapshot) > 0;
+                            
+                            if ($snapshot_exists) {
+                                // Update existing snapshot
+                                $existing_snapshot = pg_fetch_assoc($check_snapshot);
+                                $snapshot_result = pg_query_params($connection, "
+                                    UPDATE distribution_snapshots 
+                                    SET distribution_date = CURRENT_DATE, 
+                                        total_students_count = $1, 
+                                        location = $2, 
+                                        notes = $3
+                                    WHERE snapshot_id = $4
+                                ", [
+                                    $student_count,
+                                    'Main Distribution Center',
+                                    'Distribution finalized via Distribution Control Center',
+                                    $existing_snapshot['snapshot_id']
+                                ]);
+                            } else {
+                                // Create new snapshot
+                                $snapshot_result = pg_query_params($connection, "
+                                    INSERT INTO distribution_snapshots (
+                                        distribution_date, academic_year, semester, 
+                                        total_students_count, location, notes
+                                    ) VALUES (
+                                        CURRENT_DATE, $1, $2, $3, $4, $5
+                                    )
+                                ", [
+                                    $academic_year, 
+                                    $semester, 
+                                    $student_count,
+                                    'Main Distribution Center',
+                                    'Distribution finalized via Distribution Control Center'
+                                ]);
+                            }
                             
                             $snapshot_created = $snapshot_result !== false;
                         }
                     }
                 } catch (Exception $snapshot_error) {
-                    // Snapshot creation failed - log but continue
-                    error_log("Snapshot creation failed during finalization: " . $snapshot_error->getMessage());
+                    // Snapshot creation/update failed - log but continue
+                    error_log("Snapshot operation failed during finalization: " . $snapshot_error->getMessage());
                     $snapshot_created = false;
                 }
                 
@@ -707,6 +736,12 @@ $history_result = pg_query($connection, $history_query);
                                     <i class="bi bi-calendar3 me-1"></i>
                                     <?= htmlspecialchars($current_semester) ?> <?= htmlspecialchars($current_academic_year) ?>
                                 </span>
+                                <?php if ($documents_deadline): ?>
+                                    <span class="badge bg-warning text-dark mt-2 ms-1">
+                                        <i class="bi bi-clock-history me-1"></i>
+                                        Deadline: <?= date('M j, Y', strtotime($documents_deadline)) ?>
+                                    </span>
+                                <?php endif; ?>
                             <?php endif; ?>
                         </p>
                     </div>
@@ -905,40 +940,21 @@ $history_result = pg_query($connection, $history_query);
                                 <div class="row g-4">
                                     <!-- Configuration Status Column -->
                                     <div class="col-md-6">
-                                        <div class="info-section" style="background: white; padding: 1.5rem; border-radius: 10px; height: 100%; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-                                            <h6 class="fw-bold text-primary mb-3" style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                                                <i class="fas fa-cog me-2"></i>Configuration Status
-                                            </h6>
-                                            <div class="info-grid">
-                                                <div class="info-item d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
-                                                    <span class="text-muted" style="font-size: 0.9rem;">Distribution Status:</span>
-                                                    <span class="badge <?= $distribution_status === 'active' ? 'bg-success' : ($distribution_status === 'preparing' ? 'bg-warning text-dark' : ($distribution_status === 'finalized' ? 'bg-info' : 'bg-secondary')) ?>" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
-                                                        <?= ucfirst(htmlspecialchars($distribution_status)) ?>
-                                                    </span>
-                                                </div>
-                                                <div class="info-item d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
-                                                    <span class="text-muted" style="font-size: 0.9rem;">Uploads Status:</span>
-                                                    <span class="badge <?= $uploads_enabled ? 'bg-success' : 'bg-danger' ?>" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
-                                                        <?= $uploads_enabled ? 'Enabled' : 'Disabled' ?>
-                                                    </span>
-                                                </div>
-                                                <div class="info-item d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 1px solid #e9ecef;">
-                                                    <span class="text-muted" style="font-size: 0.9rem;">Academic Year:</span>
-                                                    <span class="fw-bold text-dark" style="font-size: 0.9rem;">
-                                                        <?= htmlspecialchars($current_academic_year ?: 'Not Set') ?>
-                                                    </span>
-                                                </div>
-                                                <div class="info-item d-flex justify-content-between align-items-center">
-                                                    <span class="text-muted" style="font-size: 0.9rem;">Semester:</span>
-                                                    <span class="fw-bold text-dark" style="font-size: 0.9rem;">
-                                                        <?= htmlspecialchars($current_semester ?: 'Not Set') ?>
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <small class="text-muted">Configuration Status:</small>
+                                        <ul class="list-unstyled small">
+                                            <li><strong>Distribution Status:</strong> <?= htmlspecialchars($distribution_status) ?></li>
+                                            <li><strong>Uploads Enabled:</strong> <?= htmlspecialchars($uploads_enabled ? 'Yes' : 'No') ?></li>
+                                            <li><strong>Academic Year:</strong> <?= htmlspecialchars($current_academic_year ?: 'Not Set') ?></li>
+                                            <li><strong>Semester:</strong> <?= htmlspecialchars($current_semester ?: 'Not Set') ?></li>
+                                            <li><strong>Documents Deadline:</strong> 
+                                                <?php if ($documents_deadline): ?>
+                                                    <span class="text-warning fw-bold"><?= date('F j, Y', strtotime($documents_deadline)) ?></span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">Not Set</span>
+                                                <?php endif; ?>
+                                            </li>
+                                        </ul>
                                     </div>
-                                    
-                                    <!-- Student Counts Column -->
                                     <div class="col-md-6">
                                         <div class="info-section" style="background: white; padding: 1.5rem; border-radius: 10px; height: 100%; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                                             <h6 class="fw-bold text-success mb-3" style="font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.5px;">

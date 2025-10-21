@@ -90,6 +90,10 @@ $distributionFiles = [
     'manage_schedules.php',
     'scan_qr.php',
     'manage_distributions.php',
+    'end_distribution.php',
+    'distribution_archives.php',
+    'storage_dashboard.php',
+    'reset_distribution.php',
 ];
 $isDistributionActive = in_array($current, $distributionFiles, true);
 

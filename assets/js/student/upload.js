@@ -9,7 +9,7 @@ class EnhancedUploadManager {
             light: '#67D6C6',
             fresh: '#6CC748'
         };
-        this.maxFileSize = 5 * 1024 * 1024; // 5MB
+    this.defaultMaxFileSizeMb = 5;
         this.allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
         this.init();
     }
@@ -154,7 +154,7 @@ class EnhancedUploadManager {
         const uploadItem = input.closest('.upload-form-item');
         
         if (file) {
-            if (this.validateFile(file)) {
+            if (this.validateFile(file, input)) {
                 this.showFilePreview(file, uploadItem);
                 this.updateUploadItemState(uploadItem, 'success');
             } else {
@@ -167,9 +167,17 @@ class EnhancedUploadManager {
         }
     }
     
-    validateFile(file) {
-        if (file.size > this.maxFileSize) {
-            this.showToast('File size exceeds 5MB limit', 'error');
+    validateFile(file, input) {
+        let maxMb = (input && input.dataset && input.dataset.maxMb)
+            ? parseInt(input.dataset.maxMb, 10)
+            : this.defaultMaxFileSizeMb;
+        if (!Number.isFinite(maxMb) || maxMb <= 0) {
+            maxMb = this.defaultMaxFileSizeMb;
+        }
+        const maxBytes = maxMb * 1024 * 1024;
+
+        if (file.size > maxBytes) {
+            this.showToast(`File size exceeds ${maxMb}MB limit`, 'error');
             return false;
         }
         

@@ -234,12 +234,27 @@ $pageTitle = "Storage Dashboard";
                                         <td>
                                             <span class="badge bg-<?php 
                                                 echo $stat['category'] === 'active' ? 'success' : 
-                                                    ($stat['category'] === 'archived' ? 'info' : 'secondary'); 
+                                                    ($stat['category'] === 'distributions' ? 'primary' :
+                                                    ($stat['category'] === 'archived' ? 'info' : 'secondary')); 
                                             ?>">
-                                                <?php echo ucfirst($stat['category']); ?>
+                                                <?php 
+                                                    if ($stat['category'] === 'distributions') {
+                                                        echo 'Past Distributions';
+                                                    } else {
+                                                        echo ucfirst($stat['category']);
+                                                    }
+                                                ?>
                                             </span>
                                         </td>
-                                        <td class="text-end"><?php echo number_format($stat['student_count']); ?></td>
+                                        <td class="text-end">
+                                            <?php 
+                                                if ($stat['category'] === 'distributions') {
+                                                    echo number_format($stat['student_count']) . ' archives';
+                                                } else {
+                                                    echo number_format($stat['student_count']);
+                                                }
+                                            ?>
+                                        </td>
                                         <td class="text-end"><?php echo number_format($stat['file_count']); ?></td>
                                         <td class="text-end">
                                             <strong><?php echo number_format($stat['total_size'] / (1024*1024), 2); ?> MB</strong>
@@ -416,5 +431,6 @@ $pageTitle = "Storage Dashboard";
             });
         }
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/database.php';
 
 class FileCompressionService {
     private $conn;
+    private $fileArchiveSupportsDistribution = null;
     
     public function __construct() {
         global $connection;
@@ -13,17 +14,22 @@ class FileCompressionService {
         try {
             pg_query($this->conn, "BEGIN");
             
-            // Get distribution details
+            $distribution = null;
             $distQuery = "SELECT d.*
                          FROM distributions d
                          WHERE d.distribution_id = $1";
-            $distResult = pg_query_params($this->conn, $distQuery, [$distributionId]);
+            $distResult = @pg_query_params($this->conn, $distQuery, [$distributionId]);
             
-            if (!$distResult || pg_num_rows($distResult) === 0) {
-                throw new Exception("Distribution not found");
+            if ($distResult && pg_num_rows($distResult) > 0) {
+                $distribution = pg_fetch_assoc($distResult);
+            } else {
+                // Fallback for config-driven distributions: synthesize basic info
+                $distribution = [
+                    'distribution_id' => $distributionId,
+                    'status' => 'active',
+                    'created_at' => date('Y-m-d H:i:s'),
+                ];
             }
-            
-            $distribution = pg_fetch_assoc($distResult);
             
             // Get all students with 'given' status (they received aid in this distribution)
             $studentsQuery = "SELECT s.student_id, s.first_name, s.middle_name, s.last_name
@@ -52,8 +58,11 @@ class FileCompressionService {
             }
             
             // Scan shared folders for files belonging to our students
+            // Include ALL document types: enrollment, grades, ID, indigency, letter
             $folders = [
                 'student/enrollment_forms' => 'enrollment_forms',
+                'student/grades' => 'grades',
+                'student/id_pictures' => 'id_pictures',
                 'student/indigency' => 'indigency',
                 'student/letter_to_mayor' => 'letter_to_mayor'
             ];
@@ -97,7 +106,7 @@ class FileCompressionService {
             }
             
             // Create distribution archive directory named after distribution ID
-            $archiveBaseDir = __DIR__ . '/../uploads/distributions/';
+            $archiveBaseDir = __DIR__ . '/../assets/uploads/distributions/';
             if (!file_exists($archiveBaseDir)) {
                 mkdir($archiveBaseDir, 0755, true);
             }
@@ -175,11 +184,21 @@ class FileCompressionService {
 
             
             // Update distributions table
-            pg_query_params($this->conn,
+            @pg_query_params($this->conn,
                 "UPDATE distributions 
                  SET files_compressed = true, compression_date = NOW()
                  WHERE distribution_id = $1",
                 [$distributionId]);
+            
+            // Update distribution_snapshots if exists
+            // Match by distribution_id or archive_filename
+            @pg_query_params($this->conn,
+                "UPDATE distribution_snapshots 
+                 SET files_compressed = true, 
+                     compression_date = NOW(),
+                     archive_filename = $2
+                 WHERE distribution_id = $1 OR archive_filename = $2",
+                [$distributionId, $zipFilename]);
             
             // Log the operation
             $spaceSaved = $totalOriginalSize - $totalCompressedSize;
@@ -216,7 +235,7 @@ class FileCompressionService {
                     'compressed_size' => $totalCompressedSize,
                     'space_saved' => $spaceSaved,
                     'compression_ratio' => round(($totalCompressedSize / $totalOriginalSize * 100), 2),
-                    'archive_location' => 'uploads/distributions/' . $zipFilename
+                    'archive_location' => 'assets/uploads/distributions/' . $zipFilename
                 ],
                 'log' => $compressionLog
             ];
@@ -275,13 +294,34 @@ class FileCompressionService {
                          operation_status, error_message)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)";
             
-            pg_query_params($this->conn, $logQuery, [
+            if (!$this->fileArchiveLogSupportsDistributionId()) {
+                return; // Table not compatible, skip logging
+            }
+
+            $result = @pg_query_params($this->conn, $logQuery, [
                 $operationType, $adminId, $distributionId, $studentId,
                 $fileCount, $originalSize, $compressedSize, $spaceSaved,
                 $status, $errorMessage
             ]);
+            if (!$result) {
+                throw new Exception(pg_last_error($this->conn) ?: 'Failed to log operation');
+            }
         } catch (Exception $e) {
             error_log("Failed to log file operation: " . $e->getMessage());
         }
+    }
+
+    private function fileArchiveLogSupportsDistributionId() {
+        if ($this->fileArchiveSupportsDistribution !== null) {
+            return $this->fileArchiveSupportsDistribution;
+        }
+        $query = "SELECT 1 FROM information_schema.columns WHERE table_name = 'file_archive_log' AND column_name = 'distribution_id'";
+        $result = @pg_query($this->conn, $query);
+        if ($result && pg_num_rows($result) > 0) {
+            $this->fileArchiveSupportsDistribution = true;
+        } else {
+            $this->fileArchiveSupportsDistribution = false;
+        }
+        return $this->fileArchiveSupportsDistribution;
     }
 }
