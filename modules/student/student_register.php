@@ -572,7 +572,8 @@ require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 $isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) ||
                  isset($_POST['processOcr']) || isset($_POST['processIdPictureOcr']) || isset($_POST['processLetterOcr']) ||
                  isset($_POST['processCertificateOcr']) || isset($_POST['processGradesOcr']) ||
-                 isset($_POST['cleanup_temp']) || isset($_POST['check_existing']) || isset($_POST['test_db']);
+                 isset($_POST['cleanup_temp']) || isset($_POST['check_existing']) || isset($_POST['test_db']) ||
+                 isset($_POST['check_school_student_id']);
 
 // Only output HTML for non-AJAX requests
 if (!$isAjaxRequest) {
@@ -743,6 +744,92 @@ if (!$isAjaxRequest) {
 
 <?php
 } // End of HTML output for non-AJAX requests
+
+// --- Check School Student ID Duplicate ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['check_school_student_id'])) {
+    $schoolStudentId = trim($_POST['school_student_id'] ?? '');
+    $universityId = intval($_POST['university_id'] ?? 0);
+    $firstName = trim($_POST['first_name'] ?? '');
+    $lastName = trim($_POST['last_name'] ?? '');
+    $birthDate = trim($_POST['bdate'] ?? '');
+    
+    if (empty($schoolStudentId)) {
+        json_response(['status' => 'error', 'message' => 'School student ID number required']);
+    }
+    
+    if ($universityId <= 0) {
+        json_response(['status' => 'error', 'message' => 'Please select your university first']);
+    }
+    
+    try {
+        // Use the database function to check for duplicates
+        $query = "SELECT * FROM check_duplicate_school_student_id($1, $2)";
+        $result = pg_query_params($connection, $query, [$universityId, $schoolStudentId]);
+        
+        if (!$result) {
+            json_response(['status' => 'error', 'message' => 'Database error occurred']);
+        }
+        
+        $checkResult = pg_fetch_assoc($result);
+        
+        if ($checkResult && $checkResult['is_duplicate'] === 't') {
+            // School student ID already exists - perform additional identity checks
+            $identityMatch = false;
+            $matchDetails = [];
+            
+            // Check if name and birthdate match (same person trying to register again)
+            if (!empty($firstName) && !empty($lastName) && !empty($birthDate)) {
+                $nameCheckQuery = "SELECT bdate FROM students WHERE student_id = $1";
+                $nameCheckResult = pg_query_params($connection, $nameCheckQuery, [$checkResult['system_student_id']]);
+                
+                if ($nameCheckRow = pg_fetch_assoc($nameCheckResult)) {
+                    $bdateMatch = ($nameCheckRow['bdate'] === $birthDate);
+                    
+                    // Parse name from student_name field
+                    $existingNameParts = explode(' ', $checkResult['student_name']);
+                    $existingFirstName = $existingNameParts[0] ?? '';
+                    $existingLastName = end($existingNameParts);
+                    
+                    $nameMatch = (
+                        strcasecmp($existingFirstName, $firstName) === 0 &&
+                        strcasecmp($existingLastName, $lastName) === 0
+                    );
+                    
+                    if ($nameMatch && $bdateMatch) {
+                        $identityMatch = true;
+                        $matchDetails = [
+                            'name_match' => true,
+                            'bdate_match' => true,
+                            'message' => 'This appears to be your existing account.'
+                        ];
+                    }
+                }
+            }
+            
+            json_response([
+                'status' => 'duplicate',
+                'message' => "This school student ID number is already registered in our system.",
+                'details' => [
+                    'system_student_id' => $checkResult['system_student_id'],
+                    'name' => $checkResult['student_name'],
+                    'status' => $checkResult['student_status'],
+                    'email_hint' => substr($checkResult['student_email'], 0, 3) . '***@' . explode('@', $checkResult['student_email'])[1],
+                    'mobile_hint' => substr($checkResult['student_mobile'], 0, 4) . '***' . substr($checkResult['student_mobile'], -2),
+                    'registered_at' => $checkResult['registered_at'],
+                    'identity_match' => $identityMatch,
+                    'match_details' => $matchDetails,
+                    'can_reapply' => in_array($checkResult['student_status'], ['rejected', 'disqualified'])
+                ]
+            ]);
+        } else {
+            json_response(['status' => 'available', 'message' => 'School student ID is available']);
+        }
+        
+    } catch (Exception $e) {
+        error_log("Check school student ID error: " . $e->getMessage());
+        json_response(['status' => 'error', 'message' => 'Could not verify school student ID']);
+    }
+}
 
 // --- Distribution Control & Slot check ---
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
@@ -1206,7 +1293,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processIdPictureOcr']
         return round(max($maxWordSimilarity, $percent), 2);
     }
 
-    // Validation Checks (5 checks - removed year_level)
+    // Validation Checks (6 checks total)
     $checks = [];
     
     // 1. First Name Match (80% threshold)
@@ -1289,6 +1376,54 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processIdPictureOcr']
         'found_keywords' => $foundKeywords
     ];
 
+    // 6. School Student ID Number Match (NEW)
+    $schoolStudentId = trim($_POST['school_student_id'] ?? '');
+    if (!empty($schoolStudentId)) {
+        // Clean both the expected ID and OCR text for better matching
+        $cleanSchoolId = preg_replace('/[^A-Z0-9]/i', '', $schoolStudentId);
+        $cleanOcrText = preg_replace('/[^A-Z0-9]/i', '', $ocrText);
+        
+        // Check if school student ID appears in OCR text
+        $idFound = stripos($cleanOcrText, $cleanSchoolId) !== false;
+        
+        // Also check with original formatting (dashes, spaces, etc.)
+        if (!$idFound) {
+            $idFound = stripos($ocrText, $schoolStudentId) !== false;
+        }
+        
+        // Calculate similarity for partial matches
+        $idSimilarity = 0;
+        if (!$idFound) {
+            // Extract potential ID numbers from OCR text
+            preg_match_all('/\b[\d\-]+\b/', $ocrText, $matches);
+            foreach ($matches[0] as $potentialId) {
+                $cleanPotentialId = preg_replace('/[^A-Z0-9]/i', '', $potentialId);
+                if (strlen($cleanPotentialId) >= 4) {
+                    similar_text($cleanSchoolId, $cleanPotentialId, $percent);
+                    $idSimilarity = max($idSimilarity, $percent);
+                }
+            }
+        }
+        
+        $checks['school_student_id_match'] = [
+            'passed' => $idFound || $idSimilarity >= 70,
+            'similarity' => $idFound ? 100 : round($idSimilarity, 2),
+            'threshold' => 70,
+            'expected' => $schoolStudentId,
+            'found_in_ocr' => $idFound,
+            'note' => $idFound ? 'Exact match found' : ($idSimilarity >= 70 ? 'Partial match found' : 'Not found - please verify')
+        ];
+        
+        error_log("School Student ID Check: " . ($idFound ? 'FOUND' : 'NOT FOUND') . " (Similarity: " . ($idFound ? 100 : round($idSimilarity, 2)) . "%)");
+    } else {
+        // If no school student ID provided, mark as auto-pass (backward compatibility)
+        $checks['school_student_id_match'] = [
+            'passed' => true,
+            'auto_passed' => true,
+            'reason' => 'No school student ID provided'
+        ];
+    }
+
     // Calculate overall results
     $passedChecks = array_filter($checks, function($check) {
         return $check['passed'];
@@ -1296,21 +1431,23 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processIdPictureOcr']
     $passedCount = count($passedChecks);
     
     // Simple average confidence from similarity scores
+    $schoolIdSimilarity = isset($checks['school_student_id_match']['similarity']) ? $checks['school_student_id_match']['similarity'] : 100;
     $totalSimilarity = ($firstNameSimilarity + 
                        (isset($middleNameSimilarity) ? $middleNameSimilarity : 70) + 
                        $lastNameSimilarity + 
-                       $universitySimilarity) / 4;
+                       $universitySimilarity +
+                       $schoolIdSimilarity) / 5;
     $avgConfidence = round($totalSimilarity, 2);
 
-    // Pass if 3+ checks OR 2+ checks with 80%+ avg confidence
-    $overallSuccess = ($passedCount >= 3 || ($passedCount >= 2 && $avgConfidence >= 80));
+    // Pass if 4+ checks OR 3+ checks with 80%+ avg confidence
+    $overallSuccess = ($passedCount >= 4 || ($passedCount >= 3 && $avgConfidence >= 80));
     $recommendation = $overallSuccess ? 'Approve' : 'Review - Please verify information matches your student ID';
 
     $verification = [
         'checks' => $checks,
         'summary' => [
             'passed_checks' => $passedCount,
-            'total_checks' => 5,
+            'total_checks' => 6,
             'average_confidence' => $avgConfidence,
             'recommendation' => $recommendation
         ]
@@ -1327,7 +1464,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processIdPictureOcr']
               " (" . ($checks['last_name_match']['similarity'] ?? 'N/A') . "%)");
     error_log("University Match: " . ($checks['university_match']['passed'] ? 'PASS' : 'FAIL') . 
               " (" . ($checks['university_match']['similarity'] ?? 'N/A') . "%)");
-    error_log("Overall: " . $passedCount . "/5 checks passed - " . $recommendation);
+    error_log("School Student ID Match: " . ($checks['school_student_id_match']['passed'] ? 'PASS' : 'FAIL') . 
+              " (" . ($checks['school_student_id_match']['similarity'] ?? 'N/A') . "%)");
+    error_log("Overall: " . $passedCount . "/6 checks passed - " . $recommendation);
 
     echo json_encode([
         'status' => 'success',
@@ -2444,7 +2583,8 @@ function validateDeclaredYear($ocrText, $declaredYearName) {
         return ['match' => false, 'section' => $ocrText, 'confidence' => 0];
     }
     
-    // Find the declared year section in OCR text
+    // CORRECTED LOGIC: Extract grades ONLY from the declared year section
+    // For example, if declared year is "3rd Year", extract ONLY 3rd year grades
     $targetVariations = $yearVariations[$declaredYearNum];
     $yearSectionStart = false;
     $yearSectionEnd = false;
@@ -2467,7 +2607,7 @@ function validateDeclaredYear($ocrText, $declaredYearName) {
     // Find end position (next year level or end of document)
     $yearSectionEnd = strlen($ocrText);
     foreach ($yearVariations as $otherNum => $otherVariations) {
-        if ($otherNum === $declaredYearNum) continue;
+        if ($otherNum == $declaredYearNum) continue;
         
         foreach ($otherVariations as $otherVariation) {
             $otherPos = stripos($ocrTextLower, $otherVariation, $yearSectionStart + 1);
@@ -2477,14 +2617,15 @@ function validateDeclaredYear($ocrText, $declaredYearName) {
         }
     }
     
-    // Extract the year section
+    // Extract ONLY the declared year section
     $yearSection = substr($ocrText, $yearSectionStart, $yearSectionEnd - $yearSectionStart);
     
     return [
         'match' => true,
         'section' => $yearSection,
         'confidence' => 95,
-        'matched_variation' => $matchedVariation
+        'matched_variation' => $matchedVariation,
+        'declared_year' => $declaredYearNum
     ];
 }
 
@@ -2870,8 +3011,30 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $activeSlot = pg_fetch_assoc($activeSlotQuery);
     $slot_id = $activeSlot ? $activeSlot['slot_id'] : null;
 
-    $insertQuery = "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_registration', 0, NULL, FALSE, NOW(), $11, $12, $13, $14, $15) RETURNING student_id";
+    // Get school student ID from form
+    $school_student_id = trim($_POST['school_student_id'] ?? '');
+    
+    // Validate school student ID
+    if (empty($school_student_id)) {
+        json_response(['status' => 'error', 'message' => 'School student ID number is required.']);
+    }
+    
+    // Check for duplicate school student ID one final time
+    $dupCheckQuery = "SELECT * FROM check_duplicate_school_student_id($1, $2)";
+    $dupCheckResult = pg_query_params($connection, $dupCheckQuery, [$university, $school_student_id]);
+    
+    if ($dupCheckResult) {
+        $dupCheck = pg_fetch_assoc($dupCheckResult);
+        if ($dupCheck && $dupCheck['is_duplicate'] === 't') {
+            json_response([
+                'status' => 'error', 
+                'message' => 'This school student ID number is already registered by ' . $dupCheck['student_name'] . '. Creating multiple accounts is strictly prohibited. Please contact support if you believe this is an error.'
+            ]);
+        }
+    }
+
+    $insertQuery = "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id, school_student_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_registration', 0, NULL, FALSE, NOW(), $11, $12, $13, $14, $15, $16) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $student_id,
@@ -2888,7 +3051,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $barangay,
         $university,
         $year_level,
-        $slot_id
+        $slot_id,
+        $school_student_id  // School/University-issued ID number
     ]);
 
 
@@ -3370,8 +3534,8 @@ if (!$isAjaxRequest) {
                 <!-- Step 3: University and Year Level -->
                 <div class="step-panel d-none" id="step-3">
                       <div class="mb-3">
-                          <label class="form-label">University/College</label>
-                          <select name="university_id" class="form-select" required>
+                          <label class="form-label">University/College <span class="text-danger">*</span></label>
+                          <select name="university_id" class="form-select" id="universitySelect" required>
                               <option value="" disabled selected>Select your university/college</option>
                               <?php
                               $res = pg_query($connection, "SELECT university_id, name FROM universities ORDER BY name ASC");
@@ -3381,8 +3545,29 @@ if (!$isAjaxRequest) {
                               ?>
                           </select>
                       </div>
+                      
+                      <!-- School Student ID Number Field -->
                       <div class="mb-3">
-                          <label class="form-label">Year Level</label>
+                          <label class="form-label">School Student ID Number <span class="text-danger">*</span></label>
+                          <input type="text" class="form-control" name="school_student_id" id="schoolStudentId" required 
+                                 placeholder="e.g., 2024-12345" 
+                                 pattern="[A-Za-z0-9\-]+"
+                                 maxlength="20">
+                          <small class="form-text text-muted">
+                              <i class="bi bi-info-circle me-1"></i>Enter your official school/university student ID number exactly as shown on your ID card
+                          </small>
+                          <div id="schoolStudentIdDuplicateWarning" class="alert alert-danger mt-2" style="display: none;">
+                              <i class="bi bi-exclamation-triangle me-2"></i>
+                              <strong>Warning:</strong> This school student ID is already registered in our system.
+                          </div>
+                          <div id="schoolStudentIdAvailable" class="alert alert-success mt-2" style="display: none;">
+                              <i class="bi bi-check-circle me-2"></i>
+                              <strong>Available:</strong> This school student ID is not registered yet.
+                          </div>
+                      </div>
+                      
+                      <div class="mb-3">
+                          <label class="form-label">Year Level <span class="text-danger">*</span></label>
                           <select name="year_level_id" class="form-select" required>
                               <option value="" disabled selected>Select your year level</option>
                               <?php
@@ -3394,7 +3579,7 @@ if (!$isAjaxRequest) {
                           </select>
                       </div>
                       <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                      <button type="button" class="btn btn-primary w-100" onclick="nextStep()">Next</button>
+                      <button type="button" class="btn btn-primary w-100" id="nextStep3Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 <!-- Step 4: Student ID Picture Upload and OCR Verification -->
@@ -3470,6 +3655,13 @@ if (!$isAjaxRequest) {
                                         </div>
                                         <span class="badge bg-secondary confidence-score" id="idpic-confidence-document">0%</span>
                                     </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-schoolid">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>School Student ID Number</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-schoolid">0%</span>
+                                    </div>
                                 </div>
                                 <div class="mt-3 p-3 bg-light rounded">
                                     <h6 class="mb-2">Overall Analysis:</h6>
@@ -3479,7 +3671,7 @@ if (!$isAjaxRequest) {
                                     </div>
                                     <div class="d-flex justify-content-between">
                                         <span>Passed Checks:</span>
-                                        <span class="fw-bold" id="idpic-passed-checks">0/5</span>
+                                        <span class="fw-bold" id="idpic-passed-checks">0/6</span>
                                     </div>
                                     <div class="mt-2">
                                         <small class="text-muted" id="idpic-verification-recommendation">Processing document...</small>
@@ -4472,12 +4664,14 @@ function processIdPictureDocument() {
     const lastNameInput = document.querySelector('input[name="last_name"]');
     const extensionNameInput = document.querySelector('input[name="extension_name"]');
     const universityInput = document.querySelector('select[name="university_id"]');
+    const schoolStudentIdInput = document.querySelector('input[name="school_student_id"]');
     
     if (firstNameInput && firstNameInput.value) formData.append('first_name', firstNameInput.value);
     if (middleNameInput && middleNameInput.value) formData.append('middle_name', middleNameInput.value);
     if (lastNameInput && lastNameInput.value) formData.append('last_name', lastNameInput.value);
     if (extensionNameInput && extensionNameInput.value) formData.append('extension_name', extensionNameInput.value);
     if (universityInput && universityInput.value) formData.append('university_id', universityInput.value);
+    if (schoolStudentIdInput && schoolStudentIdInput.value) formData.append('school_student_id', schoolStudentIdInput.value);
     
     formData.append('g-recaptcha-response', 'test'); // You may need proper reCAPTCHA
     
@@ -4554,6 +4748,7 @@ function handleIdPictureOcrResults(data) {
         updateCheckItem('idpic-check-lastname', 'idpic-confidence-lastname', checks.last_name_match);
         updateCheckItem('idpic-check-university', 'idpic-confidence-university', checks.university_match);
         updateCheckItem('idpic-check-document', 'idpic-confidence-document', checks.document_keywords_found);
+        updateCheckItem('idpic-check-schoolid', 'idpic-confidence-schoolid', checks.school_student_id_match);
         
         // Update overall summary
         const overallConfidenceEl = document.getElementById('idpic-overall-confidence');
@@ -5893,6 +6088,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Terms and Conditions modal functionality
     setupTermsAndConditions();
     
+    // School Student ID duplicate checking
+    setupSchoolStudentIdCheck();
+    
     // Wait a moment for external scripts to load
     setTimeout(function() {
         console.log('🔍 Final function check:', {
@@ -5911,6 +6109,136 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✅ Registration page initialization complete');
     }, 500);
 });
+
+// Real-time School Student ID duplicate check
+function setupSchoolStudentIdCheck() {
+    let schoolStudentIdCheckTimeout = null;
+    const schoolStudentIdInput = document.getElementById('schoolStudentId');
+    const universitySelect = document.getElementById('universitySelect');
+    
+    if (!schoolStudentIdInput || !universitySelect) {
+        console.log('⚠️ School student ID or university select not found');
+        return;
+    }
+    
+    console.log('✅ School student ID check initialized');
+    
+    // Check on school student ID input
+    schoolStudentIdInput.addEventListener('input', function() {
+        clearTimeout(schoolStudentIdCheckTimeout);
+        
+        const schoolStudentId = this.value.trim();
+        const universityId = universitySelect.value;
+        const warningDiv = document.getElementById('schoolStudentIdDuplicateWarning');
+        const availableDiv = document.getElementById('schoolStudentIdAvailable');
+        const nextBtn = document.getElementById('nextStep3Btn');
+        
+        // Reset states
+        if (warningDiv) warningDiv.style.display = 'none';
+        if (availableDiv) availableDiv.style.display = 'none';
+        
+        if (schoolStudentId.length < 3 || !universityId) {
+            return;
+        }
+        
+        // Debounce API call
+        schoolStudentIdCheckTimeout = setTimeout(async () => {
+            await checkSchoolStudentIdDuplicate(schoolStudentId, universityId, warningDiv, availableDiv, nextBtn);
+        }, 800); // 800ms debounce
+    });
+    
+    // Re-check when university changes
+    universitySelect.addEventListener('change', function() {
+        const schoolStudentId = schoolStudentIdInput.value.trim();
+        if (schoolStudentId.length >= 3) {
+            schoolStudentIdInput.dispatchEvent(new Event('input'));
+        }
+    });
+}
+
+async function checkSchoolStudentIdDuplicate(schoolStudentId, universityId, warningDiv, availableDiv, nextBtn) {
+    const formData = new FormData();
+    formData.append('check_school_student_id', '1');
+    formData.append('school_student_id', schoolStudentId);
+    formData.append('university_id', universityId);
+    
+    // Include name and birthdate if available for identity matching
+    const firstName = document.querySelector('input[name="first_name"]')?.value;
+    const lastName = document.querySelector('input[name="last_name"]')?.value;
+    const bdate = document.querySelector('input[name="bdate"]')?.value;
+    
+    if (firstName) formData.append('first_name', firstName);
+    if (lastName) formData.append('last_name', lastName);
+    if (bdate) formData.append('bdate', bdate);
+    
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'duplicate') {
+            if (warningDiv) {
+                let message = `<i class="bi bi-exclamation-triangle me-2"></i><strong>School Student ID Already Registered!</strong><br>`;
+                message += `<small>Registered to: ${data.details.name}<br>`;
+                message += `System ID: ${data.details.system_student_id}<br>`;
+                message += `Status: ${data.details.status}<br>`;
+                message += `Registered on: ${new Date(data.details.registered_at).toLocaleDateString()}<br>`;
+                
+                if (data.details.identity_match) {
+                    message += `<br><span class="text-danger fw-bold">⚠️ This appears to be YOUR existing account.</span><br>`;
+                    message += `Email: ${data.details.email_hint}<br>`;
+                    message += `Mobile: ${data.details.mobile_hint}<br>`;
+                    message += `<br><strong class="text-danger">🛑 MULTIPLE ACCOUNTS PROHIBITED</strong><br>`;
+                    message += `You cannot create multiple accounts. Please login with your existing credentials.`;
+                } else {
+                    message += `<br><span class="text-danger fw-bold">⚠️ This school student ID belongs to another person.</span><br>`;
+                    message += `<strong class="text-danger">🛑 MULTIPLE ACCOUNTS PROHIBITED</strong><br>`;
+                    message += `Creating multiple accounts is strictly prohibited and may result in permanent disqualification.`;
+                }
+                
+                if (data.details.can_reapply) {
+                    message += `<br><br><span class="text-info">Note: Previous application was ${data.details.status}. You may reapply by logging in with your existing credentials.</span>`;
+                }
+                
+                message += `</small>`;
+                
+                warningDiv.innerHTML = message;
+                warningDiv.style.display = 'block';
+                warningDiv.className = 'alert alert-danger mt-2';
+            }
+            
+            // Disable next button
+            if (nextBtn) {
+                nextBtn.disabled = true;
+                nextBtn.classList.remove('btn-primary');
+                nextBtn.classList.add('btn-secondary');
+            }
+            
+            // Show system notifier
+            showNotifier(
+                '🛑 MULTIPLE ACCOUNT DETECTED: This school student ID is already registered. Creating multiple accounts is strictly prohibited and will result in disqualification.', 
+                'error'
+            );
+            
+        } else if (data.status === 'available') {
+            if (availableDiv) {
+                availableDiv.style.display = 'block';
+            }
+            
+            // Enable next button
+            if (nextBtn) {
+                nextBtn.disabled = false;
+                nextBtn.classList.remove('btn-secondary');
+                nextBtn.classList.add('btn-primary');
+            }
+        }
+    } catch (error) {
+        console.error('School student ID check error:', error);
+    }
+}
 
 function setupTermsAndConditions() {
     // Handle terms and conditions modal
