@@ -14,15 +14,15 @@ $needs_upload_tab = false;
 
 if (isset($_SESSION['student_id'])) {
     include_once __DIR__ . '/../../config/database.php';
+    include_once __DIR__ . '/../workflow_control.php';
     
-    // Check if uploads are enabled globally
-    $uploads_enabled_query = "SELECT value FROM config WHERE key = 'uploads_enabled'";
-    $uploads_enabled_result = pg_query($connection, $uploads_enabled_query);
-    $uploads_enabled = false;
-
-    if ($uploads_enabled_result && $uploads_row = pg_fetch_assoc($uploads_enabled_result)) {
-        $uploads_enabled = ($uploads_row['value'] === '1');
-    }
+    // Check if distribution is active and uploads are enabled
+    $workflow = getWorkflowStatus($connection);
+    $distribution_status = $workflow['distribution_status'] ?? 'inactive';
+    $uploads_enabled = $workflow['uploads_enabled'] ?? false;
+    
+    // Only show upload tab if distribution is preparing or active AND uploads are enabled
+    $show_uploads = in_array($distribution_status, ['preparing', 'active']) && $uploads_enabled;
     
     // Fetch student name and registration date
     $studentRes = pg_query_params(
@@ -37,15 +37,12 @@ if (isset($_SESSION['student_id'])) {
         $candidate = trim($studentRow['display_name'] ?? '');
         if ($candidate !== '') { $student_name = $candidate; }
         
-        if ($uploads_enabled) {
-            // Show upload tab when uploads are enabled
-            // Students need to upload documents during active distribution cycles
-            $needs_upload_tab = true;
-        }
+        // Show upload tab only when distribution is active
+        $needs_upload_tab = $show_uploads;
     } elseif (!empty($_SESSION['student_username'])) {
         $student_name = $_SESSION['student_username'];
-        // For fallback case, check uploads enabled
-        $needs_upload_tab = $uploads_enabled;
+        // For fallback case, check distribution status
+        $needs_upload_tab = $show_uploads;
     }
     
     // Fetch theme settings for sidebar colors if table exists

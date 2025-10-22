@@ -224,24 +224,28 @@ class DistributionManager {
     }
     
     public function getAllDistributions() {
+        // Query distribution_snapshots for historical records with full metadata
         $query = "SELECT 
-                    d.distribution_id as id,
-                    d.date_given as created_at,
-                    COALESCE(d.status, 'active') as status,
-                    d.ended_at,
-                    COALESCE(d.files_compressed, false) as files_compressed,
-                    d.compression_date,
-                    NULL::integer as year_level,
-                    NULL::integer as semester,
-                    d.student_id,
-                    1 as student_count,
+                    ds.snapshot_id as id,
+                    ds.distribution_id,
+                    ds.finalized_at as created_at,
+                    'ended' as status,
+                    ds.finalized_at as ended_at,
+                    COALESCE(ds.files_compressed, false) as files_compressed,
+                    ds.compression_date,
+                    ds.academic_year as year_level,
+                    ds.semester,
+                    ds.total_students_count as student_count,
                     0 as file_count,
                     0 as original_size,
                     0 as current_size,
                     0 as avg_compression_ratio,
-                    0 as archived_files_count
-                 FROM distributions d
-                 ORDER BY d.date_given DESC";
+                    0 as archived_files_count,
+                    ds.location,
+                    ds.notes,
+                    ds.archive_filename
+                 FROM distribution_snapshots ds
+                 ORDER BY ds.finalized_at DESC";
         
         $result = pg_query($this->conn, $query);
         $distributions = $result ? pg_fetch_all($result) ?: [] : [];
@@ -250,9 +254,35 @@ class DistributionManager {
         $distributionsPath = __DIR__ . '/../assets/uploads/distributions';
         
         foreach ($distributions as &$dist) {
-            $zipFile = $distributionsPath . '/' . $dist['id'] . '.zip';
+            // Primary: Use archive_filename if stored
+            $zipFile = null;
             
-            if (file_exists($zipFile) && is_file($zipFile)) {
+            if (!empty($dist['archive_filename'])) {
+                $primaryZip = $distributionsPath . '/' . $dist['archive_filename'];
+                if (file_exists($primaryZip) && is_file($primaryZip)) {
+                    $zipFile = $primaryZip;
+                }
+            }
+            
+            // Secondary: Use distribution_id
+            if (!$zipFile && !empty($dist['distribution_id'])) {
+                $distIdZip = $distributionsPath . '/' . $dist['distribution_id'] . '.zip';
+                if (file_exists($distIdZip) && is_file($distIdZip)) {
+                    $zipFile = $distIdZip;
+                }
+            }
+            
+            // Fallback: Try pattern matching
+            if (!$zipFile && !empty($dist['created_at'])) {
+                $dateStamp = date('Y-m-d', strtotime($dist['created_at']));
+                $pattern = $distributionsPath . '/*DISTR*' . $dateStamp . '*.zip';
+                $matches = glob($pattern);
+                if (!empty($matches)) {
+                    $zipFile = $matches[0];
+                }
+            }
+            
+            if ($zipFile) {
                 $dist['files_compressed'] = true;
                 $dist['current_size'] = filesize($zipFile);
                 
@@ -270,6 +300,18 @@ class DistributionManager {
                 $dist['avg_compression_ratio'] = $dist['original_size'] > 0 
                     ? round(($spaceSaved / $dist['original_size']) * 100, 1) 
                     : 0;
+            } else {
+                // No ZIP found - check if we can get file info from snapshot JSON data
+                $snapshotQuery = "SELECT students_data FROM distribution_snapshots WHERE snapshot_id = $1";
+                $snapshotResult = pg_query_params($this->conn, $snapshotQuery, [$dist['id']]);
+                if ($snapshotResult && $snapshotRow = pg_fetch_assoc($snapshotResult)) {
+                    $studentsData = json_decode($snapshotRow['students_data'], true);
+                    if (is_array($studentsData)) {
+                        $dist['student_count'] = count($studentsData);
+                        // Estimate file count (typically 5 files per student: ID, grades, EAF, letter, certificate)
+                        $dist['file_count'] = count($studentsData) * 5;
+                    }
+                }
             }
         }
         
@@ -277,12 +319,11 @@ class DistributionManager {
     }
     
     public function getCompressionStatistics() {
-        // Get distribution counts
+        // Get distribution counts from distribution_snapshots (actual historical records)
         $distQuery = pg_query($this->conn, "
             SELECT 
-                COUNT(*) as total_distributions,
-                COUNT(CASE WHEN status = 'ended' THEN 1 END) as compressed_distributions
-            FROM distributions
+                COUNT(*) as total_distributions
+            FROM distribution_snapshots
         ");
         
         $distStats = pg_fetch_assoc($distQuery);
