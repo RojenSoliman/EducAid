@@ -13,7 +13,28 @@ if (!isset($_SESSION['admin_username'])) {
 // Check workflow prerequisites
 $workflow_status = getWorkflowStatus($connection);
 if (!$workflow_status['has_payroll_qr']) {
+    $_SESSION['error_message'] = "Cannot access QR scanner. Please generate payroll numbers and QR codes first in the Verify Students page.";
     header("Location: verify_students.php?error=no_payroll");
+    exit;
+}
+
+// ADDITIONAL CHECK: Ensure there are actual students with payroll and QR codes
+$student_check_query = "
+    SELECT COUNT(*) as count 
+    FROM students s 
+    INNER JOIN qr_codes q ON s.student_id = q.student_id 
+    WHERE s.status = 'active' AND s.payroll_no IS NOT NULL
+";
+$student_check_result = pg_query($connection, $student_check_query);
+$student_count = 0;
+if ($student_check_result) {
+    $student_data = pg_fetch_assoc($student_check_result);
+    $student_count = intval($student_data['count']);
+}
+
+if ($student_count === 0) {
+    $_SESSION['error_message'] = "No students found with payroll numbers and QR codes. Please verify students and generate payroll/QR codes first.";
+    header("Location: verify_students.php");
     exit;
 }
 
@@ -101,6 +122,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
     $admin_data = pg_fetch_assoc($password_check);
     if (!password_verify($password, $admin_data['password'])) {
         $_SESSION['error_message'] = 'Incorrect password.';
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+    
+    // CRITICAL: Check if any students have been scanned (status = 'given')
+    $scanned_check = pg_query($connection, "SELECT COUNT(*) as count FROM students WHERE status = 'given'");
+    $scanned_count = 0;
+    if ($scanned_check) {
+        $scanned_data = pg_fetch_assoc($scanned_check);
+        $scanned_count = intval($scanned_data['count']);
+    }
+    
+    if ($scanned_count === 0) {
+        $_SESSION['error_message'] = 'Cannot complete distribution. You must scan at least one student QR code before completing the distribution.';
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
     }
