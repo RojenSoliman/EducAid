@@ -2,7 +2,7 @@
 // Suppress all output and errors for AJAX requests
 if (isset($_POST['processIdPictureOcr']) || isset($_POST['processGradesOcr']) || 
     isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) || isset($_POST['processCertificateOcr']) ||
-    (isset($_POST['action']) && $_POST['action'] === 'check_full_duplicate')) {
+    (isset($_POST['action']) && in_array($_POST['action'], ['check_full_duplicate', 'check_email_duplicate']))) {
     @ini_set('display_errors', '0');
     error_reporting(0);
     if (!ob_get_level()) ob_start();
@@ -600,7 +600,7 @@ $isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) ||
                  isset($_POST['processCertificateOcr']) || isset($_POST['processGradesOcr']) ||
                  isset($_POST['cleanup_temp']) || isset($_POST['check_existing']) || isset($_POST['test_db']) ||
                  isset($_POST['check_school_student_id']) ||
-                 (isset($_POST['action']) && $_POST['action'] === 'check_full_duplicate');
+                 (isset($_POST['action']) && in_array($_POST['action'], ['check_full_duplicate', 'check_email_duplicate']));
 
 // Only output HTML for non-AJAX requests
 if (!$isAjaxRequest) {
@@ -859,6 +859,30 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action']) && $_POST['
     } catch (Exception $e) {
         error_log("Error checking full duplicate: " . $e->getMessage());
         json_response(['is_duplicate' => false]);
+    }
+}
+
+// --- Check Email Duplicate ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action']) && $_POST['action'] === 'check_email_duplicate') {
+    $email = trim($_POST['email'] ?? '');
+    
+    if (empty($email)) {
+        json_response(['exists' => false]);
+    }
+    
+    try {
+        $query = "SELECT COUNT(*) as count FROM students WHERE email = $1";
+        $result = pg_query_params($connection, $query, [$email]);
+        
+        if ($result) {
+            $row = pg_fetch_assoc($result);
+            json_response(['exists' => intval($row['count']) > 0]);
+        } else {
+            json_response(['exists' => false]);
+        }
+    } catch (Exception $e) {
+        error_log("Error checking email duplicate: " . $e->getMessage());
+        json_response(['exists' => false]);
     }
 }
 
@@ -4848,6 +4872,11 @@ if (!$isAjaxRequest) {
                       <div class="mb-3">
                         <label class="form-label">Email</label>
                         <input type="email" class="form-control" name="email" id="emailInput" required />
+                        <small class="form-text text-muted">We'll check if this email is already registered</small>
+                        <div id="emailDuplicateWarning" class="alert alert-danger mt-2" style="display: none;">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Email Already Registered!</strong> This email address is already registered in our system. Please use a different email address.
+                        </div>
                         <span id="emailStatus" class="text-success d-none">Verified</span>
                     </div>
                     <div class="mb-3">
@@ -6293,11 +6322,127 @@ function validateEmail(email) {
 }
 
 // Initialize validation when page loads
+// Check email duplicate on blur
+function setupEmailDuplicateCheck() {
+    const emailInput = document.getElementById('emailInput');
+    const emailWarning = document.getElementById('emailDuplicateWarning');
+    const sendOtpBtn = document.getElementById('sendOtpBtn');
+    
+    if (!emailInput) return;
+    
+    emailInput.addEventListener('blur', async function() {
+        const email = this.value.trim();
+        
+        if (!email || !email.includes('@')) {
+            if (emailWarning) emailWarning.style.display = 'none';
+            return;
+        }
+        
+        try {
+            const formData = new FormData();
+            formData.append('action', 'check_email_duplicate');
+            formData.append('email', email);
+            
+            const response = await fetch('student_register.php', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.exists) {
+                if (emailWarning) emailWarning.style.display = 'block';
+                if (sendOtpBtn) sendOtpBtn.disabled = true;
+                showNotifier('This email is already registered. Please use a different email.', 'error');
+            } else {
+                if (emailWarning) emailWarning.style.display = 'none';
+                if (sendOtpBtn) sendOtpBtn.disabled = false;
+            }
+        } catch (error) {
+            console.error('Error checking email:', error);
+        }
+    });
+}
+
+// Password strength indicator
+function setupPasswordStrength() {
+    const passwordInput = document.getElementById('password');
+    const strengthBar = document.getElementById('strengthBar');
+    const strengthText = document.getElementById('strengthText');
+    
+    if (!passwordInput || !strengthBar || !strengthText) return;
+    
+    passwordInput.addEventListener('input', function() {
+        const password = this.value;
+        let strength = 0;
+        let feedback = [];
+        
+        // Length check
+        if (password.length >= 12) {
+            strength += 25;
+        } else {
+            feedback.push('at least 12 characters');
+        }
+        
+        // Uppercase check
+        if (/[A-Z]/.test(password)) {
+            strength += 25;
+        } else {
+            feedback.push('uppercase letters');
+        }
+        
+        // Lowercase check
+        if (/[a-z]/.test(password)) {
+            strength += 25;
+        } else {
+            feedback.push('lowercase letters');
+        }
+        
+        // Number check
+        if (/[0-9]/.test(password)) {
+            strength += 15;
+        } else {
+            feedback.push('numbers');
+        }
+        
+        // Special character check
+        if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+            strength += 10;
+        } else {
+            feedback.push('special characters');
+        }
+        
+        // Update progress bar
+        strengthBar.style.width = strength + '%';
+        
+        // Update colors and text
+        if (strength < 40) {
+            strengthBar.className = 'progress-bar bg-danger';
+            strengthText.textContent = 'Weak - Need: ' + feedback.join(', ');
+            strengthText.className = 'text-danger';
+        } else if (strength < 70) {
+            strengthBar.className = 'progress-bar bg-warning';
+            strengthText.textContent = 'Fair - Need: ' + feedback.join(', ');
+            strengthText.className = 'text-warning';
+        } else if (strength < 90) {
+            strengthBar.className = 'progress-bar bg-info';
+            strengthText.textContent = 'Good';
+            strengthText.className = 'text-info';
+        } else {
+            strengthBar.className = 'progress-bar bg-success';
+            strengthText.textContent = 'Strong password!';
+            strengthText.className = 'text-success';
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     setupRealTimeValidation();
     setupFileUploadHandlers();
     setupOtpHandlers();
     setupOtpInputFormatting();
+    setupEmailDuplicateCheck();
+    setupPasswordStrength();
     console.log('✅ All handlers initialized');
     
     // Add debug button (temporary)
@@ -7340,12 +7485,27 @@ function setupTermsAndConditions() {
         
         // Prevent manual checking of checkbox - force modal open
         agreeCheckbox.addEventListener('click', function(e) {
-            if (!this.checked) {
-                e.preventDefault();
-                // Open modal if trying to check
-                if (termsLink) termsLink.click();
+            // Always prevent default and open modal when checkbox is clicked
+            e.preventDefault();
+            console.log('📝 Checkbox clicked, opening modal...');
+            
+            // Open modal
+            if (window.bootstrap && window.bootstrap.Modal && termsModal) {
+                const modal = new bootstrap.Modal(termsModal);
+                modal.show();
+                console.log('✅ Terms modal opened from checkbox');
             }
         });
+        
+        // Also open modal when clicking the label
+        const checkboxLabel = document.querySelector('label[for="agreeTerms"]');
+        if (checkboxLabel) {
+            checkboxLabel.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('📝 Label clicked, opening modal...');
+                if (termsLink) termsLink.click();
+            });
+        }
     }
     
     // Handle clicking the terms link to open modal

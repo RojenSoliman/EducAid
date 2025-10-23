@@ -1,0 +1,103 @@
+=====================================
+ID PICTURE OCR VERIFICATION REPORT
+=====================================
+
+Generated: October 24, 2025, 1:54 am
+Student ID: N/A
+School Student ID: 2022-2-00448
+Uploaded File: ID.jpg
+
+-------------------------------------
+PERSONAL INFORMATION (From Form):
+-------------------------------------
+
+First Name:  
+Middle Name: 
+Last Name:   
+University:  Lyceum of the Philippines University - Cavite
+
+-------------------------------------
+VALIDATION CHECKS:
+-------------------------------------
+
+First Name Match                   : ✓ PASS (80%)
+Middle Name Match                  : ✗ FAIL (28.6%)
+Last Name Match                    : ✗ FAIL (28.6%)
+University Match                   : ✗ FAIL (57.1%)
+Document Keywords Found            : ✗ FAIL
+School Student Id Match            : ✗ FAIL (0%)
+                                     Note: Not found - please verify
+
+-------------------------------------
+CONFIDENCE SCORES:
+-------------------------------------
+
+First Name:          80%
+Middle Name:         28.6%
+Last Name:           28.6%
+University:          57.1%
+Keywords Found:      1 / 12
+School Student ID:   0%
+-------------------------------------
+AVERAGE:             38.9%
+
+-------------------------------------
+OVERALL RESULT:
+-------------------------------------
+
+Passed Checks: 1 / 6
+Status: ! NEEDS REVIEW
+Recommendation: Review - Please verify information matches your student ID
+
+-------------------------------------
+EXTRACTED OCR TEXT:
+-------------------------------------
+
+@LPU
+
+LYCEUM OF THE PHILIPPINES UNIVERSITY
+
+CAVITE CAMPUS
+
+eS
+
+A
+
+eT
+
++,
+
+fs
+
+f
+
+mel
+
+pia
+
+a:
+
++ .
+
+a
+
+—
+
+“¥,
+
+¢
+
+a=
+
+STUL
+
+ta |All eae a
+
+vow
+
+Royen |
+
+
+=====================================
+END OF REPORT
+=====================================
