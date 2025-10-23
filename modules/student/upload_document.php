@@ -306,7 +306,7 @@ function getUniversityGradingPolicy($connection, $student_id) {
         }
         
         // Get grading policy from database
-        $policy_query = "SELECT * FROM grading.university_passing_policy WHERE university_key = $1 AND is_active = TRUE";
+        $policy_query = "SELECT * FROM university_passing_policy WHERE university_key = $1 AND is_active = TRUE";
         $policy_result = pg_query_params($connection, $policy_query, [$university_key]);
         $policy = pg_fetch_assoc($policy_result);
         

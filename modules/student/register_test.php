@@ -2325,10 +2325,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
 // --- Enhanced Grades OCR Processing with Strict Validation ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) {
     try {
-        $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_grades_ocr');
-        if (!$captcha['ok']) {
-            json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
-        }
+        // TEMPORARY: Bypass CAPTCHA for debugging OCR grade extraction
+        // $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_grades_ocr');
+        // if (!$captcha['ok']) {
+        //     json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
+        // }
 
         if (!isset($_FILES['grades_document']) || $_FILES['grades_document']['error'] !== UPLOAD_ERR_OK) {
             json_response(['status' => 'error', 'message' => 'No grades document uploaded or upload error.']);
@@ -2589,7 +2590,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
         if (!$yearLevelMatch) {
             error_log("Year validation failed for '$declaredYearName' - setting empty grade section");
             error_log("Year validation error: " . ($yearValidationResult['error'] ?? 'Unknown error'));
-            $yearLevelSection = ''; // Empty section = no grades extracted
+            // TEMPORARY DEBUG: Still extract grades for troubleshooting
+            // $yearLevelSection = ''; // Empty section = no grades extracted
+            // Comment out the above line to see what grades would be extracted
         }
 
         // === 2. ADMIN SEMESTER VALIDATION ===
@@ -2953,23 +2956,13 @@ function validateGradeThreshold($yearSection, $declaredYearName, $debug = false,
 
     $lines = preg_split('/\r?\n/', $yearSection);
     $lastNonEmpty = '';
-    
-    // Track seen subjects to avoid duplicates
-    $seenSubjects = [];
 
     foreach ($lines as $ln) {
         $lnTrim = trim($ln);
         if ($lnTrim === '') continue;
 
-        // Skip summary lines but be less aggressive
-        if (preg_match('/\b(total\s+units|total\s+credit|gwa|general\s+weighted\s+average|passing\s+percentage)\b/i', $lnTrim)) {
+        if (preg_match('/\b(total|units|gwa|general weighted average)\b/i', $lnTrim)) {
             if ($debug) $grade_debug[] = ['skipped' => $lnTrim];
-            continue;
-        }
-        
-        // Skip lines that are just column headers
-        if (preg_match('/^\s*(code|title|grade|compl|units|credit|semester)\s*$/i', $lnTrim)) {
-            if ($debug) $grade_debug[] = ['skipped_header' => $lnTrim];
             continue;
         }
 
@@ -3073,48 +3066,9 @@ function validateGradeThreshold($yearSection, $declaredYearName, $debug = false,
             }
         }
 
-        // Derive subject by intelligently removing grade/unit numbers
-        $subjectCandidate = $lnTrim;
-        
-        // Strategy: Keep the beginning part (subject code + name), remove numbers from the end
-        // Remove separator characters first
-        $subjectCandidate = preg_replace('/[:\|]{1,}/', ' ', $subjectCandidate);
-        
-        // Enhanced approach: Remove grade/unit tokens more intelligently
-        $lineLength = strlen($subjectCandidate);
-        
-        // If we have grade tokens, try to identify subject vs. grade section
-        if (!empty($validTokens)) {
-            // Find the position of the FIRST grade token (likely where subject ends)
-            $firstGradePos = false;
-            foreach ($validTokens as $token) {
-                $pos = strpos($subjectCandidate, $token);
-                if ($pos !== false) {
-                    // Skip if it's in the first 30% (likely part of subject code like "GNED 09")
-                    if ($pos > ($lineLength * 0.3)) {
-                        if ($firstGradePos === false || $pos < $firstGradePos) {
-                            $firstGradePos = $pos;
-                        }
-                    }
-                }
-            }
-            
-            // If we found where grades start, truncate there
-            if ($firstGradePos !== false) {
-                $subjectCandidate = substr($subjectCandidate, 0, $firstGradePos);
-            } else {
-                // Fallback: remove each token individually
-                foreach ($validTokens as $token) {
-                    $pos = strpos($subjectCandidate, $token);
-                    if ($pos !== false && $pos > ($lineLength * 0.3)) {
-                        $subjectCandidate = preg_replace('/\b' . preg_quote($token, '/') . '\b/', ' ', $subjectCandidate, 1);
-                    }
-                }
-            }
-        }
-        
-        // Also remove common separators like multiple dashes
-        $subjectCandidate = preg_replace('/\s*-+\s*/', ' ', $subjectCandidate);
+        // Derive subject by removing numeric tokens
+        $subjectCandidate = preg_replace('/(?:\d+\.\d+|\.\d+|\d+)/', ' ', $lnTrim);
+        $subjectCandidate = preg_replace('/[:\-\|]{1,}/', ' ', $subjectCandidate);
         $subjectCandidate = trim(preg_replace('/\s+/', ' ', $subjectCandidate));
         $cleanSubject = cleanSubjectName($subjectCandidate);
 
@@ -3139,22 +3093,10 @@ function validateGradeThreshold($yearSection, $declaredYearName, $debug = false,
         // Determine canonical grade for legacy checks
         $canonical = $gradeObj['grade'] ?? null;
         if ($canonical !== null) {
-            // Check for duplicates before adding
-            $isDuplicate = false;
-            $subjectKey = strtolower(trim($cleanSubject));
-            if (isset($seenSubjects[$subjectKey])) {
-                $isDuplicate = true;
-            } else {
-                $seenSubjects[$subjectKey] = true;
-                $validGrades[] = $gradeObj;
-                $gradeVal = floatval($canonical);
-                if ($gradeVal > 3.00) { $failingGrades[] = ['subject'=>$cleanSubject,'grade'=>$canonical]; $allPassing = false; }
-                if ($debug) $grade_debug[] = ['accepted' => $gradeObj, 'raw_line' => $lnTrim];
-            }
-            
-            if ($isDuplicate && $debug) {
-                $grade_debug[] = ['duplicate_skipped' => $gradeObj, 'raw_line' => $lnTrim];
-            }
+            $validGrades[] = $gradeObj;
+            $gradeVal = floatval($canonical);
+            if ($gradeVal > 3.00) { $failingGrades[] = ['subject'=>$cleanSubject,'grade'=>$canonical]; $allPassing = false; }
+            if ($debug) $grade_debug[] = ['accepted' => $gradeObj, 'raw_line' => $lnTrim];
         } else {
             if ($debug) $grade_debug[] = ['no_grade_found' => $lnTrim];
         }
@@ -3162,47 +3104,22 @@ function validateGradeThreshold($yearSection, $declaredYearName, $debug = false,
         $lastNonEmpty = $lnTrim;
     }
 
-    // Second pass for grade-only lines (more lenient for missing subjects)
+    // Second pass for grade-only lines
     $lastNonEmpty = '';
     foreach ($lines as $ln) {
         $lnTrim = trim($ln);
         if ($lnTrim === '') continue;
-        
-        // Check if line is ONLY a grade (no subject text)
         $onlyGrade = normalize_and_extract_grade_student($lnTrim);
-        $isGradeOnly = ($onlyGrade !== null && preg_match('/^[\d\.\s\-]+$/', $lnTrim));
-        
-        if ($isGradeOnly && !empty($lastNonEmpty)) {
-            // Previous line might be the subject
-            $cleanSubject = cleanSubjectName($lastNonEmpty);
-            if ($cleanSubject && strlen($cleanSubject) >= 3) {
-                $subjectKey = strtolower(trim($cleanSubject));
-                
-                // Only add if not already extracted
-                if (!isset($seenSubjects[$subjectKey])) {
+        if ($onlyGrade !== null && preg_match('/^[\d\.]+$/', $lnTrim)) {
+            if (!empty($lastNonEmpty)) {
+                $cleanSubject = cleanSubjectName($lastNonEmpty);
+                if ($cleanSubject) {
                     $gradeData = ['subject'=>$cleanSubject,'grade'=>number_format(floatval($onlyGrade),2,'.','')];
-                    $seenSubjects[$subjectKey] = true;
-                    $validGrades[] = $gradeData;
-                    
-                    if (floatval($onlyGrade) > 3.00) { 
-                        $failingGrades[] = $gradeData; 
-                        $allPassing = false; 
-                    }
-                    
-                    if ($debug) {
-                        $grade_debug[] = [
-                            'paired' => $gradeData,
-                            'subject_line' => $lastNonEmpty,
-                            'grade_line' => $lnTrim,
-                            'method' => 'second_pass'
-                        ];
-                    }
+                    $already=false; foreach($validGrades as $vg){ if($vg['subject']===$gradeData['subject'] && ($vg['grade']??'')===$gradeData['grade']){$already=true;break;} }
+                    if(!$already){ $validGrades[]=$gradeData; if(floatval($onlyGrade)>3.00){ $failingGrades[]=$gradeData; $allPassing=false; } if($debug) $grade_debug[]=['paired'=>$gradeData,'subject_line'=>$lastNonEmpty,'grade_line'=>$lnTrim]; }
                 }
             }
-        }
-        
-        // Update last non-empty line (potential subject line)
-        if (!$isGradeOnly && strlen($lnTrim) > 2) {
+        } else {
             $lastNonEmpty = $lnTrim;
         }
     }
@@ -3565,15 +3482,8 @@ function validateAdminSchoolYear($ocrText, $adminSchoolYear) {
 }
 
 function cleanSubjectName($rawSubject) {
-    // Remove subject codes and keep only the descriptive subject name
+    // Remove common subject code patterns like A24-25, 1.25 B22-23, DCSNO1C, etc.
     $subject = $rawSubject;
-    
-    // Remove subject codes at the beginning (GNED09, IENG100A, IENG125A, etc.)
-    // Pattern: Letters (2-8) followed by optional numbers and optional letter at START
-    $subject = preg_replace('/^\b[A-Z]{2,8}\d+[A-Z]?\b\s*/i', '', $subject);
-    
-    // Also handle codes with spaces like "GNED 09" or "IENG 100A"
-    $subject = preg_replace('/^\b[A-Z]{2,8}\s+\d+[A-Z]?\b\s*/i', '', $subject);
     
     // Remove patterns like A24-25, B22-23, etc. (letter + year range)
     $subject = preg_replace('/\b[A-Z]\d{2}-\d{2}\b/i', '', $subject);
@@ -3581,10 +3491,10 @@ function cleanSubjectName($rawSubject) {
     // Remove patterns like 1.25 B22-23 (grade + space + code)
     $subject = preg_replace('/\d+\.\d+\s+[A-Z]\d{2}-\d{2}/i', '', $subject);
     
-    // Remove codes at the END (after the subject name)
-    $subject = preg_replace('/\s+\b[A-Z]{2,}[0-9]+[A-Z]?\b/', '', $subject);
+    // Remove standalone codes like DCSNO1C, DCSNO3C, etc.
+    $subject = preg_replace('/\b[A-Z]{2,}[0-9]+[A-Z]?\b/', '', $subject);
     
-    // Remove patterns like 22-23, A22-23 at the beginning or end (likely years)
+    // Remove patterns like 22-23, A22-23 at the beginning or end
     $subject = preg_replace('/^[A-Z]?\d{2}-\d{2}\s*/', '', $subject);
     $subject = preg_replace('/\s*[A-Z]?\d{2}-\d{2}$/', '', $subject);
     
@@ -3592,10 +3502,7 @@ function cleanSubjectName($rawSubject) {
     $subject = preg_replace('/^\d+\s+(?=and\s)/i', '', $subject);
     
     // Remove standalone single letters or numbers
-    $subject = preg_replace('/\s+\b[A-Z0-9]\b\s+/', ' ', $subject);
-    
-    // Remove "code" or "title" labels that might appear
-    $subject = preg_replace('/^(code|title)[\s:]+/i', '', $subject);
+    $subject = preg_replace('/\b[A-Z0-9]\b/', '', $subject);
     
     // Clean up extra spaces and return
     $subject = preg_replace('/\s+/', ' ', trim($subject));
@@ -4356,9 +4263,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep4Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 <!-- Step 5: Enrollment Assessment Form Upload and OCR Verification -->
@@ -4463,9 +4368,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep5Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 <!-- Step 6: Letter to Mayor Upload and OCR Verification -->
@@ -4530,9 +4433,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep6Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 <!-- Step 7: Certificate of Indigency Upload and OCR Verification -->
@@ -4601,9 +4502,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep7Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep7Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 <!-- Step 8: Grade Scanning -->
@@ -4693,9 +4592,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep8Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep8Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 
@@ -4912,6 +4809,10 @@ function updateStepIndicators() {
 // ============================================
 
 function validateCurrentStepFields() {
+    // TEMPORARILY DISABLED FOR TESTING - REMOVE THIS TO RE-ENABLE VALIDATION
+    return { isValid: true };
+    
+    /* ORIGINAL VALIDATION CODE - UNCOMMENT TO RE-ENABLE
     const currentPanel = document.getElementById(`step-${currentStep}`);
     if (!currentPanel) return { isValid: true };
     
@@ -5091,6 +4992,7 @@ function validateCurrentStepFields() {
     }
     
     return { isValid: true };
+    END OF COMMENTED CODE */
 }
 
 function validateSpecificField(field, value) {
@@ -5449,24 +5351,14 @@ function handleIdPictureOcrResults(data) {
             if (v.summary.recommendation === 'Approve') {
                 recommendationEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Document verified successfully!';
                 if (feedbackDiv) feedbackDiv.style.display = 'none';
-                if (nextBtn) {
-                    nextBtn.disabled = false;
-                    nextBtn.classList.remove('btn-secondary');
-                    nextBtn.classList.add('btn-success');
-                    nextBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Continue - Document Verified';
-                }
+                if (nextBtn) nextBtn.disabled = false;
             } else {
                 recommendationEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>' + v.summary.recommendation;
                 if (feedbackDiv) {
                     feedbackDiv.style.display = 'block';
                     feedbackDiv.innerHTML = '<strong>Verification Warning:</strong> ' + v.summary.recommendation;
                 }
-                if (nextBtn) {
-                    nextBtn.disabled = false; // Allow proceeding with warning
-                    nextBtn.classList.remove('btn-secondary');
-                    nextBtn.classList.add('btn-warning');
-                    nextBtn.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>Continue - With Warnings';
-                }
+                if (nextBtn) nextBtn.disabled = false; // Allow proceeding with warning
             }
         }
         
@@ -5776,13 +5668,9 @@ function setupOtpHandlers() {
 }
 
 function sendOtp() {
-    const emailInput = document.getElementById('emailInput');
+    const emailInput = document.querySelector('input[name="email"]');
     const sendBtn = document.getElementById('sendOtpBtn');
     const resendBtn = document.getElementById('resendOtpBtn');
-    
-    console.log('Send OTP clicked');
-    console.log('Email input:', emailInput);
-    console.log('Email value:', emailInput ? emailInput.value : 'null');
     
     if (!emailInput || !emailInput.value) {
         showNotifier('Please enter an email address first', 'error');
@@ -5805,30 +5693,17 @@ function sendOtp() {
     formData.append('email', emailInput.value);
     formData.append('g-recaptcha-response', 'test'); // You may need proper reCAPTCHA
     
-    console.log('Sending OTP request...');
-    
     fetch(window.location.href, {
         method: 'POST',
         body: formData
     })
     .then(response => {
-        console.log('Response received:', response.status);
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        return response.text();
-    })
-    .then(text => {
-        console.log('Response text:', text);
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            console.error('JSON parse error:', e);
-            throw new Error('Invalid JSON response: ' + text.substring(0, 200));
-        }
+        return response.json();
     })
     .then(data => {
-        console.log('Parsed data:', data);
         if (data.status === 'success') {
             showNotifier(data.message, 'success');
             

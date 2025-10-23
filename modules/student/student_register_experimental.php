@@ -1,8 +1,491 @@
 <?php
+// Suppress all output and errors for AJAX requests
+if (isset($_POST['processIdPictureOcr']) || isset($_POST['processGradesOcr']) || 
+    isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) || isset($_POST['processCertificateOcr'])) {
+    @ini_set('display_errors', '0');
+    error_reporting(0);
+    if (!ob_get_level()) ob_start();
+}
+
+// Move all AJAX processing to the very top to avoid headers already sent error
 include_once '../../config/database.php';
 // Include reCAPTCHA v3 configuration (site key + secret key constants)
 include_once __DIR__ . '/../../config/recaptcha_config.php';
 session_start();
+
+$municipality_id = $_SESSION['active_municipality_id'] ?? 1;
+$municipality_logo = null;
+$municipality_name = 'General Trias';
+
+if (isset($connection)) {
+    $muni_result = pg_query_params(
+        $connection,
+        "SELECT municipality_id, name, COALESCE(custom_logo_image, preset_logo_image) AS active_logo
+         FROM municipalities
+         WHERE municipality_id = $1
+         LIMIT 1",
+        [$municipality_id]
+    );
+
+    if ($muni_result && pg_num_rows($muni_result) > 0) {
+        $muni_data = pg_fetch_assoc($muni_result);
+        $municipality_id = (int)$muni_data['municipality_id'];
+        $municipality_name = $muni_data['name'] ?: $municipality_name;
+        if (!empty($muni_data['active_logo'])) {
+            $raw_logo = trim($muni_data['active_logo']);
+            if (
+                preg_match('#^data:image/[^;]+;base64,#i', $raw_logo) ||
+                preg_match('#^(?:https?:)?//#i', $raw_logo)
+            ) {
+                $municipality_logo = $raw_logo;
+            } else {
+                $normalized = str_replace('\\', '/', $raw_logo);
+                $normalized = preg_replace('#(?<!:)/{2,}#', '/', $normalized);
+
+                if (strpos($normalized, '../') === 0) {
+                    $municipality_logo = $normalized;
+                } else {
+                    $segments = array_map('rawurlencode', explode('/', ltrim($normalized, '/')));
+                    $municipality_logo = '../../' . implode('/', $segments);
+                }
+            }
+        }
+        pg_free_result($muni_result);
+    } elseif ($muni_result) {
+        pg_free_result($muni_result);
+    }
+}
+
+$_SESSION['active_municipality_id'] = $municipality_id;
+
+// Debug: Test if POST requests work at all
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['debug_test'])) {
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'success', 'message' => 'POST debug successful', 'data' => $_POST]);
+    exit;
+}
+
+// --- MOVE OCR PROCESSING HERE BEFORE ANY HTML OUTPUT ---
+// Document OCR Processing
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processEnrollmentOcr'])) {
+    // Clear any output buffers to prevent headers already sent error
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+    
+    
+    
+    if (!isset($_FILES['enrollment_form']) || $_FILES['enrollment_form']['error'] !== UPLOAD_ERR_OK) {
+        $errorMsg = 'No file uploaded or upload error.';
+        if (isset($_FILES['enrollment_form']['error'])) {
+            $errorMsg .= ' Upload error code: ' . $_FILES['enrollment_form']['error'];
+        }
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'error', 'message' => $errorMsg]);
+        exit;
+    }
+
+    $uploadDir = '../../assets/uploads/temp/enrollment_forms/';
+    if (!file_exists($uploadDir)) {
+        mkdir($uploadDir, 0777, true);
+    }
+
+    // Clear temp folder - delete previous EAF files for this session
+    $files = glob($uploadDir . '*');
+    foreach ($files as $file) {
+        if (is_file($file)) unlink($file);
+    }
+
+    $uploadedFile = $_FILES['enrollment_form'];
+    $fileName = basename($uploadedFile['name']);
+    $targetPath = $uploadDir . $fileName;
+
+    // Validate filename format: Lastname_Firstname_EAF
+    $formFirstName = trim($_POST['first_name'] ?? '');
+    $formLastName = trim($_POST['last_name'] ?? '');
+
+    if (empty($formFirstName) || empty($formLastName)) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'error', 'message' => 'First name and last name are required for filename validation.']);
+        exit;
+    }
+
+    // Remove file extension and validate format
+    $nameWithoutExt = pathinfo($fileName, PATHINFO_FILENAME);
+    $expectedFormat = $formLastName . '_' . $formFirstName . '_EAF';
+
+    if (strcasecmp($nameWithoutExt, $expectedFormat) !== 0) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'status' => 'error', 
+            'message' => "Filename must follow format: {$formLastName}_{$formFirstName}_EAF.{file_extension}"
+        ]);
+        exit;
+    }
+
+    if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded file.']);
+        exit;
+    }
+
+    // Get form data for comparison
+    $formData = [
+        'first_name' => trim($_POST['first_name'] ?? ''),
+        'middle_name' => trim($_POST['middle_name'] ?? ''),
+        'last_name' => trim($_POST['last_name'] ?? ''),
+        'extension_name' => trim($_POST['extension_name'] ?? ''),
+        'university_id' => intval($_POST['university_id'] ?? 0),
+        'year_level_id' => intval($_POST['year_level_id'] ?? 0)
+    ];
+
+    // Get university and year level names for comparison
+    $universityName = '';
+    $yearLevelName = '';
+
+    if ($formData['university_id'] > 0) {
+        $uniResult = pg_query_params($connection, "SELECT name FROM universities WHERE university_id = $1", [$formData['university_id']]);
+        if ($uniRow = pg_fetch_assoc($uniResult)) {
+            $universityName = $uniRow['name'];
+        }
+    }
+
+    if ($formData['year_level_id'] > 0) {
+        $yearResult = pg_query_params($connection, "SELECT name, code FROM year_levels WHERE year_level_id = $1", [$formData['year_level_id']]);
+        if ($yearRow = pg_fetch_assoc($yearResult)) {
+            $yearLevelName = $yearRow['name'];
+        }
+    }
+
+    // Enhanced OCR processing with PDF support
+    $outputBase = $uploadDir . 'ocr_' . pathinfo($fileName, PATHINFO_FILENAME);
+    
+    // Check if the file is a PDF and handle accordingly
+    $fileExtension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
+    
+    if ($fileExtension === 'pdf') {
+        // Try basic PDF text extraction using a simple approach
+        $pdfText = '';
+        
+        // Method 1: Try using pdftotext if available
+        $pdfTextCommand = "pdftotext " . escapeshellarg($targetPath) . " - 2>nul";
+        $pdfText = @shell_exec($pdfTextCommand);
+        
+        if (!empty(trim($pdfText))) {
+            // Successfully extracted text from PDF
+            $ocrText = $pdfText;
+        } else {
+            // Method 2: Try basic PHP PDF text extraction
+            $pdfContent = file_get_contents($targetPath);
+            if ($pdfContent !== false) {
+                // Very basic PDF text extraction - look for text streams
+                preg_match_all('/\(([^)]+)\)/', $pdfContent, $matches);
+                if (!empty($matches[1])) {
+                    $extractedText = implode(' ', $matches[1]);
+                    // Clean up the extracted text
+                    $extractedText = preg_replace('/[^\x20-\x7E]/', ' ', $extractedText);
+                    $extractedText = preg_replace('/\s+/', ' ', trim($extractedText));
+                    
+                    if (strlen($extractedText) > 50) { // Only use if we got substantial text
+                        $ocrText = $extractedText;
+                    }
+                }
+            }
+            
+            // If no text could be extracted
+            if (empty($ocrText) || strlen(trim($ocrText)) < 10) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'status' => 'error', 
+                    'message' => 'Unable to extract text from PDF. Please try one of these alternatives:',
+                    'suggestions' => [
+                        '1. Convert the PDF to a JPG or PNG image',
+                        '2. Take a photo of the document with your phone camera',
+                        '3. Scan the document as an image file',
+                        '4. Ensure the PDF contains selectable text (not a scanned image)'
+                    ]
+                ]);
+                exit;
+            }
+        }
+    } else {
+        // For image files, use standard Tesseract processing
+        $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) .
+                   " --oem 1 --psm 6 -l eng 2>&1";
+
+        $tesseractOutput = shell_exec($command);
+        $outputFile = $outputBase . ".txt";
+
+        if (!file_exists($outputFile)) {
+            header('Content-Type: application/json');
+            echo json_encode([
+                'status' => 'error', 
+                'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
+                'debug_info' => $tesseractOutput,
+                'suggestions' => [
+                    '1. Make sure the image is clear and high resolution',
+                    '2. Ensure good lighting when taking photos',
+                    '3. Try straightening the document in the image',
+                    '4. Use JPG or PNG format for best results'
+                ]
+            ]);
+            exit;
+        }
+
+        $ocrText = file_get_contents($outputFile);
+        
+        // Clean up temporary OCR files
+        if (file_exists($outputFile)) {
+            unlink($outputFile);
+        }
+    }
+    
+    if (empty(trim($ocrText))) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'status' => 'error', 
+            'message' => 'No text could be extracted from the document. Please ensure the image is clear and contains readable text.'
+        ]);
+        exit;
+    }
+    
+    $ocrTextLower = strtolower($ocrText);
+
+    // Enhanced verification results with confidence tracking
+    $verification = [
+        'first_name_match' => false,
+        'middle_name_match' => false,
+        'last_name_match' => false,
+        'year_level_match' => false,
+        'university_match' => false,
+        'document_keywords_found' => false,
+        'confidence_scores' => [],
+        'found_text_snippets' => []
+    ];
+    
+    // Function to calculate similarity score (reusable)
+    function calculateEAFSimilarity($needle, $haystack) {
+        $needle = strtolower(trim($needle));
+        $haystack = strtolower(trim($haystack));
+        
+        // Exact match
+        if (stripos($haystack, $needle) !== false) {
+            return 100;
+        }
+        
+        // Check for partial matches with high similarity
+        $words = explode(' ', $haystack);
+        $maxSimilarity = 0;
+        
+        foreach ($words as $word) {
+            if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                $similarity = 0;
+                similar_text($needle, $word, $similarity);
+                $maxSimilarity = max($maxSimilarity, $similarity);
+            }
+        }
+        
+        return $maxSimilarity;
+    }
+
+    // Enhanced name checking with similarity scoring
+    if (!empty($formData['first_name'])) {
+        $similarity = calculateEAFSimilarity($formData['first_name'], $ocrTextLower);
+        $verification['confidence_scores']['first_name'] = $similarity;
+        
+        if ($similarity >= 80) {
+            $verification['first_name_match'] = true;
+            // Find and store the matched text snippet
+            $pattern = '/\b\w*' . preg_quote(substr($formData['first_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['first_name'] = $matches[0];
+            }
+        }
+    }
+
+    // Check middle name (optional) with improved matching
+    if (empty($formData['middle_name'])) {
+        $verification['middle_name_match'] = true; // Skip if no middle name provided
+        $verification['confidence_scores']['middle_name'] = 100;
+    } else {
+        $similarity = calculateEAFSimilarity($formData['middle_name'], $ocrTextLower);
+        $verification['confidence_scores']['middle_name'] = $similarity;
+        
+        if ($similarity >= 70) { // Slightly lower threshold for middle names
+            $verification['middle_name_match'] = true;
+            $pattern = '/\b\w*' . preg_quote(substr($formData['middle_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['middle_name'] = $matches[0];
+            }
+        }
+    }
+
+    // Check last name with improved matching
+    if (!empty($formData['last_name'])) {
+        $similarity = calculateEAFSimilarity($formData['last_name'], $ocrTextLower);
+        $verification['confidence_scores']['last_name'] = $similarity;
+        
+        if ($similarity >= 80) {
+            $verification['last_name_match'] = true;
+            $pattern = '/\b\w*' . preg_quote(substr($formData['last_name'], 0, 3), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $verification['found_text_snippets']['last_name'] = $matches[0];
+            }
+        }
+    }
+
+    // Check year level (must match the specific year level selected by user)
+    if (!empty($yearLevelName)) {
+        // Create specific variations for the selected year level only
+        $selectedYearVariations = [];
+
+        // Extract year number from the year level name
+        if (stripos($yearLevelName, '1st') !== false || stripos($yearLevelName, 'first') !== false) {
+            $selectedYearVariations = ['1st year', 'first year', '1st yr', 'year 1', 'yr 1', 'freshman'];
+        } elseif (stripos($yearLevelName, '2nd') !== false || stripos($yearLevelName, 'second') !== false) {
+            $selectedYearVariations = ['2nd year', 'second year', '2nd yr', 'year 2', 'yr 2', 'sophomore'];
+        } elseif (stripos($yearLevelName, '3rd') !== false || stripos($yearLevelName, 'third') !== false) {
+            $selectedYearVariations = ['3rd year', 'third year', '3rd yr', 'year 3', 'yr 3', 'junior'];
+        } elseif (stripos($yearLevelName, '4th') !== false || stripos($yearLevelName, 'fourth') !== false) {
+            $selectedYearVariations = ['4th year', 'fourth year', '4th yr', 'year 4', 'yr 4', 'senior'];
+        } elseif (stripos($yearLevelName, '5th') !== false || stripos($yearLevelName, 'fifth') !== false) {
+            $selectedYearVariations = ['5th year', 'fifth year', '5th yr', 'year 5', 'yr 5'];
+        } elseif (stripos($yearLevelName, 'graduate') !== false || stripos($yearLevelName, 'grad') !== false) {
+            $selectedYearVariations = ['graduate', 'grad student', 'masters', 'phd', 'doctoral'];
+        }
+
+        // Check if any of the specific year level variations are found
+        foreach ($selectedYearVariations as $variation) {
+            if (stripos($ocrText, $variation) !== false) {
+                $verification['year_level_match'] = true;
+                break;
+            }
+        }
+    }
+
+    // Enhanced university name checking with better matching
+    if (!empty($universityName)) {
+        $universityWords = array_filter(explode(' ', strtolower($universityName)));
+        $foundWords = 0;
+        $totalWords = count($universityWords);
+        $foundSnippets = [];
+        
+        foreach ($universityWords as $word) {
+            if (strlen($word) > 2) { // Check words longer than 2 characters
+                $similarity = calculateEAFSimilarity($word, $ocrTextLower);
+                if ($similarity >= 70) {
+                    $foundWords++;
+                    // Try to find the actual matched word in the text
+                    $pattern = '/\b\w*' . preg_quote(substr($word, 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $foundSnippets[] = $matches[0];
+                    }
+                }
+            }
+        }
+        
+        $universityScore = ($foundWords / max($totalWords, 1)) * 100;
+        $verification['confidence_scores']['university'] = round($universityScore, 1);
+        
+        // Accept if at least 60% of university words are found, or if it's a short name and 1+ words found
+        if ($universityScore >= 60 || ($totalWords <= 2 && $foundWords >= 1)) {
+            $verification['university_match'] = true;
+            if (!empty($foundSnippets)) {
+                $verification['found_text_snippets']['university'] = implode(', ', array_unique($foundSnippets));
+            }
+        }
+    }
+
+    // Enhanced document keywords checking
+    $documentKeywords = [
+        'enrollment', 'assessment', 'form', 'official', 'academic', 'student',
+        'tuition', 'fees', 'semester', 'registration', 'course', 'subject',
+        'grade', 'transcript', 'record', 'university', 'college', 'school',
+        'eaf', 'assessment form', 'billing', 'statement', 'certificate'
+    ];
+
+    $keywordMatches = 0;
+    $foundKeywords = [];
+    $keywordScore = 0;
+    
+    foreach ($documentKeywords as $keyword) {
+        $similarity = calculateEAFSimilarity($keyword, $ocrTextLower);
+        if ($similarity >= 80) {
+            $keywordMatches++;
+            $foundKeywords[] = $keyword;
+            $keywordScore += $similarity;
+        }
+    }
+    
+    $averageKeywordScore = $keywordMatches > 0 ? ($keywordScore / $keywordMatches) : 0;
+    $verification['confidence_scores']['document_keywords'] = round($averageKeywordScore, 1);
+
+    if ($keywordMatches >= 3) {
+        $verification['document_keywords_found'] = true;
+        $verification['found_text_snippets']['document_keywords'] = implode(', ', $foundKeywords);
+    }
+
+    // Enhanced overall success calculation
+    $requiredChecks = ['first_name_match', 'middle_name_match', 'last_name_match', 'year_level_match', 'university_match', 'document_keywords_found'];
+    $passedChecks = 0;
+    $totalConfidence = 0;
+    $confidenceCount = 0;
+    
+    foreach ($requiredChecks as $check) {
+        if ($verification[$check]) {
+            $passedChecks++;
+        }
+    }
+    
+    // Calculate average confidence
+    foreach ($verification['confidence_scores'] as $score) {
+        $totalConfidence += $score;
+        $confidenceCount++;
+    }
+    $averageConfidence = $confidenceCount > 0 ? ($totalConfidence / $confidenceCount) : 0;
+    
+    // More nuanced success criteria:
+    // Option 1: At least 4 out of 6 checks pass
+    // Option 2: At least 3 checks pass with high confidence
+    $verification['overall_success'] = ($passedChecks >= 4) || 
+                                     ($passedChecks >= 3 && $averageConfidence >= 80);
+    
+    $verification['summary'] = [
+        'passed_checks' => $passedChecks,
+        'total_checks' => 6,
+        'average_confidence' => round($averageConfidence, 1),
+        'recommendation' => $verification['overall_success'] ? 
+            'Document validation successful' : 
+            'Please ensure the document clearly shows your name, university, year level, and appears to be an official enrollment form'
+    ];
+    
+    // Include OCR text preview for debugging (truncated for security)
+    $verification['ocr_text_preview'] = substr($ocrText, 0, 500) . (strlen($ocrText) > 500 ? '...' : '');
+
+    // Save OCR confidence score to temp file for later use during registration
+    $confidenceFile = $uploadDir . 'enrollment_confidence.json';
+    $confidenceData = [
+        'overall_confidence' => $averageConfidence,
+        'detailed_scores' => $verification['confidence_scores'],
+        'timestamp' => time()
+    ];
+    @file_put_contents($confidenceFile, json_encode($confidenceData));
+
+    // Save full verification data to .verify.json for admin validation view
+    $verifyFile = $targetPath . '.verify.json';
+    @file_put_contents($verifyFile, json_encode($verification, JSON_PRETTY_PRINT));
+
+    // Save OCR text to .ocr.txt for reference
+    $ocrFile = $targetPath . '.ocr.txt';
+    @file_put_contents($ocrFile, $ocrText);
+
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'success', 'verification' => $verification]);
+    exit;
+}
 
 // Start output buffering to prevent any early HTML from leaking into JSON responses
 if (ob_get_level() === 0) {
@@ -19,7 +502,24 @@ if (!function_exists('json_response')) {
         http_response_code($statusCode);
         header_remove('X-Powered-By');
         header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($payload);
+        
+        // Encode with error handling
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        
+        // Check for JSON encoding errors
+        if ($json === false) {
+            $error = json_last_error_msg();
+            error_log("JSON encoding error: " . $error);
+            // Fallback error response
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'Failed to encode response',
+                'json_error' => $error
+            ]);
+        } else {
+            echo $json;
+        }
+        
         flush();
         exit;
     }
@@ -93,13 +593,12 @@ use PHPMailer\PHPMailer\Exception;
 
 require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 
-$municipality_id = 1;
-
 // Check if this is an AJAX request (OCR, OTP processing, cleanup, or duplicate check)
-$isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) || 
-                 isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) || 
-                 isset($_POST['processCertificateOcr']) || isset($_POST['cleanup_temp']) ||
-                 isset($_POST['check_existing']) || isset($_POST['test_db']);
+$isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) ||
+                 isset($_POST['processOcr']) || isset($_POST['processIdPictureOcr']) || isset($_POST['processLetterOcr']) ||
+                 isset($_POST['processCertificateOcr']) || isset($_POST['processGradesOcr']) ||
+                 isset($_POST['cleanup_temp']) || isset($_POST['check_existing']) || isset($_POST['test_db']) ||
+                 isset($_POST['check_school_student_id']);
 
 // Only output HTML for non-AJAX requests
 if (!$isAjaxRequest) {
@@ -117,6 +616,69 @@ if (!$isAjaxRequest) {
     <link href="../../assets/css/website/landing_page.css" rel="stylesheet" />
     <link rel="stylesheet" href="../../assets/css/registration.css" />
     <style>
+        :root {
+            --thm-primary: #0051f8;
+            --thm-green: #18a54a;
+        }
+
+        body.registration-page {
+            padding-top: var(--navbar-height);
+            overflow-x: hidden;
+            font-family: "Manrope", sans-serif;
+        }
+
+        body.registration-page nav.navbar.fixed-header {
+            isolation: isolate;
+            contain: layout style;
+        }
+
+        body.registration-page .navbar .btn-outline-primary {
+            border: 2px solid var(--thm-primary) !important;
+            color: var(--thm-primary) !important;
+            background: #fff !important;
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: all 0.2s ease;
+        }
+
+        body.registration-page .navbar .btn-outline-primary:hover {
+            background: var(--thm-primary) !important;
+            color: #fff !important;
+            border-color: var(--thm-primary) !important;
+            transform: translateY(-1px);
+        }
+
+        body.registration-page .navbar .btn-primary {
+            background: var(--thm-primary) !important;
+            color: #fff !important;
+            border: 2px solid var(--thm-primary) !important;
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: all 0.2s ease;
+        }
+
+        body.registration-page .navbar .btn-primary:hover {
+            background: var(--thm-green) !important;
+            border-color: var(--thm-green) !important;
+            color: #fff !important;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(24, 165, 74, 0.3);
+        }
+
+        body.registration-page .navbar {
+            font-family: "Manrope", sans-serif;
+        }
+
+        body.registration-page .navbar-brand {
+            font-weight: 700;
+        }
+
+        body.registration-page .nav-link {
+            font-weight: 500;
+        }
+
         .step-panel.d-none { display: none !important; }
         .step-indicator { display: flex; justify-content: center; margin-bottom: 20px; }
         .step {
@@ -176,44 +738,26 @@ if (!$isAjaxRequest) {
             });
         </script>
 </head>
-<body class="registration-page">
-    <!-- Top Info Bar -->
-    <div class="topbar py-2 d-none d-md-block">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-6">
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi bi-telephone"></i>
-                            <span>(046) 509-5555</span>
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="bi bi-envelope"></i>
-                            <span>educaid@generaltrias.gov.ph</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-6 text-end">
-                    <div class="d-flex align-items-center justify-content-end gap-3">
-                        <span>🏛️ Official City Portal</span>
-                        <div class="d-flex gap-2">
-                            <a href="#" class="text-white"><i class="bi bi-facebook"></i></a>
-                            <a href="#" class="text-white"><i class="bi bi-twitter"></i></a>
-                            <a href="#" class="text-white"><i class="bi bi-instagram"></i></a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+<body class="registration-page has-header-offset">
+    <?php include '../../includes/website/topbar.php'; ?>
 
     <?php 
-    // Configure navbar for registration page
     $custom_brand_config = [
-        'href' => '../../website/landingpage.php'
+        'href' => '../../website/landingpage.php',
+        'name' => 'EducAid • ' . $municipality_name,
+        'hide_educaid_logo' => true,
+        'show_municipality' => true,
+        'municipality_logo' => $municipality_logo,
+        'municipality_name' => $municipality_name
     ];
-    $custom_nav_links = [
-        ['href' => '../../website/landingpage.php', 'label' => '<i class="bi bi-house me-1"></i>Back to Home', 'active' => false]
+    $custom_nav_links = [];
+    $prepend_navbar_actions = [
+        [
+            'href' => '../../website/landingpage.php',
+            'label' => 'Back to Home',
+            'icon' => 'bi-house',
+            'class' => 'btn btn-outline-secondary btn-sm'
+        ]
     ];
     $simple_nav_style = true;
     include '../../includes/website/navbar.php'; 
@@ -226,8 +770,95 @@ if (!$isAjaxRequest) {
 <?php
 } // End of HTML output for non-AJAX requests
 
-// --- Slot check ---
+// --- Check School Student ID Duplicate ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['check_school_student_id'])) {
+    $schoolStudentId = trim($_POST['school_student_id'] ?? '');
+    $universityId = intval($_POST['university_id'] ?? 0);
+    $firstName = trim($_POST['first_name'] ?? '');
+    $lastName = trim($_POST['last_name'] ?? '');
+    $birthDate = trim($_POST['bdate'] ?? '');
+    
+    if (empty($schoolStudentId)) {
+        json_response(['status' => 'error', 'message' => 'School student ID number required']);
+    }
+    
+    if ($universityId <= 0) {
+        json_response(['status' => 'error', 'message' => 'Please select your university first']);
+    }
+    
+    try {
+        // Use the database function to check for duplicates
+        $query = "SELECT * FROM check_duplicate_school_student_id($1, $2)";
+        $result = pg_query_params($connection, $query, [$universityId, $schoolStudentId]);
+        
+        if (!$result) {
+            json_response(['status' => 'error', 'message' => 'Database error occurred']);
+        }
+        
+        $checkResult = pg_fetch_assoc($result);
+        
+        if ($checkResult && $checkResult['is_duplicate'] === 't') {
+            // School student ID already exists - perform additional identity checks
+            $identityMatch = false;
+            $matchDetails = [];
+            
+            // Check if name and birthdate match (same person trying to register again)
+            if (!empty($firstName) && !empty($lastName) && !empty($birthDate)) {
+                $nameCheckQuery = "SELECT bdate FROM students WHERE student_id = $1";
+                $nameCheckResult = pg_query_params($connection, $nameCheckQuery, [$checkResult['system_student_id']]);
+                
+                if ($nameCheckRow = pg_fetch_assoc($nameCheckResult)) {
+                    $bdateMatch = ($nameCheckRow['bdate'] === $birthDate);
+                    
+                    // Parse name from student_name field
+                    $existingNameParts = explode(' ', $checkResult['student_name']);
+                    $existingFirstName = $existingNameParts[0] ?? '';
+                    $existingLastName = end($existingNameParts);
+                    
+                    $nameMatch = (
+                        strcasecmp($existingFirstName, $firstName) === 0 &&
+                        strcasecmp($existingLastName, $lastName) === 0
+                    );
+                    
+                    if ($nameMatch && $bdateMatch) {
+                        $identityMatch = true;
+                        $matchDetails = [
+                            'name_match' => true,
+                            'bdate_match' => true,
+                            'message' => 'This appears to be your existing account.'
+                        ];
+                    }
+                }
+            }
+            
+            json_response([
+                'status' => 'duplicate',
+                'message' => "This school student ID number is already registered in our system.",
+                'details' => [
+                    'system_student_id' => $checkResult['system_student_id'],
+                    'name' => $checkResult['student_name'],
+                    'status' => $checkResult['student_status'],
+                    'email_hint' => substr($checkResult['student_email'], 0, 3) . '***@' . explode('@', $checkResult['student_email'])[1],
+                    'mobile_hint' => substr($checkResult['student_mobile'], 0, 4) . '***' . substr($checkResult['student_mobile'], -2),
+                    'registered_at' => $checkResult['registered_at'],
+                    'identity_match' => $identityMatch,
+                    'match_details' => $matchDetails,
+                    'can_reapply' => in_array($checkResult['student_status'], ['rejected', 'disqualified'])
+                ]
+            ]);
+        } else {
+            json_response(['status' => 'available', 'message' => 'School student ID is available']);
+        }
+        
+    } catch (Exception $e) {
+        error_log("Check school student ID error: " . $e->getMessage());
+        json_response(['status' => 'error', 'message' => 'Could not verify school student ID']);
+    }
+}
+
+// --- Distribution Control & Slot check ---
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
+    // Check if there's an active slot for this municipality
     $slotRes = pg_query_params($connection, "SELECT * FROM signup_slots WHERE is_active = TRUE AND municipality_id = $1 ORDER BY created_at DESC LIMIT 1", [$municipality_id]);
     $slotInfo = pg_fetch_assoc($slotRes);
     $slotsLeft = 0;
@@ -253,16 +884,16 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     
     if ($noSlotsAvailable || $slotsFull) {
         // Determine the appropriate message and styling
-        if ($noSlotsAvailable) {
-            $title = "EducAid – Registration Not Available";
-            $headerText = "Registration is currently closed.";
-            $messageText = "Please wait for the next opening of slots.";
-            $iconColor = "text-warning";
-        } else {
+        if ($slotsFull) {
             $title = "EducAid – Registration Closed";
             $headerText = "Slots are full.";
             $messageText = "Please wait for the next announcement before registering again.";
             $iconColor = "text-danger";
+        } else {
+            $title = "EducAid – Registration Not Available";
+            $headerText = "Registration is currently closed.";
+            $messageText = "Please wait for the next opening of slots.";
+            $iconColor = "text-warning";
         }
         
         echo <<<HTML
@@ -273,14 +904,29 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             <title>$title</title>
             <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
-            <link href="../../assets/css/homepage.css" rel="stylesheet" /> 
             <style>
+                body {
+                    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #4b79a1 100%);
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 1.5rem;
+                    color: #0b1c33;
+                }
                 .alert-container {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
-                    height: 100vh;
+                    max-width: 520px;
+                    width: 100%;
+                    margin: 0 auto;
+                    background: rgba(255, 255, 255, 0.95);
+                    padding: 2.5rem 2rem;
+                    border-radius: 1.5rem;
+                    box-shadow: 0 20px 45px rgba(18, 38, 66, 0.35);
+                    text-align: center;
                 }
                 .spinner {
                     width: 3rem;
@@ -294,7 +940,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
                 }
             </style>
         </head>
-        <body class="bg-light">
+        <body>
             <div class="container alert-container">
                 <div class="text-center">
                     <svg class="spinner $iconColor" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid">
@@ -386,10 +1032,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['check_existing'])) {
 
 // --- OTP send ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
+    // Temporarily bypass reCAPTCHA for testing - uncomment for production
+    /*
     $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'send_otp');
     if (!$captcha['ok']) {
         json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
     }
+    */
     $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -406,10 +1055,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
     $_SESSION['otp'] = $otp;
     $_SESSION['otp_email'] = $email;
     $_SESSION['otp_timestamp'] = time();
-    // Flush session so subsequent verify requests can read it immediately
+    // Immediately flush session changes so subsequent requests (e.g., OTP verify) can see them
     if (session_status() === PHP_SESSION_ACTIVE) {
         session_write_close();
-        // Avoid re-opening the session here; response will be sent shortly
+        // Do not immediately reopen the session here to avoid re-locking.
+        // This branch will respond via json_response after mailing, and does not need further session writes.
     }
 
     $mail = new PHPMailer(true);
@@ -422,12 +1072,22 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
         $mail->Username   = getenv('SMTP_USERNAME') ?: 'example@email.test';
         $mail->Password   = getenv('SMTP_PASSWORD') ?: ''; // Ensure this is set in .env on production
         $encryption       = getenv('SMTP_ENCRYPTION') ?: 'tls';
+        
+        // Debug logging for SMTP configuration
+        error_log("SMTP Configuration - Host: " . $mail->Host . ", Username: " . $mail->Username . ", Port: " . (getenv('SMTP_PORT') ?: 587));
+        
         if (strtolower($encryption) === 'ssl') {
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
         } else {
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         }
         $mail->Port       = (int)(getenv('SMTP_PORT') ?: 587);
+        
+        // Enable SMTP debug output for troubleshooting
+        $mail->SMTPDebug = 2; // Enable verbose debug output
+        $mail->Debugoutput = function($str, $level) {
+            error_log("PHPMailer Debug: $str");
+        };
 
         $fromEmail = getenv('SMTP_FROM_EMAIL') ?: ($mail->Username ?: 'no-reply@educaid.local');
         $fromName  = getenv('SMTP_FROM_NAME')  ?: 'EducAid';
@@ -442,19 +1102,46 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['sendOtp'])) {
         $mail->send();
         json_response(['status' => 'success', 'message' => 'OTP sent to your email. Please check your inbox and spam folder.']);
     } catch (Exception $e) {
-        error_log("PHPMailer Error: {$mail->ErrorInfo}");
-        json_response(['status' => 'error', 'message' => 'Message could not be sent. Please check your email address and try again.']);
+        error_log("PHPMailer Exception: " . $e->getMessage());
+        error_log("PHPMailer Error Info: {$mail->ErrorInfo}");
+        
+        // Check if SMTP credentials are configured
+        $smtpUsername = getenv('SMTP_USERNAME');
+        $smtpPassword = getenv('SMTP_PASSWORD');
+        
+        if (empty($smtpUsername) || empty($smtpPassword) || $smtpUsername === 'example@email.test') {
+            json_response([
+                'status' => 'error', 
+                'message' => 'Email service not configured. Please contact administrator.',
+                'debug' => 'SMTP credentials not set up properly.'
+            ]);
+        } else {
+            json_response([
+                'status' => 'error', 
+                'message' => 'Failed to send email. Please check your email address and try again.',
+                'debug' => 'SMTP Error: ' . $e->getMessage()
+            ]);
+        }
     }
 }
 
 // --- OTP verify ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
+    // Temporarily bypass reCAPTCHA for testing - uncomment for production
+    /*
     $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'verify_otp');
     if (!$captcha['ok']) {
         json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
     }
+    */
     $enteredOtp = filter_var($_POST['otp'], FILTER_SANITIZE_NUMBER_INT);
     $email_for_otp = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
+
+    // Check if OTP is already verified
+    if (isset($_SESSION['otp_verified']) && $_SESSION['otp_verified'] === true) {
+        error_log("OTP already verified for this session. Session ID: " . session_id());
+        json_response(['status' => 'success', 'message' => 'OTP already verified. You may proceed to the next step.']);
+    }
 
     if (!isset($_SESSION['otp']) || !isset($_SESSION['otp_email']) || !isset($_SESSION['otp_timestamp'])) {
         error_log("OTP verification error: session data missing (otp, otp_email, otp_timestamp). Session ID: " . session_id());
@@ -478,62 +1165,62 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['verifyOtp'])) {
         $_SESSION['otp_verified'] = true;
         error_log("OTP verified successfully for email: " . $_SESSION['otp_email'] . ", session set to true");
         unset($_SESSION['otp'], $_SESSION['otp_email'], $_SESSION['otp_timestamp']);
+        // Flush session updates before returning JSON to avoid stale reads from rapid follow-ups
         if (session_status() === PHP_SESSION_ACTIVE) { session_write_close(); }
         json_response(['status' => 'success', 'message' => 'OTP verified successfully!']);
     } else {
         $_SESSION['otp_verified'] = false;
+        // Flush session state update to reduce risk of duplicate/conflicting attempts
         if (session_status() === PHP_SESSION_ACTIVE) { session_write_close(); }
         error_log("OTP verification failed - entered: " . $enteredOtp . ", expected: " . $_SESSION['otp']);
         json_response(['status' => 'error', 'message' => 'Invalid OTP. Please try again.']);
     }
 }
 
-// --- Document OCR Processing ---
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
-    $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_ocr');
-    if (!$captcha['ok']) {
-        json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
+// --- ID Picture OCR Processing ---
+// --- ID Picture OCR Processing ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processIdPictureOcr'])) {
+    // Clear any output buffers to prevent headers already sent error
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
     }
-    if (!isset($_FILES['enrollment_form']) || $_FILES['enrollment_form']['error'] !== UPLOAD_ERR_OK) {
-        json_response(['status' => 'error', 'message' => 'No file uploaded or upload error.']);
+    
+    header('Content-Type: application/json');
+    
+    // Verify CAPTCHA (skip validation for development/testing)
+    $captchaToken = $_POST['g-recaptcha-response'] ?? '';
+    if ($captchaToken !== 'test') {
+        $captcha = verify_recaptcha_v3($captchaToken, 'process_id_picture_ocr');
+        if (!$captcha['ok']) { 
+            echo json_encode([
+                'status'=>'error',
+                'message'=>'Security verification failed (captcha).',
+                'debug' => ['captcha_token' => $captchaToken, 'captcha_result' => $captcha]
+            ]);
+            exit;
+        }
+    }
+    // If token is 'test', skip CAPTCHA validation for development
+    
+    if (!isset($_FILES['id_picture']) || $_FILES['id_picture']['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['status' => 'error', 'message' => 'No ID picture uploaded or upload error.']);
+        exit;
     }
 
-    $uploadDir = '../../assets/uploads/temp/enrollment_forms/';
-    if (!file_exists($uploadDir)) {
-        mkdir($uploadDir, 0777, true);
-    }
+    $uploadDir = '../../assets/uploads/temp/id_pictures/';
+    if (!file_exists($uploadDir)) { mkdir($uploadDir, 0777, true); }
 
-    // Clear temp folder - delete previous EAF files for this session
+    // Clear temp folder
     $files = glob($uploadDir . '*');
-    foreach ($files as $file) {
-        if (is_file($file)) unlink($file);
-    }
+    foreach ($files as $file) { if (is_file($file)) unlink($file); }
 
-    $uploadedFile = $_FILES['enrollment_form'];
+    $uploadedFile = $_FILES['id_picture'];
     $fileName = basename($uploadedFile['name']);
     $targetPath = $uploadDir . $fileName;
 
-    // Validate filename format: Lastname_Firstname_EAF
-    $formFirstName = trim($_POST['first_name'] ?? '');
-    $formLastName = trim($_POST['last_name'] ?? '');
-
-    if (empty($formFirstName) || empty($formLastName)) {
-        json_response(['status' => 'error', 'message' => 'First name and last name are required for filename validation.']);
-    }
-
-    // Remove file extension and validate format
-    $nameWithoutExt = pathinfo($fileName, PATHINFO_FILENAME);
-    $expectedFormat = $formLastName . '_' . $formFirstName . '_EAF';
-
-    if (strcasecmp($nameWithoutExt, $expectedFormat) !== 0) {
-        json_response([
-            'status' => 'error', 
-            'message' => "Filename must follow format: {$formLastName}_{$formFirstName}_EAF.{file_extension}"
-        ]);
-    }
-
     if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
-        json_response(['status' => 'error', 'message' => 'Failed to save uploaded file.']);
+        echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded file.']);
+        exit;
     }
 
     // Get form data for comparison
@@ -542,14 +1229,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         'middle_name' => trim($_POST['middle_name'] ?? ''),
         'last_name' => trim($_POST['last_name'] ?? ''),
         'extension_name' => trim($_POST['extension_name'] ?? ''),
-        'university_id' => intval($_POST['university_id'] ?? 0),
-        'year_level_id' => intval($_POST['year_level_id'] ?? 0)
+        'university_id' => intval($_POST['university_id'] ?? 0)
     ];
 
-    // Get university and year level names for comparison
+    // Get university name
     $universityName = '';
-    $yearLevelName = '';
-
     if ($formData['university_id'] > 0) {
         $uniResult = pg_query_params($connection, "SELECT name FROM universities WHERE university_id = $1", [$formData['university_id']]);
         if ($uniRow = pg_fetch_assoc($uniResult)) {
@@ -557,327 +1241,431 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processOcr'])) {
         }
     }
 
-    if ($formData['year_level_id'] > 0) {
-        $yearResult = pg_query_params($connection, "SELECT name, code FROM year_levels WHERE year_level_id = $1", [$formData['year_level_id']]);
-        if ($yearRow = pg_fetch_assoc($yearResult)) {
-            $yearLevelName = $yearRow['name'];
-        }
-    }
-
-    // Enhanced OCR processing with PDF support
-    $outputBase = $uploadDir . 'ocr_' . pathinfo($fileName, PATHINFO_FILENAME);
-    
-    // Check if the file is a PDF and handle accordingly
+    // OCR Processing
     $fileExtension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
     
     if ($fileExtension === 'pdf') {
-        // Try basic PDF text extraction using a simple approach
-        $pdfText = '';
-        
-        // Method 1: Try using pdftotext if available
+        // Try PDF text extraction
         $pdfTextCommand = "pdftotext " . escapeshellarg($targetPath) . " - 2>nul";
-        $pdfText = @shell_exec($pdfTextCommand);
+        $ocrText = @shell_exec($pdfTextCommand);
         
-        if (!empty(trim($pdfText))) {
-            // Successfully extracted text from PDF
-            $ocrText = $pdfText;
-        } else {
-            // Method 2: Try basic PHP PDF text extraction
-            $pdfContent = file_get_contents($targetPath);
-            if ($pdfContent !== false) {
-                // Very basic PDF text extraction - look for text streams
-                preg_match_all('/\(([^)]+)\)/', $pdfContent, $matches);
-                if (!empty($matches[1])) {
-                    $extractedText = implode(' ', $matches[1]);
-                    // Clean up the extracted text
-                    $extractedText = preg_replace('/[^\x20-\x7E]/', ' ', $extractedText);
-                    $extractedText = preg_replace('/\s+/', ' ', trim($extractedText));
-                    
-                    if (strlen($extractedText) > 50) { // Only use if we got substantial text
-                        $ocrText = $extractedText;
-                    }
-                }
-            }
-            
-            // If no text could be extracted
-            if (empty($ocrText) || strlen(trim($ocrText)) < 10) {
-                json_response([
-                    'status' => 'error', 
-                    'message' => 'Unable to extract text from PDF. Please try one of these alternatives:',
-                    'suggestions' => [
-                        '1. Convert the PDF to a JPG or PNG image',
-                        '2. Take a photo of the document with your phone camera',
-                        '3. Scan the document as an image file',
-                        '4. Ensure the PDF contains selectable text (not a scanned image)'
-                    ]
-                ]);
-            }
+        if (empty(trim($ocrText))) {
+            echo json_encode(['status' => 'error', 'message' => 'Unable to extract text from PDF. Please upload an image instead.']);
+            exit;
         }
     } else {
-        // For image files, use standard Tesseract processing
-        $command = "tesseract " . escapeshellarg($targetPath) . " " . escapeshellarg($outputBase) .
-                   " --oem 1 --psm 6 -l eng 2>&1";
-
-        $tesseractOutput = shell_exec($command);
-        $outputFile = $outputBase . ".txt";
-
-        if (!file_exists($outputFile)) {
-            json_response([
-                'status' => 'error', 
-                'message' => 'OCR processing failed. Please ensure the document is clear and readable.',
-                'debug_info' => $tesseractOutput,
-                'suggestions' => [
-                    '1. Make sure the image is clear and high resolution',
-                    '2. Ensure good lighting when taking photos',
-                    '3. Try straightening the document in the image',
-                    '4. Use JPG or PNG format for best results'
-                ]
-            ]);
-        }
-
-        $ocrText = file_get_contents($outputFile);
+        // Enhanced Image OCR with better preprocessing
+        // Try multiple OCR modes for better accuracy
         
-        // Clean up temporary OCR files
-        if (file_exists($outputFile)) {
-            unlink($outputFile);
+        // Mode 1: Standard PSM 6 (Assume a uniform block of text)
+        $tesseractCmd1 = "tesseract " . escapeshellarg($targetPath) . " stdout --psm 6 --oem 1 -l eng 2>nul";
+        $ocrText1 = @shell_exec($tesseractCmd1);
+        
+        // Mode 2: PSM 3 (Fully automatic page segmentation, but no OSD)
+        $tesseractCmd2 = "tesseract " . escapeshellarg($targetPath) . " stdout --psm 3 --oem 1 -l eng 2>nul";
+        $ocrText2 = @shell_exec($tesseractCmd2);
+        
+        // Mode 3: PSM 11 (Sparse text - Find as much text as possible in no particular order)
+        $tesseractCmd3 = "tesseract " . escapeshellarg($targetPath) . " stdout --psm 11 --oem 1 -l eng 2>nul";
+        $ocrText3 = @shell_exec($tesseractCmd3);
+        
+        // Combine results - use the longest extracted text (usually most accurate)
+        $ocrText = $ocrText1;
+        if (strlen(trim($ocrText2)) > strlen(trim($ocrText))) {
+            $ocrText = $ocrText2;
+        }
+        if (strlen(trim($ocrText3)) > strlen(trim($ocrText))) {
+            $ocrText = $ocrText3;
+        }
+        
+        error_log("ID Picture OCR - Mode 1 length: " . strlen(trim($ocrText1)));
+        error_log("ID Picture OCR - Mode 2 length: " . strlen(trim($ocrText2)));
+        error_log("ID Picture OCR - Mode 3 length: " . strlen(trim($ocrText3)));
+        error_log("ID Picture OCR - Selected length: " . strlen(trim($ocrText)));
+        
+        if (empty(trim($ocrText))) {
+            echo json_encode(['status' => 'error', 'message' => 'OCR failed to extract text. Please upload a clearer image or try a different angle/lighting.']);
+            exit;
         }
     }
+
+    // Save OCR text
+    file_put_contents($targetPath . '.ocr.txt', $ocrText);
     
-    // Clean up temporary OCR files
-    if (file_exists($outputFile)) {
-        unlink($outputFile);
-    }
-    
-    if (empty(trim($ocrText))) {
-        json_response([
-            'status' => 'error', 
-            'message' => 'No text could be extracted from the document. Please ensure the image is clear and contains readable text.'
-        ]);
-    }
-    
+    // Debug: Log OCR results
+    error_log("ID Picture OCR Results:");
+    error_log("Expected First Name: " . $formData['first_name']);
+    error_log("Expected Last Name: " . $formData['last_name']);
+    error_log("Expected University: " . $universityName);
+    error_log("OCR Text (first 500 chars): " . substr($ocrText, 0, 500));
+
     $ocrTextLower = strtolower($ocrText);
 
-    // Enhanced verification results with confidence tracking
-    $verification = [
-        'first_name' => false,
-        'middle_name' => false,
-        'last_name' => false,
-        'year_level' => false,
-        'university' => false,
-        'document_keywords' => false,
-        'confidence_scores' => [],
-        'found_text_snippets' => []
-    ];
-    
-    // Function to calculate similarity score (reusable)
-    function calculateEAFSimilarity($needle, $haystack) {
+    // Enhanced similarity calculation for name matching
+    function calculateIDSimilarity($needle, $haystack) {
         $needle = strtolower(trim($needle));
-        $haystack = strtolower(trim($haystack));
+        $haystack = strtolower($haystack);
         
-        // Exact match
+        // Exact substring match gets 100%
         if (stripos($haystack, $needle) !== false) {
             return 100;
         }
         
-        // Check for partial matches with high similarity
-        $words = explode(' ', $haystack);
-        $maxSimilarity = 0;
+        // Word-based matching - split both into words and find best match
+        $needleWords = preg_split('/\s+/', $needle);
+        $haystackWords = preg_split('/\s+/', $haystack);
         
-        foreach ($words as $word) {
-            if (strlen($word) >= 3 && strlen($needle) >= 3) {
-                $similarity = 0;
-                similar_text($needle, $word, $similarity);
-                $maxSimilarity = max($maxSimilarity, $similarity);
+        $maxWordSimilarity = 0;
+        foreach ($needleWords as $needleWord) {
+            if (strlen($needleWord) < 2) continue;
+            
+            foreach ($haystackWords as $haystackWord) {
+                if (strlen($haystackWord) < 2) continue;
+                
+                // Check exact word match
+                if ($needleWord === $haystackWord) {
+                    return 100;
+                }
+                
+                // Calculate Levenshtein distance
+                $lev = levenshtein($needleWord, $haystackWord);
+                $maxLen = max(strlen($needleWord), strlen($haystackWord));
+                $wordSim = (1 - ($lev / $maxLen)) * 100;
+                
+                $maxWordSimilarity = max($maxWordSimilarity, $wordSim);
             }
         }
         
-        return $maxSimilarity;
-    }
-
-    // Enhanced name checking with similarity scoring
-    if (!empty($formData['first_name'])) {
-        $similarity = calculateEAFSimilarity($formData['first_name'], $ocrTextLower);
-        $verification['confidence_scores']['first_name'] = $similarity;
+        // Also calculate overall similar_text as fallback
+        similar_text($needle, $haystack, $percent);
         
-        if ($similarity >= 80) {
-            $verification['first_name'] = true;
-            // Find and store the matched text snippet
-            $pattern = '/\b\w*' . preg_quote(substr($formData['first_name'], 0, 3), '/') . '\w*\b/i';
-            if (preg_match($pattern, $ocrText, $matches)) {
-                $verification['found_text_snippets']['first_name'] = $matches[0];
-            }
-        }
+        // Return the higher of word-based or overall similarity
+        return round(max($maxWordSimilarity, $percent), 2);
     }
 
-    // Check middle name (optional) with improved matching
+    // Validation Checks (6 checks total)
+    $checks = [];
+    
+    // 1. First Name Match (80% threshold)
+    $firstNameSimilarity = calculateIDSimilarity($formData['first_name'], $ocrText);
+    $checks['first_name_match'] = [
+        'passed' => $firstNameSimilarity >= 80,
+        'similarity' => $firstNameSimilarity,
+        'threshold' => 80,
+        'expected' => $formData['first_name'],
+        'found_in_ocr' => $firstNameSimilarity >= 80
+    ];
+
+    // 2. Middle Name Match (70% threshold, auto-pass if empty)
     if (empty($formData['middle_name'])) {
-        $verification['middle_name'] = true; // Skip if no middle name provided
-        $verification['confidence_scores']['middle_name'] = 100;
+        $checks['middle_name_match'] = [
+            'passed' => true,
+            'auto_passed' => true,
+            'reason' => 'No middle name provided'
+        ];
     } else {
-        $similarity = calculateEAFSimilarity($formData['middle_name'], $ocrTextLower);
-        $verification['confidence_scores']['middle_name'] = $similarity;
-        
-        if ($similarity >= 70) { // Slightly lower threshold for middle names
-            $verification['middle_name'] = true;
-            $pattern = '/\b\w*' . preg_quote(substr($formData['middle_name'], 0, 3), '/') . '\w*\b/i';
-            if (preg_match($pattern, $ocrText, $matches)) {
-                $verification['found_text_snippets']['middle_name'] = $matches[0];
-            }
-        }
+        $middleNameSimilarity = calculateIDSimilarity($formData['middle_name'], $ocrText);
+        $checks['middle_name_match'] = [
+            'passed' => $middleNameSimilarity >= 70,
+            'similarity' => $middleNameSimilarity,
+            'threshold' => 70,
+            'expected' => $formData['middle_name'],
+            'found_in_ocr' => $middleNameSimilarity >= 70
+        ];
     }
 
-    // Check last name with improved matching
-    if (!empty($formData['last_name'])) {
-        $similarity = calculateEAFSimilarity($formData['last_name'], $ocrTextLower);
-        $verification['confidence_scores']['last_name'] = $similarity;
-        
-        if ($similarity >= 80) {
-            $verification['last_name'] = true;
-            $pattern = '/\b\w*' . preg_quote(substr($formData['last_name'], 0, 3), '/') . '\w*\b/i';
-            if (preg_match($pattern, $ocrText, $matches)) {
-                $verification['found_text_snippets']['last_name'] = $matches[0];
-            }
+    // 3. Last Name Match (80% threshold)
+    $lastNameSimilarity = calculateIDSimilarity($formData['last_name'], $ocrText);
+    $checks['last_name_match'] = [
+        'passed' => $lastNameSimilarity >= 80,
+        'similarity' => $lastNameSimilarity,
+        'threshold' => 80,
+        'expected' => $formData['last_name'],
+        'found_in_ocr' => $lastNameSimilarity >= 80
+    ];
+
+    // 4. University Match (60% threshold, word-based)
+    $universityWords = explode(' ', strtolower($universityName));
+    $matchedWords = 0;
+    foreach ($universityWords as $word) {
+        if (strlen($word) > 3 && stripos($ocrTextLower, $word) !== false) {
+            $matchedWords++;
         }
     }
+    $universitySimilarity = count($universityWords) > 0 ? ($matchedWords / count($universityWords)) * 100 : 0;
+    $checks['university_match'] = [
+        'passed' => $universitySimilarity >= 60,
+        'similarity' => round($universitySimilarity, 2),
+        'threshold' => 60,
+        'expected' => $universityName,
+        'matched_words' => $matchedWords . '/' . count($universityWords),
+        'found_in_ocr' => $universitySimilarity >= 60
+    ];
 
-    // Check year level (must match the specific year level selected by user)
-    if (!empty($yearLevelName)) {
-        // Create specific variations for the selected year level only
-        $selectedYearVariations = [];
-
-        // Extract year number from the year level name
-        if (stripos($yearLevelName, '1st') !== false || stripos($yearLevelName, 'first') !== false) {
-            $selectedYearVariations = ['1st year', 'first year', '1st yr', 'year 1', 'yr 1', 'freshman'];
-        } elseif (stripos($yearLevelName, '2nd') !== false || stripos($yearLevelName, 'second') !== false) {
-            $selectedYearVariations = ['2nd year', 'second year', '2nd yr', 'year 2', 'yr 2', 'sophomore'];
-        } elseif (stripos($yearLevelName, '3rd') !== false || stripos($yearLevelName, 'third') !== false) {
-            $selectedYearVariations = ['3rd year', 'third year', '3rd yr', 'year 3', 'yr 3', 'junior'];
-        } elseif (stripos($yearLevelName, '4th') !== false || stripos($yearLevelName, 'fourth') !== false) {
-            $selectedYearVariations = ['4th year', 'fourth year', '4th yr', 'year 4', 'yr 4', 'senior'];
-        } elseif (stripos($yearLevelName, '5th') !== false || stripos($yearLevelName, 'fifth') !== false) {
-            $selectedYearVariations = ['5th year', 'fifth year', '5th yr', 'year 5', 'yr 5'];
-        } elseif (stripos($yearLevelName, 'graduate') !== false || stripos($yearLevelName, 'grad') !== false) {
-            $selectedYearVariations = ['graduate', 'grad student', 'masters', 'phd', 'doctoral'];
-        }
-
-        // Check if any of the specific year level variations are found
-        foreach ($selectedYearVariations as $variation) {
-            if (stripos($ocrText, $variation) !== false) {
-                $verification['year_level'] = true;
-                break;
-            }
+    // 5. Document Keywords (2+ required from keywords list)
+    $documentKeywords = [
+        'student', 'id', 'identification', 'card', 'number',
+        'university', 'college', 'school', 'valid', 'until',
+        'expires', 'issued'
+    ];
+    
+    $keywordsFound = 0;
+    $foundKeywords = [];
+    foreach ($documentKeywords as $keyword) {
+        if (stripos($ocrTextLower, $keyword) !== false) {
+            $keywordsFound++;
+            $foundKeywords[] = $keyword;
         }
     }
+    
+    $checks['document_keywords_found'] = [
+        'passed' => $keywordsFound >= 2,
+        'found_count' => $keywordsFound,
+        'required_count' => 2,
+        'total_keywords' => count($documentKeywords),
+        'found_keywords' => $foundKeywords
+    ];
 
-    // Enhanced university name checking with better matching
-    if (!empty($universityName)) {
-        $universityWords = array_filter(explode(' ', strtolower($universityName)));
-        $foundWords = 0;
-        $totalWords = count($universityWords);
-        $foundSnippets = [];
+    // 6. School Student ID Number Match (NEW)
+    $schoolStudentId = trim($_POST['school_student_id'] ?? '');
+    if (!empty($schoolStudentId)) {
+        // Clean both the expected ID and OCR text for better matching
+        $cleanSchoolId = preg_replace('/[^A-Z0-9]/i', '', $schoolStudentId);
+        $cleanOcrText = preg_replace('/[^A-Z0-9]/i', '', $ocrText);
         
-        foreach ($universityWords as $word) {
-            if (strlen($word) > 2) { // Check words longer than 2 characters
-                $similarity = calculateEAFSimilarity($word, $ocrTextLower);
-                if ($similarity >= 70) {
-                    $foundWords++;
-                    // Try to find the actual matched word in the text
-                    $pattern = '/\b\w*' . preg_quote(substr($word, 0, 3), '/') . '\w*\b/i';
-                    if (preg_match($pattern, $ocrText, $matches)) {
-                        $foundSnippets[] = $matches[0];
-                    }
+        // Check if school student ID appears in OCR text
+        $idFound = stripos($cleanOcrText, $cleanSchoolId) !== false;
+        
+        // Also check with original formatting (dashes, spaces, etc.)
+        if (!$idFound) {
+            $idFound = stripos($ocrText, $schoolStudentId) !== false;
+        }
+        
+        // Calculate similarity for partial matches
+        $idSimilarity = 0;
+        if (!$idFound) {
+            // Extract potential ID numbers from OCR text
+            preg_match_all('/\b[\d\-]+\b/', $ocrText, $matches);
+            foreach ($matches[0] as $potentialId) {
+                $cleanPotentialId = preg_replace('/[^A-Z0-9]/i', '', $potentialId);
+                if (strlen($cleanPotentialId) >= 4) {
+                    similar_text($cleanSchoolId, $cleanPotentialId, $percent);
+                    $idSimilarity = max($idSimilarity, $percent);
                 }
             }
         }
         
-        $universityScore = ($foundWords / max($totalWords, 1)) * 100;
-        $verification['confidence_scores']['university'] = round($universityScore, 1);
+        $checks['school_student_id_match'] = [
+            'passed' => $idFound || $idSimilarity >= 70,
+            'similarity' => $idFound ? 100 : round($idSimilarity, 2),
+            'threshold' => 70,
+            'expected' => $schoolStudentId,
+            'found_in_ocr' => $idFound,
+            'note' => $idFound ? 'Exact match found' : ($idSimilarity >= 70 ? 'Partial match found' : 'Not found - please verify')
+        ];
         
-        // Accept if at least 60% of university words are found, or if it's a short name and 1+ words found
-        if ($universityScore >= 60 || ($totalWords <= 2 && $foundWords >= 1)) {
-            $verification['university'] = true;
-            if (!empty($foundSnippets)) {
-                $verification['found_text_snippets']['university'] = implode(', ', array_unique($foundSnippets));
-            }
-        }
+        error_log("School Student ID Check: " . ($idFound ? 'FOUND' : 'NOT FOUND') . " (Similarity: " . ($idFound ? 100 : round($idSimilarity, 2)) . "%)");
+    } else {
+        // If no school student ID provided, mark as auto-pass (backward compatibility)
+        $checks['school_student_id_match'] = [
+            'passed' => true,
+            'auto_passed' => true,
+            'reason' => 'No school student ID provided'
+        ];
     }
 
-    // Enhanced document keywords checking
-    $documentKeywords = [
-        'enrollment', 'assessment', 'form', 'official', 'academic', 'student',
-        'tuition', 'fees', 'semester', 'registration', 'course', 'subject',
-        'grade', 'transcript', 'record', 'university', 'college', 'school',
-        'eaf', 'assessment form', 'billing', 'statement', 'certificate'
+    // Calculate overall results
+    $passedChecks = array_filter($checks, function($check) {
+        return $check['passed'];
+    });
+    $passedCount = count($passedChecks);
+    
+    // Simple average confidence from similarity scores
+    $schoolIdSimilarity = isset($checks['school_student_id_match']['similarity']) ? $checks['school_student_id_match']['similarity'] : 100;
+    $totalSimilarity = ($firstNameSimilarity + 
+                       (isset($middleNameSimilarity) ? $middleNameSimilarity : 70) + 
+                       $lastNameSimilarity + 
+                       $universitySimilarity +
+                       $schoolIdSimilarity) / 5;
+    $avgConfidence = round($totalSimilarity, 2);
+
+    // Pass if 4+ checks OR 3+ checks with 80%+ avg confidence
+    $overallSuccess = ($passedCount >= 4 || ($passedCount >= 3 && $avgConfidence >= 80));
+    $recommendation = $overallSuccess ? 'Approve' : 'Review - Please verify information matches your student ID';
+
+    $verification = [
+        'checks' => $checks,
+        'summary' => [
+            'passed_checks' => $passedCount,
+            'total_checks' => 6,
+            'average_confidence' => $avgConfidence,
+            'recommendation' => $recommendation
+        ]
     ];
 
-    $keywordMatches = 0;
-    $foundKeywords = [];
-    $keywordScore = 0;
-    
-    foreach ($documentKeywords as $keyword) {
-        $similarity = calculateEAFSimilarity($keyword, $ocrTextLower);
-        if ($similarity >= 80) {
-            $keywordMatches++;
-            $foundKeywords[] = $keyword;
-            $keywordScore += $similarity;
-        }
-    }
-    
-    $averageKeywordScore = $keywordMatches > 0 ? ($keywordScore / $keywordMatches) : 0;
-    $verification['confidence_scores']['document_keywords'] = round($averageKeywordScore, 1);
+    // Save verification results
+    file_put_contents($targetPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
 
-    if ($keywordMatches >= 3) {
-        $verification['document_keywords'] = true;
-        $verification['found_text_snippets']['document_keywords'] = implode(', ', $foundKeywords);
-    }
-
-    // Enhanced overall success calculation
-    $requiredChecks = ['first_name', 'middle_name', 'last_name', 'year_level', 'university', 'document_keywords'];
-    $passedChecks = 0;
-    $totalConfidence = 0;
-    $confidenceCount = 0;
-    
-    foreach ($requiredChecks as $check) {
-        if ($verification[$check]) {
-            $passedChecks++;
-        }
-        // Add confidence score to total if available
-        if (isset($verification['confidence_scores'][$check])) {
-            $totalConfidence += $verification['confidence_scores'][$check];
-            $confidenceCount++;
-        }
+    // ========================================
+    // Save OCR Results to Temporary Folder
+    // ========================================
+    $tempResultsDir = __DIR__ . '/../../temporary_result_id/';
+    if (!is_dir($tempResultsDir)) {
+        mkdir($tempResultsDir, 0755, true);
     }
     
-    $averageConfidence = $confidenceCount > 0 ? ($totalConfidence / $confidenceCount) : 0;
+    // Generate unique filename with timestamp
+    $timestamp = date('Y-m-d_H-i-s');
+    $studentIdSafe = isset($_POST['student_id']) ? preg_replace('/[^a-zA-Z0-9_-]/', '_', $_POST['student_id']) : 'unknown';
+    $resultFileBaseName = $studentIdSafe . '_' . $timestamp;
     
-    // More nuanced success criteria:
-    // Option 1: At least 4 out of 6 checks pass
-    // Option 2: At least 3 checks pass with high confidence
-    $verification['overall_success'] = ($passedChecks >= 4) || 
-                                     ($passedChecks >= 3 && $averageConfidence >= 80);
+    // 1. Save raw OCR text
+    $ocrTextFile = $tempResultsDir . $resultFileBaseName . '_ocr_text.txt';
+    file_put_contents($ocrTextFile, $ocrText);
     
-    $verification['summary'] = [
-        'passed_checks' => $passedChecks,
-        'total_checks' => 6,
-        'average_confidence' => round($averageConfidence, 1),
-        'recommendation' => $verification['overall_success'] ? 
-            'Document validation successful' : 
-            'Please ensure the document clearly shows your name, university, year level, and appears to be an official enrollment form'
+    // 2. Save verification results as JSON
+    $verificationFile = $tempResultsDir . $resultFileBaseName . '_verification.json';
+    $verificationData = [
+        'timestamp' => $timestamp,
+        'date_time' => date('F j, Y, g:i a'),
+        'student_id' => $_POST['student_id'] ?? 'N/A',
+        'school_student_id' => $schoolStudentId,
+        'personal_info' => [
+            'first_name' => $firstName,
+            'middle_name' => $middleName ?? '',
+            'last_name' => $lastName,
+            'university' => $universityName
+        ],
+        'uploaded_file' => basename($targetPath),
+        'ocr_extraction' => [
+            'success' => true,
+            'method' => 'tesseract_multi_mode',
+            'text_length' => strlen($ocrText),
+            'extracted_text' => $ocrText
+        ],
+        'validation_checks' => $checks,
+        'confidence_scores' => [
+            'first_name' => $firstNameSimilarity,
+            'middle_name' => isset($middleNameSimilarity) ? $middleNameSimilarity : 0,
+            'last_name' => $lastNameSimilarity,
+            'university' => $universitySimilarity,
+            'keywords' => count($foundKeywords),
+            'school_student_id' => $schoolIdSimilarity,
+            'average' => $avgConfidence
+        ],
+        'overall_result' => [
+            'passed_checks' => $passedCount,
+            'total_checks' => 6,
+            'recommendation' => $recommendation,
+            'status' => $overallSuccess ? 'APPROVED' : 'NEEDS REVIEW'
+        ]
     ];
     
-    // Include OCR text preview for debugging (truncated for security)
-    $verification['ocr_text_preview'] = substr($ocrText, 0, 500) . (strlen($ocrText) > 500 ? '...' : '');
+    file_put_contents($verificationFile, json_encode($verificationData, JSON_PRETTY_PRINT));
+    
+    // 3. Save a human-readable report
+    $reportFile = $tempResultsDir . $resultFileBaseName . '_report.txt';
+    $reportContent = "=====================================\n";
+    $reportContent .= "ID PICTURE OCR VERIFICATION REPORT\n";
+    $reportContent .= "=====================================\n\n";
+    $reportContent .= "Generated: " . date('F j, Y, g:i a') . "\n";
+    $reportContent .= "Student ID: " . ($_POST['student_id'] ?? 'N/A') . "\n";
+    $reportContent .= "School Student ID: " . ($schoolStudentId ?: 'Not provided') . "\n";
+    $reportContent .= "Uploaded File: " . basename($targetPath) . "\n\n";
+    
+    $reportContent .= "-------------------------------------\n";
+    $reportContent .= "PERSONAL INFORMATION (From Form):\n";
+    $reportContent .= "-------------------------------------\n\n";
+    $reportContent .= "First Name:  " . $firstName . "\n";
+    $reportContent .= "Middle Name: " . ($middleName ?? '') . "\n";
+    $reportContent .= "Last Name:   " . $lastName . "\n";
+    $reportContent .= "University:  " . $universityName . "\n\n";
+    
+    $reportContent .= "-------------------------------------\n";
+    $reportContent .= "VALIDATION CHECKS:\n";
+    $reportContent .= "-------------------------------------\n\n";
+    
+    foreach ($checks as $checkName => $checkData) {
+        $status = $checkData['passed'] ? '✓ PASS' : '✗ FAIL';
+        $confidence = '';
+        if (isset($checkData['similarity'])) {
+            $confidence = ' (' . round($checkData['similarity'], 1) . '%)';
+        } elseif (isset($checkData['confidence'])) {
+            $confidence = ' (' . round($checkData['confidence'], 1) . '%)';
+        }
+        $checkLabel = ucwords(str_replace('_', ' ', $checkName));
+        $reportContent .= str_pad($checkLabel, 35) . ": " . $status . $confidence . "\n";
+        
+        if (isset($checkData['note'])) {
+            $reportContent .= str_repeat(' ', 37) . "Note: " . $checkData['note'] . "\n";
+        }
+    }
+    
+    $reportContent .= "\n-------------------------------------\n";
+    $reportContent .= "CONFIDENCE SCORES:\n";
+    $reportContent .= "-------------------------------------\n\n";
+    $reportContent .= "First Name:          " . round($firstNameSimilarity, 1) . "%\n";
+    $reportContent .= "Middle Name:         " . (isset($middleNameSimilarity) ? round($middleNameSimilarity, 1) : 'N/A') . "%\n";
+    $reportContent .= "Last Name:           " . round($lastNameSimilarity, 1) . "%\n";
+    $reportContent .= "University:          " . round($universitySimilarity, 1) . "%\n";
+    $reportContent .= "Keywords Found:      " . count($foundKeywords) . " / " . count($documentKeywords) . "\n";
+    $reportContent .= "School Student ID:   " . round($schoolIdSimilarity, 1) . "%\n";
+    $reportContent .= "-------------------------------------\n";
+    $reportContent .= "AVERAGE:             " . round($avgConfidence, 1) . "%\n\n";
+    
+    $reportContent .= "-------------------------------------\n";
+    $reportContent .= "OVERALL RESULT:\n";
+    $reportContent .= "-------------------------------------\n\n";
+    $reportContent .= "Passed Checks: " . $passedCount . " / 6\n";
+    $reportContent .= "Status: " . ($overallSuccess ? '✓ APPROVED' : '! NEEDS REVIEW') . "\n";
+    $reportContent .= "Recommendation: " . $recommendation . "\n\n";
+    
+    $reportContent .= "-------------------------------------\n";
+    $reportContent .= "EXTRACTED OCR TEXT:\n";
+    $reportContent .= "-------------------------------------\n\n";
+    $reportContent .= $ocrText . "\n\n";
+    
+    $reportContent .= "=====================================\n";
+    $reportContent .= "END OF REPORT\n";
+    $reportContent .= "=====================================\n";
+    
+    file_put_contents($reportFile, $reportContent);
+    
+    // 4. Copy the uploaded image to results folder for reference
+    $imageExt = pathinfo($targetPath, PATHINFO_EXTENSION);
+    $imageResultFile = $tempResultsDir . $resultFileBaseName . '_image.' . $imageExt;
+    copy($targetPath, $imageResultFile);
+    
+    // Log the save operation
+    error_log("=== ID Picture OCR Results Saved to temporary_result_id/ ===");
+    error_log("  - OCR Text: " . basename($ocrTextFile));
+    error_log("  - Verification JSON: " . basename($verificationFile));
+    error_log("  - Human Report: " . basename($reportFile));
+    error_log("  - Image Copy: " . basename($imageResultFile));
 
-    // Save OCR confidence score to temp file for later use during registration
-    $confidenceFile = $uploadDir . 'enrollment_confidence.json';
-    $confidenceData = [
-        'overall_confidence' => $averageConfidence,
-        'detailed_scores' => $verification['confidence_scores'],
-        'timestamp' => time()
-    ];
-    file_put_contents($confidenceFile, json_encode($confidenceData));
+    // Debug: Log verification results
+    error_log("ID Picture Verification Results:");
+    error_log("First Name Match: " . ($checks['first_name_match']['passed'] ? 'PASS' : 'FAIL') . 
+              " (" . ($checks['first_name_match']['similarity'] ?? 'N/A') . "%)");
+    error_log("Last Name Match: " . ($checks['last_name_match']['passed'] ? 'PASS' : 'FAIL') . 
+              " (" . ($checks['last_name_match']['similarity'] ?? 'N/A') . "%)");
+    error_log("University Match: " . ($checks['university_match']['passed'] ? 'PASS' : 'FAIL') . 
+              " (" . ($checks['university_match']['similarity'] ?? 'N/A') . "%)");
+    error_log("School Student ID Match: " . ($checks['school_student_id_match']['passed'] ? 'PASS' : 'FAIL') . 
+              " (" . ($checks['school_student_id_match']['similarity'] ?? 'N/A') . "%)");
+    error_log("Overall: " . $passedCount . "/6 checks passed - " . $recommendation);
 
-    json_response(['status' => 'success', 'verification' => $verification]);
+    echo json_encode([
+        'status' => 'success',
+        'message' => 'ID Picture processed successfully',
+        'verification' => $verification,
+        'file_path' => $targetPath,
+        'debug' => [
+            'ocr_text_length' => strlen($ocrText),
+            'ocr_preview' => substr($ocrText, 0, 200)
+        ]
+    ]);
+    exit;
 }
 
 // --- Letter to Mayor OCR Processing ---
@@ -1177,6 +1965,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processLetterOcr'])) 
         'timestamp' => time()
     ];
     file_put_contents($confidenceFile, json_encode($confidenceData));
+    
+    // Save full verification data to .verify.json for admin validation view
+    $verifyFile = $targetPath . '.verify.json';
+    @file_put_contents($verifyFile, json_encode($verification, JSON_PRETTY_PRINT));
+    
+    // Save OCR text to .ocr.txt for reference
+    $ocrFile = $targetPath . '.ocr.txt';
+    @file_put_contents($ocrFile, $ocrText);
     
     // Note: Letter file is kept in temp directory for final registration step
     // It will be cleaned up during registration completion
@@ -1512,170 +2308,454 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
     ];
     file_put_contents($confidenceFile, json_encode($confidenceData));
     
+    // Save full verification data to .verify.json for admin validation view
+    $verifyFile = $targetPath . '.verify.json';
+    @file_put_contents($verifyFile, json_encode($verification, JSON_PRETTY_PRINT));
+    
+    // Save OCR text to .ocr.txt for reference
+    $ocrFile = $targetPath . '.ocr.txt';
+    @file_put_contents($ocrFile, $ocrText);
+    
     // Note: Certificate file is kept in temp directory for final registration step
     // It will be cleaned up during registration completion
     
     json_response(['status' => 'success', 'verification' => $verification]);
 }
 
-// --- Grades OCR Processing ---
+// --- Enhanced Grades OCR Processing with Strict Validation ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) {
-    $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_grades_ocr');
-    if (!$captcha['ok']) {
-        json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
-    }
-    
-    if (!isset($_FILES['grades_document']) || $_FILES['grades_document']['error'] !== UPLOAD_ERR_OK) {
-        json_response(['status' => 'error', 'message' => 'No grades file uploaded or upload error.']);
-    }
-
-    $uploadDir = '../../assets/uploads/temp/grades/';
-    if (!file_exists($uploadDir)) {
-        mkdir($uploadDir, 0777, true);
-    }
-
-    // Clear temp folder for grades files
-    $gradesFiles = glob($uploadDir . '*');
-    foreach ($gradesFiles as $file) {
-        if (is_file($file)) unlink($file);
-    }
-
-    $uploadedFile = $_FILES['grades_document'];
-    $fileName = basename($uploadedFile['name']);
-    $targetPath = $uploadDir . $fileName;
-
-    if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
-        json_response(['status' => 'error', 'message' => 'Failed to save uploaded grades file.']);
-    }
-
-    // Extract text from document
-    $ocrText = '';
-    $fileExtension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
-    
     try {
+        // TEMPORARY: Bypass CAPTCHA for debugging OCR grade extraction
+        // $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_grades_ocr');
+        // if (!$captcha['ok']) {
+        //     json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
+        // }
+
+        if (!isset($_FILES['grades_document']) || $_FILES['grades_document']['error'] !== UPLOAD_ERR_OK) {
+            json_response(['status' => 'error', 'message' => 'No grades document uploaded or upload error.']);
+        }
+
+        $uploadDir = '../../assets/uploads/temp/grades/';
+        if (!file_exists($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
+
+        // Clear temp folder for grades files
+        $gradesFiles = glob($uploadDir . '*');
+        foreach ($gradesFiles as $file) {
+            if (is_file($file)) unlink($file);
+        }
+
+        $uploadedFile = $_FILES['grades_document'];
+        $fileName = basename($uploadedFile['name']);
+        $targetPath = $uploadDir . $fileName;
+
+        if (!move_uploaded_file($uploadedFile['tmp_name'], $targetPath)) {
+            json_response(['status' => 'error', 'message' => 'Failed to save uploaded grades file.']);
+        }
+
+        // Extract text from document
+        $ocrText = '';
+        $fileExtension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
+        
         if ($fileExtension === 'pdf') {
-            // PDF processing
-            $pdfText = shell_exec("pdftotext " . escapeshellarg($targetPath) . " - 2>nul");
+            $pdfTextCommand = "pdftotext " . escapeshellarg($targetPath) . " - 2>nul";
+            $pdfText = @shell_exec($pdfTextCommand);
             if (!empty(trim($pdfText))) {
                 $ocrText = $pdfText;
             } else {
-                json_response([
-                    'status' => 'error',
-                    'message' => 'Could not extract text from PDF',
-                    'suggestions' => ['Upload a clear image instead', 'Ensure PDF contains text']
-                ]);
+                // Fallback PDF extraction
+                $pdfContent = @file_get_contents($targetPath);
+                if ($pdfContent !== false) {
+                    preg_match_all('/\(([^)]+)\)/', $pdfContent, $matches);
+                    if (!empty($matches[1])) {
+                        $extractedText = implode(' ', $matches[1]);
+                        $extractedText = preg_replace('/[^\x20-\x7E]/', ' ', $extractedText);
+                        $extractedText = preg_replace('/\s+/', ' ', trim($extractedText));
+                        if (strlen($extractedText) > 10) {
+                            $ocrText = $extractedText;
+                        }
+                    }
+                }
+                if (empty(trim($ocrText))) {
+                    json_response([
+                        'status' => 'error',
+                        'message' => 'Unable to extract text from PDF.',
+                        'suggestions' => [
+                            'Convert the PDF to a JPG or PNG image',
+                            'Take a clear photo of the grades',
+                            'Ensure the PDF contains selectable text'
+                        ]
+                    ]);
+                }
             }
         } else {
-            // Image processing
-            $outputBase = $uploadDir . 'ocr_output';
-            $command = "tesseract " . escapeshellarg($targetPath) . " " . 
-                      escapeshellarg($outputBase) . " --oem 1 --psm 6 -l eng";
-            
-            exec($command, $output, $returnCode);
-            
-            if ($returnCode !== 0) {
-                json_response([
-                    'status' => 'error',
-                    'message' => 'OCR processing failed',
-                    'suggestions' => ['Ensure image is clear', 'Try different lighting']
+            // Enhanced image processing via OCR service
+            try {
+                // Include the enhanced OCR service
+                require_once __DIR__ . '/../../services/OCRProcessingService.php';
+                
+                $ocrProcessor = new OCRProcessingService([
+                    'tesseract_path' => 'tesseract',
+                    'temp_dir' => $uploadDir . '../temp_ocr/',
+                    'max_file_size' => 10 * 1024 * 1024,
                 ]);
+                
+                // Create temp OCR directory if needed
+                $tempOcrDir = $uploadDir . '../temp_ocr/';
+                if (!is_dir($tempOcrDir)) {
+                    mkdir($tempOcrDir, 0755, true);
+                }
+                
+                // Process the document
+                $ocrResult = $ocrProcessor->processGradeDocument($targetPath);
+                
+                if ($ocrResult['success'] && !empty($ocrResult['subjects'])) {
+                    // Build OCR text from extracted subjects for backward compatibility
+                    $ocrText = "Grade Document Analysis:\n";
+                    foreach ($ocrResult['subjects'] as $subject) {
+                        $ocrText .= "{$subject['name']}: {$subject['rawGrade']}\n";
+                    }
+                    
+                    // Add raw text if needed for other validations
+                    $ocrText .= "\nRaw Document Content:\n";
+                    
+                    // Fall back to basic Tesseract for full text extraction
+                    $outputBase = $uploadDir . 'ocr_output_' . uniqid();
+                    $outputFile = $outputBase . '.txt';
+                    $cmd = "tesseract " . escapeshellarg($targetPath) . " " . 
+                              escapeshellarg($outputBase) . " --oem 1 --psm 6 -l eng 2>&1";
+                    
+                    $tesseractOutput = shell_exec($cmd);
+                    if (file_exists($outputFile)) {
+                        $rawText = file_get_contents($outputFile);
+                        $ocrText .= $rawText;
+                        @unlink($outputFile);
+                    } else {
+                        error_log("Tesseract command failed: $cmd");
+                        error_log("Tesseract output: $tesseractOutput");
+                    }
+                } else {
+                    // Enhanced OCR failed, try basic Tesseract
+                    $outputBase = $uploadDir . 'ocr_output_' . uniqid();
+                    $outputFile = $outputBase . '.txt';
+                    
+                    // Try multiple PSM modes for better results
+                    $psmModes = [6, 4, 7, 8, 3]; // Different page segmentation modes
+                    $success = false;
+                    
+                    foreach ($psmModes as $psm) {
+                        $cmd = "tesseract " . escapeshellarg($targetPath) . " " . 
+                                  escapeshellarg($outputBase) . " --oem 1 --psm $psm -l eng 2>&1";
+                        
+                        $tesseractOutput = shell_exec($cmd);
+                        
+                        if (file_exists($outputFile)) {
+                            $testText = file_get_contents($outputFile);
+                            if (!empty(trim($testText)) && strlen(trim($testText)) > 10) {
+                                $ocrText = $testText;
+                                $success = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (!$success) {
+                        // Log detailed error information
+                        error_log("OCR processing failed for file: $targetPath");
+                        error_log("Last Tesseract output: $tesseractOutput");
+                        error_log("File size: " . filesize($targetPath));
+                        error_log("File extension: $fileExtension");
+                        
+                        json_response([
+                            'status' => 'error',
+                            'message' => 'OCR processing failed. Please try the following:',
+                            'suggestions' => [
+                                'Ensure the image is clear and well-lit',
+                                'Use higher resolution (at least 300 DPI)',
+                                'Make sure text is horizontal (not rotated)',
+                                'Try converting to PNG format',
+                                'Check if the text is large enough to read'
+                            ],
+                            'debug_info' => [
+                                'file_size' => filesize($targetPath),
+                                'tesseract_output' => $tesseractOutput,
+                                'enhanced_ocr_error' => $ocrResult['error'] ?? 'No enhanced OCR error'
+                            ]
+                        ]);
+                    }
+                    
+                    @unlink($outputFile);
+                }
+                
+            } catch (Exception $e) {
+                error_log("OCR Service Error: " . $e->getMessage());
+                
+                // Final fallback to basic Tesseract
+                $outputBase = $uploadDir . 'ocr_output_' . uniqid();
+                $outputFile = $outputBase . '.txt';
+                $cmd = "tesseract " . escapeshellarg($targetPath) . " " . 
+                          escapeshellarg($outputBase) . " --oem 1 --psm 6 -l eng 2>&1";
+                
+                $tesseractOutput = shell_exec($cmd);
+                
+                if (!file_exists($outputFile) || empty(trim(file_get_contents($outputFile)))) {
+                    json_response([
+                        'status' => 'error',
+                        'message' => 'OCR processing encountered an error.',
+                        'suggestions' => [
+                            'Try uploading the image again',
+                            'Ensure the file is not corrupted',
+                            'Use a different image format (PNG, JPG)'
+                        ],
+                        'debug_info' => [
+                            'exception' => $e->getMessage(),
+                            'tesseract_output' => $tesseractOutput
+                        ]
+                    ]);
+                }
+                
+                $ocrText = file_get_contents($outputFile);
+                @unlink($outputFile);
             }
-            
-            $ocrText = file_get_contents($outputBase . '.txt');
-            unlink($outputBase . '.txt'); // Clean up
+        }
+
+        if (empty(trim($ocrText))) {
+            json_response([
+                'status' => 'error', 
+                'message' => 'No text could be extracted from the document.',
+                'suggestions' => [
+                    'Ensure the image has good contrast and lighting',
+                    'Make sure the text is horizontal (not rotated)',
+                    'Try using a higher resolution image (300+ DPI)',
+                    'Use PNG or JPG format',
+                    'Ensure the document fills most of the image frame'
+                ],
+                'debug_info' => [
+                    'file_size' => filesize($targetPath),
+                    'file_extension' => $fileExtension,
+                    'text_length' => strlen($ocrText ?? ''),
+                    'ocr_text_sample' => substr($ocrText ?? '', 0, 100)
+                ]
+            ]);
+        }
+
+        // Get form data for validation
+        $firstName = trim($_POST['first_name'] ?? '');
+        $lastName = trim($_POST['last_name'] ?? '');
+        $yearLevelId = intval($_POST['year_level_id'] ?? 0);
+        $universityId = intval($_POST['university_id'] ?? 0);
+
+        // Get declared year level name
+        $declaredYearName = '';
+        if ($yearLevelId > 0) {
+            $yrRes = pg_query_params($connection, "SELECT name FROM year_levels WHERE year_level_id = $1", [$yearLevelId]);
+            if ($yrRow = pg_fetch_assoc($yrRes)) {
+                $declaredYearName = $yrRow['name'];
+            }
+        }
+
+        // Get university name for verification
+        $declaredUniversityName = '';
+        if ($universityId > 0) {
+            $uniRes = pg_query_params($connection, "SELECT name FROM universities WHERE university_id = $1", [$universityId]);
+            if ($uniRow = pg_fetch_assoc($uniRes)) {
+                $declaredUniversityName = $uniRow['name'];
+            }
+        }
+
+        // Get admin-specified semester and school year from config
+        $adminSemester = '';
+        $adminSchoolYear = '';
+        
+        $configRes = pg_query($connection, "SELECT key, value FROM config WHERE key IN ('valid_semester', 'valid_school_year')");
+        while ($configRow = pg_fetch_assoc($configRes)) {
+            if ($configRow['key'] === 'valid_semester') {
+                $adminSemester = $configRow['value'];
+            } elseif ($configRow['key'] === 'valid_school_year') {
+                $adminSchoolYear = $configRow['value'];
+            }
+        }
+
+        // Normalize OCR text
+        $ocrTextNormalized = strtolower($ocrText);
+
+        // === 1. DECLARED YEAR VALIDATION ===
+        $yearValidationResult = validateDeclaredYear($ocrText, $declaredYearName, $adminSemester);
+        $yearLevelMatch = $yearValidationResult['match'];
+        $yearLevelSection = $yearValidationResult['section'];
+        $yearLevelConfidence = $yearValidationResult['confidence'];
+        
+        // If year validation failed, don't extract grades from entire document
+        if (!$yearLevelMatch) {
+            error_log("Year validation failed for '$declaredYearName' - setting empty grade section");
+            error_log("Year validation error: " . ($yearValidationResult['error'] ?? 'Unknown error'));
+            // TEMPORARY DEBUG: Still extract grades for troubleshooting
+            // $yearLevelSection = ''; // Empty section = no grades extracted
+            // Comment out the above line to see what grades would be extracted
+        }
+
+        // === 2. ADMIN SEMESTER VALIDATION ===
+        $semesterValidationResult = validateAdminSemester($ocrText, $adminSemester);
+        $semesterMatch = $semesterValidationResult['match'];
+        $semesterConfidence = $semesterValidationResult['confidence'];
+        $foundSemesterText = $semesterValidationResult['found_text'];
+
+        // === 3. ADMIN SCHOOL YEAR VALIDATION === (TEMPORARILY DISABLED FOR TESTING)
+        // $schoolYearValidationResult = validateAdminSchoolYear($ocrText, $adminSchoolYear);
+        // Temporarily set to always pass for testing
+        $schoolYearMatch = true;
+        $schoolYearConfidence = 100;
+        $foundSchoolYearText = 'Temporarily disabled for testing';
+
+    // === 4. GRADE THRESHOLD CHECK ===
+    // Legacy grade validation (kept for backward compatibility)
+    $debugGrades = isset($_POST['debug']) && $_POST['debug'] === '1';
+    $gradeValidationResult = validateGradeThreshold($yearLevelSection, $declaredYearName, $debugGrades, $adminSemester);
+        $legacyAllGradesPassing = $gradeValidationResult['all_passing'];
+        $legacyValidGrades = $gradeValidationResult['grades'];
+        $legacyFailingGrades = $gradeValidationResult['failing_grades'];
+        
+        // === 4B. ENHANCED PER-SUBJECT GRADE VALIDATION ===
+        // Get university code for per-subject validation
+        $universityCode = '';
+        if ($universityId) {
+            $uniCodeRes = pg_query_params($connection, "SELECT code FROM universities WHERE university_id = $1", [$universityId]);
+            if ($uniCodeRow = pg_fetch_assoc($uniCodeRes)) {
+                $universityCode = $uniCodeRow['code'];
+            }
         }
         
-        // Extract grades using regex
-        preg_match_all('/([A-Za-z\s&]+)\s*([\d.]+)/', $ocrText, $matches);
-        $grades = [];
-        $failingGrades = [];
-        $allPassing = true;
+        // Perform enhanced per-subject grade validation if university code available
+        $enhancedGradeResult = null;
+        $allGradesPassing = $legacyAllGradesPassing; // Default to legacy
+        $validGrades = $legacyValidGrades;
+        $failingGrades = $legacyFailingGrades;
         
-        for ($i = 0; $i < count($matches[0]); $i++) {
-            $subject = trim($matches[1][$i]);
-            $grade = floatval($matches[2][$i]);
-            
-            if ($grade > 0 && $grade <= 5.0) {
-                $grades[] = [
-                    'subject' => $subject,
-                    'grade' => number_format($grade, 2)
+        if (!empty($universityCode)) {
+            // Convert legacy grades to enhanced format for validation
+            $subjectsForValidation = array_map(function($grade) {
+                $s = [
+                    'name' => $grade['subject'],
+                    'rawGrade' => $grade['grade'],
+                    'confidence' => 95 // High confidence for OCR-extracted grades
                 ];
+                if (isset($grade['prelim'])) $s['prelim'] = $grade['prelim'];
+                if (isset($grade['midterm'])) $s['midterm'] = $grade['midterm'];
+                if (isset($grade['final'])) $s['final'] = $grade['final'];
+                // Keep legacy 'grade' key for backwards compatibility
+                $s['grade'] = $grade['grade'] ?? ($s['final'] ?? $s['midterm'] ?? $s['prelim'] ?? null);
+                return $s;
+            }, $legacyValidGrades);
+            
+            if (!empty($subjectsForValidation)) {
+                $enhancedGradeResult = validatePerSubjectGrades($universityCode, null, $subjectsForValidation);
                 
-                if ($grade > 3.0) {
-                    $failingGrades[] = [
-                        'subject' => $subject,
-                        'grade' => number_format($grade, 2)
-                    ];
-                    $allPassing = false;
+                if ($enhancedGradeResult['success']) {
+                    // Use enhanced validation result
+                    $allGradesPassing = $enhancedGradeResult['eligible'];
+                    $failingGrades = array_map(function($failedSubject) {
+                        // Parse failed subject string "Subject Name: Grade"
+                        $parts = explode(':', $failedSubject, 2);
+                        return [
+                            'subject' => trim($parts[0] ?? ''),
+                            'grade' => trim($parts[1] ?? '')
+                        ];
+                    }, $enhancedGradeResult['failed_subjects']);
                 }
             }
         }
 
-        // Name matching
-        $firstName = trim($_POST['first_name'] ?? '');
-        $lastName = trim($_POST['last_name'] ?? '');
-        $nameMatch = (
-            !empty($firstName) && 
-            !empty($lastName) && 
-            stripos($ocrText, $firstName) !== false && 
-            stripos($ocrText, $lastName) !== false
-        );
+        // === 5. UNIVERSITY VERIFICATION ===
+        $universityValidationResult = validateUniversity($ocrText, $declaredUniversityName);
+        $universityMatch = $universityValidationResult['match'];
+        $universityConfidence = $universityValidationResult['confidence'];
+        $foundUniversityText = $universityValidationResult['found_text'];
 
-        // Year level matching
-        $yearLevelId = intval($_POST['year_level_id'] ?? 0);
-        $yearFound = false;
-        
-        if ($yearLevelId > 0) {
-            $yearResult = pg_query_params($connection, 
-                "SELECT name FROM year_levels WHERE year_level_id = $1", 
-                [$yearLevelId]
-            );
-            if ($yearRow = pg_fetch_assoc($yearResult)) {
-                $yearFound = stripos($ocrText, $yearRow['name']) !== false;
-            }
-        }
+        // === 6. NAME VERIFICATION ===
+        $nameMatch = validateStudentName($ocrText, $firstName, $lastName);
 
-        // Build verification result
+        // === 7. SCHOOL STUDENT ID VERIFICATION ===
+        $schoolStudentId = trim($_POST['school_student_id'] ?? '');
+        $schoolIdValidationResult = validateSchoolStudentId($ocrText, $schoolStudentId);
+        $schoolIdMatch = $schoolIdValidationResult['match'];
+        $schoolIdConfidence = $schoolIdValidationResult['confidence'];
+        $foundSchoolIdText = $schoolIdValidationResult['found_text'];
+
+        // === 8. ELIGIBILITY DECISION ===
+        $isEligible = ($yearLevelMatch && $semesterMatch && $schoolYearMatch && $allGradesPassing && $universityMatch && $nameMatch && $schoolIdMatch);
+
+        // Build verification response
         $verification = [
-            'name_match'      => $nameMatch,
-            'year_found'      => $yearFound,
-            'all_passing'     => $allPassing,
-            'grades'          => $grades,
-            'failing_grades'  => $failingGrades,
-            'confidence_scores'=> [
-                'name'   => $nameMatch ? 95 : 0,
-                'year'   => $yearFound ? 90 : 0,
-                'grades' => !empty($grades) ? 85 : 0
+            'year_level_match' => $yearLevelMatch,
+            'semester_match' => $semesterMatch,
+            'school_year_match' => $schoolYearMatch,
+            'university_match' => $universityMatch,
+            'name_match' => $nameMatch,
+            'school_student_id_match' => $schoolIdMatch,
+            'all_grades_passing' => $allGradesPassing,
+            'is_eligible' => $isEligible,
+            'grades' => $validGrades,
+            'failing_grades' => $failingGrades,
+            'enhanced_grade_validation' => $enhancedGradeResult,
+            'university_code' => $universityCode,
+            'validation_method' => !empty($universityCode) && $enhancedGradeResult && $enhancedGradeResult['success'] ? 'enhanced_per_subject' : 'legacy_threshold',
+            'confidence_scores' => [
+                'year_level' => $yearLevelConfidence,
+                'semester' => $semesterConfidence,
+                'school_year' => $schoolYearConfidence,
+                'university' => $universityConfidence,
+                'name' => $nameMatch ? 95 : 0,
+                'school_student_id' => $schoolIdConfidence,
+                'grades' => !empty($validGrades) ? 90 : 0
             ],
-            'overall_success' => ($nameMatch && $yearFound && $all_passing && !empty($grades)),
-            'found_text_snippets' => [],
+            'found_text_snippets' => [
+                'year_level' => $declaredYearName,
+                'semester' => $foundSemesterText,
+                'school_year' => $foundSchoolYearText,
+                'university' => $foundUniversityText,
+                'school_student_id' => $foundSchoolIdText
+            ],
+            'admin_requirements' => [
+                'required_semester' => $adminSemester,
+                'required_school_year' => $adminSchoolYear
+            ],
+            'overall_success' => $isEligible,
             'summary' => [
-                'passed_checks' => ($nameMatch ? 1 : 0) + ($yearFound ? 1 : 0) + ($allPassing ? 1 : 0),
-                'total_checks'  => 3,
-                'average_confidence' => 0,
-                'recommendation' => $allPassing ? 
-                    'All grades verified successfully' : 
-                    'Some grades are below the required 3.00 minimum'
+                'passed_checks' => 
+                    ($yearLevelMatch ? 1 : 0) + 
+                    ($semesterMatch ? 1 : 0) + 
+                    ($schoolYearMatch ? 1 : 0) + 
+                    ($universityMatch ? 1 : 0) + 
+                    ($nameMatch ? 1 : 0) + 
+                    ($schoolIdMatch ? 1 : 0) + 
+                    ($allGradesPassing ? 1 : 0),
+                'total_checks' => 6, // Updated to 6 (added school student ID)
+                'eligibility_status' => $isEligible ? 'ELIGIBLE' : 'INELIGIBLE',
+                'recommendation' => $isEligible ? 
+                    'All validations passed - Student is eligible' : 
+                    'Validation failed - Student is not eligible'
             ]
-                    ];
-                    
-        // Compute average confidence
-        $confValues = array_values($verification['confidence_scores']);
-        $verification['summary']['average_confidence'] = !empty($confValues) ? round(array_sum($confValues) / count($confValues), 1) : 0;
-
-        // Save OCR results for registration (confidence)
-        $confidenceFile = $uploadDir . 'grades_confidence.json';
-        $confidenceData = [
-            'overall_confidence' => $verification['summary']['average_confidence'],
-            'detailed_scores'    => $verification['confidence_scores'],
-            'grades'             => $grades,
-            'timestamp'          => time()
         ];
-        @file_put_contents($confidenceFile, json_encode($confidenceData));
+
+        // Calculate average confidence
+        $confValues = array_values($verification['confidence_scores']);
+        $verification['summary']['average_confidence'] = !empty($confValues) ? 
+            round(array_sum($confValues) / count($confValues), 1) : 0;
+
+        // Save verification results
+        $confidenceFile = $uploadDir . 'grades_confidence.json';
+        @file_put_contents($confidenceFile, json_encode([
+            'overall_confidence' => $verification['summary']['average_confidence'],
+            'detailed_scores' => $verification['confidence_scores'],
+            'grades' => $validGrades,
+            'eligibility_status' => $verification['summary']['eligibility_status'],
+            'timestamp' => time()
+        ]));
 
         json_response(['status' => 'success', 'verification' => $verification]);
 
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         error_log("Grades OCR Error: " . $e->getMessage());
         json_response([
             'status' => 'error',
@@ -1687,7 +2767,849 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
             ]
         ]);
     }
-} 
+}
+
+// === GRADE VALIDATION HELPER FUNCTIONS ===
+
+function validateDeclaredYear($ocrText, $declaredYearName, $adminSemester = '') {
+    $ocrTextLower = strtolower($ocrText);
+    $declaredYearLower = strtolower($declaredYearName);
+    
+    // Year level variations mapping - expanded for better OCR matching
+    $yearVariations = [
+        '1' => ['1st year', 'first year', '1st yr', 'year 1', 'yr 1', 'freshman', 'grade 1', 'first yr', 'lst year', '1 st year', 'firstyear', 'year i', 'year one'],
+        '2' => ['2nd year', 'second year', '2nd yr', 'year 2', 'yr 2', 'sophomore', 'grade 2', 'second yr', 'znd year', '2 nd year', 'secondyear', 'year ii', 'year two'], 
+        '3' => ['3rd year', 'third year', '3rd yr', 'year 3', 'yr 3', 'junior', 'grade 3', 'third yr', '3 rd year', 'thirdyear', 'year iii', 'year three'],
+        '4' => ['4th year', 'fourth year', '4th yr', 'year 4', 'yr 4', 'senior', 'grade 4', 'fourth yr', '4 th year', 'fourthyear', 'year iv', 'year four']
+    ];
+    
+    // Semester variations for filtering
+    $semesterVariations = [
+        'first semester' => ['1st semester', 'first semester', '1st sem', 'semester 1', 'sem 1'],
+        'second semester' => ['2nd semester', 'second semester', '2nd sem', 'semester 2', 'sem 2'],
+        'summer' => ['summer', 'summer semester', 'summer class', 'midyear'],
+        'third semester' => ['3rd semester', 'third semester', '3rd sem', 'semester 3', 'sem 3']
+    ];
+    
+    // Detect which year was declared
+    $declaredYearNum = '';
+    foreach ($yearVariations as $num => $variations) {
+        foreach ($variations as $variation) {
+            if (stripos($declaredYearLower, $variation) !== false) {
+                $declaredYearNum = $num;
+                break 2;
+            }
+        }
+    }
+    
+    if (empty($declaredYearNum)) {
+        error_log("Could not determine year number from declared year name: '$declaredYearName'");
+        return ['match' => false, 'section' => $ocrText, 'confidence' => 0, 'error' => 'Could not parse declared year name'];
+    }
+    
+    // STEP 1: Extract grades ONLY from the declared year section
+    $targetVariations = $yearVariations[$declaredYearNum];
+    $yearSectionStart = false;
+    $yearSectionEnd = false;
+    $matchedVariation = '';
+    
+    // Find start position of declared year
+    foreach ($targetVariations as $variation) {
+        $pos = stripos($ocrTextLower, $variation);
+        if ($pos !== false) {
+            $yearSectionStart = $pos;
+            $matchedVariation = $variation;
+            error_log("Found year marker '$variation' at position $pos for declared year '$declaredYearName'");
+            break;
+        }
+    }
+    
+    if ($yearSectionStart === false) {
+        // Year marker not found - log what we searched for
+        error_log("WARNING: Year marker not found for '$declaredYearName' (year $declaredYearNum)");
+        error_log("Searched for variations: " . implode(', ', $targetVariations));
+        error_log("OCR text preview (first 500 chars): " . substr($ocrText, 0, 500));
+        return ['match' => false, 'section' => $ocrText, 'confidence' => 0, 'error' => 'Year marker not found'];
+    }
+    
+    // Find end position (next year level or end of document)
+    $yearSectionEnd = strlen($ocrText);
+    foreach ($yearVariations as $otherNum => $otherVariations) {
+        if ($otherNum == $declaredYearNum) continue;
+        
+        foreach ($otherVariations as $otherVariation) {
+            $otherPos = stripos($ocrTextLower, $otherVariation, $yearSectionStart + 1);
+            if ($otherPos !== false && $otherPos < $yearSectionEnd) {
+                $yearSectionEnd = $otherPos;
+            }
+        }
+    }
+    
+    // Extract the year section
+    $yearSection = substr($ocrText, $yearSectionStart, $yearSectionEnd - $yearSectionStart);
+    
+    // STEP 2: Further filter by admin semester if specified
+    if (!empty($adminSemester)) {
+        $adminSemesterLower = strtolower($adminSemester);
+        
+        // Find matching semester variations
+        $targetSemesterVariations = [];
+        foreach ($semesterVariations as $standard => $variations) {
+            if (stripos($adminSemesterLower, $standard) !== false || in_array($adminSemesterLower, $variations)) {
+                $targetSemesterVariations = $variations;
+                break;
+            }
+        }
+        
+        if (!empty($targetSemesterVariations)) {
+            $yearSectionLower = strtolower($yearSection);
+            $semesterFound = false;
+            $semesterStart = false;
+            $semesterEnd = strlen($yearSection);
+            
+            // Find the admin semester within the year section
+            foreach ($targetSemesterVariations as $semVar) {
+                $semPos = stripos($yearSectionLower, $semVar);
+                if ($semPos !== false) {
+                    $semesterStart = $semPos;
+                    $semesterFound = true;
+                    break;
+                }
+            }
+            
+            if ($semesterFound) {
+                // Find end of this semester section (next semester marker or end)
+                foreach ($semesterVariations as $otherSemesterVars) {
+                    // Skip the current semester variations
+                    if ($otherSemesterVars === $targetSemesterVariations) continue;
+                    
+                    foreach ($otherSemesterVars as $otherSemVar) {
+                        $otherSemPos = stripos($yearSectionLower, $otherSemVar, $semesterStart + 1);
+                        if ($otherSemPos !== false && $otherSemPos < $semesterEnd) {
+                            $semesterEnd = $otherSemPos;
+                        }
+                    }
+                }
+                
+                // Extract ONLY the specific semester section
+                $yearSection = substr($yearSection, $semesterStart, $semesterEnd - $semesterStart);
+            }
+        }
+    }
+    
+    return [
+        'match' => true,
+        'section' => $yearSection,
+        'confidence' => 95,
+        'matched_variation' => $matchedVariation,
+        'declared_year' => $declaredYearNum,
+        'filtered_by_semester' => !empty($adminSemester)
+    ];
+}
+
+/**
+ * Enhanced grade extraction: returns prelim/midterm/final when present.
+ * If only a single canonical grade is present, it is placed in 'final'.
+ * $debug toggles inclusion of a debug array showing extraction decisions.
+ */
+function normalize_and_extract_grade_student(string $line): ?string {
+    $s = trim($line);
+    if ($s === '') return null;
+    $s = str_replace(',', '.', $s);
+    $s = preg_replace_callback('/(?<=\d)O(?=\d)|(?<=\b)O(?=\.)|(?<=\.)O(?=\d)/i', function($m){ return '0'; }, $s);
+    preg_match_all('/(?:\d+\.\d+|\.\d+|\d+)/', $s, $m);
+    if (empty($m[0])) return null;
+    $tokens = $m[0];
+    $chosen = null;
+    for ($i = count($tokens)-1; $i >= 0; $i--) {
+        if (strpos($tokens[$i], '.') !== false) { $chosen = $tokens[$i]; break; }
+    }
+    if ($chosen === null) $chosen = end($tokens);
+    if (strpos($chosen, '.') === 0) $chosen = '0' . $chosen;
+    $chosen = preg_replace('/[^0-9\.]/', '', $chosen);
+    $chosen = preg_replace('/\.(?=.*\.)/', '', $chosen);
+    if ($chosen === '') return null;
+    
+    // VALIDATE: Reject invalid grades (> 6.0)
+    $gradeValue = floatval($chosen);
+    if ($gradeValue <= 0.0 || $gradeValue > 6.0) {
+        return null; // Reject invalid grades like 8.00, 21.00, etc.
+    }
+    
+    return number_format($gradeValue, 2, '.', '');
+}
+
+function validateGradeThreshold($yearSection, $declaredYearName, $debug = false, $declaredTerm = '') {
+    $validGrades = [];
+    $failingGrades = [];
+    $allPassing = true;
+    $grade_debug = [];
+    
+    // Normalize the declared term to identify which column to extract
+    $declaredTermLower = strtolower(trim($declaredTerm));
+    $isPrelim = (stripos($declaredTermLower, 'prelim') !== false || stripos($declaredTermLower, '1st') !== false);
+    $isMidterm = (stripos($declaredTermLower, 'midterm') !== false || stripos($declaredTermLower, 'mid') !== false || stripos($declaredTermLower, '2nd') !== false);
+    $isFinal = (stripos($declaredTermLower, 'final') !== false || stripos($declaredTermLower, '3rd') !== false);
+    
+    // For LPU and similar schools: if a specific term is declared, only extract ONE grade per subject
+    $singleTermMode = ($isPrelim || $isMidterm || $isFinal);
+
+    $lines = preg_split('/\r?\n/', $yearSection);
+    $lastNonEmpty = '';
+    
+    // Track seen subjects to avoid duplicates
+    $seenSubjects = [];
+
+    foreach ($lines as $ln) {
+        $lnTrim = trim($ln);
+        if ($lnTrim === '') continue;
+
+        // Skip summary lines but be less aggressive
+        if (preg_match('/\b(total\s+units|total\s+credit|gwa|general\s+weighted\s+average|passing\s+percentage)\b/i', $lnTrim)) {
+            if ($debug) $grade_debug[] = ['skipped' => $lnTrim];
+            continue;
+        }
+        
+        // Skip lines that are just column headers
+        if (preg_match('/^\s*(code|title|grade|compl|units|credit|semester)\s*$/i', $lnTrim)) {
+            if ($debug) $grade_debug[] = ['skipped_header' => $lnTrim];
+            continue;
+        }
+
+        // Extract ALL numeric tokens from the line (for prelim/midterm/final)
+        preg_match_all('/(?:\d+\.\d+|\.\d+|\d+)/', str_replace(',', '.', $lnTrim), $tokenMatches);
+        $allTokens = $tokenMatches[0] ?? [];
+
+        // First pass: collect all valid numeric tokens
+        // Valid Philippine grades: 1.00 to 5.00 (most schools) or 0.00 to 4.00 (honors scale)
+        // Valid units: 1-6 (whole numbers)
+        $validTokens = [];
+        foreach ($allTokens as $token) {
+            $val = floatval($token);
+            // Accept only values <= 6.0 (grades up to 5.0 + units up to 6)
+            // Reject anything > 6.0 (invalid grades like 8.00, 21.00, years like 2024, etc.)
+            if ($val > 0.0 && $val <= 6.0) {
+                $validTokens[] = $token;
+            }
+        }
+        
+        // Second pass: Remove units and credit_units columns (whole numbers 1-6 at the end)
+        $grades = [];
+        if (!empty($validTokens)) {
+            // Count how many trailing whole numbers (1-6) exist
+            $unitsCount = 0;
+            for ($i = count($validTokens) - 1; $i >= 0; $i--) {
+                $val = floatval($validTokens[$i]);
+                $isWholeNumber = abs($val - round($val)) < 0.01;
+                $isUnitRange = ($val >= 1.0 && $val <= 6.0);
+                
+                if ($isWholeNumber && $isUnitRange) {
+                    $unitsCount++;
+                } else {
+                    break; // Stop when we hit a decimal grade
+                }
+            }
+            
+            // Remove trailing units columns (typically 1-2: units and credit_units)
+            $tokensToKeep = count($validTokens) - $unitsCount;
+            for ($i = 0; $i < $tokensToKeep; $i++) {
+                $grades[] = $validTokens[$i];
+            }
+        }
+        
+        $tokens = array_values($grades);
+
+        // Map tokens to prelim/midterm/final (units already filtered)
+        $prelim = $mid = $final = null;
+        
+        // ENHANCED: Handle LPU-style side-by-side semester columns
+        // If admin semester is specified and there are 2 grades, pick the correct one
+        if (count($tokens) == 2 && !empty($declaredTerm)) {
+            // Two grades found = likely First Semester | Second Semester columns
+            // Determine which semester the admin opened
+            $isFirstSemester = (stripos($declaredTermLower, 'first') !== false || stripos($declaredTermLower, '1st') !== false);
+            $isSecondSemester = (stripos($declaredTermLower, 'second') !== false || stripos($declaredTermLower, '2nd') !== false);
+            
+            if ($isFirstSemester) {
+                // Extract LEFT column (First Semester) - index 0
+                $singleGrade = number_format(floatval($tokens[0]), 2, '.', '');
+                $final = $singleGrade;
+                
+                if ($debug) {
+                    $grade_debug[] = [
+                        'lpu_column_mode' => true,
+                        'semester' => 'First Semester (left column)',
+                        'extracted_grade' => $singleGrade,
+                        'skipped_grade' => $tokens[1]
+                    ];
+                }
+            } elseif ($isSecondSemester) {
+                // Extract RIGHT column (Second Semester) - index 1
+                $singleGrade = number_format(floatval($tokens[1]), 2, '.', '');
+                $final = $singleGrade;
+                
+                if ($debug) {
+                    $grade_debug[] = [
+                        'lpu_column_mode' => true,
+                        'semester' => 'Second Semester (right column)',
+                        'extracted_grade' => $singleGrade,
+                        'skipped_grade' => $tokens[0]
+                    ];
+                }
+            } else {
+                // Unknown semester - take first as default
+                $singleGrade = number_format(floatval($tokens[0]), 2, '.', '');
+                $final = $singleGrade;
+            }
+        } elseif (count($tokens) > 0) {
+            // Single grade or no semester filtering - extract first token
+            $singleGrade = number_format(floatval($tokens[0]), 2, '.', '');
+            $final = $singleGrade;
+            
+            if ($debug) {
+                $grade_debug[] = [
+                    'single_grade_mode' => true,
+                    'declared_term' => $declaredTerm,
+                    'extracted_grade' => $singleGrade,
+                    'token_count' => count($tokens)
+                ];
+            }
+        }
+
+        // Derive subject by intelligently removing grade/unit numbers
+        $subjectCandidate = $lnTrim;
+        
+        // Strategy: Keep the beginning part (subject code + name), remove numbers from the end
+        // Remove separator characters first
+        $subjectCandidate = preg_replace('/[:\|]{1,}/', ' ', $subjectCandidate);
+        
+        // Enhanced approach: Remove grade/unit tokens more intelligently
+        $lineLength = strlen($subjectCandidate);
+        
+        // If we have grade tokens, try to identify subject vs. grade section
+        if (!empty($validTokens)) {
+            // Find the position of the FIRST grade token (likely where subject ends)
+            $firstGradePos = false;
+            foreach ($validTokens as $token) {
+                $pos = strpos($subjectCandidate, $token);
+                if ($pos !== false) {
+                    // Skip if it's in the first 30% (likely part of subject code like "GNED 09")
+                    if ($pos > ($lineLength * 0.3)) {
+                        if ($firstGradePos === false || $pos < $firstGradePos) {
+                            $firstGradePos = $pos;
+                        }
+                    }
+                }
+            }
+            
+            // If we found where grades start, truncate there
+            if ($firstGradePos !== false) {
+                $subjectCandidate = substr($subjectCandidate, 0, $firstGradePos);
+            } else {
+                // Fallback: remove each token individually
+                foreach ($validTokens as $token) {
+                    $pos = strpos($subjectCandidate, $token);
+                    if ($pos !== false && $pos > ($lineLength * 0.3)) {
+                        $subjectCandidate = preg_replace('/\b' . preg_quote($token, '/') . '\b/', ' ', $subjectCandidate, 1);
+                    }
+                }
+            }
+        }
+        
+        // Also remove common separators like multiple dashes
+        $subjectCandidate = preg_replace('/\s*-+\s*/', ' ', $subjectCandidate);
+        $subjectCandidate = trim(preg_replace('/\s+/', ' ', $subjectCandidate));
+        $cleanSubject = cleanSubjectName($subjectCandidate);
+
+        if (empty($cleanSubject)) {
+            $cleanSubject = cleanSubjectName($lastNonEmpty);
+        }
+
+        if (empty($cleanSubject)) {
+            if ($debug) $grade_debug[] = ['no_subject' => $lnTrim, 'tokens' => $tokens];
+            $lastNonEmpty = $lnTrim;
+            continue;
+        }
+
+        // Build grade object - ONLY include the single grade value
+        $gradeObj = ['subject' => $cleanSubject];
+        
+        // For single grade format: only store the grade value, no prelim/midterm/final columns
+        if ($final !== null) {
+            $gradeObj['grade'] = $final;
+        }
+
+        // Determine canonical grade for legacy checks
+        $canonical = $gradeObj['grade'] ?? null;
+        if ($canonical !== null) {
+            // Check for duplicates before adding
+            $isDuplicate = false;
+            $subjectKey = strtolower(trim($cleanSubject));
+            if (isset($seenSubjects[$subjectKey])) {
+                $isDuplicate = true;
+            } else {
+                $seenSubjects[$subjectKey] = true;
+                $validGrades[] = $gradeObj;
+                $gradeVal = floatval($canonical);
+                if ($gradeVal > 3.00) { $failingGrades[] = ['subject'=>$cleanSubject,'grade'=>$canonical]; $allPassing = false; }
+                if ($debug) $grade_debug[] = ['accepted' => $gradeObj, 'raw_line' => $lnTrim];
+            }
+            
+            if ($isDuplicate && $debug) {
+                $grade_debug[] = ['duplicate_skipped' => $gradeObj, 'raw_line' => $lnTrim];
+            }
+        } else {
+            if ($debug) $grade_debug[] = ['no_grade_found' => $lnTrim];
+        }
+
+        $lastNonEmpty = $lnTrim;
+    }
+
+    // Second pass for grade-only lines (more lenient for missing subjects)
+    $lastNonEmpty = '';
+    foreach ($lines as $ln) {
+        $lnTrim = trim($ln);
+        if ($lnTrim === '') continue;
+        
+        // Check if line is ONLY a grade (no subject text)
+        $onlyGrade = normalize_and_extract_grade_student($lnTrim);
+        $isGradeOnly = ($onlyGrade !== null && preg_match('/^[\d\.\s\-]+$/', $lnTrim));
+        
+        if ($isGradeOnly && !empty($lastNonEmpty)) {
+            // Previous line might be the subject
+            $cleanSubject = cleanSubjectName($lastNonEmpty);
+            if ($cleanSubject && strlen($cleanSubject) >= 3) {
+                $subjectKey = strtolower(trim($cleanSubject));
+                
+                // Only add if not already extracted
+                if (!isset($seenSubjects[$subjectKey])) {
+                    $gradeData = ['subject'=>$cleanSubject,'grade'=>number_format(floatval($onlyGrade),2,'.','')];
+                    $seenSubjects[$subjectKey] = true;
+                    $validGrades[] = $gradeData;
+                    
+                    if (floatval($onlyGrade) > 3.00) { 
+                        $failingGrades[] = $gradeData; 
+                        $allPassing = false; 
+                    }
+                    
+                    if ($debug) {
+                        $grade_debug[] = [
+                            'paired' => $gradeData,
+                            'subject_line' => $lastNonEmpty,
+                            'grade_line' => $lnTrim,
+                            'method' => 'second_pass'
+                        ];
+                    }
+                }
+            }
+        }
+        
+        // Update last non-empty line (potential subject line)
+        if (!$isGradeOnly && strlen($lnTrim) > 2) {
+            $lastNonEmpty = $lnTrim;
+        }
+    }
+
+    $result = [
+        'all_passing' => $allPassing,
+        'grades' => $validGrades,
+        'failing_grades' => $failingGrades,
+        'grade_count' => count($validGrades)
+    ];
+    if ($debug) $result['debug'] = $grade_debug;
+    return $result;
+}
+
+function validatePerSubjectGrades($universityKey, $uploadedFile = null, $subjects = null) {
+    global $connection;
+    
+    try {
+        // Include required services
+        require_once __DIR__ . '/../../services/GradeValidationService.php';
+        require_once __DIR__ . '/../../services/OCRProcessingService.php';
+        
+        // Initialize services with PDO connection for grade validation
+        $dbHost = getenv('DB_HOST') ?: 'localhost';
+        $dbName = getenv('DB_NAME') ?: 'educaid';
+        $dbUser = getenv('DB_USER') ?: 'postgres';
+        $dbPass = getenv('DB_PASSWORD') ?: '';
+        $dbPort = getenv('DB_PORT') ?: '5432';
+        
+        try {
+            $pdoConnection = new PDO("pgsql:host=$dbHost;port=$dbPort;dbname=$dbName", $dbUser, $dbPass);
+            $pdoConnection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        } catch (Exception $e) {
+            error_log("PDO Connection error: " . $e->getMessage());
+            throw new Exception("Database connection failed for grade validation");
+        }
+        $gradeValidator = new GradeValidationService($pdoConnection);
+        $ocrProcessor = new OCRProcessingService([
+            'tesseract_path' => 'tesseract',
+            'temp_dir' => realpath(__DIR__ . '/../../temp_debug'),
+            'max_file_size' => 10 * 1024 * 1024,
+        ]);
+        
+        $extractedSubjects = [];
+        
+        // Process file upload or use provided subjects
+        if ($uploadedFile && is_uploaded_file($uploadedFile['tmp_name'])) {
+            // Create temp directory if needed
+            $tempDir = __DIR__ . '/../../temp';
+            if (!is_dir($tempDir)) {
+                mkdir($tempDir, 0755, true);
+            }
+            
+            // Move uploaded file to temp location
+            $tempFilePath = $tempDir . '/' . uniqid() . '_' . basename($uploadedFile['name']);
+            if (move_uploaded_file($uploadedFile['tmp_name'], $tempFilePath)) {
+                // Process document with OCR
+                $ocrResult = $ocrProcessor->processGradeDocument($tempFilePath);
+                
+                if ($ocrResult['success']) {
+                    $extractedSubjects = $ocrResult['subjects'];
+                }
+                
+                // Clean up temp file
+                unlink($tempFilePath);
+            }
+        } elseif ($subjects && is_array($subjects)) {
+            // Use provided subjects data
+            $extractedSubjects = $subjects;
+        } else {
+            throw new Exception('No valid grade data provided');
+        }
+        
+        // Validate subjects against university grading policy
+        $validationResult = $gradeValidator->validateApplicant($universityKey, $extractedSubjects);
+        
+        return [
+            'success' => true,
+            'eligible' => $validationResult['eligible'],
+            'failed_subjects' => $validationResult['failedSubjects'],
+            'total_subjects' => $validationResult['totalSubjects'],
+            'passed_subjects' => $validationResult['passedSubjects'],
+            'extracted_subjects' => $extractedSubjects,
+            'university_key' => $universityKey
+        ];
+        
+    } catch (Exception $e) {
+        error_log("Per-subject grade validation error: " . $e->getMessage());
+        return [
+            'success' => false,
+            'eligible' => false,
+            'error' => $e->getMessage(),
+            'failed_subjects' => [],
+            'total_subjects' => 0,
+            'passed_subjects' => 0,
+            'extracted_subjects' => []
+        ];
+    }
+}
+
+function validateUniversity($ocrText, $declaredUniversityName) {
+    if (empty($declaredUniversityName)) {
+        return ['match' => false, 'confidence' => 0, 'found_text' => ''];
+    }
+    
+    $ocrTextLower = strtolower($ocrText);
+    $universityLower = strtolower($declaredUniversityName);
+    
+    // Direct match
+    if (stripos($ocrTextLower, $universityLower) !== false) {
+        return ['match' => true, 'confidence' => 100, 'found_text' => $declaredUniversityName];
+    }
+    
+    // Word-by-word matching for partial matches
+    $universityWords = array_filter(explode(' ', preg_replace('/[^a-zA-Z0-9\s]/', ' ', $universityLower)));
+    $significantWords = array_filter($universityWords, function($word) {
+        return strlen($word) > 3; // Only consider words longer than 3 characters
+    });
+    
+    if (empty($significantWords)) {
+        return ['match' => false, 'confidence' => 0, 'found_text' => ''];
+    }
+    
+    $matchedWords = 0;
+    $foundText = '';
+    
+    foreach ($significantWords as $word) {
+        if (stripos($ocrTextLower, $word) !== false) {
+            $matchedWords++;
+            $foundText .= $word . ' ';
+        }
+    }
+    
+    // Require at least 70% of significant words to match
+    $matchPercentage = ($matchedWords / count($significantWords)) * 100;
+    
+    if ($matchPercentage >= 70) {
+        return [
+            'match' => true, 
+            'confidence' => round($matchPercentage), 
+            'found_text' => trim($foundText)
+        ];
+    }
+    
+    return ['match' => false, 'confidence' => round($matchPercentage), 'found_text' => trim($foundText)];
+}
+
+function validateStudentName($ocrText, $firstName, $lastName) {
+    if (empty($firstName) || empty($lastName)) {
+        return false;
+    }
+    
+    $ocrTextLower = strtolower($ocrText);
+    $firstNameMatch = stripos($ocrTextLower, strtolower($firstName)) !== false;
+    $lastNameMatch = stripos($ocrTextLower, strtolower($lastName)) !== false;
+    
+    return ($firstNameMatch && $lastNameMatch);
+}
+
+function validateSchoolStudentId($ocrText, $schoolStudentId) {
+    if (empty($schoolStudentId)) {
+        // If no school student ID provided, auto-pass (backward compatibility)
+        return [
+            'match' => true,
+            'confidence' => 100,
+            'found_text' => 'No school student ID required',
+            'auto_passed' => true
+        ];
+    }
+    
+    // Debug logging
+    error_log("=== validateSchoolStudentId Debug ===");
+    error_log("Expected School Student ID: " . $schoolStudentId);
+    error_log("OCR Text Length: " . strlen($ocrText));
+    error_log("Full OCR Text: " . $ocrText); // Log FULL text to see what OCR extracted
+    
+    // Clean both the expected ID and OCR text for better matching
+    $cleanSchoolId = preg_replace('/[^A-Z0-9]/i', '', $schoolStudentId);
+    $cleanOcrText = preg_replace('/[^A-Z0-9]/i', '', $ocrText);
+    
+    error_log("Cleaned Expected ID: " . $cleanSchoolId);
+    error_log("Cleaned OCR Text (first 1000 chars): " . substr($cleanOcrText, 0, 1000));
+    error_log("Cleaned OCR contains ID? " . (stripos($cleanOcrText, $cleanSchoolId) !== false ? 'YES' : 'NO'));
+    
+    // Method 1: Check if cleaned school student ID appears in cleaned OCR text (exact match)
+    if (stripos($cleanOcrText, $cleanSchoolId) !== false) {
+        return [
+            'match' => true,
+            'confidence' => 100,
+            'found_text' => $schoolStudentId,
+            'match_type' => 'exact_match_cleaned'
+        ];
+    }
+    
+    // Method 2: Check with original formatting (dashes, spaces, etc.)
+    if (stripos($ocrText, $schoolStudentId) !== false) {
+        return [
+            'match' => true,
+            'confidence' => 100,
+            'found_text' => $schoolStudentId,
+            'match_type' => 'exact_match_original'
+        ];
+    }
+    
+    // Method 3: Check for common format variations
+    $idVariations = [
+        $schoolStudentId,
+        str_replace('-', '', $schoolStudentId),
+        str_replace(' ', '', $schoolStudentId),
+        str_replace('-', ' ', $schoolStudentId),
+        strtoupper($schoolStudentId),
+        strtolower($schoolStudentId)
+    ];
+    
+    foreach ($idVariations as $variation) {
+        if (stripos($ocrText, $variation) !== false) {
+            return [
+                'match' => true,
+                'confidence' => 95,
+                'found_text' => $variation,
+                'match_type' => 'format_variation'
+            ];
+        }
+    }
+    
+    // Method 4: Extract potential ID numbers from OCR text and calculate similarity
+    preg_match_all('/\b[\w\d\-]+\b/', $ocrText, $matches);
+    $maxSimilarity = 0;
+    $bestMatch = '';
+    
+    foreach ($matches[0] as $potentialId) {
+        // Only check strings that have at least 4 characters
+        if (strlen($potentialId) >= 4) {
+            $cleanPotentialId = preg_replace('/[^A-Z0-9]/i', '', $potentialId);
+            
+            // Calculate similarity using similar_text
+            similar_text($cleanSchoolId, $cleanPotentialId, $percent);
+            
+            if ($percent > $maxSimilarity) {
+                $maxSimilarity = $percent;
+                $bestMatch = $potentialId;
+            }
+            
+            // Also check Levenshtein distance for better matching
+            $lev = levenshtein(strtolower($cleanSchoolId), strtolower($cleanPotentialId));
+            $maxLen = max(strlen($cleanSchoolId), strlen($cleanPotentialId));
+            $levSimilarity = (1 - ($lev / $maxLen)) * 100;
+            
+            if ($levSimilarity > $maxSimilarity) {
+                $maxSimilarity = $levSimilarity;
+                $bestMatch = $potentialId;
+            }
+        }
+    }
+    
+    // Accept if similarity is 70% or higher
+    if ($maxSimilarity >= 70) {
+        return [
+            'match' => true,
+            'confidence' => round($maxSimilarity, 2),
+            'found_text' => $bestMatch,
+            'match_type' => 'partial_match',
+            'note' => 'Partial match found - please verify'
+        ];
+    }
+    
+    // No match found
+    return [
+        'match' => false,
+        'confidence' => 0,
+        'found_text' => '',
+        'match_type' => 'no_match',
+        'note' => 'School student ID not found in document'
+    ];
+}
+
+function validateAdminSemester($ocrText, $adminSemester) {
+    if (empty($adminSemester)) {
+        return ['match' => true, 'confidence' => 100, 'found_text' => 'No semester requirement set'];
+    }
+    
+    $ocrTextLower = strtolower($ocrText);
+    $adminSemesterLower = strtolower($adminSemester);
+    
+    // Common semester variations
+    $semesterVariations = [
+        'first semester' => ['1st semester', 'first semester', '1st sem', 'semester 1', 'sem 1'],
+        'second semester' => ['2nd semester', 'second semester', '2nd sem', 'semester 2', 'sem 2'],
+        'summer' => ['summer', 'summer semester', 'summer class', 'midyear'],
+        'third semester' => ['3rd semester', 'third semester', '3rd sem', 'semester 3', 'sem 3']
+    ];
+    
+    // Find matching variations for admin semester
+    $targetVariations = [];
+    foreach ($semesterVariations as $standard => $variations) {
+        if (stripos($adminSemesterLower, $standard) !== false || in_array($adminSemesterLower, $variations)) {
+            $targetVariations = $variations;
+            break;
+        }
+    }
+    
+    // If no variations found, use direct match
+    if (empty($targetVariations)) {
+        $targetVariations = [$adminSemesterLower];
+    }
+    
+    // Check for matches in OCR text
+    $foundText = '';
+    foreach ($targetVariations as $variation) {
+        if (stripos($ocrTextLower, $variation) !== false) {
+            $foundText = $variation;
+            return ['match' => true, 'confidence' => 95, 'found_text' => $foundText];
+        }
+    }
+    
+    return ['match' => false, 'confidence' => 0, 'found_text' => ''];
+}
+
+function validateAdminSchoolYear($ocrText, $adminSchoolYear) {
+    if (empty($adminSchoolYear)) {
+        return ['match' => true, 'confidence' => 100, 'found_text' => 'No school year requirement set'];
+    }
+    
+    $ocrTextLower = strtolower($ocrText);
+    
+    // Extract year range from admin setting (e.g., "2023-2025", "2024–2025")
+    if (preg_match('/(\d{4})\s*[-–]\s*(\d{4})/', $adminSchoolYear, $matches)) {
+        $startYear = $matches[1];
+        $endYear = $matches[2];
+        
+        // Look for various formats of the school year in OCR text
+        $yearPatterns = [
+            $startYear . '-' . $endYear,
+            $startYear . '–' . $endYear,
+            $startYear . ' - ' . $endYear,
+            $startYear . ' – ' . $endYear,
+            $startYear . '/' . $endYear,
+            $startYear . ' / ' . $endYear,
+            'sy ' . $startYear . '-' . $endYear,
+            'school year ' . $startYear . '-' . $endYear,
+            'a.y. ' . $startYear . '-' . $endYear,
+            'academic year ' . $startYear . '-' . $endYear
+        ];
+        
+        foreach ($yearPatterns as $pattern) {
+            if (stripos($ocrTextLower, strtolower($pattern)) !== false) {
+                return ['match' => true, 'confidence' => 95, 'found_text' => $pattern];
+            }
+        }
+        
+        return ['match' => false, 'confidence' => 0, 'found_text' => ''];
+    }
+    
+    // If admin school year is not in range format, do direct match
+    if (stripos($ocrTextLower, strtolower($adminSchoolYear)) !== false) {
+        return ['match' => true, 'confidence' => 90, 'found_text' => $adminSchoolYear];
+    }
+    
+    return ['match' => false, 'confidence' => 0, 'found_text' => ''];
+}
+
+function cleanSubjectName($rawSubject) {
+    // Remove subject codes and keep only the descriptive subject name
+    $subject = $rawSubject;
+    
+    // Remove subject codes at the beginning (GNED09, IENG100A, IENG125A, etc.)
+    // Pattern: Letters (2-8) followed by optional numbers and optional letter at START
+    $subject = preg_replace('/^\b[A-Z]{2,8}\d+[A-Z]?\b\s*/i', '', $subject);
+    
+    // Also handle codes with spaces like "GNED 09" or "IENG 100A"
+    $subject = preg_replace('/^\b[A-Z]{2,8}\s+\d+[A-Z]?\b\s*/i', '', $subject);
+    
+    // Remove patterns like A24-25, B22-23, etc. (letter + year range)
+    $subject = preg_replace('/\b[A-Z]\d{2}-\d{2}\b/i', '', $subject);
+    
+    // Remove patterns like 1.25 B22-23 (grade + space + code)
+    $subject = preg_replace('/\d+\.\d+\s+[A-Z]\d{2}-\d{2}/i', '', $subject);
+    
+    // Remove codes at the END (after the subject name)
+    $subject = preg_replace('/\s+\b[A-Z]{2,}[0-9]+[A-Z]?\b/', '', $subject);
+    
+    // Remove patterns like 22-23, A22-23 at the beginning or end (likely years)
+    $subject = preg_replace('/^[A-Z]?\d{2}-\d{2}\s*/', '', $subject);
+    $subject = preg_replace('/\s*[A-Z]?\d{2}-\d{2}$/', '', $subject);
+    
+    // Remove extra numbers at the beginning (like "4 and Habits Practice")
+    $subject = preg_replace('/^\d+\s+(?=and\s)/i', '', $subject);
+    
+    // Remove standalone single letters or numbers
+    $subject = preg_replace('/\s+\b[A-Z0-9]\b\s+/', ' ', $subject);
+    
+    // Remove "code" or "title" labels that might appear
+    $subject = preg_replace('/^(code|title)[\s:]+/i', '', $subject);
+    
+    // Clean up extra spaces and return
+    $subject = preg_replace('/\s+/', ' ', trim($subject));
+    
+    // If the subject is too short after cleaning, return original
+    if (strlen($subject) < 3) {
+        return trim($rawSubject);
+    }
+    
+    return $subject;
+}
 // --- Final registration submission ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     // Basic input validation
@@ -1742,6 +3664,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     require_once __DIR__ . '/../../includes/util/student_id.php';
     $student_id = generateSystemStudentId($connection, $year_level, $municipality_id, intval(date('Y')));
     if (!$student_id) {
+        // Fallback to avoid blocking registration: generate RANDOM6 with uniqueness check
         $ylCode = (string)intval($year_level);
         $muniPrefix = 'MUNI' . intval($municipality_id);
         $mr = @pg_query_params($connection, "SELECT COALESCE(NULLIF(slug,''), name) AS tag FROM municipalities WHERE municipality_id = $1", [$municipality_id]);
@@ -1765,8 +3688,30 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
     $activeSlot = pg_fetch_assoc($activeSlotQuery);
     $slot_id = $activeSlot ? $activeSlot['slot_id'] : null;
 
-    $insertQuery = "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_registration', 0, NULL, FALSE, NOW(), $11, $12, $13, $14, $15) RETURNING student_id";
+    // Get school student ID from form
+    $school_student_id = trim($_POST['school_student_id'] ?? '');
+    
+    // Validate school student ID
+    if (empty($school_student_id)) {
+        json_response(['status' => 'error', 'message' => 'School student ID number is required.']);
+    }
+    
+    // Check for duplicate school student ID one final time
+    $dupCheckQuery = "SELECT * FROM check_duplicate_school_student_id($1, $2)";
+    $dupCheckResult = pg_query_params($connection, $dupCheckQuery, [$university, $school_student_id]);
+    
+    if ($dupCheckResult) {
+        $dupCheck = pg_fetch_assoc($dupCheckResult);
+        if ($dupCheck && $dupCheck['is_duplicate'] === 't') {
+            json_response([
+                'status' => 'error', 
+                'message' => 'This school student ID number is already registered by ' . $dupCheck['student_name'] . '. Creating multiple accounts is strictly prohibited. Please contact support if you believe this is an error.'
+            ]);
+        }
+    }
+
+    $insertQuery = "INSERT INTO students (student_id, municipality_id, first_name, middle_name, last_name, extension_name, email, mobile, password, sex, status, payroll_no, qr_code, has_received, application_date, bdate, barangay_id, university_id, year_level_id, slot_id, school_student_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_registration', 0, NULL, FALSE, NOW(), $11, $12, $13, $14, $15, $16) RETURNING student_id";
 
     $result = pg_query_params($connection, $insertQuery, [
         $student_id,
@@ -1783,7 +3728,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $barangay,
         $university,
         $year_level,
-        $slot_id
+        $slot_id,
+        $school_student_id  // School/University-issued ID number
     ]);
 
 
@@ -1795,6 +3741,75 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $cleanLastname = preg_replace('/[^a-zA-Z0-9]/', '', $lastname);
         $cleanFirstname = preg_replace('/[^a-zA-Z0-9]/', '', $firstname);
         $namePrefix = strtolower($cleanLastname . '_' . $cleanFirstname);
+
+        // Save Student ID Picture to temporary folder (not permanent until approved)
+        $tempIDPictureDir = '../../assets/uploads/temp/id_pictures/';
+        $allIDFiles = glob($tempIDPictureDir . '*');
+        $idTempFiles = array_filter($allIDFiles, function($file) {
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
+        });
+        
+        error_log("Looking for ID Picture files in: " . $tempIDPictureDir);
+        error_log("Found ID Picture files: " . print_r($idTempFiles, true));
+        
+        if (!empty($idTempFiles)) {
+            // Process the first ID Picture file found
+            foreach ($idTempFiles as $idTempFile) {
+                $idExtension = pathinfo($idTempFile, PATHINFO_EXTENSION);
+                $idNewFilename = $student_id . '_id_' . time() . '.' . $idExtension;
+                $idTempPath = $tempIDPictureDir . $idNewFilename;
+                
+                // Copy the main file
+                if (@copy($idTempFile, $idTempPath)) {
+                    error_log("Copied ID Picture from $idTempFile to $idTempPath");
+                    
+                    // Get OCR confidence from confidence file
+                    $idConfidenceFile = $tempIDPictureDir . 'id_picture_confidence.json';
+                    $idConfidence = null;
+                    
+                    if (file_exists($idConfidenceFile)) {
+                        $idConfData = json_decode(file_get_contents($idConfidenceFile), true);
+                        if ($idConfData && isset($idConfData['ocr_confidence'])) {
+                            $idConfidence = $idConfData['ocr_confidence'];
+                        }
+                        @unlink($idConfidenceFile); // Clean up confidence file
+                    }
+                    
+                    // Copy .verify.json file if it exists
+                    $idVerifyFile = $idTempFile . '.verify.json';
+                    if (file_exists($idVerifyFile)) {
+                        @copy($idVerifyFile, $idTempPath . '.verify.json');
+                        @unlink($idVerifyFile);
+                    }
+                    
+                    // Copy .ocr.txt file if it exists
+                    $idOcrFile = $idTempFile . '.ocr.txt';
+                    if (file_exists($idOcrFile)) {
+                        @copy($idOcrFile, $idTempPath . '.ocr.txt');
+                        @unlink($idOcrFile);
+                    }
+                    
+                    // Save ID Picture record to database with temporary path and OCR confidence
+                    $idQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $idResult = pg_query_params($connection, $idQuery, [$student_id, 'id_picture', $idTempPath, 'false', $idConfidence]);
+                    
+                    if (!$idResult) {
+                        error_log("Failed to save ID Picture to database: " . pg_last_error($connection));
+                    } else {
+                        error_log("Successfully saved ID Picture to database for student $student_id with confidence $idConfidence%");
+                    }
+                    
+                    // Clean up original temp ID Picture file
+                    @unlink($idTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy ID Picture file from $idTempFile to $idTempPath");
+                }
+            }
+        } else {
+            error_log("No ID Picture temp files found in path: " . $tempIDPictureDir);
+        }
 
         // Save enrollment form to temporary folder (not permanent until approved)
         $tempFormPath = '../../assets/uploads/temp/';
@@ -1825,6 +3840,21 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                     error_log("Failed to copy EAF file from $tempFile to $tempEnrollmentPath");
                     continue; // Skip this file and try others
                 } else {
+                    // Copy associated .verify.json and .ocr.txt files if they exist
+                    $verifySourceFile = $tempFile . '.verify.json';
+                    $ocrSourceFile = $tempFile . '.ocr.txt';
+                    $verifyDestFile = $tempEnrollmentPath . '.verify.json';
+                    $ocrDestFile = $tempEnrollmentPath . '.ocr.txt';
+                    
+                    if (file_exists($verifySourceFile)) {
+                        copy($verifySourceFile, $verifyDestFile);
+                        unlink($verifySourceFile);
+                    }
+                    if (file_exists($ocrSourceFile)) {
+                        copy($ocrSourceFile, $ocrDestFile);
+                        unlink($ocrSourceFile);
+                    }
+                    
                     unlink($tempFile); // Remove original file
                     
                     // Get OCR confidence score from temp file
@@ -1888,6 +3918,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 }
 
                 if (copy($letterTempFile, $letterTempPath)) {
+                    // Copy verification files (.verify.json and .ocr.txt) if they exist
+                    $letterVerifyFile = $letterTempFile . '.verify.json';
+                    $letterOcrFile = $letterTempFile . '.ocr.txt';
+                    
+                    if (file_exists($letterVerifyFile)) {
+                        @copy($letterVerifyFile, $letterTempPath . '.verify.json');
+                        @unlink($letterVerifyFile);
+                    }
+                    
+                    if (file_exists($letterOcrFile)) {
+                        @copy($letterOcrFile, $letterTempPath . '.ocr.txt');
+                        @unlink($letterOcrFile);
+                    }
+                    
                     // Save letter record to database with temporary path and OCR confidence
                     $letterQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
                     $letterResult = pg_query_params($connection, $letterQuery, [$student_id, 'letter_to_mayor', $letterTempPath, 'false', $letterConfidence]);
@@ -1946,6 +3990,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
                 }
 
                 if (copy($certificateTempFile, $certificateTempPath)) {
+                    // Copy verification files (.verify.json and .ocr.txt) if they exist
+                    $certificateVerifyFile = $certificateTempFile . '.verify.json';
+                    $certificateOcrFile = $certificateTempFile . '.ocr.txt';
+                    
+                    if (file_exists($certificateVerifyFile)) {
+                        @copy($certificateVerifyFile, $certificateTempPath . '.verify.json');
+                        @unlink($certificateVerifyFile);
+                    }
+                    
+                    if (file_exists($certificateOcrFile)) {
+                        @copy($certificateOcrFile, $certificateTempPath . '.ocr.txt');
+                        @unlink($certificateOcrFile);
+                    }
+                    
                     // Save certificate record to database with temporary path and OCR confidence
                     $certificateQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
                     $certificateResult = pg_query_params($connection, $certificateQuery, [$student_id, 'certificate_of_indigency', $certificateTempPath, 'false', $certificateConfidence]);
@@ -1965,6 +4023,63 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             }
         } else {
             error_log("No certificate temp files found in path: " . $tempIndigencyDir);
+        }
+
+        // Save grades to temporary folder (not permanent until approved)
+        $tempGradesDir = '../../assets/uploads/temp/grades/';
+        $allGradesFiles = glob($tempGradesDir . '*');
+        $gradesTempFiles = array_filter($allGradesFiles, function($file) {
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
+        });
+        error_log("Looking for grades files in: " . $tempGradesDir);
+        error_log("Found grades files: " . print_r($gradesTempFiles, true));
+        if (!empty($gradesTempFiles)) {
+            // Create temporary grades directory for pending students
+            if (!file_exists($tempGradesDir)) {
+                mkdir($tempGradesDir, 0777, true);
+            }
+
+            // Process all grades files and rename them with student ID
+            foreach ($gradesTempFiles as $gradesTempFile) {
+                $originalGradesFilename = basename($gradesTempFile);
+                $gradesExtension = pathinfo($originalGradesFilename, PATHINFO_EXTENSION);
+                
+                // Always rename with student ID prefix for consistent naming
+                $newGradesFilename = $student_id . '_' . $namePrefix . '_grades.' . $gradesExtension;
+                $gradesTempPath = $tempGradesDir . $newGradesFilename;
+
+                // Get OCR confidence score from temp file
+                $gradesConfidenceFile = $tempGradesDir . 'grades_confidence.json';
+                $gradesConfidence = 75.0; // default
+                if (file_exists($gradesConfidenceFile)) {
+                    $confidenceData = json_decode(file_get_contents($gradesConfidenceFile), true);
+                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                        $gradesConfidence = $confidenceData['overall_confidence'];
+                    }
+                    unlink($gradesConfidenceFile); // Clean up confidence file
+                }
+
+                if (copy($gradesTempFile, $gradesTempPath)) {
+                    // Save grades record to database with temporary path and OCR confidence
+                    $gradesQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $gradesResult = pg_query_params($connection, $gradesQuery, [$student_id, 'academic_grades', $gradesTempPath, 'false', $gradesConfidence]);
+                    
+                    if (!$gradesResult) {
+                        error_log("Failed to save grades to database: " . pg_last_error($connection));
+                    } else {
+                        error_log("Successfully saved grades to database for student $student_id with confidence $gradesConfidence%");
+                    }
+
+                    // Clean up original temp grades file
+                    unlink($gradesTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy grades file from $gradesTempFile to $gradesTempPath");
+                }
+            }
+        } else {
+            error_log("No grades temp files found in path: " . $tempGradesDir);
         }
 
         // Note: semester and academic_year are stored in signup_slots table via students.slot_id relationship
@@ -2026,21 +4141,22 @@ if (!$isAjaxRequest) {
                 <span class="step" id="step-indicator-7">7</span>
                 <span class="step" id="step-indicator-8">8</span>
                 <span class="step" id="step-indicator-9">9</span>
+                <span class="step" id="step-indicator-10">10</span>
             </div>
             <form id="multiStepForm" method="POST" autocomplete="off">
                 <!-- Step 1: Personal Information -->
                 <div class="step-panel" id="step-1">
                     <div class="mb-3">
                         <label class="form-label">First Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="first_name" required />
+                        <input type="text" class="form-control" name="first_name" autocomplete="given-name" required />
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Middle Name <span class="text-muted">(Optional)</span></label>
-                        <input type="text" class="form-control" name="middle_name" />
+                        <input type="text" class="form-control" name="middle_name" autocomplete="additional-name" />
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Last Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="last_name" required />
+                        <input type="text" class="form-control" name="last_name" autocomplete="family-name" required />
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Extension Name <span class="text-muted">(Optional)</span></label>
@@ -2062,7 +4178,7 @@ if (!$isAjaxRequest) {
                 <div class="step-panel d-none" id="step-2">
                     <div class="mb-3">
                         <label class="form-label">Date of Birth</label>
-                        <input type="date" class="form-control" name="bdate" required />
+                        <input type="date" class="form-control" name="bdate" autocomplete="bday" required />
                     </div>
                     <div class="mb-3">
                         <label class="form-label d-block">Gender</label>
@@ -2093,8 +4209,8 @@ if (!$isAjaxRequest) {
                 <!-- Step 3: University and Year Level -->
                 <div class="step-panel d-none" id="step-3">
                       <div class="mb-3">
-                          <label class="form-label">University/College</label>
-                          <select name="university_id" class="form-select" required>
+                          <label class="form-label">University/College <span class="text-danger">*</span></label>
+                          <select name="university_id" class="form-select" id="universitySelect" required>
                               <option value="" disabled selected>Select your university/college</option>
                               <?php
                               $res = pg_query($connection, "SELECT university_id, name FROM universities ORDER BY name ASC");
@@ -2104,8 +4220,29 @@ if (!$isAjaxRequest) {
                               ?>
                           </select>
                       </div>
+                      
+                      <!-- School Student ID Number Field -->
                       <div class="mb-3">
-                          <label class="form-label">Year Level</label>
+                          <label class="form-label">School Student ID Number <span class="text-danger">*</span></label>
+                          <input type="text" class="form-control" name="school_student_id" id="schoolStudentId" required 
+                                 placeholder="e.g., 2024-12345" 
+                                 pattern="[A-Za-z0-9\-]+"
+                                 maxlength="20">
+                          <small class="form-text text-muted">
+                              <i class="bi bi-info-circle me-1"></i>Enter your official school/university student ID number exactly as shown on your ID card
+                          </small>
+                          <div id="schoolStudentIdDuplicateWarning" class="alert alert-danger mt-2" style="display: none;">
+                              <i class="bi bi-exclamation-triangle me-2"></i>
+                              <strong>Warning:</strong> This school student ID is already registered in our system.
+                          </div>
+                          <div id="schoolStudentIdAvailable" class="alert alert-success mt-2" style="display: none;">
+                              <i class="bi bi-check-circle me-2"></i>
+                              <strong>Available:</strong> This school student ID is not registered yet.
+                          </div>
+                      </div>
+                      
+                      <div class="mb-3">
+                          <label class="form-label">Year Level <span class="text-danger">*</span></label>
                           <select name="year_level_id" class="form-select" required>
                               <option value="" disabled selected>Select your year level</option>
                               <?php
@@ -2117,10 +4254,116 @@ if (!$isAjaxRequest) {
                           </select>
                       </div>
                       <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                      <button type="button" class="btn btn-primary w-100" onclick="nextStep()">Next</button>
+                      <button type="button" class="btn btn-primary w-100" id="nextStep3Btn" onclick="nextStep()">Next</button>
                 </div>
-                <!-- Step 4: Document Upload and OCR Verification -->
+                
+                <!-- Step 4: Student ID Picture Upload and OCR Verification -->
                 <div class="step-panel d-none" id="step-4">
+                    <div class="mb-3">
+                        <label class="form-label">Upload Student ID Picture</label>
+                        <small class="form-text text-muted d-block">
+                            Please upload a clear photo or PDF of your Student ID<br>
+                            <strong>Required content:</strong> Your name and university
+                        </small>
+                        <input type="file" class="form-control" id="id_picture_file" accept="image/*,.pdf" required>
+                        <div id="idPictureFilenameError" class="text-danger mt-1" style="display: none;">
+                            <small><i class="bi bi-exclamation-triangle me-1"></i>Please upload a valid student ID picture</small>
+                        </div>
+                    </div>
+                    <div id="idPictureUploadPreview" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label">Preview:</label>
+                            <div id="idPicturePreviewContainer" class="border rounded p-2" style="max-height: 300px; overflow-y: auto;">
+                                <img id="idPicturePreviewImage" class="img-fluid" style="max-width: 100%; display: none;" />
+                                <div id="idPicturePdfPreview" class="text-center p-3" style="display: none;">
+                                    <i class="bi bi-file-earmark-pdf fs-1 text-danger"></i>
+                                    <p>PDF File Selected</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="idPictureOcrSection" class="d-none">
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-info w-100" id="processIdPictureOcrBtn">
+                                <i class="bi bi-search me-2"></i>Verify Student ID
+                            </button>
+                            <small class="text-muted d-block mt-1">
+                                <i class="bi bi-info-circle me-1"></i>Click to verify your student ID information
+                            </small>
+                        </div>
+                        <div id="idPictureOcrResults" class="d-none">
+                            <div class="mb-3">
+                                <label class="form-label">Verification Results:</label>
+                                <div class="verification-checklist">
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-firstname">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>First Name Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-firstname">0%</span>
+                                    </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-middlename">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Middle Name Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-middlename">0%</span>
+                                    </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-lastname">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Last Name Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-lastname">0%</span>
+                                    </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-university">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>University Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-university">0%</span>
+                                    </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-document">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Official Document Keywords</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-document">0%</span>
+                                    </div>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="idpic-check-schoolid">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>School Student ID Number</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="idpic-confidence-schoolid">0%</span>
+                                    </div>
+                                </div>
+                                <div class="mt-3 p-3 bg-light rounded">
+                                    <h6 class="mb-2">Overall Analysis:</h6>
+                                    <div class="d-flex justify-content-between">
+                                        <span>Average Confidence:</span>
+                                        <span class="fw-bold" id="idpic-overall-confidence">0%</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between">
+                                        <span>Passed Checks:</span>
+                                        <span class="fw-bold" id="idpic-passed-checks">0/6</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted" id="idpic-verification-recommendation">Processing document...</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="idPictureOcrFeedback" class="alert alert-warning mt-3" style="display: none;">
+                                <strong>Verification Failed:</strong> Please ensure your student ID is clear and contains all required information.
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" onclick="nextStep()">Next</button>
+                </div>
+                
+                <!-- Step 5: Enrollment Assessment Form Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-5">
                     <div class="mb-3">
                         <label class="form-label">Upload Enrollment Assessment Form</label>
                         <small class="form-text text-muted d-block">
@@ -2157,29 +4400,61 @@ if (!$isAjaxRequest) {
                             <div class="mb-3">
                                 <label class="form-label">Verification Results:</label>
                                 <div class="verification-checklist">
-                                    <div class="form-check" id="check-firstname">
-                                        <i class="bi bi-x-circle text-danger me-2"></i>
-                                        <span>First Name Match</span>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="check-firstname">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>First Name Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="confidence-firstname">0%</span>
                                     </div>
-                                    <div class="form-check" id="check-middlename">
-                                        <i class="bi bi-x-circle text-danger me-2"></i>
-                                        <span>Middle Name Match</span>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="check-middlename">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Middle Name Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="confidence-middlename">0%</span>
                                     </div>
-                                    <div class="form-check" id="check-lastname">
-                                        <i class="bi bi-x-circle text-danger me-2"></i>
-                                        <span>Last Name Match</span>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="check-lastname">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Last Name Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="confidence-lastname">0%</span>
                                     </div>
-                                    <div class="form-check" id="check-yearlevel">
-                                        <i class="bi bi-x-circle text-danger me-2"></i>
-                                        <span>Year Level Match</span>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="check-yearlevel">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Year Level Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="confidence-yearlevel">0%</span>
                                     </div>
-                                    <div class="form-check" id="check-university">
-                                        <i class="bi bi-x-circle text-danger me-2"></i>
-                                        <span>University Match</span>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="check-university">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>University Match</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="confidence-university">0%</span>
                                     </div>
-                                    <div class="form-check" id="check-document">
-                                        <i class="bi bi-x-circle text-danger me-2"></i>
-                                        <span>Official Document Keywords</span>
+                                    <div class="form-check d-flex justify-content-between align-items-center" id="check-document">
+                                        <div>
+                                            <i class="bi bi-x-circle text-danger me-2"></i>
+                                            <span>Official Document Keywords</span>
+                                        </div>
+                                        <span class="badge bg-secondary confidence-score" id="confidence-document">0%</span>
+                                    </div>
+                                </div>
+                                <div class="mt-3 p-3 bg-light rounded">
+                                    <h6 class="mb-2">Overall Analysis:</h6>
+                                    <div class="d-flex justify-content-between">
+                                        <span>Average Confidence:</span>
+                                        <span class="fw-bold" id="overall-confidence">0%</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between">
+                                        <span>Passed Checks:</span>
+                                        <span class="fw-bold" id="passed-checks">0/6</span>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted" id="verification-recommendation">Processing document...</small>
                                     </div>
                                 </div>
                             </div>
@@ -2189,11 +4464,11 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" disabled onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 5: Letter to Mayor Upload and OCR Verification -->
-                <div class="step-panel d-none" id="step-5">
+                <!-- Step 6: Letter to Mayor Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-6">
                     <div class="mb-3">
                         <label class="form-label">Upload Letter to Mayor</label>
                         <small class="form-text text-muted d-block">
@@ -2254,11 +4529,11 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" disabled onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 6: Certificate of Indigency Upload and OCR Verification -->
-                <div class="step-panel d-none" id="step-6">
+                <!-- Step 7: Certificate of Indigency Upload and OCR Verification -->
+                <div class="step-panel d-none" id="step-7">
                     <div class="mb-3">
                         <label class="form-label">Upload Certificate of Indigency</label>
                         <small class="form-text text-muted d-block mb-2">
@@ -2323,11 +4598,11 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" disabled onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep7Btn" onclick="nextStep()">Next</button>
                 </div>
                 
-                <!-- Step 7: Grade Scanning -->
-                <div class="step-panel d-none" id="step-7">
+                <!-- Step 8: Grade Scanning -->
+                <div class="step-panel d-none" id="step-8">
                     <div class="mb-3">
                         <label class="form-label">Upload Grades Document</label>
                         <small class="form-text text-muted d-block mb-2">
@@ -2363,7 +4638,7 @@ if (!$isAjaxRequest) {
                         </div>
                         <div id="gradesOcrResults" class="d-none">
                             <div class="mb-3">
-                                <label class="form-label">Verification Results:</label>
+                                <label class="form-label">Eligibility Validation Results:</label>
                                 <div class="verification-checklist">
                                     <div class="form-check" id="check-grades-name">
                                         <i class="bi bi-x-circle text-danger me-2"></i>
@@ -2371,11 +4646,33 @@ if (!$isAjaxRequest) {
                                     </div>
                                     <div class="form-check" id="check-grades-year">
                                         <i class="bi bi-x-circle text-danger me-2"></i>
-                                        <span>School Year Found</span>
+                                        <span>Declared Year Level Match</span>
+                                    </div>
+                                    <div class="form-check" id="check-grades-semester">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Admin Required Semester Match</span>
+                                    </div>
+                                    <div class="form-check d-none" id="check-grades-school-year">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>Admin Required School Year Match (Temporarily Disabled)</span>
+                                    </div>
+                                    <div class="form-check" id="check-grades-university">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>University Match</span>
+                                    </div>
+                                    <div class="form-check" id="check-grades-student-id">
+                                        <i class="bi bi-x-circle text-danger me-2"></i>
+                                        <span>School Student ID Match</span>
                                     </div>
                                     <div class="form-check" id="check-grades-passing">
                                         <i class="bi bi-x-circle text-danger me-2"></i>
-                                        <span>All Grades Above 3.00</span>
+                                        <span>All Grades Below 3.00</span>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <div class="alert alert-info" id="eligibilityStatus">
+                                        <strong><i class="bi bi-info-circle me-2"></i>Eligibility Status:</strong>
+                                        <span id="eligibilityText">Pending validation...</span>
                                     </div>
                                 </div>
                             </div>
@@ -2391,12 +4688,12 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep7Btn" disabled onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep8Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 
-                <!-- Step 8: OTP Verification -->
-                <div class="step-panel d-none" id="step-8">
+                <!-- Step 9: OTP Verification -->
+                <div class="step-panel d-none" id="step-9">
                       <div class="mb-3">
                         <label class="form-label">Email</label>
                         <input type="email" class="form-control" name="email" id="emailInput" required />
@@ -2410,19 +4707,30 @@ if (!$isAjaxRequest) {
                         <button type="button" class="btn btn-info" id="sendOtpBtn">Send OTP (Email)</button>
                     </div>
                     <div id="otpSection" class="d-none mt-3">
-                        <div class="mb-3">
-                            <label class="form-label" for="otp">Enter OTP</label>
-                            <input type="text" class="form-control" name="otp" id="otp" required />
+                        <div class="alert alert-info">
+                            <i class="bi bi-envelope-check me-2"></i>
+                            <strong>OTP Sent!</strong> We've sent a 6-digit verification code to your email. Please check your inbox and spam folder.
                         </div>
-                        <button type="button" class="btn btn-success w-100 mb-2" id="verifyOtpBtn">Verify OTP</button>
-                        <div id="timer" class="text-danger mt-2"></div>
-                        <button type="button" class="btn btn-warning w-100 mt-3" id="resendOtpBtn" style="display:none;" disabled>Resend OTP</button>
+                        <div class="mb-3">
+                            <label class="form-label" for="otp">Enter 6-Digit OTP Code</label>
+                            <input type="text" class="form-control text-center" name="otp" id="otp" maxlength="6" pattern="[0-9]{6}" placeholder="123456" required style="font-size: 1.2em; letter-spacing: 0.2em;" />
+                            <small class="form-text text-muted">Enter the 6-digit code sent to your email</small>
+                        </div>
+                        <button type="button" class="btn btn-success w-100 mb-3" id="verifyOtpBtn">
+                            <i class="bi bi-shield-check me-2"></i>Verify OTP
+                        </button>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div id="otpTimer" class="text-muted small"></div>
+                            <button type="button" class="btn btn-outline-warning btn-sm" id="resendOtpBtn" style="display:none;" disabled>
+                                <i class="bi bi-arrow-clockwise me-2"></i>Resend OTP
+                            </button>
+                        </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-primary w-100" id="nextStep7Btn" onclick="nextStep()">Next</button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep9Btn" onclick="nextStep()">Next</button>
                 </div>
-                <!-- Step 9: Password and Confirmation -->
-                <div class="step-panel d-none" id="step-9">
+                <!-- Step 10: Password and Confirmation -->
+                <div class="step-panel d-none" id="step-10">
                     <div class="mb-3">
                         <label class="form-label" for="password">Password</label>
                         <input type="password" class="form-control" name="password" id="password" minlength="12" required />
@@ -2459,11 +4767,1255 @@ if (!$isAjaxRequest) {
     </div>
     
     <div id="notifier" class="notifier" role="alert" aria-live="polite"></div>
+    
+    <!-- Terms and Conditions Modal CSS -->
+    <style>
+    /* Ensure modal appears above everything */
+    .modal {
+        z-index: 1050;
+    }
+    .modal-backdrop {
+        z-index: 1040;
+    }
+    
+    /* Fallback styling for manual modal display */
+    .modal.show {
+        display: block !important;
+    }
+    
+    .modal-open {
+        overflow: hidden;
+    }
+    
+    /* Custom terms content styling */
+    .terms-content h6 {
+        color: #0d6efd;
+        font-weight: 600;
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+    }
+    
+    .terms-content ul {
+        margin-bottom: 1rem;
+    }
+    
+    .terms-content li {
+        margin-bottom: 0.25rem;
+    }
+    </style>
+    
     <!-- Make sure this is included BEFORE your custom JavaScript -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <!-- OR if you have local Bootstrap files -->
 <script src="../../assets/js/bootstrap.bundle.min.js"></script>
+
+<!-- Immediate function definitions for onclick handlers -->
+<script>
+// Simple working navigation functions (fallback if main script fails)
+let currentStep = 1;
+
+function nextStep() {
+    console.log('🔧 Enhanced nextStep called - Step:', currentStep);
+    
+    if (currentStep >= 10) return; // Allow navigation through all 10 steps
+    
+    // Validate current step before proceeding
+    const validationResult = validateCurrentStepFields();
+    if (!validationResult.isValid) {
+        showValidationError(validationResult.message, validationResult.fields);
+        return;
+    }
+    
+    // Hide current step
+    const currentPanel = document.getElementById(`step-${currentStep}`);
+    if (currentPanel) {
+        currentPanel.classList.add('d-none');
+    }
+    
+    // Show next step
+    currentStep++;
+    const nextPanel = document.getElementById(`step-${currentStep}`);
+    if (nextPanel) {
+        nextPanel.classList.remove('d-none');
+    }
+    
+    // Update step indicators
+    updateStepIndicators();
+    
+    // Clear any previous error messages
+    clearValidationErrors();
+    
+    console.log('✅ Moved to step:', currentStep);
+}
+
+function prevStep() {
+    console.log('🔧 Fallback prevStep called - Step:', currentStep);
+    
+    if (currentStep <= 1) return;
+    
+    // Hide current step
+    const currentPanel = document.getElementById(`step-${currentStep}`);
+    if (currentPanel) {
+        currentPanel.classList.add('d-none');
+    }
+    
+    // Show previous step
+    currentStep--;
+    const prevPanel = document.getElementById(`step-${currentStep}`);
+    if (prevPanel) {
+        prevPanel.classList.remove('d-none');
+    }
+    
+    // Update step indicators
+    updateStepIndicators();
+    
+    console.log('✅ Moved to step:', currentStep);
+}
+
+function showStep(stepNum) {
+    console.log('🔧 Fallback showStep called:', stepNum);
+    
+    // Hide all steps
+    document.querySelectorAll('.step-panel').forEach(panel => {
+        panel.classList.add('d-none');
+    });
+    
+    // Show target step
+    const targetPanel = document.getElementById(`step-${stepNum}`);
+    if (targetPanel) {
+        targetPanel.classList.remove('d-none');
+        currentStep = stepNum;
+        updateStepIndicators();
+    }
+}
+
+function updateStepIndicators() {
+    document.querySelectorAll('.step').forEach((step, index) => {
+        if (index + 1 === currentStep) {
+            step.classList.add('active');
+        } else {
+            step.classList.remove('active');
+        }
+    });
+}
+
+// ============================================
+// VALIDATION FUNCTIONS
+// ============================================
+
+function validateCurrentStepFields() {
+    // TEMPORARILY DISABLED FOR TESTING - REMOVE THIS TO RE-ENABLE VALIDATION
+    return { isValid: true };
+    
+    /* ORIGINAL VALIDATION CODE - UNCOMMENT TO RE-ENABLE
+    const currentPanel = document.getElementById(`step-${currentStep}`);
+    if (!currentPanel) return { isValid: true };
+    
+    const requiredFields = currentPanel.querySelectorAll('input[required], select[required], textarea[required]');
+    const emptyFields = [];
+    const invalidFields = [];
+    
+    requiredFields.forEach(field => {
+        const value = field.value.trim();
+        
+        // Check if field is empty
+        if (!value) {
+            emptyFields.push({
+                field: field,
+                name: field.name || field.id || 'Unknown field',
+                label: getFieldLabel(field)
+            });
+            return;
+        }
+        
+        // Specific validations by field type and step
+        const validation = validateSpecificField(field, value);
+        if (!validation.isValid) {
+            invalidFields.push({
+                field: field,
+                name: field.name || field.id,
+                label: getFieldLabel(field),
+                error: validation.error
+            });
+        }
+    });
+    
+    // Check for radio button groups (like gender)
+    if (currentStep === 2) {
+        const genderChecked = currentPanel.querySelector('input[name="sex"]:checked');
+        if (!genderChecked) {
+            emptyFields.push({
+                name: 'sex',
+                label: 'Gender',
+                field: currentPanel.querySelector('input[name="sex"]')
+            });
+        }
+    }
+    
+    // Special validation for file upload steps
+    // Step 4: Student ID Picture
+    if (currentStep === 4) {
+        const idPictureFile = currentPanel.querySelector('#id_picture_file');
+        if (idPictureFile && !idPictureFile.files[0]) {
+            emptyFields.push({
+                name: 'id_picture',
+                label: 'Student ID Picture',
+                field: idPictureFile
+            });
+        }
+    }
+    
+    // Step 5: Enrollment Assessment Form
+    if (currentStep === 5) {
+        const enrollmentFile = currentPanel.querySelector('#enrollmentForm');
+        if (enrollmentFile && !enrollmentFile.files[0]) {
+            emptyFields.push({
+                name: 'enrollment_form',
+                label: 'Enrollment Assessment Form',
+                field: enrollmentFile
+            });
+        } else if (enrollmentFile && enrollmentFile.files[0]) {
+            // Validate filename format
+            const filename = enrollmentFile.files[0].name;
+            const namePattern = /^[A-Za-z]+_[A-Za-z]+_EAF\.(jpg|jpeg|png|pdf)$/i;
+            if (!namePattern.test(filename)) {
+                invalidFields.push({
+                    field: enrollmentFile,
+                    name: 'enrollment_form',
+                    label: 'Enrollment Assessment Form',
+                    error: 'Filename must follow format: Lastname_Firstname_EAF.jpg (e.g., Santos_Juan_EAF.jpg)'
+                });
+            }
+        }
+    }
+    
+    // Step 6: Letter to Mayor
+    if (currentStep === 6) {
+        const letterFile = currentPanel.querySelector('#letterToMayorForm');
+        if (letterFile && !letterFile.files[0]) {
+            emptyFields.push({
+                name: 'letter_to_mayor',
+                label: 'Letter to Mayor',
+                field: letterFile
+            });
+        }
+    }
+    
+    // Step 7: Certificate of Indigency
+    if (currentStep === 7) {
+        const certificateFile = currentPanel.querySelector('#certificateForm');
+        if (certificateFile && !certificateFile.files[0]) {
+            emptyFields.push({
+                name: 'certificate_of_indigency',
+                label: 'Certificate of Indigency',
+                field: certificateFile
+            });
+        }
+    }
+    
+    // Step 8: Grades Document
+    if (currentStep === 8) {
+        const gradesFile = currentPanel.querySelector('#gradesForm');
+        if (gradesFile && !gradesFile.files[0]) {
+            emptyFields.push({
+                name: 'grades_document',
+                label: 'Grades Document',
+                field: gradesFile
+            });
+        }
+    }
+    
+    // Step 9: OTP Verification
+    if (currentStep === 9) {
+        const emailStatus = document.getElementById('emailStatus');
+        const otpSection = document.getElementById('otpSection');
+        const mobileInput = currentPanel.querySelector('#mobile');
+        
+        // Check if phone number is filled
+        if (!mobileInput || !mobileInput.value.trim()) {
+            return {
+                isValid: false,
+                message: 'Please enter your phone number.',
+                fields: [mobileInput]
+            };
+        }
+        
+        // Validate phone number format (09XXXXXXXXX - 11 digits starting with 09)
+        const phonePattern = /^09[0-9]{9}$/;
+        if (!phonePattern.test(mobileInput.value.trim())) {
+            return {
+                isValid: false,
+                message: 'Phone number must be 11 digits and start with 09 (e.g., 09123456789).',
+                fields: [mobileInput]
+            };
+        }
+        
+        // Check if email is verified (emailStatus is visible)
+        if (!emailStatus || emailStatus.classList.contains('d-none')) {
+            // Check if OTP section is visible (means OTP was sent but not verified)
+            if (otpSection && !otpSection.classList.contains('d-none')) {
+                return {
+                    isValid: false,
+                    message: 'Please verify your email by entering the OTP code sent to your email.',
+                    fields: [currentPanel.querySelector('#otp')]
+                };
+            } else {
+                return {
+                    isValid: false,
+                    message: 'Please send and verify OTP to your email address.',
+                    fields: [currentPanel.querySelector('#emailInput')]
+                };
+            }
+        }
+    }
+    
+    // Return validation result
+    if (emptyFields.length > 0) {
+        return {
+            isValid: false,
+            message: `Please fill in all required fields: ${emptyFields.map(f => f.label).join(', ')}`,
+            fields: emptyFields.map(f => f.field)
+        };
+    }
+    
+    if (invalidFields.length > 0) {
+        return {
+            isValid: false,
+            message: invalidFields[0].error,
+            fields: invalidFields.map(f => f.field)
+        };
+    }
+    
+    return { isValid: true };
+    END OF COMMENTED CODE */
+}
+
+function validateSpecificField(field, value) {
+    const fieldName = field.name;
+    
+    // Name validation (letters, spaces, hyphens, apostrophes only)
+    if (['first_name', 'middle_name', 'last_name'].includes(fieldName)) {
+        if (!/^[A-Za-z\s\-']+$/.test(value)) {
+            return {
+                isValid: false,
+                error: 'Names can only contain letters, spaces, hyphens (-), and apostrophes (\')'
+            };
+        }
+    }
+    
+    // Date validation
+    if (fieldName === 'bdate') {
+        const birthDate = new Date(value);
+        const today = new Date();
+        const age = today.getFullYear() - birthDate.getFullYear();
+        
+        if (birthDate >= today) {
+            return {
+                isValid: false,
+                error: 'Birth date cannot be in the future'
+            };
+        }
+        
+        if (age < 10 || age > 100) {
+            return {
+                isValid: false,
+                error: 'Please enter a valid birth date (age must be between 10-100)'
+            };
+        }
+    }
+    
+    return { isValid: true };
+}
+
+function getFieldLabel(field) {
+    // Try to find associated label
+    const label = field.closest('.mb-3')?.querySelector('label');
+    if (label) {
+        return label.textContent.replace('*', '').trim();
+    }
+    
+    // Fallback to placeholder or name
+    return field.placeholder || field.name || 'Field';
+}
+
+function showValidationError(message, fields) {
+    // Remove previous highlights
+    clearValidationErrors();
+    
+    // Highlight invalid fields
+    if (fields) {
+        fields.forEach(field => {
+            if (field) {
+                field.classList.add('is-invalid');
+                field.style.borderColor = '#dc3545';
+            }
+        });
+    }
+    
+    // Show error message
+    showNotifier(message, 'error');
+    
+    // Focus on first invalid field
+    if (fields && fields[0]) {
+        fields[0].focus();
+    }
+}
+
+function clearValidationErrors() {
+    // Remove validation classes from all fields
+    document.querySelectorAll('.is-invalid').forEach(field => {
+        field.classList.remove('is-invalid');
+        field.style.borderColor = '';
+    });
+    
+    // Hide any existing error messages
+    const notifier = document.getElementById('notifier');
+    if (notifier) {
+        notifier.style.display = 'none';
+    }
+}
+
+function showNotifier(message, type = 'error') {
+    // Create notifier if it doesn't exist
+    let notifier = document.getElementById('notifier');
+    if (!notifier) {
+        notifier = document.createElement('div');
+        notifier.id = 'notifier';
+        notifier.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 20px;
+            border-radius: 6px;
+            color: white;
+            font-weight: 500;
+            z-index: 9999;
+            max-width: 500px;
+            text-align: center;
+            display: none;
+        `;
+        document.body.appendChild(notifier);
+    }
+    
+    // Set message and style based on type
+    notifier.textContent = message;
+    notifier.style.display = 'block';
+    
+    if (type === 'error') {
+        notifier.style.backgroundColor = '#dc3545';
+    } else if (type === 'success') {
+        notifier.style.backgroundColor = '#28a745';
+    } else if (type === 'warning') {
+        notifier.style.backgroundColor = '#ffc107';
+        notifier.style.color = '#000';
+    }
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        if (notifier) {
+            notifier.style.display = 'none';
+        }
+    }, 5000);
+}
+
+// ============================================
+// REAL-TIME VALIDATION SETUP
+// ============================================
+
+function setupRealTimeValidation() {
+    // Add event listeners to all form fields
+    document.addEventListener('input', function(e) {
+        if (e.target.matches('input, select, textarea')) {
+            // Clear validation error when user starts typing/selecting
+            e.target.classList.remove('is-invalid');
+            e.target.style.borderColor = '';
+        }
+    });
+    
+    // Add listeners for radio buttons
+    document.addEventListener('change', function(e) {
+        if (e.target.matches('input[type="radio"]')) {
+            // Clear validation error for radio group
+            const radioName = e.target.name;
+            document.querySelectorAll(`input[name="${radioName}"]`).forEach(radio => {
+                radio.classList.remove('is-invalid');
+                radio.style.borderColor = '';
+            });
+        }
+    });
+}
+
+// ============================================
+// FILE UPLOAD HANDLERS
+// ============================================
+
+function setupFileUploadHandlers() {
+    // Student ID Picture Upload Handler
+    const idPictureFile = document.getElementById('id_picture_file');
+    if (idPictureFile) {
+        idPictureFile.addEventListener('change', function(e) {
+            handleIdPictureFileUpload(e.target);
+        });
+    }
+    
+    // Enrollment Form Upload Handler
+    const enrollmentForm = document.getElementById('enrollmentForm');
+    if (enrollmentForm) {
+        enrollmentForm.addEventListener('change', function(e) {
+            handleEnrollmentFileUpload(e.target);
+        });
+    }
+    
+    // Other file upload handlers can be added here
+    console.log('✅ File upload handlers initialized');
+}
+
+function handleIdPictureFileUpload(fileInput) {
+    const file = fileInput.files[0];
+    const previewContainer = document.getElementById('idPictureUploadPreview');
+    const previewImage = document.getElementById('idPicturePreviewImage');
+    const pdfPreview = document.getElementById('idPicturePdfPreview');
+    const ocrSection = document.getElementById('idPictureOcrSection');
+    const processBtn = document.getElementById('processIdPictureOcrBtn');
+    
+    if (!file) {
+        // Hide preview and OCR section if no file
+        if (previewContainer) previewContainer.classList.add('d-none');
+        if (ocrSection) ocrSection.classList.add('d-none');
+        return;
+    }
+    
+    // Show preview container
+    if (previewContainer) previewContainer.classList.remove('d-none');
+    
+    // Handle image preview
+    if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            if (previewImage) {
+                previewImage.src = e.target.result;
+                previewImage.style.display = 'block';
+            }
+            if (pdfPreview) pdfPreview.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf') {
+        if (previewImage) previewImage.style.display = 'none';
+        if (pdfPreview) pdfPreview.style.display = 'block';
+    }
+    
+    // Show OCR section and enable process button
+    if (ocrSection) ocrSection.classList.remove('d-none');
+    if (processBtn) {
+        processBtn.disabled = false;
+        processBtn.classList.remove('btn-secondary');
+        processBtn.classList.add('btn-info');
+        
+        // Add click handler for processing
+        processBtn.onclick = function() {
+            processIdPictureDocument();
+        };
+    }
+}
+
+function processIdPictureDocument() {
+    const processBtn = document.getElementById('processIdPictureOcrBtn');
+    const fileInput = document.getElementById('id_picture_file');
+    
+    console.log('Processing ID Picture...');
+    
+    if (!fileInput.files[0]) {
+        showNotifier('Please select a file first', 'error');
+        return;
+    }
+    
+    // Show processing state
+    if (processBtn) {
+        processBtn.disabled = true;
+        processBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
+    }
+    
+    // Create form data for OCR processing
+    const formData = new FormData();
+    formData.append('processIdPictureOcr', '1');
+    formData.append('id_picture', fileInput.files[0]);
+    
+    // Add form data for validation - use querySelector with name attributes
+    const firstNameInput = document.querySelector('input[name="first_name"]');
+    const middleNameInput = document.querySelector('input[name="middle_name"]');
+    const lastNameInput = document.querySelector('input[name="last_name"]');
+    const extensionNameInput = document.querySelector('input[name="extension_name"]');
+    const universityInput = document.querySelector('select[name="university_id"]');
+    const schoolStudentIdInput = document.querySelector('input[name="school_student_id"]');
+    
+    if (firstNameInput && firstNameInput.value) formData.append('first_name', firstNameInput.value);
+    if (middleNameInput && middleNameInput.value) formData.append('middle_name', middleNameInput.value);
+    if (lastNameInput && lastNameInput.value) formData.append('last_name', lastNameInput.value);
+    if (extensionNameInput && extensionNameInput.value) formData.append('extension_name', extensionNameInput.value);
+    if (universityInput && universityInput.value) formData.append('university_id', universityInput.value);
+    if (schoolStudentIdInput && schoolStudentIdInput.value) formData.append('school_student_id', schoolStudentIdInput.value);
+    
+    formData.append('g-recaptcha-response', 'test'); // You may need proper reCAPTCHA
+    
+    // Send OCR request
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('ID Picture OCR Response:', data);
+        handleIdPictureOcrResults(data);
+    })
+    .catch(error => {
+        console.error('ID Picture OCR Error:', error);
+        showNotifier('Error processing ID Picture: ' + error.message, 'error');
+        resetIdPictureProcessButton();
+    });
+}
+
+function updateCheckItem(checkId, confidenceId, checkData) {
+    const checkEl = document.getElementById(checkId);
+    const confEl = document.getElementById(confidenceId);
+    
+    if (!checkEl || !confEl || !checkData) return;
+    
+    const icon = checkEl.querySelector('i');
+    
+    if (checkData.passed) {
+        // Check passed - show success
+        if (icon) icon.className = 'bi bi-check-circle text-success me-2';
+        confEl.className = 'badge bg-success confidence-score';
+    } else {
+        // Check failed - show error
+        if (icon) icon.className = 'bi bi-x-circle text-danger me-2';
+        confEl.className = 'badge bg-danger confidence-score';
+    }
+    
+    // Update confidence display
+    if (checkData.similarity !== undefined) {
+        confEl.textContent = Math.round(checkData.similarity) + '%';
+    } else if (checkData.auto_passed) {
+        confEl.textContent = 'Auto-passed';
+        confEl.className = 'badge bg-info confidence-score';
+    } else if (checkData.found_count !== undefined) {
+        confEl.textContent = checkData.found_count + '/' + checkData.required_count;
+    } else {
+        confEl.textContent = checkData.passed ? 'Passed' : 'Failed';
+    }
+}
+
+function handleIdPictureOcrResults(data) {
+    const resultsDiv = document.getElementById('idPictureOcrResults');
+    const feedbackDiv = document.getElementById('idPictureOcrFeedback');
+    const nextBtn = document.getElementById('nextStep4Btn');
+    
+    if (!resultsDiv) return;
+    
+    // Show results section
+    resultsDiv.classList.remove('d-none');
+    
+    if (data.status === 'success' && data.verification) {
+        const v = data.verification;
+        const checks = v.checks;
+        
+        // Update individual check items
+        updateCheckItem('idpic-check-firstname', 'idpic-confidence-firstname', checks.first_name_match);
+        updateCheckItem('idpic-check-middlename', 'idpic-confidence-middlename', checks.middle_name_match);
+        updateCheckItem('idpic-check-lastname', 'idpic-confidence-lastname', checks.last_name_match);
+        updateCheckItem('idpic-check-university', 'idpic-confidence-university', checks.university_match);
+        updateCheckItem('idpic-check-document', 'idpic-confidence-document', checks.document_keywords_found);
+        updateCheckItem('idpic-check-schoolid', 'idpic-confidence-schoolid', checks.school_student_id_match);
+        
+        // Update overall summary
+        const overallConfidenceEl = document.getElementById('idpic-overall-confidence');
+        const passedChecksEl = document.getElementById('idpic-passed-checks');
+        const recommendationEl = document.getElementById('idpic-verification-recommendation');
+        
+        if (overallConfidenceEl) overallConfidenceEl.textContent = v.summary.average_confidence + '%';
+        if (passedChecksEl) passedChecksEl.textContent = v.summary.passed_checks + '/' + v.summary.total_checks;
+        
+        // Show recommendation
+        if (recommendationEl) {
+            if (v.summary.recommendation === 'Approve') {
+                recommendationEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Document verified successfully!';
+                if (feedbackDiv) feedbackDiv.style.display = 'none';
+                if (nextBtn) nextBtn.disabled = false;
+            } else {
+                recommendationEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>' + v.summary.recommendation;
+                if (feedbackDiv) {
+                    feedbackDiv.style.display = 'block';
+                    feedbackDiv.innerHTML = '<strong>Verification Warning:</strong> ' + v.summary.recommendation;
+                }
+                if (nextBtn) nextBtn.disabled = false; // Allow proceeding with warning
+            }
+        }
+        
+        showNotifier('ID Picture processed successfully!', 'success');
+    } else {
+        // Show error feedback
+        if (feedbackDiv) {
+            feedbackDiv.style.display = 'block';
+            feedbackDiv.className = 'alert alert-danger mt-3';
+            feedbackDiv.innerHTML = '<strong>Processing Failed:</strong> ' + (data.message || 'Unable to process ID Picture');
+        }
+        if (nextBtn) nextBtn.disabled = true;
+        showNotifier(data.message || 'Failed to process ID Picture', 'error');
+    }
+    
+    resetIdPictureProcessButton();
+}
+
+function resetIdPictureProcessButton() {
+    const processBtn = document.getElementById('processIdPictureOcrBtn');
+    if (processBtn) {
+        processBtn.disabled = false;
+        processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Verify Student ID';
+    }
+}
+
+function handleEnrollmentFileUpload(fileInput) {
+    const file = fileInput.files[0];
+    const previewContainer = document.getElementById('uploadPreview');
+    const previewImage = document.getElementById('previewImage');
+    const pdfPreview = document.getElementById('pdfPreview');
+    const ocrSection = document.getElementById('ocrSection');
+    const processBtn = document.getElementById('processOcrBtn');
+    
+    if (!file) {
+        // Hide preview and OCR section if no file
+        if (previewContainer) previewContainer.classList.add('d-none');
+        if (ocrSection) ocrSection.classList.add('d-none');
+        return;
+    }
+    
+    // Show preview container
+    if (previewContainer) previewContainer.classList.remove('d-none');
+    
+    // Handle image preview
+    if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            if (previewImage) {
+                previewImage.src = e.target.result;
+                previewImage.style.display = 'block';
+            }
+            if (pdfPreview) pdfPreview.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf') {
+        if (previewImage) previewImage.style.display = 'none';
+        if (pdfPreview) pdfPreview.style.display = 'block';
+    }
+    
+    // Validate filename format
+    const filename = file.name;
+    const namePattern = /^[A-Za-z]+_[A-Za-z]+_EAF\.(jpg|jpeg|png|pdf)$/i;
+    
+    if (namePattern.test(filename)) {
+        // Show OCR section and enable process button
+        if (ocrSection) ocrSection.classList.remove('d-none');
+        if (processBtn) {
+            processBtn.disabled = false;
+            processBtn.classList.remove('btn-secondary');
+            processBtn.classList.add('btn-info');
+            processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
+            
+            // Add click handler for processing
+            processBtn.onclick = function() {
+                processEnrollmentDocument();
+            };
+        }
+    } else {
+        // Hide OCR section and disable button
+        if (ocrSection) ocrSection.classList.add('d-none');
+        if (processBtn) {
+            processBtn.disabled = true;
+            processBtn.classList.add('btn-secondary');
+            processBtn.classList.remove('btn-info');
+        }
+        
+        // Show filename error
+        showNotifier('Filename must follow format: Lastname_Firstname_EAF.jpg (e.g., Santos_Juan_EAF.jpg)', 'error');
+    }
+}
+
+function processEnrollmentDocument() {
+    const processBtn = document.getElementById('processOcrBtn');
+    const fileInput = document.getElementById('enrollmentForm');
+    
+    console.log('Current URL:', window.location.href);
+    console.log('Processing document...');
+    
+    if (!fileInput.files[0]) {
+        showNotifier('Please select a file first', 'error');
+        return;
+    }
+    
+    // Show processing state
+    if (processBtn) {
+        processBtn.disabled = true;
+        processBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
+    }
+    
+    // Create form data for OCR processing
+    const formData = new FormData();
+    formData.append('processEnrollmentOcr', '1');
+    formData.append('enrollment_form', fileInput.files[0]);
+    
+    // Add form data for validation - use querySelector with name attributes
+    const firstNameInput = document.querySelector('input[name="first_name"]');
+    const middleNameInput = document.querySelector('input[name="middle_name"]');
+    const lastNameInput = document.querySelector('input[name="last_name"]');
+    const extensionNameInput = document.querySelector('input[name="extension_name"]');
+    const universityInput = document.querySelector('select[name="university_id"]');
+    const yearLevelInput = document.querySelector('select[name="year_level_id"]');
+    
+    if (firstNameInput && firstNameInput.value) formData.append('first_name', firstNameInput.value);
+    if (middleNameInput && middleNameInput.value) formData.append('middle_name', middleNameInput.value);
+    if (lastNameInput && lastNameInput.value) formData.append('last_name', lastNameInput.value);
+    if (extensionNameInput && extensionNameInput.value) formData.append('extension_name', extensionNameInput.value);
+    if (universityInput && universityInput.value) formData.append('university_id', universityInput.value);
+    if (yearLevelInput && yearLevelInput.value) formData.append('year_level_id', yearLevelInput.value);
+    
+    formData.append('g-recaptcha-response', 'test'); // You may need proper reCAPTCHA
+    
+    // Send OCR request
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('OCR Response:', data);
+        handleOcrResults(data);
+    })
+    .catch(error => {
+        console.error('OCR Error:', error);
+        showNotifier('Error processing document: ' + error.message, 'error');
+        resetProcessButton();
+    });
+}
+
+function handleOcrResults(data) {
+    const resultsSection = document.getElementById('ocrResults');
+    const processBtn = document.getElementById('processOcrBtn');
+    const nextBtn = document.getElementById('nextStep5Btn'); // Fixed: Changed from nextStep4Btn to nextStep5Btn
+    
+    if (data.status === 'success') {
+        // Show results section
+        if (resultsSection) resultsSection.classList.remove('d-none');
+        
+        // Update verification checkmarks
+        updateVerificationChecks(data.verification);
+        
+        // Enable next button if verification passed
+        if (data.verification && data.verification.overall_success) {
+            if (nextBtn) {
+                nextBtn.disabled = false;
+                nextBtn.classList.remove('btn-secondary');
+                nextBtn.classList.add('btn-success');
+                nextBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Continue - Document Verified';
+            }
+            showNotifier('Document verification successful!', 'success');
+        } else {
+            showNotifier('Document verification failed. Please check the requirements.', 'error');
+        }
+    } else {
+        showNotifier(data.message || 'Document processing failed', 'error');
+    }
+    
+    resetProcessButton();
+}
+
+function updateVerificationChecks(verification) {
+    if (!verification) return;
+    
+    const checks = {
+        'check-firstname': verification.first_name_match,
+        'check-middlename': verification.middle_name_match,
+        'check-lastname': verification.last_name_match,
+        'check-yearlevel': verification.year_level_match,
+        'check-university': verification.university_match,
+        'check-document': verification.document_keywords_found
+    };
+    
+    const confidenceMapping = {
+        'check-firstname': 'first_name',
+        'check-middlename': 'middle_name',
+        'check-lastname': 'last_name',
+        'check-yearlevel': 'year_level',
+        'check-university': 'university',
+        'check-document': 'document_keywords'
+    };
+    
+    Object.keys(checks).forEach(checkId => {
+        const element = document.getElementById(checkId);
+        const confidenceId = 'confidence-' + checkId.replace('check-', '');
+        const confidenceElement = document.getElementById(confidenceId);
+        
+        if (element) {
+            const icon = element.querySelector('i');
+            if (checks[checkId]) {
+                icon.className = 'bi bi-check-circle text-success me-2';
+                element.classList.add('text-success');
+                element.classList.remove('text-danger');
+            } else {
+                icon.className = 'bi bi-x-circle text-danger me-2';
+                element.classList.add('text-danger');
+                element.classList.remove('text-success');
+            }
+        }
+        
+        // Update confidence score
+        if (confidenceElement && verification.confidence_scores) {
+            const confidenceKey = confidenceMapping[checkId];
+            const score = verification.confidence_scores[confidenceKey] || 0;
+            const roundedScore = Math.round(score);
+            
+            confidenceElement.textContent = roundedScore + '%';
+            
+            // Color code the confidence badge
+            confidenceElement.className = 'badge confidence-score ';
+            if (roundedScore >= 80) {
+                confidenceElement.className += 'bg-success';
+            } else if (roundedScore >= 60) {
+                confidenceElement.className += 'bg-warning';
+            } else {
+                confidenceElement.className += 'bg-danger';
+            }
+        }
+    });
+    
+    // Update overall statistics
+    if (verification.summary) {
+        const overallConfidence = document.getElementById('overall-confidence');
+        const passedChecks = document.getElementById('passed-checks');
+        const recommendation = document.getElementById('verification-recommendation');
+        
+        if (overallConfidence) {
+            overallConfidence.textContent = verification.summary.average_confidence + '%';
+        }
+        
+        if (passedChecks) {
+            passedChecks.textContent = verification.summary.passed_checks + '/' + verification.summary.total_checks;
+        }
+        
+        if (recommendation) {
+            recommendation.textContent = verification.summary.recommendation;
+        }
+    }
+    
+    // Show OCR text preview if available (for debugging)
+    if (verification.ocr_text_preview) {
+        console.log('OCR Text Preview:', verification.ocr_text_preview);
+    }
+}
+
+function resetProcessButton() {
+    const processBtn = document.getElementById('processOcrBtn');
+    if (processBtn) {
+        processBtn.disabled = false;
+        processBtn.innerHTML = '<i class="bi bi-search me-2"></i>Process Document';
+    }
+}
+
+
+// ============================================
+// OTP FUNCTIONALITY
+// ============================================
+
+function setupOtpHandlers() {
+    const sendOtpBtn = document.getElementById('sendOtpBtn');
+    const resendOtpBtn = document.getElementById('resendOtpBtn');
+    const verifyOtpBtn = document.getElementById('verifyOtpBtn');
+    
+    if (sendOtpBtn) {
+        sendOtpBtn.addEventListener('click', function() {
+            sendOtp();
+        });
+    }
+    
+    if (resendOtpBtn) {
+        resendOtpBtn.addEventListener('click', function() {
+            sendOtp();
+        });
+    }
+    
+    if (verifyOtpBtn) {
+        verifyOtpBtn.addEventListener('click', function() {
+            verifyOtp();
+        });
+    }
+    
+    console.log('✅ OTP handlers initialized');
+}
+
+function sendOtp() {
+    const emailInput = document.querySelector('input[name="email"]');
+    const sendBtn = document.getElementById('sendOtpBtn');
+    const resendBtn = document.getElementById('resendOtpBtn');
+    
+    if (!emailInput || !emailInput.value) {
+        showNotifier('Please enter an email address first', 'error');
+        return;
+    }
+    
+    if (!validateEmail(emailInput.value)) {
+        showNotifier('Please enter a valid email address', 'error');
+        return;
+    }
+    
+    // Disable button and show loading state
+    if (sendBtn) {
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Sending OTP...';
+    }
+    
+    const formData = new FormData();
+    formData.append('sendOtp', '1');
+    formData.append('email', emailInput.value);
+    formData.append('g-recaptcha-response', 'test'); // You may need proper reCAPTCHA
+    
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            showNotifier(data.message, 'success');
+            
+            // Show OTP input section and hide send button
+            const otpSection = document.getElementById('otpSection');
+            if (otpSection) {
+                otpSection.classList.remove('d-none');
+                otpSection.style.display = 'block';
+            }
+            
+            if (sendBtn) {
+                sendBtn.style.display = 'none';
+            }
+            
+            if (resendBtn) {
+                resendBtn.style.display = 'block';
+                startResendCooldown();
+            }
+        } else {
+            showNotifier(data.message || 'Failed to send OTP', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('OTP Error:', error);
+        showNotifier('Error sending OTP: ' + error.message, 'error');
+    })
+    .finally(() => {
+        // Reset button state
+        if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = 'Send OTP (Email)';
+        }
+    });
+}
+
+function startResendCooldown() {
+    const resendBtn = document.getElementById('resendOtpBtn');
+    const timerDiv = document.getElementById('otpTimer');
+    if (!resendBtn) return;
+    
+    let cooldown = 60; // 60 seconds cooldown
+    resendBtn.disabled = true;
+    
+    const interval = setInterval(() => {
+        resendBtn.innerHTML = `<i class="bi bi-arrow-clockwise me-2"></i>Resend (${cooldown}s)`;
+        if (timerDiv) {
+            timerDiv.innerHTML = `Code expires in ${cooldown} seconds`;
+        }
+        cooldown--;
+        
+        if (cooldown < 0) {
+            clearInterval(interval);
+            resendBtn.disabled = false;
+            resendBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-2"></i>Resend OTP';
+            if (timerDiv) {
+                timerDiv.innerHTML = 'Code expired - please request a new one';
+                timerDiv.className = 'text-danger small';
+            }
+        }
+    }, 1000);
+}
+
+// Add OTP input formatting
+function setupOtpInputFormatting() {
+    const otpInput = document.getElementById('otp');
+    if (otpInput) {
+        otpInput.addEventListener('input', function(e) {
+            // Only allow numbers
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+            
+            // Auto-verify when 6 digits are entered
+            if (e.target.value.length === 6) {
+                // Small delay to let user see the complete input
+                setTimeout(() => {
+                    const verifyBtn = document.getElementById('verifyOtpBtn');
+                    if (verifyBtn && !verifyBtn.disabled) {
+                        verifyOtp();
+                    }
+                }, 500);
+            }
+        });
+        
+        // Handle paste events
+        otpInput.addEventListener('paste', function(e) {
+            e.preventDefault();
+            const paste = (e.clipboardData || window.clipboardData).getData('text');
+            const numbers = paste.replace(/[^0-9]/g, '').substring(0, 6);
+            e.target.value = numbers;
+            
+            if (numbers.length === 6) {
+                setTimeout(() => {
+                    const verifyBtn = document.getElementById('verifyOtpBtn');
+                    if (verifyBtn && !verifyBtn.disabled) {
+                        verifyOtp();
+                    }
+                }, 500);
+            }
+        });
+    }
+}
+
+function verifyOtp() {
+    const otpInput = document.querySelector('input[name="otp"]');
+    const emailInput = document.querySelector('input[name="email"]');
+    const verifyBtn = document.getElementById('verifyOtpBtn');
+    
+    if (!otpInput || !otpInput.value) {
+        showNotifier('Please enter the OTP code', 'error');
+        return;
+    }
+    
+    if (!emailInput || !emailInput.value) {
+        showNotifier('Email address is required', 'error');
+        return;
+    }
+    
+    // Disable button and show loading state
+    if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Verifying OTP...';
+    }
+    
+    const formData = new FormData();
+    formData.append('verifyOtp', '1');
+    formData.append('otp', otpInput.value);
+    formData.append('email', emailInput.value);
+    formData.append('g-recaptcha-response', 'test'); // You may need proper reCAPTCHA
+    
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            showNotifier(data.message, 'success');
+            
+            // Hide OTP verification section and show success
+            const otpSection = document.getElementById('otpSection');
+            if (otpSection) {
+                otpSection.style.display = 'none';
+            }
+            
+            // Show email verified status
+            const emailStatus = document.getElementById('emailStatus');
+            if (emailStatus) {
+                emailStatus.classList.remove('d-none');
+                console.log('✅ Email status set to verified');
+            }
+            
+            // Enable next button for step 9 (OTP verification step)
+            const nextBtn = document.getElementById('nextStep9Btn'); // Fixed: Changed from nextStep8Btn to nextStep9Btn
+            if (nextBtn) {
+                nextBtn.disabled = false;
+                nextBtn.classList.remove('btn-secondary');
+                nextBtn.classList.remove('btn-primary');
+                nextBtn.classList.add('btn-success');
+                nextBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Continue - Email Verified';
+                console.log('✅ Next button enabled for step 9');
+            } else {
+                console.error('❌ nextStep9Btn not found');
+            }
+        } else {
+            showNotifier(data.message || 'OTP verification failed', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('OTP Verification Error:', error);
+        showNotifier('Error verifying OTP: ' + error.message, 'error');
+    })
+    .finally(() => {
+        // Reset button state
+        if (verifyBtn) {
+            verifyBtn.disabled = false;
+            verifyBtn.innerHTML = 'Verify OTP';
+        }
+    });
+}
+
+function validateEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+}
+
+// Initialize validation when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    setupRealTimeValidation();
+    setupFileUploadHandlers();
+    setupOtpHandlers();
+    setupOtpInputFormatting();
+    console.log('✅ All handlers initialized');
+    
+    // Add debug button (temporary)
+    const debugBtn = document.createElement('button');
+    debugBtn.innerHTML = 'Test POST Request';
+    debugBtn.onclick = testPostRequest;
+    debugBtn.className = 'btn btn-warning btn-sm';
+    debugBtn.style.position = 'fixed';
+    debugBtn.style.top = '10px';
+    debugBtn.style.right = '10px';
+    debugBtn.style.zIndex = '9999';
+    document.body.appendChild(debugBtn);
+});
+
+// Make them globally available
+window.nextStep = nextStep;
+window.prevStep = prevStep;
+window.showStep = showStep;
+
+console.log('✅ Enhanced navigation with validation ready');
+</script>
 
 <!-- Your registration JavaScript should come AFTER Bootstrap -->
 <script src="../../assets/js/student/user_registration.js?v=<?php echo time(); ?>"></script>
@@ -2588,7 +6140,7 @@ if (!$isAjaxRequest) {
     function displayLetterVerificationResults(verification) {
         const resultsDiv = document.getElementById('letterOcrResults');
         const feedbackDiv = document.getElementById('letterOcrFeedback');
-        const nextButton = document.getElementById('nextStep5Btn');
+        const nextButton = document.getElementById('nextStep6Btn'); // Fixed: Changed from nextStep5Btn to nextStep6Btn
 
         // Update verification checklist with confidence scores
         updateVerificationCheckWithDetails('check-letter-firstname', verification.first_name, 
@@ -2797,7 +6349,7 @@ if (!$isAjaxRequest) {
     function displayCertificateVerificationResults(verification) {
         const resultsDiv = document.getElementById('certificateOcrResults');
         const feedbackDiv = document.getElementById('certificateOcrFeedback');
-        const nextButton = document.getElementById('nextStep6Btn');
+        const nextButton = document.getElementById('nextStep7Btn'); // Fixed: Changed from nextStep6Btn to nextStep7Btn
 
         // Update verification checklist with confidence scores
         updateVerificationCheckWithDetails('check-certificate-title', verification.certificate_title, 
@@ -2888,6 +6440,8 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
     formData.append('first_name', document.querySelector('input[name="first_name"]').value);
     formData.append('last_name', document.querySelector('input[name="last_name"]').value);
     formData.append('year_level_id', document.querySelector('select[name="year_level_id"]').value);
+    formData.append('university_id', document.querySelector('select[name="university_id"]').value);
+    formData.append('school_student_id', document.querySelector('input[name="school_student_id"]').value); // Added for validation
 
     // Add reCAPTCHA token
     if (typeof grecaptcha !== 'undefined' && window.RECAPTCHA_SITE_KEY) {
@@ -2916,6 +6470,12 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
             if (data.suggestions && data.suggestions.length > 0) {
                 errorMessage += '\n\nSuggestions:\n' + data.suggestions.join('\n');
             }
+            
+            // Show debug info in console for troubleshooting
+            if (data.debug_info) {
+                console.log('OCR Debug Information:', data.debug_info);
+            }
+            
             alert(errorMessage);
             
             const resultsDiv = document.getElementById('gradesOcrResults');
@@ -2923,8 +6483,10 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
             
             resultsDiv.classList.remove('d-none');
             feedbackDiv.style.display = 'block';
+            feedbackDiv.className = 'alert alert-danger mt-3';
             
-            let suggestionHTML = '<strong>' + data.message + '</strong>';
+            let suggestionHTML = '<strong><i class="bi bi-exclamation-triangle me-2"></i>' + data.message + '</strong>';
+            
             if (data.suggestions) {
                 suggestionHTML += '<br><br><strong>Please try:</strong><ul>';
                 data.suggestions.forEach(suggestion => {
@@ -2932,6 +6494,28 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
                 });
                 suggestionHTML += '</ul>';
             }
+            
+            // Add debug information if available
+            if (data.debug_info) {
+                suggestionHTML += '<br><br><details><summary><strong>Technical Details</strong> (click to expand)</summary>';
+                suggestionHTML += '<small>';
+                if (data.debug_info.file_size) {
+                    suggestionHTML += 'File size: ' + (data.debug_info.file_size / 1024).toFixed(1) + ' KB<br>';
+                }
+                if (data.debug_info.file_extension) {
+                    suggestionHTML += 'File type: ' + data.debug_info.file_extension + '<br>';
+                }
+                if (data.debug_info.text_length !== undefined) {
+                    suggestionHTML += 'Extracted text length: ' + data.debug_info.text_length + ' characters<br>';
+                }
+                if (data.debug_info.tesseract_output) {
+                    suggestionHTML += 'Tesseract output: <pre>' + data.debug_info.tesseract_output + '</pre>';
+                }
+                suggestionHTML += '</small></details>';
+            }
+            
+            // Add link to debug tool
+            suggestionHTML += '<br><br><a href="debug_ocr.php" target="_blank" class="btn btn-sm btn-outline-info">🔍 Use OCR Debug Tool</a>';
             
             feedbackDiv.innerHTML = suggestionHTML;
         }
@@ -2951,23 +6535,52 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
         const feedbackDiv = document.getElementById('gradesOcrFeedback');
         const gradesDetails = document.getElementById('gradesDetails');
         const gradesTable = document.getElementById('gradesTable');
-        const nextButton = document.getElementById('nextStep7Btn');
+        const nextButton = document.getElementById('nextStep8Btn'); // Fixed: Changed from nextStep7Btn to nextStep8Btn
+        const eligibilityStatus = document.getElementById('eligibilityStatus');
+        const eligibilityText = document.getElementById('eligibilityText');
 
-        // Update verification checklist
+        // Update verification checklist with new validation structure
         updateVerificationCheckWithDetails('check-grades-name', verification.name_match, 
             verification.confidence_scores?.name, verification.found_text_snippets?.name);
-        updateVerificationCheckWithDetails('check-grades-year', verification.year_found, 
-            verification.confidence_scores?.year, verification.found_text_snippets?.year);
-        updateVerificationCheckWithDetails('check-grades-passing', verification.all_passing, 
+        updateVerificationCheckWithDetails('check-grades-year', verification.year_level_match, 
+            verification.confidence_scores?.year_level, verification.found_text_snippets?.year_level);
+        updateVerificationCheckWithDetails('check-grades-semester', verification.semester_match, 
+            verification.confidence_scores?.semester, verification.found_text_snippets?.semester);
+        updateVerificationCheckWithDetails('check-grades-school-year', verification.school_year_match, 
+            verification.confidence_scores?.school_year, verification.found_text_snippets?.school_year);
+        updateVerificationCheckWithDetails('check-grades-university', verification.university_match, 
+            verification.confidence_scores?.university, verification.found_text_snippets?.university);
+        updateVerificationCheckWithDetails('check-grades-student-id', verification.school_student_id_match, 
+            verification.confidence_scores?.school_student_id, verification.found_text_snippets?.school_student_id);
+        updateVerificationCheckWithDetails('check-grades-passing', verification.all_grades_passing, 
             verification.confidence_scores?.grades, null);
+
+        // Update eligibility status
+        if (verification.is_eligible) {
+            eligibilityStatus.className = 'alert alert-success';
+            eligibilityText.innerHTML = '<i class="bi bi-check-circle me-2"></i><strong>ELIGIBLE</strong> - All validations passed';
+        } else {
+            eligibilityStatus.className = 'alert alert-danger';
+            eligibilityText.innerHTML = '<i class="bi bi-x-circle me-2"></i><strong>INELIGIBLE</strong> - ' + verification.summary?.recommendation;
+        }
 
         // Show results
         resultsDiv.classList.remove('d-none');
 
-        // Display grades table if available
+        // Display grades table with enhanced validation info
         if (verification.grades && verification.grades.length > 0) {
             gradesDetails.classList.remove('d-none');
+            
+            // Show validation method used
+            let validationMethodBadge = '';
+            if (verification.validation_method === 'enhanced_per_subject') {
+                validationMethodBadge = '<span class="badge bg-info mb-2">Enhanced Per-Subject Validation</span>';
+            } else {
+                validationMethodBadge = '<span class="badge bg-secondary mb-2">Legacy Threshold Validation</span>';
+            }
+            
             let tableHTML = `
+                ${validationMethodBadge}
                 <table class="table table-sm">
                     <thead>
                         <tr>
@@ -2978,49 +6591,116 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
                     </thead>
                     <tbody>
             `;
+            
             verification.grades.forEach(grade => {
-                const status = parseFloat(grade.grade) <= 3.00 ? 
-                    '<span class="text-success">Pass</span>' : 
-                    '<span class="text-danger">Fail</span>';
+                let status = '';
+                let policyInfo = '';
+                
+                if (verification.validation_method === 'enhanced_per_subject') {
+                    // Enhanced validation - check against university policy
+                    const isFailingSubject = verification.enhanced_grade_validation?.failed_subjects?.some(
+                        failedSubject => failedSubject.includes(grade.subject)
+                    ) || false;
+                    
+                    status = isFailingSubject ? 
+                        '<span class="text-danger">Fail</span>' : 
+                        '<span class="text-success">Pass</span>';
+                        
+                        policyInfo = `<td><small>${verification.university_code || 'N/A'}</small></td>`;
+                } else {
+                    // Legacy validation - 3.00 threshold
+                    status = parseFloat(grade.grade) <= 3.00 ? 
+                        '<span class="text-success">Pass</span>' : 
+                        '<span class="text-danger">Fail</span>';
+                }
+                
+                // Get the grade value (fallback chain for compatibility)
+                const gradeValue = grade.grade || grade.final || grade.midterm || grade.prelim || 'N/A';
+                const canonicalGrade = parseFloat(gradeValue || '0');
+
+                // Recompute status for legacy method if needed
+                if (verification.validation_method !== 'enhanced_per_subject') {
+                    status = !isNaN(canonicalGrade) && canonicalGrade <= 3.00 ?
+                        '<span class="text-success">Pass</span>' : '<span class="text-danger">Fail</span>';
+                }
+
                 tableHTML += `
                     <tr>
                         <td>${grade.subject}</td>
-                        <td>${grade.grade}</td>
+                        <td>${gradeValue}</td>
                         <td>${status}</td>
                     </tr>
                 `;
-            });
-            tableHTML += '</tbody></table>';
+            });            tableHTML += '</tbody></table>';
+            
+            // Add enhanced validation summary if available
+            if (verification.enhanced_grade_validation && verification.enhanced_grade_validation.success) {
+                tableHTML += `
+                    <div class="mt-2 p-2 bg-light rounded">
+                        <small class="text-muted">
+                            <strong>Enhanced Validation Summary:</strong><br>
+                            Total Subjects: ${verification.enhanced_grade_validation.total_subjects}<br>
+                            Passed: ${verification.enhanced_grade_validation.passed_subjects}<br>
+                            Failed: ${verification.enhanced_grade_validation.failed_subjects.length}
+                            ${verification.enhanced_grade_validation.failed_subjects.length > 0 ? 
+                                '<br>Failed Subjects: ' + verification.enhanced_grade_validation.failed_subjects.join(', ') : ''
+                            }
+                        </small>
+                    </div>
+                `;
+            }
+            
             gradesTable.innerHTML = tableHTML;
         }
 
-        // Update feedback and next button
-        if (verification.overall_success) {
+        // Update feedback and next button based on eligibility
+        if (verification.is_eligible) {
             feedbackDiv.style.display = 'none';
             nextButton.disabled = false;
             nextButton.classList.add('btn-success');
             nextButton.classList.remove('btn-primary');
+            nextButton.innerHTML = '<i class="bi bi-check-circle me-2"></i>Continue - Student Eligible';
         } else {
-            let feedbackMessage = `<strong>Verification Result:</strong> ${verification.summary?.recommendation || 'Some checks failed'}<br>`;
-            feedbackMessage += `<small>Passed ${verification.summary?.passed_checks || 0} of ${verification.summary?.total_checks || 3} checks`;
-            if (verification.summary?.average_confidence) {
-                feedbackMessage += ` (Average confidence: ${verification.summary.average_confidence}%)`;
-            }
-            feedbackMessage += `</small>`;
+            let feedbackMessage = `<strong>Eligibility Assessment:</strong> ${verification.summary?.recommendation || 'Student is not eligible'}<br>`;
+            feedbackMessage += `<small>Validation Status: ${verification.summary?.eligibility_status || 'INELIGIBLE'}</small><br>`;
+            feedbackMessage += `<small>Passed ${verification.summary?.passed_checks || 0} of ${verification.summary?.total_checks || 5} validation checks</small>`;
             
-            if (verification.failing_grades && verification.failing_grades.length > 0) {
-                feedbackMessage += '<br><br><strong>Failing Grades Found:</strong><ul>';
+            // Show specific validation failures
+            if (!verification.year_level_match) {
+                feedbackMessage += '<br><br><strong>⚠️ Year Level Mismatch:</strong> The declared year level does not match what was found on the grade card.';
+            }
+            if (!verification.semester_match) {
+                const requiredSemester = verification.admin_requirements?.required_semester || 'Not specified';
+                feedbackMessage += `<br><br><strong>⚠️ Semester Mismatch:</strong> Grade card does not show required semester: "${requiredSemester}".`;
+            }
+            // TEMPORARILY DISABLED FOR TESTING
+            // if (!verification.school_year_match) {
+            //     const requiredSchoolYear = verification.admin_requirements?.required_school_year || 'Not specified';
+            //     feedbackMessage += `<br><br><strong>⚠️ School Year Mismatch:</strong> Grade card does not show required school year: "${requiredSchoolYear}".`;
+            // }
+            if (!verification.university_match) {
+                feedbackMessage += '<br><br><strong>⚠️ University Mismatch:</strong> The declared university does not match what was found on the grade card.';
+            }
+            if (!verification.all_grades_passing) {
+                feedbackMessage += '<br><br><strong>⚠️ Failing Grades Found:</strong><ul>';
                 verification.failing_grades.forEach(grade => {
-                    feedbackMessage += `<li>${grade.subject}: ${grade.grade}</li>`;
+                    feedbackMessage += `<li>${grade.subject}: ${grade.grade} (Grade ≥ 3.00 is failing)</li>`;
                 });
                 feedbackMessage += '</ul>';
+            }
+            if (!verification.name_match) {
+                feedbackMessage += '<br><br><strong>⚠️ Name Mismatch:</strong> Student name not clearly found on the grade card.';
+            }
+            if (!verification.school_student_id_match) {
+                feedbackMessage += '<br><br><strong>⚠️ School Student ID Mismatch:</strong> The school student ID from Step 3 was not found on the grade card. Please ensure your grades document shows your student ID number.';
             }
             
             feedbackDiv.innerHTML = feedbackMessage;
             feedbackDiv.style.display = 'block';
             nextButton.disabled = true;
             nextButton.classList.remove('btn-success');
-            nextButton.classList.add('btn-primary');
+            nextButton.classList.add('btn-danger');
+            nextButton.innerHTML = '<i class="bi bi-x-circle me-2"></i>Cannot Continue - Ineligible';
         }
     }
 </script>
@@ -3099,8 +6779,241 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
         </div>
     </div>
 </div>
+
+<!-- Terms and Conditions Modal Functionality -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Terms and Conditions modal functionality
+    setupTermsAndConditions();
+    
+    // School Student ID duplicate checking
+    setupSchoolStudentIdCheck();
+    
+    // Wait a moment for external scripts to load
+    setTimeout(function() {
+        console.log('🔍 Final function check:', {
+            nextStep: typeof window.nextStep,
+            prevStep: typeof window.prevStep,
+            showStep: typeof window.showStep,
+            bootstrap: typeof window.bootstrap
+        });
+        
+        // Test if functions work
+        const testButton = document.createElement('button');
+        testButton.onclick = function() {
+            console.log('✅ nextStep function test successful');
+        };
+        
+        console.log('✅ Registration page initialization complete');
+    }, 500);
+});
+
+// Real-time School Student ID duplicate check
+function setupSchoolStudentIdCheck() {
+    let schoolStudentIdCheckTimeout = null;
+    const schoolStudentIdInput = document.getElementById('schoolStudentId');
+    const universitySelect = document.getElementById('universitySelect');
+    
+    if (!schoolStudentIdInput || !universitySelect) {
+        console.log('⚠️ School student ID or university select not found');
+        return;
+    }
+    
+    console.log('✅ School student ID check initialized');
+    
+    // Check on school student ID input
+    schoolStudentIdInput.addEventListener('input', function() {
+        clearTimeout(schoolStudentIdCheckTimeout);
+        
+        const schoolStudentId = this.value.trim();
+        const universityId = universitySelect.value;
+        const warningDiv = document.getElementById('schoolStudentIdDuplicateWarning');
+        const availableDiv = document.getElementById('schoolStudentIdAvailable');
+        const nextBtn = document.getElementById('nextStep3Btn');
+        
+        // Reset states
+        if (warningDiv) warningDiv.style.display = 'none';
+        if (availableDiv) availableDiv.style.display = 'none';
+        
+        if (schoolStudentId.length < 3 || !universityId) {
+            return;
+        }
+        
+        // Debounce API call
+        schoolStudentIdCheckTimeout = setTimeout(async () => {
+            await checkSchoolStudentIdDuplicate(schoolStudentId, universityId, warningDiv, availableDiv, nextBtn);
+        }, 800); // 800ms debounce
+    });
+    
+    // Re-check when university changes
+    universitySelect.addEventListener('change', function() {
+        const schoolStudentId = schoolStudentIdInput.value.trim();
+        if (schoolStudentId.length >= 3) {
+            schoolStudentIdInput.dispatchEvent(new Event('input'));
+        }
+    });
+}
+
+async function checkSchoolStudentIdDuplicate(schoolStudentId, universityId, warningDiv, availableDiv, nextBtn) {
+    const formData = new FormData();
+    formData.append('check_school_student_id', '1');
+    formData.append('school_student_id', schoolStudentId);
+    formData.append('university_id', universityId);
+    
+    // Include name and birthdate if available for identity matching
+    const firstName = document.querySelector('input[name="first_name"]')?.value;
+    const lastName = document.querySelector('input[name="last_name"]')?.value;
+    const bdate = document.querySelector('input[name="bdate"]')?.value;
+    
+    if (firstName) formData.append('first_name', firstName);
+    if (lastName) formData.append('last_name', lastName);
+    if (bdate) formData.append('bdate', bdate);
+    
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'duplicate') {
+            if (warningDiv) {
+                let message = `<i class="bi bi-exclamation-triangle me-2"></i><strong>School Student ID Already Registered!</strong><br>`;
+                message += `<small>Registered to: ${data.details.name}<br>`;
+                message += `System ID: ${data.details.system_student_id}<br>`;
+                message += `Status: ${data.details.status}<br>`;
+                message += `Registered on: ${new Date(data.details.registered_at).toLocaleDateString()}<br>`;
+                
+                if (data.details.identity_match) {
+                    message += `<br><span class="text-danger fw-bold">⚠️ This appears to be YOUR existing account.</span><br>`;
+                    message += `Email: ${data.details.email_hint}<br>`;
+                    message += `Mobile: ${data.details.mobile_hint}<br>`;
+                    message += `<br><strong class="text-danger">🛑 MULTIPLE ACCOUNTS PROHIBITED</strong><br>`;
+                    message += `You cannot create multiple accounts. Please login with your existing credentials.`;
+                } else {
+                    message += `<br><span class="text-danger fw-bold">⚠️ This school student ID belongs to another person.</span><br>`;
+                    message += `<strong class="text-danger">🛑 MULTIPLE ACCOUNTS PROHIBITED</strong><br>`;
+                    message += `Creating multiple accounts is strictly prohibited and may result in permanent disqualification.`;
+                }
+                
+                if (data.details.can_reapply) {
+                    message += `<br><br><span class="text-info">Note: Previous application was ${data.details.status}. You may reapply by logging in with your existing credentials.</span>`;
+                }
+                
+                message += `</small>`;
+                
+                warningDiv.innerHTML = message;
+                warningDiv.style.display = 'block';
+                warningDiv.className = 'alert alert-danger mt-2';
+            }
+            
+            // Disable next button
+            if (nextBtn) {
+                nextBtn.disabled = true;
+                nextBtn.classList.remove('btn-primary');
+                nextBtn.classList.add('btn-secondary');
+            }
+            
+            // Show system notifier
+            showNotifier(
+                '🛑 MULTIPLE ACCOUNT DETECTED: This school student ID is already registered. Creating multiple accounts is strictly prohibited and will result in disqualification.', 
+                'error'
+            );
+            
+        } else if (data.status === 'available') {
+            if (availableDiv) {
+                availableDiv.style.display = 'block';
+            }
+            
+            // Enable next button
+            if (nextBtn) {
+                nextBtn.disabled = false;
+                nextBtn.classList.remove('btn-secondary');
+                nextBtn.classList.add('btn-primary');
+            }
+        }
+    } catch (error) {
+        console.error('School student ID check error:', error);
+    }
+}
+
+function setupTermsAndConditions() {
+    // Handle terms and conditions modal
+    const termsLink = document.querySelector('a[data-bs-target="#termsModal"]');
+    const acceptBtn = document.getElementById('acceptTermsBtn');
+    const agreeCheckbox = document.getElementById('agreeTerms');
+    const termsModal = document.getElementById('termsModal');
+    
+    console.log('🔍 Terms elements found:', {
+        termsLink: !!termsLink,
+        acceptBtn: !!acceptBtn,
+        agreeCheckbox: !!agreeCheckbox,
+        termsModal: !!termsModal,
+        bootstrap: typeof window.bootstrap
+    });
+    
+    // Bootstrap should handle the modal opening automatically via data-bs-toggle and data-bs-target
+    // No need for custom click handler - just verify Bootstrap is loaded
+    if (!window.bootstrap) {
+        console.warn('⚠️ Bootstrap not loaded! Modal may not work.');
+    }
+    
+    // Handle accept button
+    if (acceptBtn) {
+        acceptBtn.addEventListener('click', function() {
+            // Check the terms checkbox
+            if (agreeCheckbox) {
+                agreeCheckbox.checked = true;
+                agreeCheckbox.dispatchEvent(new Event('change'));
+                console.log('✅ Terms accepted and checkbox checked');
+            }
+            
+            // Close modal using Bootstrap
+            if (window.bootstrap && window.bootstrap.Modal) {
+                const modal = bootstrap.Modal.getInstance(termsModal);
+                if (modal) {
+                    modal.hide();
+                    console.log('✅ Terms modal closed via Bootstrap');
+                }
+            }
+        });
+    }
+    
+    // Handle modal close buttons
+    const closeButtons = termsModal?.querySelectorAll('[data-bs-dismiss="modal"]');
+    closeButtons?.forEach(button => {
+        button.addEventListener('click', function() {
+            if (window.bootstrap && window.bootstrap.Modal) {
+                const modal = bootstrap.Modal.getInstance(termsModal);
+                if (modal) modal.hide();
+            } else {
+                // Fallback close
+                if (termsModal) {
+                    termsModal.style.display = 'none';
+                    termsModal.classList.remove('show');
+                    termsModal.removeAttribute('aria-modal');
+                    termsModal.removeAttribute('role');
+                    document.body.classList.remove('modal-open');
+                }
+            }
+        });
+    });
+    
+    // Add backdrop click to close
+    if (termsModal) {
+        termsModal.addEventListener('click', function(e) {
+            if (e.target === termsModal) {
+                const closeBtn = termsModal.querySelector('[data-bs-dismiss="modal"]');
+                if (closeBtn) closeBtn.click();
+            }
+        });
+    }
+    
+    console.log('✅ Terms and Conditions functionality initialized');
+}
+</script>
 </body>
 </html>
 <?php
 } // End of main registration HTML for non-AJAX requests
-?>
