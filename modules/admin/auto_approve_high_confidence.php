@@ -54,70 +54,13 @@ try {
         $updateResult = pg_query_params($connection, $updateQuery, [$student['student_id']]);
         
         if ($updateResult) {
-            // Move enrollment form from temporary to permanent location
-            $enrollmentQuery = "SELECT file_path, original_filename FROM enrollment_forms WHERE student_id = $1";
-            $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student['student_id']]);
+            // Move files from temp to permanent storage using FileManagementService
+            require_once __DIR__ . '/../../services/FileManagementService.php';
+            $fileService = new FileManagementService($connection);
+            $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($student['student_id']);
             
-            if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
-                $tempPath = $enrollmentRow['file_path'];
-                $originalFilename = $enrollmentRow['original_filename'];
-                
-                if (file_exists($tempPath)) {
-                    $permanentDir = '../../assets/uploads/student/enrollment_forms/';
-                    if (!is_dir($permanentDir)) {
-                        mkdir($permanentDir, 0755, true);
-                    }
-                    
-                    $newFilename = $student['student_id'] . '_' . $originalFilename;
-                    $permanentPath = $permanentDir . $newFilename;
-                    
-                    if (rename($tempPath, $permanentPath)) {
-                        // Update database with new path
-                        pg_query_params($connection, 
-                            "UPDATE enrollment_forms SET file_path = $1 WHERE student_id = $2", 
-                            [$permanentPath, $student['student_id']]
-                        );
-                    }
-                }
-            }
-            
-            // Move documents from temporary to permanent locations
-            $documentsQuery = "SELECT document_id, type, file_path FROM documents WHERE student_id = $1";
-            $documentsResult = pg_query_params($connection, $documentsQuery, [$student['student_id']]);
-            
-            while ($docRow = pg_fetch_assoc($documentsResult)) {
-                $tempDocPath = $docRow['file_path'];
-                $docType = $docRow['type'];
-                $docId = $docRow['document_id'];
-                
-                // Determine permanent directory based on document type
-                if ($docType === 'letter_to_mayor') {
-                    $permanentDocDir = '../../assets/uploads/student/letter_to_mayor/';
-                } elseif ($docType === 'certificate_of_indigency') {
-                    $permanentDocDir = '../../assets/uploads/student/indigency/';
-                } elseif ($docType === 'eaf') {
-                    $permanentDocDir = '../../assets/uploads/student/enrollment_forms/';
-                } else {
-                    continue; // Skip unknown document types
-                }
-                
-                // Create permanent directory if it doesn't exist
-                if (!is_dir($permanentDocDir)) {
-                    mkdir($permanentDocDir, 0755, true);
-                }
-                
-                // Define permanent path
-                $filename = basename($tempDocPath);
-                $permanentDocPath = $permanentDocDir . $filename;
-                
-                // Move file from temporary to permanent location
-                if (file_exists($tempDocPath) && rename($tempDocPath, $permanentDocPath)) {
-                    // Update database with permanent path
-                    pg_query_params($connection, 
-                        "UPDATE documents SET file_path = $1 WHERE document_id = $2", 
-                        [$permanentDocPath, $docId]
-                    );
-                }
+            if (!$fileMoveResult['success']) {
+                error_log("Auto-approve FileManagement: Error moving files for student " . $student['student_id'] . ": " . implode(', ', $fileMoveResult['errors']));
             }
             
             // Send approval email

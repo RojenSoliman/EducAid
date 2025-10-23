@@ -1082,6 +1082,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /** @phpstan-ignore-next-line */
         pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$sid]);
         
+        // Move files from temp to permanent storage
+        require_once __DIR__ . '/../../services/FileManagementService.php';
+        $fileService = new FileManagementService($connection);
+        $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($sid);
+        
+        if (!$fileMoveResult['success']) {
+            error_log("FileManagement: Error moving files for student $sid: " . implode(', ', $fileMoveResult['errors']));
+        }
+        
         // Add admin notification
         if ($student) {
             $student_name = $student['first_name'] . ' ' . $student['last_name'];
@@ -1124,6 +1133,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             /** @phpstan-ignore-next-line */
             pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$sid]);
+
+            // Move files from temp to permanent storage
+            require_once __DIR__ . '/../../services/FileManagementService.php';
+            $fileService = new FileManagementService($connection);
+            $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($sid);
+            
+            if (!$fileMoveResult['success']) {
+                error_log("FileManagement: Error moving files for student $sid (override): " . implode(', ', $fileMoveResult['errors']));
+            }
 
             // Add admin notification noting override
             if ($student) {

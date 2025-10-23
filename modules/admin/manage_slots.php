@@ -279,9 +279,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $output = fopen('php://output', 'w');
         fputcsv($output, ['Name', 'Application Date', 'Status', 'Semester', 'Academic Year']);
         $exportQuery = pg_query_params($connection, "
-            SELECT s.first_name, s.middle_name, s.last_name, s.application_date, s.status, a.semester, a.academic_year
+            SELECT s.first_name, s.middle_name, s.last_name, s.application_date, s.status, ss.semester, ss.academic_year
             FROM students s
-            LEFT JOIN applications a ON s.student_id = a.student_id
+            LEFT JOIN signup_slots ss ON s.slot_id = ss.slot_id
             WHERE (s.status = 'under_registration' OR s.status = 'applicant') AND s.municipality_id = $1
             ORDER BY s.status DESC, s.application_date DESC
         ", [$municipality_id]);
@@ -370,9 +370,9 @@ if ($slotInfo) {
 
     // Get applicants list - include all relevant statuses
     $res = pg_query_params($connection, "
-        SELECT s.first_name, s.middle_name, s.last_name, s.application_date, s.status, a.semester, a.academic_year
+        SELECT s.first_name, s.middle_name, s.last_name, s.application_date, s.status, ss.semester, ss.academic_year
         FROM students s
-        LEFT JOIN applications a ON s.student_id = a.student_id
+        LEFT JOIN signup_slots ss ON s.slot_id = ss.slot_id
         WHERE s.slot_id = $1 
         AND s.status IN ('under_registration', 'applicant', 'verified', 'active')
         AND s.municipality_id = $2

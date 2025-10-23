@@ -3405,10 +3405,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             error_log("No grades temp files found in path: " . $tempGradesDir);
         }
 
-        $semester = $slotInfo['semester'];
-        $academic_year = $slotInfo['academic_year'];
-        $applicationQuery = "INSERT INTO applications (student_id, semester, academic_year) VALUES ($1, $2, $3)";
-        pg_query_params($connection, $applicationQuery, [$student_id, $semester, $academic_year]);
+        // Note: semester and academic_year are stored in signup_slots table via students.slot_id relationship
+        // No need to duplicate this data in a separate applications table
 
         // Calculate and store confidence score for the new registration
         $confidenceQuery = "UPDATE students SET confidence_score = calculate_confidence_score(student_id) WHERE student_id = $1";

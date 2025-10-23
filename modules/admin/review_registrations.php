@@ -185,7 +185,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         pg_query_params($connection, "DELETE FROM distributions WHERE student_id = $1", [$student_id]);
                         pg_query_params($connection, "DELETE FROM enrollment_forms WHERE student_id = $1", [$student_id]);
                         pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$student_id]);
-                        pg_query_params($connection, "DELETE FROM applications WHERE student_id = $1", [$student_id]);
                         
                         // Finally delete the student record
                         $deleteResult = pg_query_params($connection, "DELETE FROM students WHERE student_id = $1", [$student_id]);
@@ -383,7 +382,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 pg_query_params($connection, "DELETE FROM distributions WHERE student_id = $1", [$student_id]);
                 pg_query_params($connection, "DELETE FROM enrollment_forms WHERE student_id = $1", [$student_id]);
                 pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$student_id]);
-                pg_query_params($connection, "DELETE FROM applications WHERE student_id = $1", [$student_id]);
                 
                 // Finally delete the student record - this frees up the slot completely
                 $deleteResult = pg_query_params($connection, "DELETE FROM students WHERE student_id = $1", [$student_id]);

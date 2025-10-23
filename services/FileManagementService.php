@@ -57,8 +57,8 @@ class FileManagementService {
                 continue;
             }
             
-            // Get all files in temp folder
-            $files = glob($tempPath . '/*.*');
+            // Get all files in temp folder that belong to this student
+            $files = glob($tempPath . '/' . $studentId . '_*');
             
             foreach ($files as $file) {
                 if (!is_file($file)) continue;
