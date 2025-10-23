@@ -27,21 +27,26 @@ if (empty($doc_type) || empty($student_id)) {
 $validation_data = [];
 
 try {
-    // Map document type to database type
-    $db_type_map = [
-        'id_picture' => 'id_picture',
-        'grades' => 'academic_grades',
-        'eaf' => 'eaf',
-        'letter_to_mayor' => 'letter_to_mayor',
-        'certificate_of_indigency' => 'certificate_of_indigency'
+    // Map document type to database document_type_code
+    $type_to_code_map = [
+        'id_picture' => '04',
+        'grades' => '01',
+        'eaf' => '00',
+        'letter_to_mayor' => '02',
+        'certificate_of_indigency' => '03'
     ];
     
-    $db_type = $db_type_map[$doc_type] ?? $doc_type;
+    $document_type_code = $type_to_code_map[$doc_type] ?? null;
     
-    // Get basic document info from documents table by student_id and type
+    if (!$document_type_code) {
+        echo json_encode(['success' => false, 'message' => 'Invalid document type: ' . $doc_type]);
+        exit;
+    }
+    
+    // Get basic document info from documents table by student_id and document_type_code
     $doc_query = pg_query_params($connection, 
-        "SELECT * FROM documents WHERE student_id = $1 AND type = $2 ORDER BY upload_date DESC LIMIT 1",
-        [$student_id, $db_type]
+        "SELECT * FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1",
+        [$student_id, $document_type_code]
     );
     
     if (!$doc_query || pg_num_rows($doc_query) === 0) {
@@ -51,14 +56,15 @@ try {
     
     $document = pg_fetch_assoc($doc_query);
     $file_path = $document['file_path'];
+    $verification_data_path = $document['verification_data_path'];
     $validation_data['ocr_confidence'] = $document['ocr_confidence'];
     $validation_data['upload_date'] = $document['upload_date'];
     
     // ID Picture - Get identity verification data
     if ($doc_type === 'id_picture') {
-        $verify_json_path = $file_path . '.verify.json';
-        if (file_exists($verify_json_path)) {
-            $verify_data = json_decode(file_get_contents($verify_json_path), true);
+        // Use verification_data_path from database instead of manual construction
+        if (!empty($verification_data_path) && file_exists($verification_data_path)) {
+            $verify_data = json_decode(file_get_contents($verification_data_path), true);
             if ($verify_data) {
                 // Get student info for verification
                 $student_query = pg_query_params($connection,
@@ -73,6 +79,7 @@ try {
                 
                 // Parse verify.json for detailed validation (6-check structure)
                 $validation_data['identity_verification'] = [
+                    'document_type' => $doc_type,
                     'first_name_match' => $verify_data['first_name_match'] ?? false,
                     'first_name_confidence' => $verify_data['confidence_scores']['first_name'] ?? 0,
                     'middle_name_match' => $verify_data['middle_name_match'] ?? false,
@@ -89,7 +96,8 @@ try {
                     'passed_checks' => $verify_data['summary']['passed_checks'] ?? 0,
                     'total_checks' => $verify_data['summary']['total_checks'] ?? 6,
                     'average_confidence' => $verify_data['summary']['average_confidence'] ?? round(($document['ocr_confidence'] ?? 0), 1),
-                    'recommendation' => $verify_data['summary']['recommendation'] ?? 'No recommendation available'
+                    'recommendation' => $verify_data['summary']['recommendation'] ?? 'No recommendation available',
+                    'found_text_snippets' => $verify_data['found_text_snippets'] ?? []
                 ];
             }
         }
@@ -151,10 +159,9 @@ try {
     
     // EAF, Letter, Certificate - Get OCR text and verification data
     else {
-        // Check for verification data
-        $verify_json_path = $file_path . '.verify.json';
-        if (file_exists($verify_json_path)) {
-            $verify_data = json_decode(file_get_contents($verify_json_path), true);
+        // Use verification_data_path from database instead of manual construction
+        if (!empty($verification_data_path) && file_exists($verification_data_path)) {
+            $verify_data = json_decode(file_get_contents($verification_data_path), true);
             if ($verify_data) {
                 // Get student info for display
                 $student_query = pg_query_params($connection,
@@ -175,6 +182,7 @@ try {
                 
                 if ($doc_type === 'eaf') {
                     $validation_data['identity_verification'] = [
+                        'document_type' => $doc_type,
                         'first_name_match' => $verify_data['first_name_match'] ?? false,
                         'first_name_confidence' => $verify_data['confidence_scores']['first_name'] ?? 0,
                         'middle_name_match' => $verify_data['middle_name_match'] ?? false,

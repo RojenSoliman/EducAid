@@ -2232,9 +2232,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                     // Add raw text if needed for other validations
                     $ocrText .= "\nRaw Document Content:\n";
                     
-                    // Fall back to basic Tesseract for full text extraction
+                    // Fall back to basic Tesseract for full text extraction AND generate TSV
                     $outputBase = $uploadDir . 'ocr_output_' . uniqid();
                     $outputFile = $outputBase . '.txt';
+                    
+                    // Generate text output
                     $cmd = "tesseract " . escapeshellarg($targetPath) . " " . 
                               escapeshellarg($outputBase) . " --oem 1 --psm 6 -l eng 2>&1";
                     
@@ -2247,6 +2249,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                         error_log("Tesseract command failed: $cmd");
                         error_log("Tesseract output: $tesseractOutput");
                     }
+                    
+                    // Generate TSV data (structured OCR data with confidence scores and coordinates)
+                    $tsvOutputBase = $uploadDir . pathinfo($fileName, PATHINFO_FILENAME);
+                    $tsvCmd = "tesseract " . escapeshellarg($targetPath) . " " . 
+                             escapeshellarg($tsvOutputBase) . " -l eng --oem 1 --psm 6 tsv 2>&1";
+                    @shell_exec($tsvCmd);
+                    
+                    // TSV file should be created as filename.tsv
+                    $generatedTsvFile = $tsvOutputBase . '.tsv';
+                    $permanentTsvFile = $targetPath . '.tsv';
+                    if (file_exists($generatedTsvFile)) {
+                        @rename($generatedTsvFile, $permanentTsvFile);
+                    }
                 } else {
                     // Enhanced OCR failed, try basic Tesseract
                     $outputBase = $uploadDir . 'ocr_output_' . uniqid();
@@ -2255,6 +2270,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                     // Try multiple PSM modes for better results
                     $psmModes = [6, 4, 7, 8, 3]; // Different page segmentation modes
                     $success = false;
+                    $successPsm = 6;
                     
                     foreach ($psmModes as $psm) {
                         $cmd = "tesseract " . escapeshellarg($targetPath) . " " . 
@@ -2267,6 +2283,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                             if (!empty(trim($testText)) && strlen(trim($testText)) > 10) {
                                 $ocrText = $testText;
                                 $success = true;
+                                $successPsm = $psm;
                                 break;
                             }
                         }
@@ -2298,6 +2315,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                     }
                     
                     @unlink($outputFile);
+                    
+                    // Generate TSV data with the successful PSM mode
+                    $tsvOutputBase = $uploadDir . pathinfo($fileName, PATHINFO_FILENAME);
+                    $tsvCmd = "tesseract " . escapeshellarg($targetPath) . " " . 
+                             escapeshellarg($tsvOutputBase) . " -l eng --oem 1 --psm $successPsm tsv 2>&1";
+                    @shell_exec($tsvCmd);
+                    
+                    // Move TSV file to permanent location
+                    $generatedTsvFile = $tsvOutputBase . '.tsv';
+                    $permanentTsvFile = $targetPath . '.tsv';
+                    if (file_exists($generatedTsvFile)) {
+                        @rename($generatedTsvFile, $permanentTsvFile);
+                    }
                 }
                 
             } catch (Exception $e) {
@@ -2329,6 +2359,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                 
                 $ocrText = file_get_contents($outputFile);
                 @unlink($outputFile);
+                
+                // Generate TSV data for fallback
+                $tsvOutputBase = $uploadDir . pathinfo($fileName, PATHINFO_FILENAME);
+                $tsvCmd = "tesseract " . escapeshellarg($targetPath) . " " . 
+                         escapeshellarg($tsvOutputBase) . " -l eng --oem 1 --psm 6 tsv 2>&1";
+                @shell_exec($tsvCmd);
+                
+                // Move TSV file to permanent location
+                $generatedTsvFile = $tsvOutputBase . '.tsv';
+                $permanentTsvFile = $targetPath . '.tsv';
+                if (file_exists($generatedTsvFile)) {
+                    @rename($generatedTsvFile, $permanentTsvFile);
+                }
             }
         }
 
@@ -2528,12 +2571,23 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
         $verification['summary']['average_confidence'] = !empty($confValues) ? 
             round(array_sum($confValues) / count($confValues), 1) : 0;
 
-        // Save verification results
+        // Save OCR text to .ocr.txt file (in correct directory: uploadDir)
+        $ocrTextFile = $targetPath . '.ocr.txt';
+        @file_put_contents($ocrTextFile, $ocrText);
+
+        // Save full verification results to .verify.json file (in correct directory: uploadDir)
+        $verifyJsonFile = $targetPath . '.verify.json';
+        @file_put_contents($verifyJsonFile, json_encode($verification, JSON_PRETTY_PRINT));
+
+        // Save verification results for confidence calculation
         $confidenceFile = $uploadDir . 'grades_confidence.json';
         @file_put_contents($confidenceFile, json_encode([
             'overall_confidence' => $verification['summary']['average_confidence'],
+            'ocr_confidence' => $verification['summary']['average_confidence'],
             'detailed_scores' => $verification['confidence_scores'],
-            'grades' => $validGrades,
+            'extracted_grades' => $validGrades,
+            'average_grade' => $averageGrade,
+            'passing_status' => $allGradesPassing,
             'eligibility_status' => $verification['summary']['eligibility_status'],
             'timestamp' => time()
         ]));
@@ -2935,6 +2989,8 @@ function cleanSubjectName($rawSubject) {
 }
 // --- Final registration submission ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
+    // Include DocumentService for unified document management
+    require_once __DIR__ . '/../../services/DocumentService.php';
     // Basic input validation
     $firstname = trim($_POST['first_name'] ?? '');
     $middlename = trim($_POST['middle_name'] ?? '');
@@ -3060,12 +3116,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $student_id_row = pg_fetch_assoc($result);
         $student_id = $student_id_row['student_id'];
 
+        // Initialize DocumentService
+        $docService = new DocumentService($connection);
+        
         // Create standardized name for file naming (lastname_firstname)
         $cleanLastname = preg_replace('/[^a-zA-Z0-9]/', '', $lastname);
         $cleanFirstname = preg_replace('/[^a-zA-Z0-9]/', '', $firstname);
         $namePrefix = strtolower($cleanLastname . '_' . $cleanFirstname);
 
-        // Save Student ID Picture to temporary folder (not permanent until approved)
+        // === SAVE ID PICTURE USING DocumentService ===
         $tempIDPictureDir = '../../assets/uploads/temp/id_pictures/';
         $allIDFiles = glob($tempIDPictureDir . '*');
         $idTempFiles = array_filter($allIDFiles, function($file) {
@@ -3073,336 +3132,318 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
         });
         
-        error_log("Looking for ID Picture files in: " . $tempIDPictureDir);
-        error_log("Found ID Picture files: " . print_r($idTempFiles, true));
+        error_log("Processing ID Picture for student: $student_id");
         
         if (!empty($idTempFiles)) {
-            // Process the first ID Picture file found
             foreach ($idTempFiles as $idTempFile) {
                 $idExtension = pathinfo($idTempFile, PATHINFO_EXTENSION);
                 $idNewFilename = $student_id . '_id_' . time() . '.' . $idExtension;
                 $idTempPath = $tempIDPictureDir . $idNewFilename;
                 
-                // Copy the main file
+                // Copy file with new student ID-based name
                 if (@copy($idTempFile, $idTempPath)) {
-                    error_log("Copied ID Picture from $idTempFile to $idTempPath");
+                    // Copy associated OCR files to new filename (.verify.json, .ocr.txt, .tsv)
+                    if (file_exists($idTempFile . '.verify.json')) {
+                        @copy($idTempFile . '.verify.json', $idTempPath . '.verify.json');
+                        @unlink($idTempFile . '.verify.json'); // Delete old file
+                    }
+                    if (file_exists($idTempFile . '.ocr.txt')) {
+                        @copy($idTempFile . '.ocr.txt', $idTempPath . '.ocr.txt');
+                        @unlink($idTempFile . '.ocr.txt'); // Delete old file
+                    }
+                    if (file_exists($idTempFile . '.tsv')) {
+                        @copy($idTempFile . '.tsv', $idTempPath . '.tsv');
+                        @unlink($idTempFile . '.tsv'); // Delete old file
+                    }
                     
-                    // Get OCR confidence from confidence file
+                    // Get OCR data
                     $idConfidenceFile = $tempIDPictureDir . 'id_picture_confidence.json';
-                    $idConfidence = null;
+                    $idOcrData = ['ocr_confidence' => 0, 'verification_status' => 'pending'];
                     
                     if (file_exists($idConfidenceFile)) {
                         $idConfData = json_decode(file_get_contents($idConfidenceFile), true);
-                        if ($idConfData && isset($idConfData['ocr_confidence'])) {
-                            $idConfidence = $idConfData['ocr_confidence'];
+                        if ($idConfData) {
+                            $idOcrData = [
+                                'ocr_confidence' => $idConfData['ocr_confidence'] ?? 0,
+                                'verification_score' => $idConfData['overall_confidence'] ?? 0,
+                                'verification_status' => ($idConfData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
+                                'verification_details' => $idConfData // Store full verification results
+                            ];
                         }
-                        @unlink($idConfidenceFile); // Clean up confidence file
+                        @unlink($idConfidenceFile);
                     }
                     
-                    // Copy .verify.json file if it exists
-                    $idVerifyFile = $idTempFile . '.verify.json';
-                    if (file_exists($idVerifyFile)) {
-                        @copy($idVerifyFile, $idTempPath . '.verify.json');
-                        @unlink($idVerifyFile);
-                    }
+                    // Save using DocumentService
+                    $saveResult = $docService->saveDocument($student_id, 'id_picture', $idTempPath, $idOcrData);
                     
-                    // Copy .ocr.txt file if it exists
-                    $idOcrFile = $idTempFile . '.ocr.txt';
-                    if (file_exists($idOcrFile)) {
-                        @copy($idOcrFile, $idTempPath . '.ocr.txt');
-                        @unlink($idOcrFile);
-                    }
-                    
-                    // Save ID Picture record to database with temporary path and OCR confidence
-                    $idQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                    $idResult = pg_query_params($connection, $idQuery, [$student_id, 'id_picture', $idTempPath, 'false', $idConfidence]);
-                    
-                    if (!$idResult) {
-                        error_log("Failed to save ID Picture to database: " . pg_last_error($connection));
+                    if ($saveResult['success']) {
+                        error_log("DocumentService: Saved ID Picture - " . $saveResult['document_id']);
                     } else {
-                        error_log("Successfully saved ID Picture to database for student $student_id with confidence $idConfidence%");
+                        error_log("DocumentService: Failed to save ID Picture - " . ($saveResult['error'] ?? 'Unknown error'));
                     }
                     
-                    // Clean up original temp ID Picture file
+                    // Clean up original temp file (main image file)
                     @unlink($idTempFile);
-                    break; // Only process the first valid file
-                } else {
-                    error_log("Failed to copy ID Picture file from $idTempFile to $idTempPath");
+                    break;
                 }
             }
         } else {
-            error_log("No ID Picture temp files found in path: " . $tempIDPictureDir);
+            error_log("No ID Picture temp files found");
         }
 
-        // Save enrollment form to temporary folder (not permanent until approved)
-        $tempFormPath = '../../assets/uploads/temp/';
+        // === SAVE ENROLLMENT FORM (EAF) USING DocumentService ===
         $tempEnrollmentDir = '../../assets/uploads/temp/enrollment_forms/';
         $allFiles = glob($tempEnrollmentDir . '*');
         $tempFiles = array_filter($allFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
         });
         
+        error_log("Processing EAF for student: $student_id");
+        
         if (!empty($tempFiles)) {
-            // Create temporary enrollment forms directory for pending students
-            $tempEnrollmentDir = '../../assets/uploads/temp/enrollment_forms/';
-            if (!file_exists($tempEnrollmentDir)) {
-                mkdir($tempEnrollmentDir, 0777, true);
-            }
-
-            // Process all EAF files and rename them with student ID
             foreach ($tempFiles as $tempFile) {
-                $originalFilename = basename($tempFile);
-                $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
-                
-                // Always rename with student ID prefix for consistent naming
+                $extension = pathinfo($tempFile, PATHINFO_EXTENSION);
                 $newFilename = $student_id . '_' . $namePrefix . '_eaf.' . $extension;
                 $tempEnrollmentPath = $tempEnrollmentDir . $newFilename;
                 
-                if (!copy($tempFile, $tempEnrollmentPath)) {
-                    error_log("Failed to copy EAF file from $tempFile to $tempEnrollmentPath");
-                    continue; // Skip this file and try others
-                } else {
-                    // Copy associated .verify.json and .ocr.txt files if they exist
-                    $verifySourceFile = $tempFile . '.verify.json';
-                    $ocrSourceFile = $tempFile . '.ocr.txt';
-                    $verifyDestFile = $tempEnrollmentPath . '.verify.json';
-                    $ocrDestFile = $tempEnrollmentPath . '.ocr.txt';
-                    
-                    if (file_exists($verifySourceFile)) {
-                        copy($verifySourceFile, $verifyDestFile);
-                        unlink($verifySourceFile);
+                if (copy($tempFile, $tempEnrollmentPath)) {
+                    // Copy associated OCR files (.verify.json, .ocr.txt, .tsv)
+                    if (file_exists($tempFile . '.verify.json')) {
+                        @copy($tempFile . '.verify.json', $tempEnrollmentPath . '.verify.json');
+                        @unlink($tempFile . '.verify.json');
                     }
-                    if (file_exists($ocrSourceFile)) {
-                        copy($ocrSourceFile, $ocrDestFile);
-                        unlink($ocrSourceFile);
+                    if (file_exists($tempFile . '.ocr.txt')) {
+                        @copy($tempFile . '.ocr.txt', $tempEnrollmentPath . '.ocr.txt');
+                        @unlink($tempFile . '.ocr.txt');
+                    }
+                    if (file_exists($tempFile . '.tsv')) {
+                        @copy($tempFile . '.tsv', $tempEnrollmentPath . '.tsv');
+                        @unlink($tempFile . '.tsv');
                     }
                     
-                    unlink($tempFile); // Remove original file
-                    
-                    // Get OCR confidence score from temp file
+                    // Get OCR data
                     $enrollmentConfidenceFile = $tempEnrollmentDir . 'enrollment_confidence.json';
-                    $enrollmentConfidence = 75.0; // default
+                    $eafOcrData = ['ocr_confidence' => 75.0, 'verification_status' => 'pending'];
+                    
                     if (file_exists($enrollmentConfidenceFile)) {
                         $confidenceData = json_decode(file_get_contents($enrollmentConfidenceFile), true);
-                        if ($confidenceData && isset($confidenceData['overall_confidence'])) {
-                            $enrollmentConfidence = $confidenceData['overall_confidence'];
+                        if ($confidenceData) {
+                            $eafOcrData = [
+                                'ocr_confidence' => $confidenceData['ocr_confidence'] ?? 75.0,
+                                'verification_score' => $confidenceData['overall_confidence'] ?? 75.0,
+                                'verification_status' => ($confidenceData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
+                                'verification_details' => $confidenceData
+                            ];
                         }
-                        unlink($enrollmentConfidenceFile); // Clean up confidence file
+                        @unlink($enrollmentConfidenceFile);
                     }
-
-                    // Save form record to database with temporary path
-                    $formQuery = "INSERT INTO enrollment_forms (student_id, file_path, original_filename) VALUES ($1, $2, $3)";
-                    pg_query_params($connection, $formQuery, [$student_id, $tempEnrollmentPath, $originalFilename]);
-
-                    // Also save to documents table with OCR confidence for confidence calculation
-                    $docQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                    pg_query_params($connection, $docQuery, [$student_id, 'eaf', $tempEnrollmentPath, 'false', $enrollmentConfidence]);
                     
-                    error_log("Successfully saved EAF to database for student $student_id with confidence $enrollmentConfidence%");
-                    break; // Only process the first valid file
+                    // Save using DocumentService
+                    $saveResult = $docService->saveDocument($student_id, 'eaf', $tempEnrollmentPath, $eafOcrData);
+                    
+                    if ($saveResult['success']) {
+                        error_log("DocumentService: Saved EAF - " . $saveResult['document_id']);
+                    } else {
+                        error_log("DocumentService: Failed to save EAF - " . ($saveResult['error'] ?? 'Unknown error'));
+                    }
+                    
+                    @unlink($tempFile);
+                    break;
                 }
             }
         }
 
-        // Save letter to mayor to temporary folder (not permanent until approved)
+        // === SAVE LETTER TO MAYOR USING DocumentService ===
         $tempLetterDir = '../../assets/uploads/temp/letter_mayor/';
         $allLetterFiles = glob($tempLetterDir . '*');
         $letterTempFiles = array_filter($allLetterFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
         });
-        error_log("Looking for letter files in: " . $tempLetterDir);
-        error_log("Found letter files: " . print_r($letterTempFiles, true));
+        
+        error_log("Processing Letter to Mayor for student: $student_id");
+        
         if (!empty($letterTempFiles)) {
-            // Directory already exists (created during upload)
-            if (!file_exists($tempLetterDir)) {
-                mkdir($tempLetterDir, 0777, true);
-            }
-
-            // Process all letter files and rename them with student ID
             foreach ($letterTempFiles as $letterTempFile) {
-                $originalLetterFilename = basename($letterTempFile);
-                $letterExtension = pathinfo($originalLetterFilename, PATHINFO_EXTENSION);
-                
-                // Always rename with student ID prefix for consistent naming
+                $letterExtension = pathinfo($letterTempFile, PATHINFO_EXTENSION);
                 $newLetterFilename = $student_id . '_' . $namePrefix . '_lettertomayor.' . $letterExtension;
                 $letterTempPath = $tempLetterDir . $newLetterFilename;
 
-                // Get OCR confidence score from temp file
-                $letterConfidenceFile = $tempLetterDir . 'letter_confidence.json';
-                $letterConfidence = 75.0; // default
-                if (file_exists($letterConfidenceFile)) {
-                    $confidenceData = json_decode(file_get_contents($letterConfidenceFile), true);
-                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
-                        $letterConfidence = $confidenceData['overall_confidence'];
-                    }
-                    unlink($letterConfidenceFile); // Clean up confidence file
-                }
-
                 if (copy($letterTempFile, $letterTempPath)) {
-                    // Copy verification files (.verify.json and .ocr.txt) if they exist
-                    $letterVerifyFile = $letterTempFile . '.verify.json';
-                    $letterOcrFile = $letterTempFile . '.ocr.txt';
-                    
-                    if (file_exists($letterVerifyFile)) {
-                        @copy($letterVerifyFile, $letterTempPath . '.verify.json');
-                        @unlink($letterVerifyFile);
+                    // Copy associated OCR files (.verify.json, .ocr.txt, .tsv)
+                    if (file_exists($letterTempFile . '.verify.json')) {
+                        @copy($letterTempFile . '.verify.json', $letterTempPath . '.verify.json');
+                        @unlink($letterTempFile . '.verify.json');
+                    }
+                    if (file_exists($letterTempFile . '.ocr.txt')) {
+                        @copy($letterTempFile . '.ocr.txt', $letterTempPath . '.ocr.txt');
+                        @unlink($letterTempFile . '.ocr.txt');
+                    }
+                    if (file_exists($letterTempFile . '.tsv')) {
+                        @copy($letterTempFile . '.tsv', $letterTempPath . '.tsv');
+                        @unlink($letterTempFile . '.tsv');
                     }
                     
-                    if (file_exists($letterOcrFile)) {
-                        @copy($letterOcrFile, $letterTempPath . '.ocr.txt');
-                        @unlink($letterOcrFile);
+                    // Get OCR data
+                    $letterConfidenceFile = $tempLetterDir . 'letter_confidence.json';
+                    $letterOcrData = ['ocr_confidence' => 75.0, 'verification_status' => 'pending'];
+                    
+                    if (file_exists($letterConfidenceFile)) {
+                        $confidenceData = json_decode(file_get_contents($letterConfidenceFile), true);
+                        if ($confidenceData) {
+                            $letterOcrData = [
+                                'ocr_confidence' => $confidenceData['ocr_confidence'] ?? 75.0,
+                                'verification_score' => $confidenceData['overall_confidence'] ?? 75.0,
+                                'verification_status' => ($confidenceData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
+                                'verification_details' => $confidenceData
+                            ];
+                        }
+                        @unlink($letterConfidenceFile);
                     }
                     
-                    // Save letter record to database with temporary path and OCR confidence
-                    $letterQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                    $letterResult = pg_query_params($connection, $letterQuery, [$student_id, 'letter_to_mayor', $letterTempPath, 'false', $letterConfidence]);
+                    // Save using DocumentService
+                    $saveResult = $docService->saveDocument($student_id, 'letter_to_mayor', $letterTempPath, $letterOcrData);
                     
-                    if (!$letterResult) {
-                        error_log("Failed to save letter to database: " . pg_last_error($connection));
+                    if ($saveResult['success']) {
+                        error_log("DocumentService: Saved Letter - " . $saveResult['document_id']);
                     } else {
-                        error_log("Successfully saved letter to database for student $student_id with confidence $letterConfidence%");
+                        error_log("DocumentService: Failed to save Letter - " . ($saveResult['error'] ?? 'Unknown error'));
                     }
 
-                    // Clean up original temp letter file
-                    unlink($letterTempFile);
-                    break; // Only process the first valid file
-                } else {
-                    error_log("Failed to copy letter file from $letterTempFile to $letterTempPath");
+                    @unlink($letterTempFile);
+                    break;
                 }
             }
-        } else {
-            error_log("No letter temp files found in path: " . $tempLetterDir);
         }
 
-        // Save certificate of indigency to temporary folder (not permanent until approved)
+        // === SAVE CERTIFICATE OF INDIGENCY USING DocumentService ===
         $tempIndigencyDir = '../../assets/uploads/temp/indigency/';
         $allCertificateFiles = glob($tempIndigencyDir . '*');
         $certificateTempFiles = array_filter($allCertificateFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
         });
-        error_log("Looking for certificate files in: " . $tempIndigencyDir);
-        error_log("Found certificate files: " . print_r($certificateTempFiles, true));
+        
+        error_log("Processing Certificate of Indigency for student: $student_id");
+        
         if (!empty($certificateTempFiles)) {
-            // Create temporary indigency directory for pending students
-            $tempIndigencyDir = '../../assets/uploads/temp/indigency/';
-            if (!file_exists($tempIndigencyDir)) {
-                mkdir($tempIndigencyDir, 0777, true);
-            }
-
-            // Process all certificate files and rename them with student ID
             foreach ($certificateTempFiles as $certificateTempFile) {
-                $originalCertificateFilename = basename($certificateTempFile);
-                $certificateExtension = pathinfo($originalCertificateFilename, PATHINFO_EXTENSION);
-                
-                // Always rename with student ID prefix for consistent naming
+                $certificateExtension = pathinfo($certificateTempFile, PATHINFO_EXTENSION);
                 $newCertificateFilename = $student_id . '_' . $namePrefix . '_indigency.' . $certificateExtension;
                 $certificateTempPath = $tempIndigencyDir . $newCertificateFilename;
 
-                // Get OCR confidence score from temp file
-                $certificateConfidenceFile = $tempIndigencyDir . 'certificate_confidence.json';
-                $certificateConfidence = 75.0; // default
-                if (file_exists($certificateConfidenceFile)) {
-                    $confidenceData = json_decode(file_get_contents($certificateConfidenceFile), true);
-                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
-                        $certificateConfidence = $confidenceData['overall_confidence'];
-                    }
-                    unlink($certificateConfidenceFile); // Clean up confidence file
-                }
-
                 if (copy($certificateTempFile, $certificateTempPath)) {
-                    // Copy verification files (.verify.json and .ocr.txt) if they exist
-                    $certificateVerifyFile = $certificateTempFile . '.verify.json';
-                    $certificateOcrFile = $certificateTempFile . '.ocr.txt';
-                    
-                    if (file_exists($certificateVerifyFile)) {
-                        @copy($certificateVerifyFile, $certificateTempPath . '.verify.json');
-                        @unlink($certificateVerifyFile);
+                    // Copy associated OCR files (.verify.json, .ocr.txt, .tsv)
+                    if (file_exists($certificateTempFile . '.verify.json')) {
+                        @copy($certificateTempFile . '.verify.json', $certificateTempPath . '.verify.json');
+                        @unlink($certificateTempFile . '.verify.json');
+                    }
+                    if (file_exists($certificateTempFile . '.ocr.txt')) {
+                        @copy($certificateTempFile . '.ocr.txt', $certificateTempPath . '.ocr.txt');
+                        @unlink($certificateTempFile . '.ocr.txt');
+                    }
+                    if (file_exists($certificateTempFile . '.tsv')) {
+                        @copy($certificateTempFile . '.tsv', $certificateTempPath . '.tsv');
+                        @unlink($certificateTempFile . '.tsv');
                     }
                     
-                    if (file_exists($certificateOcrFile)) {
-                        @copy($certificateOcrFile, $certificateTempPath . '.ocr.txt');
-                        @unlink($certificateOcrFile);
+                    // Get OCR data
+                    $certificateConfidenceFile = $tempIndigencyDir . 'certificate_confidence.json';
+                    $certOcrData = ['ocr_confidence' => 75.0, 'verification_status' => 'pending'];
+                    
+                    if (file_exists($certificateConfidenceFile)) {
+                        $confidenceData = json_decode(file_get_contents($certificateConfidenceFile), true);
+                        if ($confidenceData) {
+                            $certOcrData = [
+                                'ocr_confidence' => $confidenceData['ocr_confidence'] ?? 75.0,
+                                'verification_score' => $confidenceData['overall_confidence'] ?? 75.0,
+                                'verification_status' => ($confidenceData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
+                                'verification_details' => $confidenceData
+                            ];
+                        }
+                        @unlink($certificateConfidenceFile);
                     }
                     
-                    // Save certificate record to database with temporary path and OCR confidence
-                    $certificateQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                    $certificateResult = pg_query_params($connection, $certificateQuery, [$student_id, 'certificate_of_indigency', $certificateTempPath, 'false', $certificateConfidence]);
+                    // Save using DocumentService
+                    $saveResult = $docService->saveDocument($student_id, 'certificate_of_indigency', $certificateTempPath, $certOcrData);
                     
-                    if (!$certificateResult) {
-                        error_log("Failed to save certificate to database: " . pg_last_error($connection));
+                    if ($saveResult['success']) {
+                        error_log("DocumentService: Saved Certificate - " . $saveResult['document_id']);
                     } else {
-                        error_log("Successfully saved certificate to database for student $student_id with confidence $certificateConfidence%");
+                        error_log("DocumentService: Failed to save Certificate - " . ($saveResult['error'] ?? 'Unknown error'));
                     }
 
-                    // Clean up original temp certificate file
-                    unlink($certificateTempFile);
-                    break; // Only process the first valid file
-                } else {
-                    error_log("Failed to copy certificate file from $certificateTempFile to $certificateTempPath");
+                    @unlink($certificateTempFile);
+                    break;
                 }
             }
-        } else {
-            error_log("No certificate temp files found in path: " . $tempIndigencyDir);
         }
 
-        // Save grades to temporary folder (not permanent until approved)
+        // === SAVE GRADES USING DocumentService ===
         $tempGradesDir = '../../assets/uploads/temp/grades/';
         $allGradesFiles = glob($tempGradesDir . '*');
         $gradesTempFiles = array_filter($allGradesFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
         });
-        error_log("Looking for grades files in: " . $tempGradesDir);
-        error_log("Found grades files: " . print_r($gradesTempFiles, true));
+        
+        error_log("Processing Grades for student: $student_id");
+        
         if (!empty($gradesTempFiles)) {
-            // Create temporary grades directory for pending students
-            if (!file_exists($tempGradesDir)) {
-                mkdir($tempGradesDir, 0777, true);
-            }
-
-            // Process all grades files and rename them with student ID
             foreach ($gradesTempFiles as $gradesTempFile) {
-                $originalGradesFilename = basename($gradesTempFile);
-                $gradesExtension = pathinfo($originalGradesFilename, PATHINFO_EXTENSION);
-                
-                // Always rename with student ID prefix for consistent naming
+                $gradesExtension = pathinfo($gradesTempFile, PATHINFO_EXTENSION);
                 $newGradesFilename = $student_id . '_' . $namePrefix . '_grades.' . $gradesExtension;
                 $gradesTempPath = $tempGradesDir . $newGradesFilename;
 
-                // Get OCR confidence score from temp file
-                $gradesConfidenceFile = $tempGradesDir . 'grades_confidence.json';
-                $gradesConfidence = 75.0; // default
-                if (file_exists($gradesConfidenceFile)) {
-                    $confidenceData = json_decode(file_get_contents($gradesConfidenceFile), true);
-                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
-                        $gradesConfidence = $confidenceData['overall_confidence'];
-                    }
-                    unlink($gradesConfidenceFile); // Clean up confidence file
-                }
-
                 if (copy($gradesTempFile, $gradesTempPath)) {
-                    // Save grades record to database with temporary path and OCR confidence
-                    $gradesQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
-                    $gradesResult = pg_query_params($connection, $gradesQuery, [$student_id, 'academic_grades', $gradesTempPath, 'false', $gradesConfidence]);
+                    // Copy associated OCR files (.verify.json, .ocr.txt, .tsv)
+                    if (file_exists($gradesTempFile . '.verify.json')) {
+                        @copy($gradesTempFile . '.verify.json', $gradesTempPath . '.verify.json');
+                        @unlink($gradesTempFile . '.verify.json'); // Delete after copying
+                    }
+                    if (file_exists($gradesTempFile . '.ocr.txt')) {
+                        @copy($gradesTempFile . '.ocr.txt', $gradesTempPath . '.ocr.txt');
+                        @unlink($gradesTempFile . '.ocr.txt'); // Delete after copying
+                    }
+                    if (file_exists($gradesTempFile . '.tsv')) {
+                        @copy($gradesTempFile . '.tsv', $gradesTempPath . '.tsv');
+                        @unlink($gradesTempFile . '.tsv'); // Delete after copying
+                    }
                     
-                    if (!$gradesResult) {
-                        error_log("Failed to save grades to database: " . pg_last_error($connection));
+                    // Get OCR data including extracted grades
+                    $gradesConfidenceFile = $tempGradesDir . 'grades_confidence.json';
+                    $gradesOcrData = ['ocr_confidence' => 75.0, 'verification_status' => 'pending'];
+                    
+                    if (file_exists($gradesConfidenceFile)) {
+                        $confidenceData = json_decode(file_get_contents($gradesConfidenceFile), true);
+                        if ($confidenceData) {
+                            $gradesOcrData = [
+                                'ocr_confidence' => $confidenceData['ocr_confidence'] ?? 75.0,
+                                'verification_score' => $confidenceData['overall_confidence'] ?? 75.0,
+                                'verification_status' => ($confidenceData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
+                                'verification_details' => $confidenceData,
+                                'extracted_grades' => $confidenceData['extracted_grades'] ?? [],
+                                'average_grade' => $confidenceData['average_grade'] ?? null,
+                                'passing_status' => $confidenceData['passing_status'] ?? false
+                            ];
+                        }
+                        @unlink($gradesConfidenceFile);
+                    }
+                    
+                    // Save using DocumentService
+                    $saveResult = $docService->saveDocument($student_id, 'academic_grades', $gradesTempPath, $gradesOcrData);
+                    
+                    if ($saveResult['success']) {
+                        error_log("DocumentService: Saved Grades - " . $saveResult['document_id']);
                     } else {
-                        error_log("Successfully saved grades to database for student $student_id with confidence $gradesConfidence%");
+                        error_log("DocumentService: Failed to save Grades - " . ($saveResult['error'] ?? 'Unknown error'));
                     }
 
-                    // Clean up original temp grades file
-                    unlink($gradesTempFile);
-                    break; // Only process the first valid file
-                } else {
-                    error_log("Failed to copy grades file from $gradesTempFile to $gradesTempPath");
+                    @unlink($gradesTempFile);
+                    break;
                 }
             }
-        } else {
-            error_log("No grades temp files found in path: " . $tempGradesDir);
         }
 
         // Note: semester and academic_year are stored in signup_slots table via students.slot_id relationship

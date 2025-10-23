@@ -352,7 +352,9 @@ $university_policy = getUniversityGradingPolicy($connection, $student_id);
 
 // Simple OCR helper for general documents (letter/certificate): extract text and average confidence
 function ocr_extract_text_and_conf($filePath, $workDir = null) {
-  $result = ['text' => '', 'confidence' => null];
+  $result = ['text' => '', 'confidence' => null, 'tsv_data' => [], 'tsv_file' => null];
+  
+  // Use the same directory as the file for TSV storage
   $workDir = $workDir ?: dirname($filePath);
   $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
 
@@ -377,23 +379,61 @@ function ocr_extract_text_and_conf($filePath, $workDir = null) {
     }
   }
 
-  // 3) Estimate average confidence via TSV
-  $tsv = @shell_exec("tesseract " . escapeshellarg($filePath) . " stdout -l eng --oem 1 --psm 6 tsv 2>&1");
-  if (!empty($tsv)) {
-    $lines = preg_split('/\r?\n/', $tsv);
+  // 3) Generate TSV data using stdout (no temp files created)
+  $tsvFile = $filePath . '.tsv';
+  
+  // Run Tesseract to generate TSV output via stdout
+  $cmd = "tesseract " . escapeshellarg($filePath) . " stdout -l eng --oem 1 --psm 6 tsv 2>&1";
+  $tsvOutput = @shell_exec($cmd);
+  
+  // Save TSV directly to final location and parse (no intermediate files)
+  if (!empty($tsvOutput)) {
+    @file_put_contents($tsvFile, $tsvOutput);
+    $result['tsv_file'] = $tsvFile;
+    
+    // Parse TSV data from stdout output
+    $lines = preg_split('/\r?\n/', $tsvOutput);
     if (count($lines) > 1) {
-      array_shift($lines); // header
+      $header = array_shift($lines); // Remove header
       $sum = 0; $cnt = 0;
+      $tsvData = [];
+      
       foreach ($lines as $line) {
         if (!trim($line)) continue;
         $cols = explode("\t", $line);
         if (count($cols) >= 12) {
           $conf = is_numeric($cols[10] ?? null) ? (float)$cols[10] : null;
           $text = trim($cols[11] ?? '');
-          if ($conf !== null && $conf >= 0 && $text !== '') { $sum += $conf; $cnt++; }
+          
+          // Store structured TSV data
+          $tsvData[] = [
+            'level' => (int)($cols[0] ?? 0),
+            'page_num' => (int)($cols[1] ?? 0),
+            'block_num' => (int)($cols[2] ?? 0),
+            'par_num' => (int)($cols[3] ?? 0),
+            'line_num' => (int)($cols[4] ?? 0),
+            'word_num' => (int)($cols[5] ?? 0),
+            'left' => (int)($cols[6] ?? 0),
+            'top' => (int)($cols[7] ?? 0),
+            'width' => (int)($cols[8] ?? 0),
+            'height' => (int)($cols[9] ?? 0),
+            'conf' => $conf,
+            'text' => $text
+          ];
+          
+          // Calculate average confidence
+          if ($conf !== null && $conf >= 0 && $text !== '') { 
+            $sum += $conf; 
+            $cnt++; 
+          }
         }
       }
-      if ($cnt > 0) { $result['confidence'] = round($sum / $cnt, 2); }
+      
+      if ($cnt > 0) { 
+        $result['confidence'] = round($sum / $cnt, 2); 
+      }
+      
+      $result['tsv_data'] = $tsvData;
     }
   }
 

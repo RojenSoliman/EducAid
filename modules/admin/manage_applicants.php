@@ -600,7 +600,8 @@ function find_student_documents_in_students_dir($student_id) {
 
 // Function to check if all required documents are uploaded
 function check_documents($connection, $student_id) {
-    $required = ['eaf', 'letter_to_mayor', 'certificate_of_indigency'];
+    // Required document type codes: EAF, Letter to Mayor, Certificate of Indigency
+    $required_codes = ['00', '02', '03'];
     
     // Check if student needs upload tab (existing student) or uses registration docs (new student)
     // Detect if column exists; if not, default to true (existing flow)
@@ -625,33 +626,58 @@ function check_documents($connection, $student_id) {
         $needs_upload_tab = true;
     }
     
-    $uploaded = [];
+    $uploaded_codes = [];
     
     if ($needs_upload_tab) {
-        // Existing student: check upload_documents table/system
-        $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
-        while ($row = pg_fetch_assoc($query)) $uploaded[] = $row['type'];
+        // Existing student: check documents table for document_type_codes
+        $query = pg_query_params($connection, "SELECT document_type_code FROM documents WHERE student_id = $1", [$student_id]);
+        while ($row = pg_fetch_assoc($query)) {
+            $uploaded_codes[] = $row['document_type_code'];
+        }
         
-        // Also check file system for new structure by student name
+        // Also check file system - convert document names to codes
         $found_documents = find_student_documents_by_id($connection, $student_id);
-        $uploaded = array_unique(array_merge($uploaded, array_keys($found_documents)));
+        $name_to_code_map = [
+            'eaf' => '00',
+            'letter_to_mayor' => '02',
+            'certificate_of_indigency' => '03',
+            'id_picture' => '04',
+            'grades' => '01'
+        ];
+        foreach (array_keys($found_documents) as $doc_name) {
+            if (isset($name_to_code_map[$doc_name])) {
+                $uploaded_codes[] = $name_to_code_map[$doc_name];
+            }
+        }
+        $uploaded_codes = array_unique($uploaded_codes);
         
-        // Check if grades are uploaded via upload system
-        $grades_query = pg_query_params($connection, "SELECT COUNT(*) as count FROM grade_uploads WHERE student_id = $1", [$student_id]);
-        $grades_row = pg_fetch_assoc($grades_query);
-        $has_grades = $grades_row['count'] > 0;
+        // Check if grades are uploaded via documents table (document_type_code = '01')
+        $has_grades = in_array('01', $uploaded_codes);
     } else {
         // New student: check registration documents (temp files moved to permanent storage)
         $registration_docs = find_student_documents_by_id($connection, $student_id);
-        $uploaded = array_keys($registration_docs);
         
-        // For new registrants, check if they have temporary grade files or completed registration
-        // They should have uploaded grades during registration process
-        $has_grades = in_array('grades', $uploaded) || 
+        // Convert document names to codes
+        $name_to_code_map = [
+            'eaf' => '00',
+            'letter_to_mayor' => '02',
+            'certificate_of_indigency' => '03',
+            'id_picture' => '04',
+            'grades' => '01'
+        ];
+        foreach (array_keys($registration_docs) as $doc_name) {
+            if (isset($name_to_code_map[$doc_name])) {
+                $uploaded_codes[] = $name_to_code_map[$doc_name];
+            }
+        }
+        
+        // For new registrants, check if they have grades
+        $has_grades = in_array('01', $uploaded_codes) || 
                      file_exists("../../assets/uploads/student/" . $student_id . "/grades/");
     }
     
-    return count(array_diff($required, $uploaded)) === 0 && $has_grades;
+    // Check if all required document codes are present
+    return count(array_diff($required_codes, $uploaded_codes)) === 0 && $has_grades;
 }
 
 // Pagination & Filtering logic
@@ -740,18 +766,51 @@ function render_table($applicants, $connection) {
                             </div>
                             <div class="modal-body">
                                 <?php
+                                // Map document type codes to readable names
+                                $doc_type_map = [
+                                    '04' => 'id_picture',
+                                    '00' => 'eaf',
+                                    '02' => 'letter_to_mayor',
+                                    '03' => 'certificate_of_indigency',
+                                    '01' => 'grades'
+                                ];
+                                
                                 // First, get documents from database (only those with valid file paths that exist)
-                                $docs = pg_query_params($connection, "SELECT * FROM documents WHERE student_id = $1", [$student_id]);
+                                $docs = pg_query_params($connection, "SELECT document_type_code, file_path FROM documents WHERE student_id = $1", [$student_id]);
                                 $db_documents = [];
                                 while ($doc = pg_fetch_assoc($docs)) {
                                     // Only include documents where the file actually exists
+                                    // Try both temp and student directories
                                     $filePath = $doc['file_path'];
-                                    $server_root = dirname(__DIR__, 2);
-                                    $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
-                                    $server_path = $server_root . '/' . $relative_from_root;
+                                    $docTypeCode = $doc['document_type_code'];
+                                    $docTypeName = $doc_type_map[$docTypeCode] ?? 'unknown';
                                     
-                                    if (file_exists($server_path)) {
-                                        $db_documents[$doc['type']] = $doc['file_path'];
+                                    $server_root = dirname(__DIR__, 2);
+                                    
+                                    // Check if path contains 'temp' - replace with 'student' for approved students
+                                    if (strpos($filePath, '/temp/') !== false) {
+                                        $permanentPath = str_replace('/temp/', '/student/', $filePath);
+                                        // Check if permanent file exists
+                                        $relative_from_root = ltrim(str_replace('../../', '', $permanentPath), '/');
+                                        $server_path = $server_root . '/' . $relative_from_root;
+                                        
+                                        if (file_exists($server_path)) {
+                                            $db_documents[$docTypeName] = $permanentPath;
+                                        } else {
+                                            // Fallback to temp path
+                                            $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+                                            $server_path = $server_root . '/' . $relative_from_root;
+                                            if (file_exists($server_path)) {
+                                                $db_documents[$docTypeName] = $filePath;
+                                            }
+                                        }
+                                    } else {
+                                        // Already permanent path
+                                        $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+                                        $server_path = $server_root . '/' . $relative_from_root;
+                                        if (file_exists($server_path)) {
+                                            $db_documents[$docTypeName] = $filePath;
+                                        }
                                     }
                                 }
                                 
@@ -760,13 +819,45 @@ function render_table($applicants, $connection) {
                                     $db_documents['grades'] = $db_documents['academic_grades'];
                                 }
 
-                                // Then, search for documents in new file structure by applicant name
-                                $found_documents = find_student_documents($applicant['first_name'] ?? '', $applicant['last_name'] ?? '');
-                                // Also, scan the students/ directory for files named with student_id prefix
-                                $student_dir_docs = find_student_documents_in_students_dir($student_id);
+                                // Then, search for documents in student directory using student_id pattern
+                                $found_documents = [];
+                                $server_base = dirname(__DIR__, 2) . '/assets/uploads/student/';
+                                $web_base = '../../assets/uploads/student/';
+                                
+                                $document_folders = [
+                                    'id_pictures' => 'id_picture',
+                                    'enrollment_forms' => 'eaf',
+                                    'letter_to_mayor' => 'letter_to_mayor',
+                                    'indigency' => 'certificate_of_indigency',
+                                    'grades' => 'grades'
+                                ];
+                                
+                                foreach ($document_folders as $folder => $type) {
+                                    $dir = $server_base . $folder . '/';
+                                    if (is_dir($dir)) {
+                                        // Look for files starting with student_id
+                                        $pattern = $dir . $student_id . '_*';
+                                        $matches = glob($pattern);
+                                        if (!empty($matches)) {
+                                            // Filter out associated files (.verify.json, .ocr.txt, etc)
+                                            $matches = array_filter($matches, function($file) {
+                                                return !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
+                                            });
+                                            
+                                            if (!empty($matches)) {
+                                                // Get the newest file
+                                                usort($matches, function($a, $b) {
+                                                    return filemtime($b) - filemtime($a);
+                                                });
+                                                $newest = $matches[0];
+                                                $found_documents[$type] = $web_base . $folder . '/' . basename($newest);
+                                            }
+                                        }
+                                    }
+                                }
 
                                 // Merge all sources, prioritizing file system results over DB
-                                $all_documents = array_merge($db_documents, $found_documents, $student_dir_docs);
+                                $all_documents = array_merge($db_documents, $found_documents);
 
                                 $document_labels = [
                                     'id_picture' => 'ID Picture',
@@ -809,16 +900,28 @@ function render_table($applicants, $connection) {
                                         }
 
                                         // Fetch OCR confidence for this document
+                                        // Map type name back to document_type_code
+                                        $type_to_code = [
+                                            'id_picture' => '04',
+                                            'eaf' => '00',
+                                            'letter_to_mayor' => '02',
+                                            'certificate_of_indigency' => '03',
+                                            'grades' => '01'
+                                        ];
+                                        $doc_code = $type_to_code[$type] ?? null;
+                                        
                                         $ocr_confidence_badge = '';
-                                        $ocr_query = pg_query_params($connection, 
-                                            "SELECT ocr_confidence FROM documents WHERE student_id = $1 AND type = $2 ORDER BY upload_date DESC LIMIT 1", 
-                                            [$student_id, $type]);
-                                        if ($ocr_query && pg_num_rows($ocr_query) > 0) {
-                                            $ocr_data = pg_fetch_assoc($ocr_query);
-                                            if ($ocr_data['ocr_confidence'] !== null && $ocr_data['ocr_confidence'] > 0) {
-                                                $conf_val = round($ocr_data['ocr_confidence'], 1);
-                                                $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
-                                                $ocr_confidence_badge = "<span class='badge bg-{$conf_color} ms-2'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+                                        if ($doc_code) {
+                                            $ocr_query = pg_query_params($connection, 
+                                                "SELECT ocr_confidence FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
+                                                [$student_id, $doc_code]);
+                                            if ($ocr_query && pg_num_rows($ocr_query) > 0) {
+                                                $ocr_data = pg_fetch_assoc($ocr_query);
+                                                if ($ocr_data['ocr_confidence'] !== null && $ocr_data['ocr_confidence'] > 0) {
+                                                    $conf_val = round($ocr_data['ocr_confidence'], 1);
+                                                    $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
+                                                    $ocr_confidence_badge = "<span class='badge bg-{$conf_color} ms-2'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+                                                }
                                             }
                                         }
 
@@ -827,8 +930,44 @@ function render_table($applicants, $connection) {
                                             : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
 
                                         $safeSrc = htmlspecialchars($webPath);
+                                        
+                                        // Get verification status and score from documents table
+                                        $verification_badge = '';
+                                        $verification_btn = '';
+                                        if ($doc_code) {
+                                            $verify_query = pg_query_params($connection, 
+                                                "SELECT verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
+                                                [$student_id, $doc_code]);
+                                            if ($verify_query && pg_num_rows($verify_query) > 0) {
+                                                $verify_data = pg_fetch_assoc($verify_query);
+                                                $verify_score = $verify_data['verification_score'];
+                                                $verify_status = $verify_data['verification_status'];
+                                                
+                                                if ($verify_score !== null && $verify_score > 0) {
+                                                    $verify_val = round($verify_score, 1);
+                                                    $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
+                                                    $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
+                                                    $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
+                                                    
+                                                    // Add view validation button
+                                                    $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
+                                                        onclick=\"event.stopPropagation(); loadValidationData('$type', '$student_id'); showValidationModal();\">
+                                                        <i class='bi bi-clipboard-check me-1'></i>View Validation Details
+                                                    </button>";
+                                                }
+                                            }
+                                        }
+                                        
                                         echo "<div class='doc-card'>
-                                                <div class='doc-card-header'>$cardTitle $ocr_confidence_badge</div>
+                                                <div class='doc-card-header'>
+                                                    <div class='d-flex justify-content-between align-items-center'>
+                                                        <span>$cardTitle</span>
+                                                        <div class='d-flex gap-1'>
+                                                            $ocr_confidence_badge
+                                                            $verification_badge
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
                                                 <div class='doc-meta'>" .
                                                     ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
@@ -837,20 +976,17 @@ function render_table($applicants, $connection) {
                                                 <div class='doc-actions'>
                                                     <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\" title='View Document'><i class='bi bi-eye'></i></button>
                                                     <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank' title='Open in New Tab'><i class='bi bi-box-arrow-up-right'></i></a>
-                                                    <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>";
+                                                    <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>
+                                                </div>";
                                         
-                                        // Add validation details button if OCR data exists (full width, new row)
-                                        if ($ocr_confidence_badge) {
-                                            echo "</div><div class='doc-actions' style='border-top: 0; padding-top: 0;'>
-                                                  <button type='button' class='btn btn-sm btn-outline-info w-100' 
-                                                  data-bs-toggle='modal' data-bs-target='#validationModal' 
-                                                  onclick=\"loadValidationData('$type', '$student_id')\">
-                                                  <i class='bi bi-clipboard-data me-1'></i>View Validation
-                                                  </button>";
+                                        // Add validation button if verification data exists (full width, new row)
+                                        if ($verification_btn) {
+                                            echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
+                                                  $verification_btn
+                                                  </div>";
                                         }
                                         
-                                        echo "</div>
-                                              </div>";
+                                        echo "</div>";
                                     } else {
                                         echo "<div class='doc-card doc-card-missing'>
                                                 <div class='doc-card-header'>$cardTitle</div>
@@ -906,20 +1042,51 @@ function render_table($applicants, $connection) {
 
                                     $safeSrc = htmlspecialchars($webPath);
                                     
-                                    // Check for OCR confidence from documents table
+                                    // Check for OCR confidence and verification from documents table (document_type_code '01' = grades)
                                     $ocr_confidence = '';
-                                    $docs_query = pg_query_params($connection, "SELECT ocr_confidence FROM documents WHERE student_id = $1 AND type = 'academic_grades' ORDER BY upload_date DESC LIMIT 1", [$student_id]);
+                                    $verification_badge = '';
+                                    $verification_btn = '';
+                                    
+                                    $docs_query = pg_query_params($connection, 
+                                        "SELECT ocr_confidence, verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = '01' ORDER BY upload_date DESC LIMIT 1", 
+                                        [$student_id]);
+                                    
                                     if ($docs_query && pg_num_rows($docs_query) > 0) {
                                         $doc_data = pg_fetch_assoc($docs_query);
+                                        
+                                        // OCR Confidence
                                         if ($doc_data['ocr_confidence'] !== null && $doc_data['ocr_confidence'] > 0) {
                                             $conf_val = round($doc_data['ocr_confidence'], 1);
                                             $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
-                                            $ocr_confidence = "<span class='badge bg-{$conf_color} ms-2'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+                                            $ocr_confidence = "<span class='badge bg-{$conf_color}'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+                                        }
+                                        
+                                        // Verification Score
+                                        $verify_score = $doc_data['verification_score'];
+                                        if ($verify_score !== null && $verify_score > 0) {
+                                            $verify_val = round($verify_score, 1);
+                                            $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
+                                            $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
+                                            $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
+                                            
+                                            // Add view validation button
+                                            $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
+                                                onclick=\"event.stopPropagation(); loadValidationData('grades', '$student_id'); showValidationModal();\">
+                                                <i class='bi bi-clipboard-check me-1'></i>View Validation Details
+                                            </button>";
                                         }
                                     }
                                     
                                     echo "<div class='doc-card'>
-                                            <div class='doc-card-header'>$cardTitle $ocr_confidence</div>
+                                            <div class='doc-card-header'>
+                                                <div class='d-flex justify-content-between align-items-center'>
+                                                    <span>$cardTitle</span>
+                                                    <div class='d-flex gap-1'>
+                                                        $ocr_confidence
+                                                        $verification_badge
+                                                    </div>
+                                                </div>
+                                            </div>
                                             <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
                                             <div class='doc-meta'>" .
                                                 ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
@@ -931,21 +1098,14 @@ function render_table($applicants, $connection) {
                                                 <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>
                                             </div>";
                                     
-                                    // Add validation and review buttons on separate rows (full width)
-                                    if ($ocr_confidence) {
+                                    // Add validation button if verification data exists (full width, new row)
+                                    if ($verification_btn) {
                                         echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
-                                              <button type='button' class='btn btn-sm btn-outline-info w-100' 
-                                              data-bs-toggle='modal' data-bs-target='#validationModal' 
-                                              onclick=\"loadValidationData('grades', '$student_id')\">
-                                              <i class='bi bi-clipboard-data me-1'></i>View Validation
-                                              </button>
+                                              $verification_btn
                                               </div>";
                                     }
                                     
-                                    echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
-                                          <a class='btn btn-sm btn-outline-primary w-100' href='validate_grades.php'><i class='bi bi-check2-square me-1'></i>Review in Validator</a>
-                                          </div>
-                                          </div>";
+                                    echo "</div>";
                                 } else {
                                     echo "<div class='doc-card doc-card-missing'>
                                             <div class='doc-card-header'>$cardTitle</div>
@@ -1693,11 +1853,15 @@ function updateTableData() {
 // Start real-time updates when page loads
 document.addEventListener('DOMContentLoaded', function() {
     // Move all modals to be direct children of body to avoid stacking context issues
-    document.querySelectorAll('.modal').forEach(function(modalEl){
-        if (modalEl.parentElement !== document.body) {
-            document.body.appendChild(modalEl);
-        }
-    });
+    // But do this AFTER a delay to let sidebar.js and Bootstrap initialize first
+    setTimeout(() => {
+        document.querySelectorAll('.modal').forEach(function(modalEl){
+            if (modalEl.parentElement !== document.body) {
+                document.body.appendChild(modalEl);
+            }
+        });
+    }, 100);
+    
     setTimeout(updateTableData, 300);
     // Auto-open migration modal if preview/result exists
     <?php if (!empty($_SESSION['migration_preview']) || !empty($_SESSION['migration_result'])): ?>
@@ -2061,21 +2225,111 @@ document.addEventListener('DOMContentLoaded', function() {
 .modal { z-index: 200000 !important; }
 .modal-backdrop { z-index: 199999 !important; }
 /* Document grid */
-.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.doc-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; display: flex; flex-direction: column; }
-.doc-card-header { font-weight: 600; padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
-.doc-card-body { padding: 8px; display: flex; align-items: center; justify-content: center; min-height: 160px; cursor: zoom-in; background: #fafafa; }
-.doc-thumb { max-width: 100%; max-height: 150px; border-radius: 4px; }
-.doc-thumb-pdf { font-size: 48px; color: #d32f2f; display: flex; align-items: center; justify-content: center; height: 150px; width: 100%; }
-.doc-meta { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; color: #6b7280; font-size: 12px; border-top: 1px dashed #eee; }
-.doc-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-top: 1px solid #f0f0f0; }
-.doc-actions .btn { flex: 1 1 auto; min-width: 70px; font-size: 0.75rem; padding: 4px 8px; }
-.doc-card-missing .missing { background: #fff7e6; color: #8a6d3b; min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.doc-card-missing .missing-icon { font-size: 28px; margin-bottom: 6px; }
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.doc-card { 
+    border: 1px solid #e5e7eb; 
+    border-radius: 10px; 
+    background: #fff; 
+    display: flex; 
+    flex-direction: column;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: box-shadow 0.2s, transform 0.2s;
+}
+.doc-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transform: translateY(-2px);
+}
+.doc-card-header { 
+    font-weight: 600; 
+    font-size: 0.95rem;
+    padding: 12px 14px; 
+    border-bottom: 1px solid #f0f0f0; 
+    background: linear-gradient(to bottom, #f8f9fa, #fff);
+}
+.doc-card-header .badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.35em 0.6em;
+}
+.doc-card-body { 
+    padding: 10px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    min-height: 180px; 
+    cursor: zoom-in; 
+    background: #fafafa;
+    border-radius: 4px;
+    margin: 8px;
+}
+.doc-card-body:hover {
+    background: #f5f5f5;
+}
+.doc-thumb { 
+    max-width: 100%; 
+    max-height: 165px; 
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.doc-thumb-pdf { 
+    font-size: 56px; 
+    color: #dc3545; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    height: 165px; 
+    width: 100%; 
+}
+.doc-meta { 
+    display: flex; 
+    justify-content: space-between; 
+    gap: 10px; 
+    padding: 8px 14px; 
+    color: #6b7280; 
+    font-size: 0.75rem; 
+    border-top: 1px dashed #eee; 
+    background: #fafbfc;
+}
+.doc-meta i {
+    opacity: 0.7;
+}
+.doc-actions { 
+    display: flex; 
+    flex-wrap: wrap; 
+    gap: 6px; 
+    padding: 10px 12px; 
+    border-top: 1px solid #f0f0f0; 
+}
+.doc-actions .btn { 
+    flex: 1 1 auto; 
+    min-width: 40px; 
+    font-size: 0.8rem; 
+    padding: 6px 10px; 
+}
+.doc-actions .w-100 {
+    flex: 1 1 100%;
+}
+.doc-card-missing .missing { 
+    background: #fff7e6; 
+    color: #8a6d3b; 
+    min-height: 180px; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center;
+    border-radius: 8px;
+    margin: 8px;
+    border: 2px dashed #ffc107;
+}
+.doc-card-missing .missing-icon { 
+    font-size: 36px; 
+    margin-bottom: 8px; 
+    opacity: 0.6;
+}
 
-/* Fullscreen viewer */
-.doc-viewer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; z-index: 1500; }
-.doc-viewer { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 95vw; max-width: 1280px; height: 85vh; background: #111; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+/* Fullscreen viewer - Must appear ABOVE modals (z-index 200000+) */
+.doc-viewer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; z-index: 210000 !important; }
+.doc-viewer { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 95vw; max-width: 1280px; height: 85vh; background: #111; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
 .doc-viewer-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; padding: 8px 12px; background: #1f2937; color: #fff; }
 .doc-viewer-toolbar .btn { padding: 4px 8px; }
 .doc-viewer-content { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
@@ -2083,6 +2337,63 @@ document.addEventListener('DOMContentLoaded', function() {
 .doc-viewer-content img { will-change: transform; transform-origin: center center; user-select: none; -webkit-user-drag: none; }
 .doc-viewer-content iframe { width: 100%; height: 100%; border: none; }
 .doc-viewer-close { background: transparent; border: 0; color: #fff; font-size: 20px; }
+
+/* Validation modal should appear above student info modal but below document viewer */
+#validationModal { z-index: 205000 !important; }
+#validationModal + .modal-backdrop { z-index: 204999 !important; }
+
+/* Custom backdrop for validation modal to dim the student info modal behind it */
+.validation-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 204998 !important;
+    display: none;
+}
+
+.validation-backdrop.show {
+    display: block;
+}
+
+/* Verification checklist styling (matching registration page) */
+.verification-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.verification-checklist .form-check {
+    padding: 0.75rem 1rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    margin: 0;
+}
+
+.verification-checklist .form-check.check-passed {
+    background: #d1e7dd;
+    border-color: #badbcc;
+}
+
+.verification-checklist .form-check.check-failed {
+    background: #f8d7da;
+    border-color: #f5c2c7;
+}
+
+.verification-checklist .form-check.check-warning {
+    background: #fff3cd;
+    border-color: #ffe69c;
+}
+
+.confidence-score {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem;
+    min-width: 50px;
+    text-align: center;
+}
 
 @media (max-width: 576px) {
     .doc-grid { grid-template-columns: 1fr; }
@@ -2446,7 +2757,14 @@ async function loadValidationData(docType, studentId) {
 }
 
 function generateValidationHTML(validation, docType) {
-    console.log('generateValidationHTML called with:', {validation, docType});
+    console.log('=== generateValidationHTML DEBUG ===');
+    console.log('docType:', docType);
+    console.log('validation object:', validation);
+    console.log('Has identity_verification?', !!validation.identity_verification);
+    if (validation.identity_verification) {
+        console.log('identity_verification keys:', Object.keys(validation.identity_verification));
+        console.log('identity_verification data:', validation.identity_verification);
+    }
     
     if (!validation || typeof validation !== 'object') {
         return `<div class="alert alert-warning p-4">
@@ -2456,258 +2774,194 @@ function generateValidationHTML(validation, docType) {
         </div>`;
     }
     
-    let html = '<div class="p-3">';
+    let html = '';
     
+    // === OCR CONFIDENCE BANNER ===
     if (validation.ocr_confidence !== undefined) {
         const conf = parseFloat(validation.ocr_confidence);
         const confColor = conf >= 80 ? 'success' : (conf >= 60 ? 'warning' : 'danger');
-        html += `<div class="alert alert-${confColor} d-flex justify-content-between mb-4">
-            <div><h6 class="mb-0"><i class="bi bi-robot me-2"></i>Overall OCR Confidence</h6></div>
-            <h4 class="mb-0">${conf.toFixed(1)}%</h4>
+        html += `<div class="alert alert-${confColor} d-flex justify-content-between align-items-center mb-4">
+            <div><h5 class="mb-0"><i class="bi bi-robot me-2"></i>Overall OCR Confidence</h5></div>
+            <h3 class="mb-0 fw-bold">${conf.toFixed(1)}%</h3>
         </div>`;
     }
     
-    // === VERIFICATION RESULTS (styled like your image) ===
+    // === DETAILED VERIFICATION CHECKLIST ===
     if (validation.identity_verification) {
         const idv = validation.identity_verification;
-        const isLetterOrCert = (idv.document_type === 'letter_to_mayor' || idv.document_type === 'certificate_of_indigency');
-        html += '<h5 class="mb-3"><i class="bi bi-shield-check me-2"></i>VERIFICATION RESULTS:</h5>';
+        const isIdOrEaf = (docType === 'id_picture' || docType === 'eaf');
+        const isLetter = (docType === 'letter_to_mayor');
+        const isCert = (docType === 'certificate_of_indigency');
         
-        // First Name Check
-        const fnConf = parseFloat(idv.first_name_confidence || 0);
+        html += '<div class="card mb-4"><div class="card-header bg-primary text-white">';
+        html += '<h5 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Verification Checklist</h5>';
+        html += '</div><div class="card-body"><div class="verification-checklist">';
+        
+        // FIRST NAME
         const fnMatch = idv.first_name_match;
-        html += `<div class="verification-check ${fnMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${fnMatch ? 'success' : 'danger'}">
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="d-flex align-items-center gap-3">
-                    <i class="bi ${fnMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                    <div>
-                        <strong class="d-block" style="font-size:1.1rem;">${fnMatch ? 'First Name Found' : 'First Name Not Found'}</strong>
-                        <small class="text-muted">${fnConf.toFixed(0)}% match${fnMatch && idv.found_text_snippets && idv.found_text_snippets.first_name ? ', found: "' + idv.found_text_snippets.first_name + '"' : ''}</small>
-                    </div>
-                </div>
-                <span class="badge ${fnMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${fnConf.toFixed(0)}%</span>
-            </div>
+        const fnConf = parseFloat(idv.first_name_confidence || 0);
+        const fnClass = fnMatch ? 'check-passed' : 'check-failed';
+        const fnIcon = fnMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+        html += `<div class="form-check ${fnClass} d-flex justify-content-between align-items-center">
+            <div><i class="bi bi-${fnIcon} me-2" style="font-size:1.2rem;"></i>
+            <span><strong>First Name</strong> ${fnMatch ? 'Match' : 'Not Found'}</span></div>
+            <span class="badge ${fnMatch ? 'bg-success' : 'bg-danger'} confidence-score">${fnConf.toFixed(0)}%</span>
         </div>`;
         
-        // Middle Name Check (only for ID/EAF)
-        if (!isLetterOrCert) {
-            const mnConf = parseFloat(idv.middle_name_confidence || 0);
+        // MIDDLE NAME (ID/EAF only)
+        if (isIdOrEaf) {
             const mnMatch = idv.middle_name_match;
-            html += `<div class="verification-check ${mnMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${mnMatch ? 'success' : 'danger'}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${mnMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${mnMatch ? 'Middle Name Found' : 'Middle Name Not Found'}</strong>
-                            <small class="text-muted">${mnConf.toFixed(0)}% match${mnMatch && idv.found_text_snippets && idv.found_text_snippets.middle_name ? ', found: "' + idv.found_text_snippets.middle_name + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge ${mnMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${mnConf.toFixed(0)}%</span>
-                </div>
+            const mnConf = parseFloat(idv.middle_name_confidence || 0);
+            const mnClass = mnMatch ? 'check-passed' : 'check-failed';
+            const mnIcon = mnMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${mnClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${mnIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Middle Name</strong> ${mnMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${mnMatch ? 'bg-success' : 'bg-danger'} confidence-score">${mnConf.toFixed(0)}%</span>
             </div>`;
         }
         
-        // Last Name Check
-        const lnConf = parseFloat(idv.last_name_confidence || 0);
+        // LAST NAME
         const lnMatch = idv.last_name_match;
-        html += `<div class="verification-check ${lnMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${lnMatch ? 'success' : 'danger'}">
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="d-flex align-items-center gap-3">
-                    <i class="bi ${lnMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                    <div>
-                        <strong class="d-block" style="font-size:1.1rem;">${lnMatch ? 'Last Name Found' : 'Last Name Not Found'}</strong>
-                        <small class="text-muted">${lnConf.toFixed(0)}% match${lnMatch && idv.found_text_snippets && idv.found_text_snippets.last_name ? ', found: "' + idv.found_text_snippets.last_name + '"' : ''}</small>
-                    </div>
-                </div>
-                <span class="badge ${lnMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${lnConf.toFixed(0)}%</span>
-            </div>
+        const lnConf = parseFloat(idv.last_name_confidence || 0);
+        const lnClass = lnMatch ? 'check-passed' : 'check-failed';
+        const lnIcon = lnMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+        html += `<div class="form-check ${lnClass} d-flex justify-content-between align-items-center">
+            <div><i class="bi bi-${lnIcon} me-2" style="font-size:1.2rem;"></i>
+            <span><strong>Last Name</strong> ${lnMatch ? 'Match' : 'Not Found'}</span></div>
+            <span class="badge ${lnMatch ? 'bg-success' : 'bg-danger'} confidence-score">${lnConf.toFixed(0)}%</span>
         </div>`;
         
-        // Check 4: Year Level (for ID/EAF) OR Barangay (for Letter/Certificate)
-        if (isLetterOrCert) {
-            // Barangay Match
+        // YEAR LEVEL or BARANGAY
+        if (isIdOrEaf) {
+            const ylMatch = idv.year_level_match;
+            const ylClass = ylMatch ? 'check-passed' : 'check-failed';
+            const ylIcon = ylMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${ylClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${ylIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Year Level</strong> ${ylMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${ylMatch ? 'bg-success' : 'bg-secondary'} confidence-score">${ylMatch ? '✓' : '✗'}</span>
+            </div>`;
+        } else if (isLetter || isCert) {
             const brgyMatch = idv.barangay_match;
             const brgyConf = parseFloat(idv.barangay_confidence || 0);
-            html += `<div class="verification-check ${brgyMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${brgyMatch ? 'success' : 'danger'}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${brgyMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${brgyMatch ? 'Barangay Match' : 'Barangay Not Found'}</strong>
-                            <small class="text-muted">${brgyConf.toFixed(0)}% match${brgyMatch && idv.found_text_snippets && idv.found_text_snippets.barangay ? ', found: "' + idv.found_text_snippets.barangay + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge ${brgyMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${brgyConf.toFixed(0)}%</span>
-                </div>
-            </div>`;
-        } else {
-            // Year Level Match (for ID/EAF)
-            const ylMatch = idv.year_level_match;
-            const ylConf = parseFloat(idv.year_level_confidence || 0);
-            html += `<div class="verification-check ${ylMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${ylMatch ? 'success' : 'danger'}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${ylMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${ylMatch ? 'Year Level Match' : 'Year Level Not Found'}</strong>
-                            <small class="text-muted">${ylMatch ? 'Found in document' : 'Not detected'}</small>
-                        </div>
-                    </div>
-                    <span class="badge ${ylMatch ? 'bg-success' : 'bg-secondary'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${ylMatch ? '100%' : 'N/A'}</span>
-                </div>
+            const brgyClass = brgyMatch ? 'check-passed' : 'check-failed';
+            const brgyIcon = brgyMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${brgyClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${brgyIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Barangay</strong> ${brgyMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${brgyMatch ? 'bg-success' : 'bg-danger'} confidence-score">${brgyConf.toFixed(0)}%</span>
             </div>`;
         }
         
-        // Check 5: University (for ID/EAF) OR Office Header (for Letter) OR Certificate Title (for Certificate)
-        if (idv.document_type === 'letter_to_mayor') {
-            // Office Header Match for Letter
+        // UNIVERSITY/SCHOOL (ID/EAF only)
+        if (isIdOrEaf) {
+            const schoolMatch = idv.school_match || idv.university_match;
+            const schoolConf = parseFloat(idv.school_confidence || idv.university_confidence || 0);
+            const schoolClass = schoolMatch ? 'check-passed' : 'check-failed';
+            const schoolIcon = schoolMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${schoolClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${schoolIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>University/School</strong> ${schoolMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${schoolMatch ? 'bg-success' : 'bg-danger'} confidence-score">${schoolConf.toFixed(0)}%</span>
+            </div>`;
+        } else if (isLetter) {
             const officeMatch = idv.office_header_found;
             const officeConf = parseFloat(idv.office_header_confidence || 0);
-            const officeColor = officeConf >= 80 ? 'success' : (officeConf >= 60 ? 'warning' : 'danger');
-            html += `<div class="verification-check ${officeMatch ? 'bg-success' : 'bg-warning'} bg-opacity-10 p-3 rounded mb-2 border border-${officeColor}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${officeMatch ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-warning'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${officeMatch ? 'Mayor\'s Office Header' : 'Office Header Not Found'}</strong>
-                            <small class="text-muted">${officeConf.toFixed(0)}% match${officeMatch && idv.found_text_snippets && idv.found_text_snippets.mayor_header ? ', found: "' + idv.found_text_snippets.mayor_header + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge bg-${officeColor}" style="font-size:1.2rem; padding:0.5rem 1rem;">${officeConf.toFixed(0)}%</span>
-                </div>
+            const officeClass = officeMatch ? 'check-passed' : 'check-warning';
+            const officeIcon = officeMatch ? 'check-circle-fill text-success' : 'exclamation-circle-fill text-warning';
+            html += `<div class="form-check ${officeClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${officeIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Mayor's Office Header</strong> ${officeMatch ? 'Found' : 'Not Found'}</span></div>
+                <span class="badge ${officeMatch ? 'bg-success' : 'bg-warning'} confidence-score">${officeConf.toFixed(0)}%</span>
             </div>`;
-        } else if (idv.document_type === 'certificate_of_indigency') {
-            // Certificate Title for Certificate
+        } else if (isCert) {
             const certMatch = idv.certificate_title_found;
             const certConf = parseFloat(idv.certificate_title_confidence || 0);
-            const certColor = certConf >= 80 ? 'success' : (certConf >= 60 ? 'warning' : 'danger');
-            html += `<div class="verification-check ${certMatch ? 'bg-success' : 'bg-warning'} bg-opacity-10 p-3 rounded mb-2 border border-${certColor}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${certMatch ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-warning'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${certMatch ? 'Certificate Title Found' : 'Certificate Title Not Found'}</strong>
-                            <small class="text-muted">${certConf.toFixed(0)}% match${certMatch && idv.found_text_snippets && idv.found_text_snippets.certificate_title ? ', found: "' + idv.found_text_snippets.certificate_title + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge bg-${certColor}" style="font-size:1.2rem; padding:0.5rem 1rem;">${certConf.toFixed(0)}%</span>
-                </div>
-            </div>`;
-            
-            // General Trias for Certificate (5th check)
-            const gtMatch = idv.general_trias_found;
-            const gtConf = parseFloat(idv.general_trias_confidence || 0);
-            const gtColor = gtConf >= 80 ? 'success' : (gtConf >= 60 ? 'warning' : 'danger');
-            html += `<div class="verification-check ${gtMatch ? 'bg-success' : 'bg-warning'} bg-opacity-10 p-3 rounded mb-2 border border-${gtColor}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${gtMatch ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-warning'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${gtMatch ? 'General Trias Found' : 'General Trias Not Found'}</strong>
-                            <small class="text-muted">${gtConf.toFixed(0)}% match${gtMatch && idv.found_text_snippets && idv.found_text_snippets.general_trias ? ', found: "' + idv.found_text_snippets.general_trias + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge bg-${gtColor}" style="font-size:1.2rem; padding:0.5rem 1rem;">${gtConf.toFixed(0)}%</span>
-                </div>
-            </div>`;
-        } else {
-            // University/School Check (for ID/EAF)
-            const uniConf = parseFloat(idv.school_confidence || 0);
-            const uniMatch = idv.school_match;
-            const uniColor = uniConf >= 80 ? 'success' : (uniConf >= 60 ? 'warning' : 'danger');
-            html += `<div class="verification-check ${uniMatch ? 'bg-success' : 'bg-warning'} bg-opacity-10 p-3 rounded mb-2 border border-${uniColor}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${uniMatch ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-warning'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${uniMatch ? 'University Match' : 'University Partial Match'}</strong>
-                            <small class="text-muted">${uniConf.toFixed(0)}% match${uniMatch && idv.found_text_snippets && idv.found_text_snippets.university ? ', found: "' + idv.found_text_snippets.university + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge bg-${uniColor}" style="font-size:1.2rem; padding:0.5rem 1rem;">${uniConf.toFixed(0)}%</span>
-                </div>
+            const certClass = certMatch ? 'check-passed' : 'check-warning';
+            const certIcon = certMatch ? 'check-circle-fill text-success' : 'exclamation-circle-fill text-warning';
+            html += `<div class="form-check ${certClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${certIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Certificate Title</strong> ${certMatch ? 'Found' : 'Not Found'}</span></div>
+                <span class="badge ${certMatch ? 'bg-success' : 'bg-warning'} confidence-score">${certConf.toFixed(0)}%</span>
             </div>`;
         }
         
-        // Official Keywords Check (only for ID/EAF)
-        if (!isLetterOrCert) {
-            const kwConf = parseFloat(idv.keywords_confidence || 0);
+        // OFFICIAL KEYWORDS (ID/EAF only)
+        if (isIdOrEaf) {
             const kwMatch = idv.official_keywords;
-            html += `<div class="verification-check ${kwMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${kwMatch ? 'success' : 'danger'}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${kwMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${kwMatch ? 'Official Document Keywords' : 'Keywords Not Found'}</strong>
-                            <small class="text-muted">${kwMatch ? 'Document contains official markers' : 'Missing required keywords'}</small>
-                        </div>
-                    </div>
-                    <span class="badge ${kwMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${kwConf.toFixed(0)}%</span>
-                </div>
+            const kwConf = parseFloat(idv.keywords_confidence || 0);
+            const kwClass = kwMatch ? 'check-passed' : 'check-failed';
+            const kwIcon = kwMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${kwClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${kwIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Official Document Keywords</strong> ${kwMatch ? 'Found' : 'Not Found'}</span></div>
+                <span class="badge ${kwMatch ? 'bg-success' : 'bg-danger'} confidence-score">${kwConf.toFixed(0)}%</span>
             </div>`;
         }
         
-        // === OVERALL ANALYSIS (styled like your image bottom section) ===
-        html += '<div class="mt-4 p-4 bg-light rounded border">';
-        html += '<h6 class="mb-3"><i class="bi bi-clipboard-data me-2"></i>Overall Analysis:</h6>';
+        html += '</div></div></div>'; // Close checklist, card-body, card
         
-        const avgConf = parseFloat(idv.average_confidence || 0);
+        // === OVERALL SUMMARY ===
+        const avgConf = parseFloat(idv.average_confidence || validation.ocr_confidence || 0);
         const passedChecks = idv.passed_checks || 0;
         const totalChecks = idv.total_checks || 6;
-        
-        html += `<div class="row g-3">
-            <div class="col-md-6">
-                <div class="d-flex justify-content-between align-items-center">
-                    <span><strong>Average Confidence:</strong></span>
-                    <h4 class="mb-0 ${avgConf >= 80 ? 'text-success' : avgConf >= 60 ? 'text-warning' : 'text-danger'}">${avgConf.toFixed(1)}%</h4>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="d-flex justify-content-between align-items-center">
-                    <span><strong>Passed Checks:</strong></span>
-                    <h4 class="mb-0 ${passedChecks >= 5 ? 'text-success' : passedChecks >= 4 ? 'text-warning' : 'text-danger'}">${passedChecks}/${totalChecks}</h4>
-                </div>
-            </div>
-        </div>`;
-        
-        // Verification Status Message
         const verificationScore = ((passedChecks / totalChecks) * 100);
+        
         let statusMessage = '';
         let statusClass = '';
+        let statusIcon = '';
         
         if (verificationScore >= 80) {
-            statusMessage = '✓ Document validation successful';
+            statusMessage = 'Document validation successful';
             statusClass = 'alert-success';
+            statusIcon = 'check-circle-fill';
         } else if (verificationScore >= 60) {
-            statusMessage = '⚠ Document validation passed with warnings';
+            statusMessage = 'Document validation passed with warnings';
             statusClass = 'alert-warning';
+            statusIcon = 'exclamation-triangle-fill';
         } else {
-            statusMessage = '✗ Document validation failed - manual review required';
+            statusMessage = 'Document validation failed - manual review required';
             statusClass = 'alert-danger';
+            statusIcon = 'x-circle-fill';
         }
         
-        html += `<div class="alert ${statusClass} mt-3 mb-0">
-            <i class="bi bi-info-circle me-2"></i><strong>${statusMessage}</strong>
+        html += `<div class="card mb-4"><div class="card-header bg-light"><h6 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Overall Analysis</h6></div><div class="card-body">`;
+        html += `<div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="text-center p-3 bg-light rounded">
+                    <small class="text-muted d-block mb-1">Average Confidence</small>
+                    <h4 class="mb-0 fw-bold text-primary">${avgConf.toFixed(1)}%</h4>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-center p-3 bg-light rounded">
+                    <small class="text-muted d-block mb-1">Passed Checks</small>
+                    <h4 class="mb-0 fw-bold text-success">${passedChecks}/${totalChecks}</h4>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-center p-3 bg-light rounded">
+                    <small class="text-muted d-block mb-1">Verification Score</small>
+                    <h4 class="mb-0 fw-bold ${verificationScore >= 80 ? 'text-success' : (verificationScore >= 60 ? 'text-warning' : 'text-danger')}">${verificationScore.toFixed(0)}%</h4>
+                </div>
+            </div>
         </div>`;
         
-        html += '</div>'; // close overall analysis
-    }
-    
-    // === NO VERIFICATION DATA AVAILABLE ===
-    if (!validation.identity_verification && docType !== 'grades') {
-        html += '<div class="alert alert-info mt-3">';
-        html += '<h6 class="mb-2"><i class="bi bi-info-circle me-2"></i>Verification Status</h6>';
-        html += '<p class="mb-0">Detailed verification checks are not available for this document type. ';
-        html += 'The document has been processed with OCR text extraction only.</p>';
-        if (validation.extracted_text) {
-            html += '<p class="mb-0 mt-2"><small class="text-muted">Review the extracted text below to manually verify the document content.</small></p>';
+        html += `<div class="alert ${statusClass} mb-0">
+            <h6 class="mb-0"><i class="bi bi-${statusIcon} me-2"></i>${statusMessage}</h6>`;
+        if (idv.recommendation) {
+            html += `<small class="mt-2 d-block"><strong>Recommendation:</strong> ${idv.recommendation}</small>`;
         }
-        html += '</div>';
+        html += `</div></div></div>`; // Close card-body, card
     }
     
+    // === EXTRACTED GRADES (for grades document) ===
     if (docType === 'grades' && validation.extracted_grades) {
-        html += '<h6 class="mb-3"><i class="bi bi-list-check me-2"></i>EXTRACTED GRADES:</h6>';
-        html += '<table class="table table-bordered table-sm"><thead class="table-light"><tr><th>Subject</th><th>Grade</th><th>Confidence</th><th>Status</th></tr></thead><tbody>';
+        html += '<div class="card mb-4"><div class="card-header bg-success text-white">';
+        html += '<h6 class="mb-0"><i class="bi bi-list-check me-2"></i>Extracted Grades</h6>';
+        html += '</div><div class="card-body p-0"><div class="table-responsive">';
+        html += '<table class="table table-bordered table-hover mb-0"><thead class="table-light"><tr><th>Subject</th><th>Grade</th><th>Confidence</th><th>Status</th></tr></thead><tbody>';
         
         validation.extracted_grades.forEach(grade => {
             const conf = parseFloat(grade.extraction_confidence || 0);
@@ -2723,36 +2977,87 @@ function generateValidationHTML(validation, docType) {
             </tr>`;
         });
         
-        html += '</tbody></table>';
+        html += '</tbody></table></div></div></div>';
         
         if (validation.validation_status) {
             const statusColors = {'passed': 'success', 'failed': 'danger', 'manual_review': 'warning', 'pending': 'info'};
             const statusColor = statusColors[validation.validation_status] || 'secondary';
-            html += `<div class="alert alert-${statusColor}"><strong>Status:</strong> ${validation.validation_status.toUpperCase().replace('_', ' ')}</div>`;
+            html += `<div class="alert alert-${statusColor}"><strong>Grade Validation Status:</strong> ${validation.validation_status.toUpperCase().replace('_', ' ')}</div>`;
         }
     }
     
+    // === EXTRACTED TEXT ===
     if (validation.extracted_text) {
-        html += '<h6 class="mb-3"><i class="bi bi-file-text me-2"></i>EXTRACTED TEXT:</h6>';
-        html += `<pre style="max-height:300px;overflow-y:auto;font-size:0.85em;white-space:pre-wrap;background:#f8f9fa;padding:15px;border-radius:4px;">${validation.extracted_text.substring(0, 1000)}${validation.extracted_text.length > 1000 ? '...' : ''}</pre>`;
+        html += '<div class="card"><div class="card-header bg-secondary text-white">';
+        html += '<h6 class="mb-0"><i class="bi bi-file-text me-2"></i>Extracted Text (OCR)</h6>';
+        html += '</div><div class="card-body">';
+        const textPreview = validation.extracted_text.substring(0, 2000);
+        const hasMore = validation.extracted_text.length > 2000;
+        html += `<pre style="max-height:400px;overflow-y:auto;font-size:0.85em;white-space:pre-wrap;background:#f8f9fa;padding:15px;border-radius:4px;border:1px solid #dee2e6;">${textPreview}${hasMore ? '\n\n... (text truncated)' : ''}</pre>`;
+        html += '</div></div>';
     }
     
-    html += '</div>';
     return html;
+}
+
+// Show validation modal without closing parent student info modal
+function showValidationModal() {
+    // Get or create the validation modal instance
+    const validationModalEl = document.getElementById('validationModal');
+    let validationModal = bootstrap.Modal.getInstance(validationModalEl);
+    
+    if (!validationModal) {
+        validationModal = new bootstrap.Modal(validationModalEl, {
+            backdrop: 'static',
+            keyboard: true,
+            focus: true
+        });
+    }
+    
+    // Create custom backdrop to dim the student info modal
+    let backdrop = document.getElementById('validationModalBackdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.id = 'validationModalBackdrop';
+        backdrop.className = 'validation-backdrop';
+        document.body.appendChild(backdrop);
+    }
+    
+    // Show backdrop
+    backdrop.classList.add('show');
+    
+    // Show the validation modal (it will appear on top of student info modal)
+    validationModal.show();
+    
+    // Hide backdrop when modal is closed
+    validationModalEl.addEventListener('hidden.bs.modal', function() {
+        backdrop.classList.remove('show');
+    }, { once: true });
 }
 </script>
 
 <!-- Validation Modal -->
 <div class="modal fade" id="validationModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header bg-info text-white">
-                <h5 class="modal-title" id="validationModalLabel">Validation Results</h5>
+                <h5 class="modal-title" id="validationModalLabel">
+                    <i class="bi bi-clipboard-check me-2"></i>Validation Results
+                </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="validationModalBody"></div>
+            <div class="modal-body" id="validationModalBody">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-info" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3 text-muted">Loading validation data...</p>
+                </div>
+            </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i>Close
+                </button>
             </div>
         </div>
     </div>

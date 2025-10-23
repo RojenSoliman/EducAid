@@ -76,16 +76,18 @@ function getConfidenceBreakdown($connection, $student_id) {
     ];
     if ($has_enrollment) $document_score += 10;
     
-    // Check other documents
+    // Check other documents using document_type_code
     $doc_types = [
-        'certificate_of_indigency' => 'Certificate of Indigency',
-        'letter_to_mayor' => 'Letter to Mayor',
-        'eaf' => 'Enrollment Assessment Form'
+        '04' => 'ID Picture',
+        '00' => 'Enrollment Assessment Form',
+        '02' => 'Letter to Mayor',
+        '03' => 'Certificate of Indigency',
+        '01' => 'Academic Grades'
     ];
     
-    foreach ($doc_types as $type => $label) {
-        $docQuery = "SELECT COUNT(*) as count FROM documents WHERE student_id = $1 AND type = $2";
-        $docResult = pg_query_params($connection, $docQuery, [$student_id, $type]);
+    foreach ($doc_types as $code => $label) {
+        $docQuery = "SELECT COUNT(*) as count FROM documents WHERE student_id = $1 AND document_type_code = $2";
+        $docResult = pg_query_params($connection, $docQuery, [$student_id, $code]);
         $has_doc = pg_fetch_result($docResult, 0, 0) > 0;
         
         $document_details[] = [
