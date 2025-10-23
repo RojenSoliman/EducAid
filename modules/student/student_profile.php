@@ -531,6 +531,26 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
       box-shadow: 0 10px 40px rgba(0,0,0,0.15);
     }
     
+    /* Fix modal backdrop z-index issues - disable backdrop completely */
+    .modal-backdrop {
+      display: none !important;
+    }
+    
+    .modal {
+      z-index: 1050 !important;
+      background: rgba(0, 0, 0, 0.5) !important;
+    }
+    
+    /* Ensure sidebar stays above modal background */
+    .sidebar {
+      z-index: 1055 !important;
+    }
+    
+    /* Ensure topbar stays above modal background */
+    .student-topbar {
+      z-index: 1060 !important;
+    }
+    
     .modal-header {
       background: #f8f9fa;
       border-bottom: 1px solid #e9ecef;
@@ -721,7 +741,7 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
   </div>
 
   <!-- Enhanced Profile Picture Upload Modal -->
-  <div class="modal fade" id="profilePictureModal" tabindex="-1">
+  <div class="modal fade" id="profilePictureModal" tabindex="-1" data-bs-backdrop="false" data-bs-keyboard="false">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
@@ -1102,6 +1122,32 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
         proceedBtn.disabled = true;
         currentImage = null;
         resetImagePosition();
+    });
+    
+    // Fix for duplicate backdrop issue - remove any extra backdrops when modal opens
+    document.getElementById('profilePictureModal').addEventListener('show.bs.modal', function() {
+        // Remove any existing backdrops before opening
+        const existingBackdrops = document.querySelectorAll('.modal-backdrop');
+        if (existingBackdrops.length > 0) {
+            existingBackdrops.forEach((backdrop, index) => {
+                // Keep only the first one, remove extras
+                if (index > 0) {
+                    backdrop.remove();
+                }
+            });
+        }
+    });
+    
+    // Clean up any leftover backdrops after modal is fully hidden
+    document.getElementById('profilePictureModal').addEventListener('hidden.bs.modal', function() {
+        // Remove any lingering backdrops
+        setTimeout(() => {
+            const allBackdrops = document.querySelectorAll('.modal-backdrop');
+            allBackdrops.forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+        }, 100);
     });
   </script>
 </body>
