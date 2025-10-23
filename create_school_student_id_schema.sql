@@ -168,15 +168,15 @@ BEGIN
     RETURN QUERY
     SELECT 
         TRUE as is_duplicate,
-        s.student_id as system_student_id,
-        s.first_name || ' ' || COALESCE(s.middle_name || ' ', '') || s.last_name as student_name,
-        s.email,
-        s.mobile,
-        s.status,
+        s.student_id::VARCHAR(50) as system_student_id,
+        (s.first_name || ' ' || COALESCE(s.middle_name || ' ', '') || s.last_name)::TEXT as student_name,
+        s.email::TEXT as student_email,
+        s.mobile::TEXT as student_mobile,
+        s.status::TEXT as student_status,
         ssi.registered_at,
-        ssi.university_name,
-        ssi.first_name,
-        ssi.last_name
+        ssi.university_name::VARCHAR(255) as university_name,
+        ssi.first_name::VARCHAR(100) as first_name,
+        ssi.last_name::VARCHAR(100) as last_name
     FROM school_student_ids ssi
     JOIN students s ON ssi.student_id = s.student_id
     WHERE ssi.university_id = p_university_id

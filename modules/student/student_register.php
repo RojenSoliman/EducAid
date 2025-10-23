@@ -3794,6 +3794,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $student_id_row = pg_fetch_assoc($result);
         $student_id = $student_id_row['student_id'];
 
+        // Note: school_student_ids table will be populated when admin approves the application
+        // This prevents fake/spam registrations from polluting the duplicate check system
+
         // Initialize DocumentService
         $docService = new DocumentService($connection);
         
@@ -4158,8 +4161,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         // Log the PostgreSQL error for debugging
         $error = pg_last_error($connection);
         error_log("Registration Database Error: " . $error);
-        echo "<script>alert('Registration failed due to a database error: " . addslashes($error) . "');</script>";
-
+        echo "<script>alert('Registration failed due to a database error: " . addslashes($error) . "'); window.location.href = window.location.href;</script>";
+        exit;
     }
 }
 
@@ -4806,14 +4809,15 @@ if (!$isAjaxRequest) {
                         <small id="strengthText" class="text-muted"></small>
                     </div>
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" name="agree_terms" id="agreeTerms" required />
+                        <input type="checkbox" class="form-check-input" name="agree_terms" id="agreeTerms" required readonly />
                         <label class="form-check-label" for="agreeTerms">
                             I agree to the 
-                            <a href="#" class="text-primary" data-bs-toggle="modal" data-bs-target="#termsModal">
+                            <a href="#" class="text-primary" id="termsLink">
                                 Terms and Conditions
                             </a>
                             <span class="text-danger">*</span>
                         </label>
+                        <small class="d-block text-muted mt-1">Click "Terms and Conditions" to read and accept</small>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
                     <button type="submit" name="register" class="btn btn-success w-100">Submit</button>
@@ -6850,7 +6854,7 @@ document.getElementById('processGradesOcrBtn').addEventListener('click', async f
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" id="acceptTermsBtn" data-bs-dismiss="modal">
+                <button type="button" class="btn btn-primary" id="acceptTermsBtn">
                     <i class="bi bi-check-circle me-2"></i>I Accept
                 </button>
             </div>
@@ -7091,14 +7095,91 @@ function setupBirthdateValidation() {
 }
 
 function setupTermsAndConditions() {
-    // Terms and conditions handling is now managed by user_registration.js
-    // This includes:
-    // - Scroll tracking (must scroll to bottom to enable Accept button)
-    // - Checkbox validation (must read modal before checking)
-    // - Modal state management
-    // - Event handlers for Accept button
+    const termsLink = document.getElementById('termsLink');
+    const acceptBtn = document.getElementById('acceptTermsBtn');
+    const agreeCheckbox = document.getElementById('agreeTerms');
+    const termsModal = document.getElementById('termsModal');
     
-    console.log('✅ Terms and Conditions (handled by user_registration.js)');
+    console.log('🔍 Terms elements found:', {
+        termsLink: !!termsLink,
+        acceptBtn: !!acceptBtn,
+        agreeCheckbox: !!agreeCheckbox,
+        termsModal: !!termsModal,
+        bootstrap: typeof window.bootstrap
+    });
+    
+    if (!window.bootstrap) {
+        console.warn('⚠️ Bootstrap not loaded! Modal may not work.');
+        return;
+    }
+    
+    // Make checkbox readonly so it can only be checked via the modal
+    if (agreeCheckbox) {
+        agreeCheckbox.readOnly = true;
+        
+        // Prevent manual checking of checkbox - force modal open
+        agreeCheckbox.addEventListener('click', function(e) {
+            if (!this.checked) {
+                e.preventDefault();
+                // Open modal if trying to check
+                if (termsLink) termsLink.click();
+            }
+        });
+    }
+    
+    // Handle clicking the terms link to open modal
+    if (termsLink) {
+        termsLink.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            if (window.bootstrap && window.bootstrap.Modal && termsModal) {
+                const modal = new bootstrap.Modal(termsModal);
+                modal.show();
+                console.log('✅ Terms modal opened');
+            }
+        });
+    }
+    
+    // Handle accept button
+    if (acceptBtn) {
+        acceptBtn.addEventListener('click', function() {
+            // Check the terms checkbox
+            if (agreeCheckbox) {
+                agreeCheckbox.checked = true;
+                agreeCheckbox.dispatchEvent(new Event('change'));
+                console.log('✅ Terms accepted and checkbox checked');
+            }
+            
+            // Close modal using Bootstrap
+            if (window.bootstrap && window.bootstrap.Modal && termsModal) {
+                const modal = bootstrap.Modal.getInstance(termsModal);
+                if (modal) {
+                    modal.hide();
+                    console.log('✅ Terms modal closed via Bootstrap');
+                }
+            }
+        });
+    }
+    
+    // Handle modal close buttons (without accepting)
+    const closeButtons = termsModal?.querySelectorAll('[data-bs-dismiss="modal"]:not(#acceptTermsBtn)');
+    closeButtons?.forEach(button => {
+        button.addEventListener('click', function() {
+            console.log('ℹ️ Modal closed without accepting');
+        });
+    });
+    
+    // Add backdrop click to close
+    if (termsModal) {
+        termsModal.addEventListener('click', function(e) {
+            if (e.target === termsModal) {
+                const modal = bootstrap.Modal.getInstance(termsModal);
+                if (modal) modal.hide();
+            }
+        });
+    }
+    
+    console.log('✅ Terms and Conditions functionality initialized');
 }
 </script>
 </body>

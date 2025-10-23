@@ -1,8 +1,0 @@
-# Ignore all files in this directory (temporary OCR results)
-*
-
-# But keep the .gitignore file itself
-!.gitignore
-
-# Keep the README for documentation
-!README.md

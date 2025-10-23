@@ -152,6 +152,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = pg_query_params($connection, $updateQuery, [$student_id]);
             
             if ($result) {
+                // Get student information for school_student_ids tracking
+                $studentInfoQuery = "SELECT s.school_student_id, s.university_id, s.first_name, s.last_name, u.name as university_name
+                                    FROM students s
+                                    LEFT JOIN universities u ON s.university_id = u.university_id
+                                    WHERE s.student_id = $1";
+                $studentInfoResult = pg_query_params($connection, $studentInfoQuery, [$student_id]);
+                $studentInfo = pg_fetch_assoc($studentInfoResult);
+                
+                // Insert into school_student_ids table now that admin has approved
+                if ($studentInfo && !empty($studentInfo['school_student_id'])) {
+                    $schoolIdInsert = "INSERT INTO school_student_ids (
+                        student_id, 
+                        university_id, 
+                        school_student_id, 
+                        university_name,
+                        first_name,
+                        last_name,
+                        registered_at,
+                        status,
+                        notes
+                    ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'active', 'Approved by admin')
+                    ON CONFLICT (university_id, school_student_id) DO NOTHING";
+                    
+                    pg_query_params($connection, $schoolIdInsert, [
+                        $student_id,
+                        $studentInfo['university_id'],
+                        $studentInfo['school_student_id'],
+                        $studentInfo['university_name'],
+                        $studentInfo['first_name'],
+                        $studentInfo['last_name']
+                    ]);
+                }
+                
                 // Use DocumentService to move all documents from temp to permanent storage
                 $moveResult = $docService->moveToPermStorage($student_id);
                 
