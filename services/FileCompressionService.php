@@ -228,6 +228,10 @@ class FileCompressionService {
             return [
                 'success' => true,
                 'message' => "Distribution compressed successfully. Student uploads have been archived and deleted.",
+                'archive_path' => $zipPath,
+                'size' => $totalCompressedSize,
+                'file_count' => $filesCompressed,
+                'compression_ratio' => round(($totalCompressedSize / $totalOriginalSize * 100), 2),
                 'statistics' => [
                     'students_processed' => $studentsProcessed,
                     'files_compressed' => $filesCompressed,

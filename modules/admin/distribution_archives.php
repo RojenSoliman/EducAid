@@ -6,18 +6,82 @@ if (!isset($_SESSION['admin_username'])) {
 }
 
 require_once __DIR__ . '/../../config/database.php';
-require_once __DIR__ . '/../../services/DistributionManager.php';
-
-$distManager = new DistributionManager();
 
 // Get filter from query string
 $filter = $_GET['filter'] ?? 'all';
 
-// Get all distributions
-$allDistributions = $distManager->getAllDistributions();
+// Scan filesystem for compressed distribution archives
+$distributionsPath = __DIR__ . '/../../assets/uploads/distributions';
+$allDistributions = [];
+
+if (is_dir($distributionsPath)) {
+    $zipFiles = glob($distributionsPath . '/*.zip');
+    
+    foreach ($zipFiles as $zipFile) {
+        $filename = basename($zipFile);
+        $filesize = filesize($zipFile);
+        $filetime = filemtime($zipFile);
+        
+        // Parse distribution ID from filename (format: #MUNICIPALITY-DISTR-YYYY-MM-DD-HHMMSS.zip)
+        $distribution_id = str_replace('.zip', '', $filename);
+        
+        // Try to open ZIP and count files
+        $fileCount = 0;
+        $zip = new ZipArchive();
+        if ($zip->open($zipFile) === true) {
+            $fileCount = $zip->numFiles;
+            $zip->close();
+        }
+        
+        // Check if there's a matching snapshot in database
+        $snapshotQuery = pg_query_params($connection,
+            "SELECT * FROM distribution_snapshots WHERE archive_filename = $1 OR distribution_id = $2 LIMIT 1",
+            [$filename, $distribution_id]
+        );
+        $snapshot = $snapshotQuery ? pg_fetch_assoc($snapshotQuery) : null;
+        
+        // Build distribution entry
+        $dist = [
+            'distribution_id' => $distribution_id,
+            'created_at' => date('Y-m-d H:i:s', $filetime),
+            'year_level' => $snapshot['academic_year'] ?? 'N/A',
+            'semester' => $snapshot['semester'] ?? 'N/A',
+            'student_count' => $snapshot['total_students_count'] ?? 0,
+            'file_count' => $fileCount,
+            'original_size' => $filesize * 2, // Estimate: assume 50% compression
+            'current_size' => $filesize,
+            'status' => 'ended',
+            'files_compressed' => true,
+            'archived_files_count' => $fileCount,
+            'location' => $snapshot['location'] ?? 'Unknown',
+            'notes' => $snapshot['notes'] ?? ''
+        ];
+        
+        $allDistributions[] = $dist;
+    }
+}
+
+// Sort by date descending
+usort($allDistributions, function($a, $b) {
+    return strtotime($b['created_at']) - strtotime($a['created_at']);
+});
 
 // Get compression statistics
-$compressionStats = $distManager->getCompressionStatistics();
+$totalDistributions = count($allDistributions);
+$compressedDistributions = count(array_filter($allDistributions, fn($d) => $d['files_compressed']));
+$totalSpaceSaved = array_sum(array_map(fn($d) => $d['original_size'] - $d['current_size'], $allDistributions));
+$avgCompressionRatio = $compressedDistributions > 0 
+    ? (array_sum(array_map(fn($d) => 
+        $d['original_size'] > 0 ? (($d['original_size'] - $d['current_size']) / $d['original_size']) * 100 : 0
+      , $allDistributions)) / $compressedDistributions)
+    : 0;
+
+$compressionStats = [
+    'total_distributions' => $totalDistributions,
+    'compressed_distributions' => $compressedDistributions,
+    'total_space_saved' => $totalSpaceSaved,
+    'avg_compression_ratio' => $avgCompressionRatio
+];
 
 // Filter distributions based on tab
 $filteredDistributions = array_filter($allDistributions, function($dist) use ($filter) {
@@ -183,26 +247,24 @@ $pageTitle = "Distribution Archives";
                                         ?>
                                         <tr>
                                             <td>
-                                                <strong><?php echo $dist['distribution_id'] ?: '#' . $dist['id']; ?></strong>
-                                                <br><small class="text-muted">Snapshot #<?php echo $dist['id']; ?></small>
+                                                <strong><?php echo htmlspecialchars($dist['distribution_id']); ?></strong>
                                             </td>
-                                            <td><?php echo date('M d, Y', strtotime($dist['created_at'])); ?></td>
+                                            <td><?php echo date('M d, Y g:i A', strtotime($dist['created_at'])); ?></td>
                                             <td>
-                                                <strong>AY <?php echo htmlspecialchars($dist['year_level'] ?: 'N/A'); ?></strong><br>
-                                                <small class="text-muted">Semester <?php echo htmlspecialchars($dist['semester'] ?: 'N/A'); ?></small>
+                                                <strong>AY <?php echo htmlspecialchars($dist['year_level']); ?></strong><br>
+                                                <small class="text-muted">Semester <?php echo htmlspecialchars($dist['semester']); ?></small>
                                             </td>
-                                            <td><?php echo $dist['student_count']; ?></td>
                                             <td>
-                                                <?php echo $dist['file_count']; ?>
-                                                <?php if ($dist['archived_files_count'] > 0): ?>
-                                                    <small class="text-muted">(<?php echo $dist['archived_files_count']; ?> archived)</small>
-                                                <?php endif; ?>
+                                                <span class="badge bg-primary"><?php echo $dist['student_count']; ?></span>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-info"><?php echo $dist['file_count']; ?></span>
                                             </td>
                                             <td><?php echo number_format($dist['original_size'] / 1024 / 1024, 2); ?> MB</td>
                                             <td><?php echo number_format($dist['current_size'] / 1024 / 1024, 2); ?> MB</td>
                                             <td>
                                                 <?php if ($spaceSaved > 0): ?>
-                                                    <span class="text-success">
+                                                    <span class="badge bg-success">
                                                         <?php echo number_format($spaceSaved / 1024 / 1024, 2); ?> MB
                                                         (<?php echo $compressionPct; ?>%)
                                                     </span>
@@ -211,25 +273,26 @@ $pageTitle = "Distribution Archives";
                                                 <?php endif; ?>
                                             </td>
                                             <td>
-                                                <?php if ($dist['status'] === 'active'): ?>
-                                                    <span class="badge badge-active">Active</span>
+                                                <?php if ($dist['files_compressed']): ?>
+                                                    <span class="badge badge-compressed">
+                                                        <i class="bi bi-file-zip"></i> Compressed
+                                                    </span>
                                                 <?php else: ?>
                                                     <span class="badge badge-ended">Ended</span>
-                                                <?php endif; ?>
-                                                
-                                                <?php if ($dist['files_compressed']): ?>
-                                                    <span class="badge badge-compressed">Compressed</span>
-                                                <?php endif; ?>
-                                                
-                                                <?php if ($dist['archived_files_count'] > 0): ?>
-                                                    <span class="badge badge-archived">Archived</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td class="table-actions">
                                                 <button class="btn btn-sm btn-info" 
-                                                        onclick="viewDetails(<?php echo $dist['id']; ?>)">
-                                                    <i class="bi bi-eye"></i> Details
+                                                        onclick="viewDetails('<?php echo htmlspecialchars($dist['distribution_id']); ?>')">
+                                                    <i class="bi bi-eye"></i> View
                                                 </button>
+                                                <?php if ($dist['files_compressed']): ?>
+                                                    <a href="../../assets/uploads/distributions/<?php echo htmlspecialchars(basename($dist['distribution_id'])); ?>.zip" 
+                                                       class="btn btn-sm btn-success" 
+                                                       download>
+                                                        <i class="bi bi-download"></i> Download
+                                                    </a>
+                                                <?php endif; ?>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>

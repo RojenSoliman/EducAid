@@ -27,9 +27,9 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     
     $csv_query = "
         SELECT s.payroll_no, s.first_name, s.middle_name, s.last_name, 
-               s.student_id, s.status, d.date_given
+               s.student_id, s.status, dsr.scanned_at as date_given
         FROM students s
-        LEFT JOIN distributions d ON s.student_id = d.student_id
+        LEFT JOIN distribution_student_records dsr ON s.student_id = dsr.student_id
         WHERE s.status IN ('active', 'given') AND s.payroll_no IS NOT NULL
         ORDER BY s.payroll_no ASC
     ";
@@ -263,37 +263,121 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_distribution'
   $student_id = $_POST['student_id'];
   $admin_id = $_SESSION['admin_id'] ?? 1;
     
-    // Update student status to 'given'
-    $update_query = "UPDATE students SET status = 'given' WHERE student_id = $1";
-    $update_result = pg_query_params($connection, $update_query, [$student_id]);
-    
-    if ($update_result) {
-        // Generate identifiable distribution ID
-        require_once __DIR__ . '/../../services/DistributionIdGenerator.php';
-        $idGenerator = new DistributionIdGenerator($connection, 'GENERALTRIAS');
-        $distribution_id = $idGenerator->generateDistributionId();
+    try {
+        // Start transaction
+        pg_query($connection, "BEGIN");
         
-        // Record distribution with identifiable ID
-        $dist_query = "INSERT INTO distributions (distribution_id, student_id, date_given, verified_by, status) 
-                       VALUES ($1, $2, NOW(), $3, 'active')";
-        pg_query_params($connection, $dist_query, [$distribution_id, $student_id, $admin_id]);
+        // Get current active snapshot (or create a temporary one)
+        $snapshot_query = "
+            SELECT snapshot_id, academic_year, semester 
+            FROM distribution_snapshots 
+            WHERE finalized_at IS NULL OR finalized_at >= CURRENT_DATE - INTERVAL '7 days'
+            ORDER BY finalized_at DESC NULLS FIRST
+            LIMIT 1
+        ";
+        $snapshot_result = pg_query($connection, $snapshot_query);
+        $snapshot_id = null;
+        
+        if ($snapshot_result && pg_num_rows($snapshot_result) > 0) {
+            $snapshot = pg_fetch_assoc($snapshot_result);
+            $snapshot_id = $snapshot['snapshot_id'];
+        } else {
+            // Create a temporary snapshot for ongoing distribution
+            $temp_snapshot_query = "
+                INSERT INTO distribution_snapshots 
+                (distribution_date, location, total_students_count, academic_year, semester, finalized_by, notes, distribution_id)
+                VALUES (CURRENT_DATE, 'Ongoing', 0, 
+                    (SELECT value FROM config WHERE key = 'current_academic_year'),
+                    (SELECT value FROM config WHERE key = 'current_semester'),
+                    $1, 'Auto-created during QR scanning', 
+                    'TEMP-' || TO_CHAR(NOW(), 'YYYY-MM-DD-HH24MISS'))
+                RETURNING snapshot_id
+            ";
+            $temp_result = pg_query_params($connection, $temp_snapshot_query, [$admin_id]);
+            if ($temp_result) {
+                $temp_row = pg_fetch_assoc($temp_result);
+                $snapshot_id = $temp_row['snapshot_id'];
+                error_log("Created temporary distribution snapshot: $snapshot_id");
+            }
+        }
+        
+        // Update student status to 'given'
+        $update_query = "UPDATE students SET status = 'given' WHERE student_id = $1";
+        $update_result = pg_query_params($connection, $update_query, [$student_id]);
+        
+        if (!$update_result) {
+            throw new Exception('Failed to update student status');
+        }
+        
+        // Get QR code for this student
+        $qr_query = "SELECT unique_id FROM qr_codes WHERE student_id = $1";
+        $qr_result = pg_query_params($connection, $qr_query, [$student_id]);
+        $qr_data = $qr_result ? pg_fetch_assoc($qr_result) : null;
+        $qr_code_used = $qr_data['unique_id'] ?? null;
+        
+        // Update QR code status to 'Done' (must match CHECK constraint: 'Pending' or 'Done')
+        $qr_update_query = "UPDATE qr_codes SET status = 'Done' WHERE student_id = $1";
+        $qr_update_result = pg_query_params($connection, $qr_update_query, [$student_id]);
+        
+        if (!$qr_update_result) {
+            throw new Exception('Failed to update QR code status');
+        }
+        
+        // Create distribution record linking student to snapshot
+        if ($snapshot_id) {
+            $record_query = "
+                INSERT INTO distribution_student_records 
+                (snapshot_id, student_id, qr_code_used, scanned_by, verification_method, notes)
+                VALUES ($1, $2, $3, $4, 'qr_scan', 'Scanned via QR code scanner')
+                ON CONFLICT (snapshot_id, student_id) DO UPDATE 
+                SET scanned_at = NOW(), scanned_by = EXCLUDED.scanned_by
+            ";
+            $record_result = pg_query_params($connection, $record_query, [
+                $snapshot_id, $student_id, $qr_code_used, $admin_id
+            ]);
+            
+            if (!$record_result) {
+                error_log("Warning: Failed to create distribution record for student $student_id in snapshot $snapshot_id");
+            } else {
+                error_log("Created distribution record: Student $student_id linked to snapshot $snapshot_id");
+            }
+        }
+        
+        // Log QR scan to qr_logs table for tracking
+        $log_query = "INSERT INTO qr_logs (student_id, scanned_at, scanned_by) VALUES ($1, NOW(), $2)";
+        $log_result = pg_query_params($connection, $log_query, [$student_id, $admin_id]);
+        
+        if (!$log_result) {
+            error_log("Warning: Failed to log QR scan for student $student_id: " . pg_last_error($connection));
+        }
         
         // Add notification to student
         $notif_query = "INSERT INTO notifications (student_id, message) VALUES ($1, $2)";
         $notif_message = "Your scholarship aid has been successfully distributed. Thank you for participating in the EducAid program.";
-        pg_query_params($connection, $notif_query, [$student_id, $notif_message]);
+        $notif_result = pg_query_params($connection, $notif_query, [$student_id, $notif_message]);
         
-    echo json_encode([
-      'success' => true,
-      'message' => 'Distribution confirmed successfully',
-      'next_token' => CSRFProtection::generateToken('confirm_distribution')
-    ]);
-    } else {
-    echo json_encode([
-      'success' => false,
-      'message' => 'Failed to update student status',
-      'next_token' => CSRFProtection::generateToken('confirm_distribution')
-    ]);
+        if (!$notif_result) {
+            error_log("Warning: Failed to create notification for student $student_id");
+        }
+        
+        // Commit transaction
+        pg_query($connection, "COMMIT");
+        
+        echo json_encode([
+            'success' => true,
+            'message' => 'Distribution confirmed successfully',
+            'next_token' => CSRFProtection::generateToken('confirm_distribution')
+        ]);
+    } catch (Exception $e) {
+        // Rollback on any error
+        pg_query($connection, "ROLLBACK");
+        error_log("Distribution confirmation error: " . $e->getMessage());
+        
+        echo json_encode([
+            'success' => false,
+            'message' => 'Failed to confirm distribution: ' . $e->getMessage(),
+            'next_token' => CSRFProtection::generateToken('confirm_distribution')
+        ]);
     }
     exit;
 }
@@ -361,15 +445,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_qr'])) {
 // Fetch all students with payroll numbers for the table
 $students_query = "
     SELECT s.student_id, s.payroll_no, s.first_name, s.middle_name, s.last_name, 
-           s.status, q.unique_id as qr_unique_id,
-           d.date_given,
-           a.username as distributed_by_username,
-           a.first_name as admin_first_name,
-           a.last_name as admin_last_name
+           s.status, q.unique_id as qr_unique_id, q.status as qr_status,
+           COALESCE(qr_log.scanned_at, dsr.scanned_at) as distribution_date,
+           dsr.snapshot_id,
+           COALESCE(
+               TRIM(qr_admin.first_name || ' ' || qr_admin.last_name),
+               TRIM(a.first_name || ' ' || a.last_name)
+           ) as scanned_by_name,
+           a.username as distributed_by_username
     FROM students s
     LEFT JOIN qr_codes q ON s.student_id = q.student_id AND s.payroll_no = q.payroll_number
-    LEFT JOIN distributions d ON s.student_id = d.student_id
-    LEFT JOIN admins a ON d.verified_by = a.admin_id
+    LEFT JOIN distribution_student_records dsr ON s.student_id = dsr.student_id
+    LEFT JOIN admins a ON dsr.scanned_by = a.admin_id
+    LEFT JOIN LATERAL (
+        SELECT scanned_at, scanned_by
+        FROM qr_logs 
+        WHERE qr_logs.student_id = s.student_id
+        ORDER BY scanned_at DESC 
+        LIMIT 1
+    ) qr_log ON true
+    LEFT JOIN admins qr_admin ON qr_log.scanned_by = qr_admin.admin_id
     WHERE s.status IN ('active', 'given') AND s.payroll_no IS NOT NULL
     ORDER BY s.payroll_no ASC
 ";
@@ -581,28 +676,30 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
                         <?php endif; ?>
                       </td>
                       <td>
-                        <?php if ($student['date_given']): ?>
+                        <?php if (!empty($student['distribution_date'])): ?>
                           <div class="small">
                             <i class="bi bi-calendar-check text-primary me-1"></i>
-                            <strong><?= date('M d, Y', strtotime($student['date_given'])) ?></strong>
+                            <strong><?= date('M d, Y', strtotime($student['distribution_date'])) ?></strong>
                           </div>
                           <div class="small text-muted">
                             <i class="bi bi-clock me-1"></i>
-                            <?= date('g:i A', strtotime($student['date_given'])) ?>
+                            <?= date('g:i A', strtotime($student['distribution_date'])) ?>
                           </div>
                         <?php else: ?>
                           <span class="text-muted">-</span>
                         <?php endif; ?>
                       </td>
                       <td>
-                        <?php if ($student['distributed_by_username']): ?>
+                        <?php if (!empty($student['scanned_by_name'])): ?>
                           <div class="small">
                             <i class="bi bi-person-circle text-success me-1"></i>
-                            <strong><?= htmlspecialchars($student['distributed_by_username']) ?></strong>
+                            <strong><?= htmlspecialchars($student['scanned_by_name']) ?></strong>
                           </div>
+                          <?php if (!empty($student['distributed_by_username'])): ?>
                           <div class="small text-muted">
-                            <?= htmlspecialchars(trim($student['admin_first_name'] . ' ' . $student['admin_last_name'])) ?>
+                            <i class="bi bi-at"></i><?= htmlspecialchars($student['distributed_by_username']) ?>
                           </div>
+                          <?php endif; ?>
                         <?php else: ?>
                           <span class="text-muted">-</span>
                         <?php endif; ?>
@@ -1118,18 +1215,37 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
     function updateStudentRow(studentId) {
       const row = document.getElementById(`student-${studentId}`);
       if (row) {
-        // Update status badge
-        const statusCell = row.cells[3];
-        statusCell.innerHTML = '<span class="badge status-given">Given</span>';
+        // Update status badge (column 4)
+        const statusCell = row.cells[4];
+        statusCell.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Given</span>';
         
-        // Update distribution date
-        const dateCell = row.cells[4];
-        const today = new Date().toLocaleDateString('en-US', { 
+        // Update distribution date (column 5)
+        const dateCell = row.cells[5];
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('en-US', { 
           year: 'numeric', 
           month: 'short', 
           day: 'numeric' 
         });
-        dateCell.textContent = today;
+        const timeStr = now.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        dateCell.innerHTML = `
+          <div class="small">
+            <i class="bi bi-calendar-check text-primary me-1"></i>
+            <strong>${dateStr}</strong>
+          </div>
+          <div class="small text-muted">
+            <i class="bi bi-clock me-1"></i>
+            ${timeStr}
+          </div>
+        `;
+        
+        // Update scanned by (column 6) - will be shown after page reload
+        const scannedByCell = row.cells[6];
+        scannedByCell.innerHTML = '<span class="text-muted"><i class="bi bi-arrow-clockwise"></i> Refresh to see</span>';
         
         // Highlight row briefly
         row.classList.add('table-success');
@@ -1174,12 +1290,18 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
           <input type="hidden" name="complete_distribution" value="1">
           
           <div class="modal-body">
-            <div class="alert alert-info">
-              <i class="bi bi-info-circle me-2"></i>
-              <strong>Create Distribution Snapshot:</strong> This will save a permanent record of your current distribution session.
-              You have distributed aid to <strong><?php echo $total_distributed; ?> student<?php echo $total_distributed != 1 ? 's' : ''; ?></strong>.
-              <br><br>
-              <small><i class="bi bi-arrow-right me-1"></i>After creating the snapshot, you can continue scanning or go to "End Distribution" to close the distribution cycle and compress files.</small>
+            <div class="alert alert-warning border-warning">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              <strong>REQUIRED: Create Distribution Snapshot</strong>
+              <p class="mb-2">This will save a permanent record of your current distribution session.
+              You have distributed aid to <strong><?php echo $total_distributed; ?> student<?php echo $total_distributed != 1 ? 's' : ''; ?></strong>.</p>
+              
+              <div class="mt-2 p-2 bg-light rounded">
+                <small class="text-dark">
+                  <i class="bi bi-arrow-right me-1"></i><strong>Important:</strong> You MUST complete this step before you can access "End Distribution".<br>
+                  <i class="bi bi-arrow-right me-1"></i>After creating the snapshot, you can continue scanning or proceed to end the distribution cycle.
+                </small>
+              </div>
             </div>
 
             <div class="mb-3">
