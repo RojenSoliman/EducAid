@@ -66,6 +66,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $fileService = new FileManagementService($connection);
         $extractResult = $fileService->extractArchivedStudent($studentId);
         
+        // Delete the ZIP file after successful extraction
+        $zipDeleted = false;
+        if ($extractResult['success']) {
+            $zipDeleted = $fileService->deleteArchivedZip($studentId);
+        }
+        
         // Log to audit trail
         $auditLogger->logStudentUnarchived(
             $adminId,
@@ -75,13 +81,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 'full_name' => $fullName,
                 'archive_reason' => $student['archive_reason'],
                 'archived_at' => $student['archived_at'],
-                'files_restored' => $extractResult['files_extracted'] ?? 0
+                'files_restored' => $extractResult['files_extracted'] ?? 0,
+                'zip_deleted' => $zipDeleted
             ]
         );
         
         $message = 'Student successfully unarchived';
         if (($extractResult['files_extracted'] ?? 0) > 0) {
             $message .= ' and ' . $extractResult['files_extracted'] . ' files restored';
+        }
+        if ($zipDeleted) {
+            $message .= '. Archive ZIP file removed';
         }
         
         echo json_encode(['success' => true, 'message' => $message]);

@@ -214,101 +214,6 @@ function send_migration_email($toEmail, $toName, $passwordPlain) {
     } catch (Exception $e) { return false; }
 }
 
-function send_archive_notification_email($toEmail, $toName, $archiveReason, $adminName) {
-    try {
-        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-        
-        // Server settings - using same configuration
-        $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com';
-        $mail->SMTPAuth   = true;
-        $mail->Username   = 'dilucayaka02@gmail.com';
-        $mail->Password   = 'jlld eygl hksj flvg';
-        $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
-        
-        // Recipients
-        $mail->setFrom('dilucayaka02@gmail.com', 'EducAid System');
-        $mail->addAddress($toEmail, $toName ?: $toEmail);
-        $mail->isHTML(true);
-        $mail->Subject = 'EducAid Application Status - Application Not Approved';
-        
-        $mail->Body = '
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
-            <div style="background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                <div style="text-align: center; margin-bottom: 30px;">
-                    <h1 style="color: #dc3545; margin: 0; font-size: 28px;">Application Status Update</h1>
-                    <p style="color: #6c757d; margin: 10px 0 0 0;">EducAid Educational Assistance Program</p>
-                </div>
-                
-                <div style="background-color: #f8d7da; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #dc3545;">
-                    <h3 style="color: #721c24; margin: 0 0 15px 0;">⚠️ Application Not Approved</h3>
-                    <p style="color: #721c24; margin: 0;">Dear <strong>' . htmlspecialchars($toName) . '</strong>,</p>
-                    <p style="color: #721c24; margin: 10px 0 0 0;">We regret to inform you that your application for the EducAid Educational Assistance Program has not been approved at this time.</p>
-                </div>
-                
-                <div style="background-color: #fff3cd; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #ffc107;">
-                    <h3 style="color: #856404; margin: 0 0 15px 0;">📋 Reason for Not Approving</h3>
-                    <p style="color: #856404; margin: 0; padding: 15px; background-color: #fff; border-radius: 4px; border: 1px solid #ffc107;">
-                        ' . nl2br(htmlspecialchars($archiveReason)) . '
-                    </p>
-                </div>
-                
-                <div style="background-color: #d1ecf1; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #17a2b8;">
-                    <h3 style="color: #0c5460; margin: 0 0 15px 0;">ℹ️ What This Means</h3>
-                    <ul style="margin: 0; padding-left: 20px; color: #0c5460;">
-                        <li>Your application has been archived in our system</li>
-                        <li>Your account access has been suspended</li>
-                        <li>All uploaded documents have been securely stored</li>
-                    </ul>
-                </div>
-                
-                <div style="background-color: #d4edda; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #28a745;">
-                    <h3 style="color: #155724; margin: 0 0 15px 0;">🔄 Next Steps</h3>
-                    <p style="color: #155724; margin: 0 0 10px 0;">If you believe this decision was made in error, or if you have questions about the reason for not approving your application, please:</p>
-                    <ul style="margin: 0; padding-left: 20px; color: #155724;">
-                        <li>Contact your local EducAid administrator for clarification</li>
-                        <li>Visit your municipality office during business hours</li>
-                        <li>Provide any additional documentation that may support your application</li>
-                    </ul>
-                </div>
-                
-                <div style="background-color: #e2e3e5; padding: 20px; border-radius: 6px; margin-bottom: 25px;">
-                    <h3 style="color: #383d41; margin: 0 0 15px 0;">👤 Reviewed By</h3>
-                    <p style="margin: 0; color: #383d41;"><strong>' . htmlspecialchars($adminName) . '</strong></p>
-                    <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">EducAid Administrator</p>
-                </div>
-                
-                <div style="border-top: 1px solid #dee2e6; padding-top: 20px; margin-top: 30px; text-align: center; color: #6c757d; font-size: 14px;">
-                    <p>Thank you for your interest in the EducAid Educational Assistance Program.</p>
-                    <p style="margin: 5px 0 0 0;">This is an automated message. For inquiries, please contact your local EducAid office.</p>
-                </div>
-            </div>
-        </div>';
-        
-        $mail->AltBody = "Application Status Update - EducAid\n\n" .
-            "Dear " . $toName . ",\n\n" .
-            "We regret to inform you that your application for the EducAid Educational Assistance Program has not been approved at this time.\n\n" .
-            "REASON FOR NOT APPROVING:\n" .
-            $archiveReason . "\n\n" .
-            "WHAT THIS MEANS:\n" .
-            "- Your application has been archived in our system\n" .
-            "- Your account access has been suspended\n" .
-            "- All uploaded documents have been securely stored\n\n" .
-            "NEXT STEPS:\n" .
-            "If you believe this decision was made in error, or if you have questions, please contact your local EducAid administrator.\n\n" .
-            "Reviewed by: " . $adminName . "\n" .
-            "EducAid Administrator\n\n" .
-            "Thank you for your interest in the EducAid Educational Assistance Program.";
-        
-        $mail->send();
-        return true;
-    } catch (Exception $e) { 
-        error_log("Failed to send archive notification email: " . $e->getMessage());
-        return false; 
-    }
-}
-
 // Handle Migration POST actions
 $migration_preview = $_SESSION['migration_preview'] ?? null;
 $migration_result = $_SESSION['migration_result'] ?? null;
@@ -319,7 +224,8 @@ $csrfMigrationToken = CSRFProtection::generateToken('csv_migration');
 // Generate CSRF tokens for applicant approval flows
 $csrfApproveApplicantToken = CSRFProtection::generateToken('approve_applicant');
 $csrfOverrideApplicantToken = CSRFProtection::generateToken('override_applicant');
-$csrfRejectApplicantToken = CSRFProtection::generateToken('reject_applicant');
+$csrfArchiveStudentToken = CSRFProtection::generateToken('archive_student');
+// Rejection token removed - will be re-implemented from scratch
 
 // Clear migration sessions on GET request to prevent resubmission warnings
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['clear_migration'])) {
@@ -872,6 +778,11 @@ function render_table($applicants, $connection) {
                             <i class="bi bi-eye"></i> View
                         </button>
                         <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
+                        <button class="btn btn-warning btn-sm ms-1" 
+                                onclick="showArchiveModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>')"
+                                title="Archive Student">
+                            <i class="bi bi-archive"></i>
+                        </button>
                         <button class="btn btn-danger btn-sm ms-1" 
                                 onclick="showBlacklistModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
                                     barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
@@ -1277,10 +1188,7 @@ function render_table($applicants, $connection) {
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfApproveApplicantToken) ?>">
                                         <button class="btn btn-success btn-sm"><i class="bi bi-check-circle me-1"></i> Verify</button>
                                     </form>
-                                    <button type="button" class="btn btn-danger btn-sm ms-2" 
-                                            onclick="showRejectModal('<?= htmlspecialchars($student_id, ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>')">
-                                        <i class="bi bi-x-circle me-1"></i> Reject
-                                    </button>
+                                    <!-- Reject button removed - will be re-implemented from scratch -->
                                 <?php else: ?>
                                     <span class="text-muted">Incomplete documents</span>
                                     <?php if (!empty($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'super_admin'): ?>
@@ -1295,6 +1203,11 @@ function render_table($applicants, $connection) {
                                 
                                 <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
                                 <div class="ms-auto">
+                                    <button class="btn btn-outline-warning btn-sm me-2" 
+                                            onclick="showArchiveModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>')"
+                                            data-bs-dismiss="modal">
+                                        <i class="bi bi-archive me-1"></i> Archive Student
+                                    </button>
                                     <button class="btn btn-outline-danger btn-sm" 
                                             onclick="showBlacklistModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
                                                 barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
@@ -1339,13 +1252,15 @@ function render_pagination($page, $totalPages) {
     <?php
 }
 
-// Handle verify/reject actions before AJAX or page render
+// Handle verify/reject/archive actions before AJAX or page render
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $applicantCsrfAction = null;
     if (!empty($_POST['mark_verified']) && isset($_POST['student_id'])) {
         $applicantCsrfAction = 'approve_applicant';
     } elseif (!empty($_POST['mark_verified_override']) && isset($_POST['student_id'])) {
         $applicantCsrfAction = 'override_applicant';
+    } elseif (!empty($_POST['archive_student']) && isset($_POST['student_id'])) {
+        $applicantCsrfAction = 'archive_student';
     } elseif (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
         $applicantCsrfAction = 'reject_applicant';
     }
@@ -1449,549 +1364,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
     }
-    // Reject applicant with document-specific rejection or archive
-    if (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
-        // CSRF Protection - validate token first
-        $token = $_POST['csrf_token'] ?? '';
-        if (!CSRFProtection::validateToken('reject_applicant', $token)) {
-            $_SESSION['error_message'] = 'Invalid security token. Please try again.';
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit;
-        }
-        
+    
+    // Archive Student
+    if (!empty($_POST['archive_student']) && isset($_POST['student_id'], $_POST['archive_reason'])) {
         $sid = trim($_POST['student_id']);
-        $rejection_type = $_POST['rejection_type'] ?? 'document'; // 'document' or 'archive'
-        $archive_reason = trim($_POST['archive_reason'] ?? '');
-        $rejected_documents = $_POST['rejected_documents'] ?? []; // Array of document type codes to reject
-        $rejection_notes = trim($_POST['rejection_notes'] ?? '');
+        $archiveReason = trim($_POST['archive_reason']);
+        $archiveOtherReason = trim($_POST['archive_other_reason'] ?? '');
         
-        // Get student info
+        // If reason is "other", use the custom reason text
+        if ($archiveReason === 'other' && !empty($archiveOtherReason)) {
+            $archiveReason = $archiveOtherReason;
+        }
+        
+        // Get student details for logging
         $studentQuery = pg_query_params($connection, 
-            "SELECT first_name, last_name, middle_name, email, year_level_id, expected_graduation_year, needs_document_upload 
-             FROM students WHERE student_id = $1", [$sid]);
+            "SELECT first_name, last_name, email, status FROM students WHERE student_id = $1", 
+            [$sid]
+        );
+        
+        if (!$studentQuery || pg_num_rows($studentQuery) === 0) {
+            $_SESSION['error_message'] = "Student not found.";
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
+        
         $student = pg_fetch_assoc($studentQuery);
+        $fullName = trim($student['first_name'] . ' ' . $student['last_name']);
         
-        if (!$student) {
-            $_SESSION['error_message'] = 'Student not found';
+        // Check if already archived
+        if ($student['status'] === 'archived') {
+            $_SESSION['error_message'] = "Student is already archived.";
             header('Location: ' . $_SERVER['PHP_SELF']);
             exit;
         }
         
-        // Handle Archive Rejection
-        if ($rejection_type === 'archive') {
-            if (empty($archive_reason)) {
-                $_SESSION['error_message'] = 'Archive reason is required';
-                header('Location: ' . $_SERVER['PHP_SELF']);
-                exit;
-            }
-            
-            // Archive the student directly in database
-            $fullName = trim($student['first_name'] . ' ' . ($student['middle_name'] ?? '') . ' ' . $student['last_name']);
-            $final_reason = $archive_reason . ($rejection_notes ? ' - ' . $rejection_notes : '');
-            
-            // Begin transaction
-            pg_query($connection, "BEGIN");
-            
-            try {
-                // Update student record to mark as archived
-                $archiveUpdate = pg_query_params($connection,
-                    "UPDATE students 
-                     SET is_archived = TRUE,
-                         archived_at = NOW(),
-                         archived_by = $1,
-                         archive_reason = $2,
-                         archive_type = 'manual',
-                         status = 'archived'
-                     WHERE student_id = $3",
-                    [$_SESSION['admin_id'], $final_reason, $sid]
-                );
-                
-                if (!$archiveUpdate) {
-                    throw new Exception('Failed to update student archive status');
-                }
-                
-                // Compress and archive student files
-                require_once __DIR__ . '/../../services/FileManagementService.php';
-                $fileService = new FileManagementService($connection);
-                $compressionResult = $fileService->compressArchivedStudent($sid);
-                
-                // Log to audit trail
-                require_once __DIR__ . '/../../services/AuditLogger.php';
-                $auditLogger = new AuditLogger($connection);
-                $final_reason = $archive_reason;
-                if (!empty($rejection_notes)) {
-                    $final_reason .= ' - Additional notes: ' . $rejection_notes;
-                }
-                $auditLogger->logStudentArchived(
-                    $_SESSION['admin_id'],
-                    $_SESSION['admin_username'],
-                    $sid,
-                    [
-                        'student_name' => $fullName,
-                        'year_level_id' => $student['year_level_id'],
-                        'expected_graduation_year' => $student['expected_graduation_year']
-                    ],
-                    $final_reason,
-                    false // Manual archiving (not automatic)
-                );
-                
-                // Commit transaction
-                pg_query($connection, "COMMIT");
-                
-                // Send email notification to student
-                $adminName = $_SESSION['admin_username'] ?? 'EducAid Administrator';
-                $emailSent = send_archive_notification_email(
-                    $student['email'],
-                    $fullName,
-                    $final_reason,
-                    $adminName
-                );
-                
-                $successMsg = 'Student archived successfully: ' . $archive_reason;
-                if (($compressionResult['files_archived'] ?? 0) > 0) {
-                    $successMsg .= ' (' . $compressionResult['files_archived'] . ' files archived)';
-                }
-                if ($emailSent) {
-                    $successMsg .= '. Email notification sent to student.';
-                } else {
-                    $successMsg .= '. Warning: Failed to send email notification.';
-                }
-                $_SESSION['success_message'] = $successMsg;
-                
-            } catch (Exception $e) {
-                // Rollback on error
-                pg_query($connection, "ROLLBACK");
-                error_log("Archive rejection failed: " . $e->getMessage());
-                $_SESSION['error_message'] = 'Failed to archive student: ' . $e->getMessage();
-            }
-            
+        // Archive files first
+        require_once __DIR__ . '/../../services/FileManagementService.php';
+        $fileService = new FileManagementService($connection);
+        $archiveResult = $fileService->compressArchivedStudent($sid);
+        
+        if (!$archiveResult['success']) {
+            error_log("Archive Error: Failed to compress files for student $sid");
+            $_SESSION['error_message'] = "Failed to archive student files. Please try again.";
             header('Location: ' . $_SERVER['PHP_SELF']);
             exit;
         }
         
-        // Handle Document Rejection (for re-upload)
-        if ($rejection_type === 'document') {
-            if (empty($rejected_documents)) {
-                $_SESSION['error_message'] = 'Please select at least one document to reject';
-                header('Location: ' . $_SERVER['PHP_SELF']);
-                exit;
-            }
+        // Update student record using SQL function
+        $archiveQuery = pg_query_params($connection,
+            "SELECT archive_student($1, $2, $3) as success",
+            [$sid, $adminId, $archiveReason]
+        );
+        
+        if ($archiveQuery && pg_fetch_assoc($archiveQuery)['success'] === 't') {
+            // Log the archival action
+            require_once __DIR__ . '/../../services/AuditLogger.php';
+            $auditLogger = new AuditLogger($connection);
+            $auditLogger->logStudentArchived(
+                $adminId,
+                $adminUsername,
+                $sid,
+                [
+                    'full_name' => $fullName,
+                    'email' => $student['email'],
+                    'files_archived' => $archiveResult['files_archived'] ?? 0,
+                    'space_saved' => $archiveResult['space_saved'] ?? 0
+                ],
+                $archiveReason,
+                false // Manual archival
+            );
             
-            error_log("========== DOCUMENT REJECTION START ==========");
-            error_log("Student ID: " . $sid);
-            error_log("Rejected documents: " . json_encode($rejected_documents));
-            error_log("Rejection notes: " . $rejection_notes);
+            $_SESSION['success_message'] = "Student {$fullName} has been archived successfully.";
             
-            $deleted_files = [];
-            $deletion_errors = [];
-            
-            // Begin transaction
-            pg_query($connection, "BEGIN");
-            
-            try {
-                // Delete only the rejected documents
-                foreach ($rejected_documents as $doc_code) {
-                    $doc_code = trim($doc_code);
-                    $docQuery = pg_query_params($connection, 
-                        "SELECT file_path FROM documents WHERE student_id = $1 AND document_type_code = $2", 
-                        [$sid, $doc_code]);
-                    
-                    $doc_count = pg_num_rows($docQuery);
-                    error_log("Documents found for code $doc_code: " . $doc_count);
-                    
-                    if ($doc_count === 0) {
-                        $deletion_errors[] = "No document found for code $doc_code in database";
-                        continue;
-                    }
-                    
-                    while ($d = pg_fetch_assoc($docQuery)) {
-                        $path = $d['file_path'];
-                        
-                        // Handle multiple path formats
-                        // 1. First try the path as-is (for absolute paths)
-                        $absolute_path = $path;
-                        
-                        // 2. If not found, try prepending root directory (for relative paths like "assets/uploads/...")
-                        if (!file_exists($absolute_path)) {
-                            $absolute_path = dirname(__DIR__, 2) . '/' . ltrim($path, '/');
-                        }
-                        
-                        // 3. If still not found, try with backslashes (Windows compatibility)
-                        if (!file_exists($absolute_path)) {
-                            $absolute_path = dirname(__DIR__, 2) . '\\' . str_replace('/', '\\', ltrim($path, '/\\'));
-                        }
-                        
-                        // Debug logging
-                        error_log("Document Deletion Debug:");
-                        error_log("  Original path from DB: " . $path);
-                        error_log("  Resolved absolute path: " . $absolute_path);
-                        error_log("  File exists: " . (file_exists($absolute_path) ? 'YES' : 'NO'));
-                        error_log("  Base directory: " . dirname(__DIR__, 2));
-                        
-                        if (file_exists($absolute_path)) {
-                            if (@unlink($absolute_path)) {
-                                $deleted_files[] = basename($absolute_path);
-                                error_log("  Successfully deleted: " . $absolute_path);
-                                
-                                // Also delete associated OCR files
-                                $associated_files = [
-                                    $absolute_path . '.ocr.txt',
-                                    $absolute_path . '.verify.json',
-                                    $absolute_path . '.tsv',
-                                    $absolute_path . '.confidence.json'
-                                ];
-                                foreach ($associated_files as $assoc_file) {
-                                    if (file_exists($assoc_file)) {
-                                        @unlink($assoc_file);
-                                        error_log("    Deleted associated file: " . basename($assoc_file));
-                                    }
-                                }
-                            } else {
-                                $deletion_errors[] = basename($absolute_path) . ' (permission denied)';
-                                error_log("  FAILED to delete (permission denied): " . $absolute_path);
-                            }
-                        } else {
-                            $deletion_errors[] = basename($path) . ' (file not found at any attempted path)';
-                            error_log("  FAILED to delete (file not found)");
-                        }
-                    }
-                    
-                    // Delete document record from database
-                    $deleteResult = pg_query_params($connection, 
-                        "DELETE FROM documents WHERE student_id = $1 AND document_type_code = $2", 
-                        [$sid, $doc_code]);
-                    
-                    if ($deleteResult) {
-                        error_log("  Database record deleted for student $sid, document code $doc_code");
-                    } else {
-                        throw new Exception("Failed to delete database record: " . pg_last_error($connection));
-                    }
-                }
-                
-                // Set needs_document_upload to TRUE (student needs to re-upload)
-                // This applies to BOTH new registrants and existing students
-                $updateResult = pg_query_params($connection, 
-                    "UPDATE students SET needs_document_upload = TRUE WHERE student_id = $1", 
-                    [$sid]);
-                
-                if (!$updateResult) {
-                    throw new Exception("Failed to update needs_document_upload: " . pg_last_error($connection));
-                }
-                
-                error_log("Set needs_document_upload = TRUE for student " . $sid);
-                
-                // Store rejected document codes in a JSON field for selective re-upload
-                // First check if column exists
-                $colCheck = pg_query($connection, 
-                    "SELECT 1 FROM information_schema.columns 
-                     WHERE table_name='students' AND column_name='documents_to_reupload'");
-                $hasReuploadCol = $colCheck ? (pg_num_rows($colCheck) > 0) : false;
-                
-                if ($hasReuploadCol) {
-                    $rejected_json = json_encode($rejected_documents);
-                    pg_query_params($connection, 
-                        "UPDATE students SET documents_to_reupload = $1 WHERE student_id = $2", 
-                        [$rejected_json, $sid]);
-                }
-                
-                // Build document names for notification
-                $doc_names = [
-                    '00' => 'EAF (Enrollment Assistance Form)',
-                    '01' => 'Academic Grades',
-                    '02' => 'Letter to Mayor',
-                    '03' => 'Certificate of Indigency',
-                    '04' => 'ID Picture'
-                ];
-                $rejected_names = array_map(function($code) use ($doc_names) {
-                    return $doc_names[$code] ?? 'Document ' . $code;
-                }, $rejected_documents);
-                
-                // Create urgent notification for student (priority notification)
-                $msg = 'URGENT: Some of your documents were rejected on ' . date('F j, Y, g:i a') . '. ' .
-                       'Please re-upload the following: ' . implode(', ', $rejected_names) . '.';
-                if ($rejection_notes) {
-                    $msg .= ' Reason: ' . $rejection_notes;
-                }
-                
-                // Check if notifications table has priority column
-                $notifColCheck = pg_query($connection, 
-                    "SELECT 1 FROM information_schema.columns 
-                     WHERE table_name='notifications' AND column_name='is_priority'");
-                $hasPriorityCol = $notifColCheck ? (pg_num_rows($notifColCheck) > 0) : false;
-                
-                if ($hasPriorityCol) {
-                    $notifResult = pg_query_params($connection, 
-                        "INSERT INTO notifications (student_id, message, is_priority, is_read) VALUES ($1, $2, TRUE, FALSE)", 
-                        [$sid, $msg]);
-                } else {
-                    $notifResult = pg_query_params($connection, 
-                        "INSERT INTO notifications (student_id, message) VALUES ($1, $2)", 
-                        [$sid, $msg]);
-                }
-                
-                if (!$notifResult) {
-                    throw new Exception("Failed to create notification: " . pg_last_error($connection));
-                }
-                
-                error_log("Created priority notification for student " . $sid);
-                
-                // Add admin notification
-                $student_name = $student['first_name'] . ' ' . $student['last_name'];
-                $notification_msg = "Documents rejected for applicant: " . $student_name . " (ID: " . $sid . "). " .
-                                  "Documents to re-upload: " . implode(', ', $rejected_names);
-                if (!empty($deleted_files)) {
-                    $notification_msg .= ". Deleted files: " . implode(', ', $deleted_files);
-                }
-                if (!empty($deletion_errors)) {
-                    $notification_msg .= ". Deletion errors: " . implode(', ', $deletion_errors);
-                }
-                $adminNotifResult = pg_query_params($connection, 
-                    "INSERT INTO admin_notifications (message) VALUES ($1)", 
-                    [$notification_msg]);
-                
-                if (!$adminNotifResult) {
-                    error_log("Warning: Failed to create admin notification: " . pg_last_error($connection));
-                }
-                
-                // Log in audit trail
-                require_once __DIR__ . '/../../services/AuditLogger.php';
-                $auditLogger = new AuditLogger($connection);
-                $auditLogger->logApplicantRejected(
-                    $_SESSION['admin_id'],
-                    $_SESSION['admin_username'],
-                    $sid,
-                    [
-                        'first_name' => $student['first_name'],
-                        'last_name' => $student['last_name'],
-                        'email' => $student['email']
-                    ],
-                    'Specific documents rejected: ' . implode(', ', $rejected_names) . 
-                    ($rejection_notes ? ' - ' . $rejection_notes : '') .
-                    (count($deleted_files) > 0 ? ' | Deleted: ' . count($deleted_files) . ' files' : '')
-                );
-                
-                // Commit transaction
-                pg_query($connection, "COMMIT");
-                error_log("========== DOCUMENT REJECTION SUCCESS ==========");
-                
-                $success_msg = 'Documents rejected. Student can now re-upload the selected documents.';
-                if (!empty($deleted_files)) {
-                    $success_msg .= ' Deleted ' . count($deleted_files) . ' file(s).';
-                }
-                if (!empty($deletion_errors)) {
-                    $success_msg .= ' Warning: ' . count($deletion_errors) . ' file(s) could not be deleted.';
-                }
-                $_SESSION['success_message'] = $success_msg;
-        } catch (Exception $e) {
-            // Rollback transaction on error
-            pg_query($connection, "ROLLBACK");
-            error_log("========== DOCUMENT REJECTION FAILED ==========");
-            error_log("Error: " . $e->getMessage());
-            error_log("Trace: " . $e->getTraceAsString());
-            $_SESSION['error_message'] = 'Failed to reject documents: ' . $e->getMessage();
+            // Add admin notification
+            $notification_msg = "Student archived: {$fullName} (ID: {$sid}) - Reason: {$archiveReason}";
+            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        } else {
+            $_SESSION['error_message'] = "Failed to archive student. Please try again.";
         }
         
-        // Send email notification to student (outside transaction - always send even if transaction fails)
-        if (!empty($student['email']) && !empty($rejected_names)) {
-                require_once __DIR__ . '/../../phpmailer/vendor/autoload.php';
-                try {
-                    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-                    $mail->isSMTP();
-                    $mail->Host       = 'smtp.gmail.com';
-                    $mail->SMTPAuth   = true;
-                    $mail->Username   = 'dilucayaka02@gmail.com';
-                    $mail->Password   = 'jlld eygl hksj flvg';
-                    $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-                    $mail->Port       = 587;
-                    
-                    $mail->setFrom('dilucayaka02@gmail.com', 'EducAid System');
-                    $mail->addAddress($student['email'], $student['first_name'] . ' ' . $student['last_name']);
-                    $mail->isHTML(true);
-                    $mail->Subject = 'URGENT: Document Rejection - Action Required';
-                    
-                    $loginUrl = (isset($_SERVER['HTTPS'])?'https':'http') . '://' . $_SERVER['HTTP_HOST'] . '/EducAid/unified_login.php';
-                    
-                    $mail->Body = '
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
-                        <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
-                            <h1 style="margin: 0; font-size: 28px;">⚠️ Document Rejection Notice</h1>
-                        </div>
-                        
-                        <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                            <p>Dear ' . htmlspecialchars($student['first_name']) . ',</p>
-                            
-                            <p><strong>Some of your documents have been rejected and require re-upload.</strong></p>
-                            
-                            <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                                <p style="margin: 0 0 10px 0; font-weight: 600; color: #dc2626;">Documents requiring re-upload:</p>
-                                <ul style="margin: 0; padding-left: 20px;">
-                                    ' . implode('', array_map(function($name) {
-                                        return '<li>' . htmlspecialchars($name) . '</li>';
-                                    }, $rejected_names)) . '
-                                </ul>
-                            </div>
-                            
-                            ' . ($rejection_notes ? '
-                            <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                                <p style="margin: 0; font-weight: 600; color: #d97706;">Admin Notes:</p>
-                                <p style="margin: 5px 0 0 0;">' . htmlspecialchars($rejection_notes) . '</p>
-                            </div>
-                            ' : '') . '
-                            
-                            <p><strong>What you need to do:</strong></p>
-                            <ol>
-                                <li>Log in to your EducAid student portal</li>
-                                <li>Go to "Upload Documents" page</li>
-                                <li>Re-upload only the rejected documents listed above</li>
-                                <li>Ensure documents meet all requirements</li>
-                            </ol>
-                            
-                            <div style="text-align: center; margin: 30px 0;">
-                                <a href="' . $loginUrl . '" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
-                                    Log In to Re-upload Documents
-                                </a>
-                            </div>
-                            
-                            <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
-                                <strong>Note:</strong> Please re-upload the required documents as soon as possible to avoid delays in processing your application.
-                            </p>
-                        </div>
-                        
-                        <div style="text-align: center; margin-top: 20px; color: #6b7280; font-size: 12px;">
-                            <p>This is an automated message from EducAid System. Please do not reply to this email.</p>
-                        </div>
-                    </div>';
-                    
-                    $mail->AltBody = "URGENT: Document Rejection Notice\n\n" .
-                        "Dear " . $student['first_name'] . ",\n\n" .
-                        "Some of your documents have been rejected and require re-upload.\n\n" .
-                        "Documents requiring re-upload:\n" .
-                        implode("\n", array_map(function($name) { return "- " . $name; }, $rejected_names)) . "\n\n" .
-                        ($rejection_notes ? "Admin Notes: " . $rejection_notes . "\n\n" : "") .
-                        "Please log in to your EducAid student portal and re-upload the required documents.\n\n" .
-                        "Login at: " . $loginUrl;
-                    
-                    $mail->send();
-                } catch (Exception $e) {
-                    error_log("Failed to send rejection email to student $sid: " . $e->getMessage());
-                }
-            }
-        }
-        
-        // Redirect to refresh list
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
     }
-}
-
-// --------- Archive Student Handler ---------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'archive_student') {
-    // Start output buffering to catch any errors/warnings
-    ob_start();
     
-    header('Content-Type: application/json');
-    
-    // Verify super admin
-    if (!isset($_SESSION['admin_role']) || $_SESSION['admin_role'] !== 'super_admin') {
-        ob_clean(); // Clear any buffered output
-        echo json_encode(['success' => false, 'message' => 'Only super admins can archive students']);
-        exit;
-    }
-    
-    $studentId = $_POST['student_id'] ?? null;
-    $archiveReason = trim($_POST['archive_reason'] ?? '');
-    
-    if (!$studentId || empty($archiveReason)) {
-        ob_clean();
-        echo json_encode(['success' => false, 'message' => 'Student ID and reason are required']);
-        exit;
-    }
-    
-    // Get student data before archiving for audit log
-    $studentQuery = pg_query_params($connection,
-        "SELECT student_id, first_name, last_name, middle_name, email, year_level_id, expected_graduation_year 
-         FROM students WHERE student_id = $1",
-        [$studentId]
-    );
-    
-    if (!$studentQuery || pg_num_rows($studentQuery) === 0) {
-        ob_clean();
-        echo json_encode(['success' => false, 'message' => 'Student not found']);
-        exit;
-    }
-    
-    $student = pg_fetch_assoc($studentQuery);
-    $fullName = trim($student['first_name'] . ' ' . ($student['middle_name'] ?? '') . ' ' . $student['last_name']);
-    
-    // Get year level name
-    $yearLevelName = null;
-    if ($student['year_level_id']) {
-        $ylQuery = pg_query_params($connection, "SELECT name FROM year_levels WHERE year_level_id = $1", [$student['year_level_id']]);
-        if ($ylQuery && pg_num_rows($ylQuery) > 0) {
-            $yearLevelName = pg_fetch_assoc($ylQuery)['name'];
-        }
-    }
-    
-    // Check if archive_student_manual function exists
-    $funcCheck = pg_query($connection, "SELECT proname FROM pg_proc WHERE proname = 'archive_student_manual'");
-    if (!$funcCheck || pg_num_rows($funcCheck) === 0) {
-        ob_clean();
-        echo json_encode(['success' => false, 'message' => 'Database function archive_student_manual not found. Please run the archiving migration SQL first.']);
-        exit;
-    }
-    
-    // Archive student using PostgreSQL function
-    $result = pg_query_params($connection,
-        "SELECT archive_student_manual($1, $2, $3) as success",
-        [$studentId, $_SESSION['admin_id'], $archiveReason]
-    );
-    
-    if (!$result) {
-        $error = pg_last_error($connection);
-        ob_clean();
-        echo json_encode(['success' => false, 'message' => 'Database error: ' . $error]);
-        exit;
-    }
-    
-    $resultRow = pg_fetch_assoc($result);
-    if ($resultRow && $resultRow['success'] === 't') {
-        // Compress and archive student files
-        require_once __DIR__ . '/../../services/FileManagementService.php';
-        $fileService = new FileManagementService($connection);
-        $compressionResult = $fileService->compressArchivedStudent($studentId);
-        
-        // Log to audit trail
-        require_once __DIR__ . '/../../services/AuditLogger.php';
-        $auditLogger = new AuditLogger($connection);
-        $auditLogger->logStudentArchived(
-            $_SESSION['admin_id'],
-            $_SESSION['admin_username'],
-            $studentId,
-            [
-                'full_name' => $fullName,
-                'email' => $student['email'],
-                'year_level' => $yearLevelName,
-                'expected_graduation_year' => $student['expected_graduation_year'],
-                'files_archived' => $compressionResult['files_archived'] ?? 0,
-                'space_saved' => $compressionResult['space_saved'] ?? 0
-            ],
-            $archiveReason,
-            false // not automatic
-        );
-        
-        $message = 'Student successfully archived';
-        if (($compressionResult['files_archived'] ?? 0) > 0) {
-            $spaceSavedMB = round(($compressionResult['space_saved'] ?? 0) / 1024 / 1024, 2);
-            $message .= ' and ' . $compressionResult['files_archived'] . ' files compressed (saved ' . $spaceSavedMB . ' MB)';
-        }
-        
-        ob_clean(); // Clear any buffered output
-        echo json_encode(['success' => true, 'message' => $message]);
-    } else {
-        ob_clean();
-        echo json_encode(['success' => false, 'message' => 'Failed to archive student. The function returned false.']);
-    }
-    exit;
+    // Rejection functionality removed - will be re-implemented from scratch
 }
 
 // --------- AJAX handler ---------
@@ -2091,6 +1547,77 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
 
 <!-- Include Blacklist Modal -->
 <?php include '../../includes/admin/blacklist_modal.php'; ?>
+
+<!-- Archive Student Modal -->
+<div class="modal fade" id="archiveModal" tabindex="-1" aria-labelledby="archiveModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title" id="archiveModalLabel">
+                    <i class="bi bi-archive-fill me-2"></i>Archive Student
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="archiveForm">
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>What happens when you archive a student:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li>Student account will be deactivated</li>
+                            <li>All documents will be compressed into a ZIP file</li>
+                            <li>Student will not be able to login</li>
+                            <li>Student will be moved to "Archived Students" page</li>
+                            <li>You can unarchive the student later if needed</li>
+                        </ul>
+                    </div>
+                    
+                    <p class="mb-3">
+                        You are about to archive: <strong id="archiveStudentName"></strong>
+                    </p>
+                    
+                    <input type="hidden" name="student_id" id="archiveStudentId">
+                    <input type="hidden" name="archive_student" value="1">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfArchiveStudentToken) ?>">
+                    
+                    <div class="mb-3">
+                        <label for="archiveReason" class="form-label">
+                            Reason for Archiving <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="archiveReason" name="archive_reason" required onchange="handleArchiveReasonChange()">
+                            <option value="">-- Select Reason --</option>
+                            <option value="graduated">Graduated</option>
+                            <option value="ineligible">Ineligible</option>
+                            <option value="duplicate">Duplicate Account</option>
+                            <option value="inactive">Inactive/No Longer Enrolled</option>
+                            <option value="transferred">Transferred to Another Municipality</option>
+                            <option value="did_not_attend">Did Not Attend Distribution</option>
+                            <option value="other">Other (Please Specify)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3" id="otherReasonContainer" style="display: none;">
+                        <label for="archiveOtherReason" class="form-label">
+                            Please specify the reason <span class="text-danger">*</span>
+                        </label>
+                        <textarea class="form-control" id="archiveOtherReason" name="archive_other_reason" rows="3" placeholder="Enter the specific reason for archiving this student..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-warning" id="confirmArchiveBtn">
+                        <i class="bi bi-archive me-1"></i> Archive Student
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Password Confirmation Modal for Archive -->
+<!-- Removed - Password confirmation disabled for archive -->
 
 <!-- Migration Modal -->
 <div class="modal fade" id="migrationModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
@@ -2243,7 +1770,6 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
-<script src="../../assets/js/admin/rejection_modal.js"></script>
 <!-- Removed external manage_applicants.js include (404 caused script parse error) -->
 <script>
 // Image Zoom Functionality
@@ -2860,10 +2386,6 @@ document.addEventListener('DOMContentLoaded', function() {
 #validationModal { z-index: 205000 !important; }
 #validationModal + .modal-backdrop { z-index: 204999 !important; }
 
-/* Rejection modal should appear above student info modal */
-#rejectModal { z-index: 206000 !important; }
-#rejectModal + .modal-backdrop { z-index: 205999 !important; }
-
 /* Custom backdrop for validation modal to dim the student info modal behind it */
 .validation-backdrop {
     position: fixed;
@@ -2877,22 +2399,6 @@ document.addEventListener('DOMContentLoaded', function() {
 }
 
 .validation-backdrop.show {
-    display: block;
-}
-
-/* Custom backdrop for rejection modal to dim the student info modal behind it */
-.rejection-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 205998 !important;
-    display: none;
-}
-
-.rejection-backdrop.show {
     display: block;
 }
 
@@ -3104,133 +2610,81 @@ function closeDocumentViewer() {
 
 // Archive Student Modal and Functions
 function showArchiveModal(studentId, studentName) {
-    // Create modal if it doesn't exist
-    let modal = document.getElementById('archiveStudentModal');
+    const modal = document.getElementById('archiveModal');
     if (!modal) {
-        const modalHtml = `
-            <div class="modal fade" id="archiveStudentModal" tabindex="-1">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header bg-warning text-dark">
-                            <h5 class="modal-title">
-                                <i class="bi bi-archive"></i> Archive Student
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="alert alert-warning">
-                                <i class="bi bi-exclamation-triangle"></i>
-                                <strong>Warning:</strong> Archiving will prevent this student from logging in and accessing the system.
-                            </div>
-                            <p>You are about to archive: <strong id="archiveStudentName"></strong></p>
-                            <input type="hidden" id="archiveStudentId">
-                            
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Archive Reason: <span class="text-danger">*</span></label>
-                                <select class="form-select mb-2" id="archiveReasonSelect" onchange="handleArchiveReasonChange()">
-                                    <option value="">Select a reason...</option>
-                                    <option value="Graduated">Graduated</option>
-                                    <option value="Did not attend distribution">Did not attend distribution</option>
-                                    <option value="No longer eligible">No longer eligible</option>
-                                    <option value="Withdrew from program">Withdrew from program</option>
-                                    <option value="Duplicate account">Duplicate account</option>
-                                    <option value="custom">Other (specify below)</option>
-                                </select>
-                                <textarea class="form-control" id="archiveReasonText" rows="3" 
-                                          placeholder="Enter detailed reason for archiving..." 
-                                          style="display: none;"></textarea>
-                                <small class="text-muted">This reason will be recorded in the audit trail.</small>
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" class="btn btn-warning" onclick="confirmArchiveStudent()">
-                                <i class="bi bi-archive"></i> Archive Student
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        modal = document.getElementById('archiveStudentModal');
+        console.error('Archive modal element not found');
+        return;
     }
-    
-    // Set student details
-    document.getElementById('archiveStudentId').value = studentId;
-    document.getElementById('archiveStudentName').textContent = studentName;
-    document.getElementById('archiveReasonSelect').value = '';
-    document.getElementById('archiveReasonText').value = '';
-    document.getElementById('archiveReasonText').style.display = 'none';
-    
-    // Show modal
-    const bsModal = new bootstrap.Modal(modal);
+
+    const idInput = document.getElementById('archiveStudentId');
+    const nameLabel = document.getElementById('archiveStudentName');
+    const reasonSelect = document.getElementById('archiveReason');
+    const otherReason = document.getElementById('archiveOtherReason');
+    const otherContainer = document.getElementById('otherReasonContainer');
+
+    if (idInput) idInput.value = studentId;
+    if (nameLabel) nameLabel.textContent = studentName;
+    if (reasonSelect) reasonSelect.value = '';
+    if (otherReason) otherReason.value = '';
+    if (otherContainer) otherContainer.style.display = 'none';
+
+    const bsModal = bootstrap.Modal.getOrCreateInstance(modal);
     bsModal.show();
 }
 
 function handleArchiveReasonChange() {
-    const select = document.getElementById('archiveReasonSelect');
-    const textarea = document.getElementById('archiveReasonText');
-    
-    if (select.value === 'custom') {
-        textarea.style.display = 'block';
-        textarea.focus();
+    const select = document.getElementById('archiveReason');
+    const otherContainer = document.getElementById('otherReasonContainer');
+    const otherInput = document.getElementById('archiveOtherReason');
+
+    if (!select || !otherContainer || !otherInput) {
+        return;
+    }
+
+    if (select.value === 'other') {
+        otherContainer.style.display = 'block';
+        otherInput.focus();
     } else {
-        textarea.style.display = 'none';
-        textarea.value = '';
+        otherContainer.style.display = 'none';
+        otherInput.value = '';
     }
 }
 
-function confirmArchiveStudent() {
-    const studentId = document.getElementById('archiveStudentId').value;
-    const studentName = document.getElementById('archiveStudentName').textContent;
-    const reasonSelect = document.getElementById('archiveReasonSelect').value;
-    const reasonText = document.getElementById('archiveReasonText').value;
-    
-    let finalReason = '';
-    if (reasonSelect === 'custom') {
-        finalReason = reasonText.trim();
-    } else if (reasonSelect) {
-        finalReason = reasonSelect;
+// Handle archive form submission with confirmation dialog
+document.addEventListener('DOMContentLoaded', function() {
+    const archiveForm = document.getElementById('archiveForm');
+
+    if (archiveForm) {
+        archiveForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            // Validate reason selection
+            const reasonSelect = document.getElementById('archiveReason');
+            const otherReasonText = document.getElementById('archiveOtherReason');
+            
+            if (!reasonSelect.value) {
+                alert('Please select a reason for archiving.');
+                return;
+            }
+
+            if (reasonSelect.value === 'other' && !otherReasonText.value.trim()) {
+                alert('Please specify the reason for archiving.');
+                otherReasonText.focus();
+                return;
+            }
+
+            // Get student name for confirmation
+            const studentName = document.getElementById('archiveStudentName').textContent;
+            const reason = reasonSelect.value === 'other' ? otherReasonText.value : reasonSelect.options[reasonSelect.selectedIndex].text;
+
+            // Show confirmation dialog
+            if (confirm(`⚠️ CONFIRM ARCHIVE\n\nStudent: ${studentName}\nReason: ${reason}\n\nThis will:\n• Deactivate the student account\n• Compress all documents to ZIP\n• Prevent student login\n• Move student to archived list\n\nAre you sure you want to proceed?`)) {
+                // Submit the form
+                archiveForm.submit();
+            }
+        });
     }
-    
-    if (!finalReason) {
-        alert('Please select or enter a reason for archiving.');
-        return;
-    }
-    
-    if (!confirm(`Are you sure you want to archive ${studentName}?\n\nReason: ${finalReason}\n\nThis student will no longer be able to log in.`)) {
-        return;
-    }
-    
-    // Send archive request
-    const formData = new FormData();
-    formData.append('action', 'archive_student');
-    formData.append('student_id', studentId);
-    formData.append('archive_reason', finalReason);
-    
-    fetch('manage_applicants.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert(data.message);
-            // Close modal
-            const modal = bootstrap.Modal.getInstance(document.getElementById('archiveStudentModal'));
-            modal.hide();
-            // Reload page to refresh the list
-            location.reload();
-        } else {
-            alert('Error: ' + data.message);
-        }
-    })
-    .catch(error => {
-        alert('An error occurred. Please try again.');
-        console.error(error);
-    });
-}
+});
 
 // Load validation data into modal (modal will be shown automatically by Bootstrap data attributes)
 async function loadValidationData(docType, studentId) {
@@ -3595,164 +3049,6 @@ function showValidationModal() {
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                     <i class="bi bi-x-circle me-1"></i>Close
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Rejection Modal -->
-<div class="modal fade" id="rejectModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title">
-                    <i class="bi bi-x-circle me-2"></i>Reject Applicant
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    <strong>Student:</strong> <span id="rejectStudentName"></span>
-                </div>
-
-                <!-- Rejection Type Selection -->
-                <div class="mb-4">
-                    <label class="form-label fw-bold">Rejection Type</label>
-                    <div class="btn-group w-100" role="group">
-                        <input type="radio" class="btn-check" name="rejection_type" id="rejectTypeDocument" value="document" checked>
-                        <label class="btn btn-outline-warning" for="rejectTypeDocument">
-                            <i class="bi bi-file-earmark-x me-2"></i>Document Re-upload
-                            <small class="d-block text-muted">Student can fix and re-upload</small>
-                        </label>
-
-                        <input type="radio" class="btn-check" name="rejection_type" id="rejectTypeArchive" value="archive">
-                        <label class="btn btn-outline-danger" for="rejectTypeArchive">
-                            <i class="bi bi-archive me-2"></i>Archive & Reject
-                            <small class="d-block text-muted">Student does not qualify</small>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Document Re-upload Section -->
-                <div id="documentReuploadSection">
-                    <h6 class="fw-bold mb-3">
-                        <i class="bi bi-list-check me-2"></i>Select Documents to Reject
-                    </h6>
-                    <p class="text-muted small">Check the documents that need to be re-uploaded. Unchecked documents will remain view-only.</p>
-                    
-                    <div class="document-checklist">
-                        <div class="form-check p-3 mb-2 border rounded">
-                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="00" id="reject_eaf">
-                            <label class="form-check-label w-100" for="reject_eaf">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <i class="bi bi-file-earmark-text text-primary me-2"></i>
-                                        <strong>EAF (Enrollment Assistance Form)</strong>
-                                    </div>
-                                    <span class="badge bg-secondary">Code: 00</span>
-                                </div>
-                            </label>
-                        </div>
-
-                        <div class="form-check p-3 mb-2 border rounded">
-                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="01" id="reject_grades">
-                            <label class="form-check-label w-100" for="reject_grades">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <i class="bi bi-mortarboard text-success me-2"></i>
-                                        <strong>Academic Grades</strong>
-                                    </div>
-                                    <span class="badge bg-secondary">Code: 01</span>
-                                </div>
-                            </label>
-                        </div>
-
-                        <div class="form-check p-3 mb-2 border rounded">
-                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="02" id="reject_letter">
-                            <label class="form-check-label w-100" for="reject_letter">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <i class="bi bi-envelope text-info me-2"></i>
-                                        <strong>Letter to Mayor</strong>
-                                    </div>
-                                    <span class="badge bg-secondary">Code: 02</span>
-                                </div>
-                            </label>
-                        </div>
-
-                        <div class="form-check p-3 mb-2 border rounded">
-                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="03" id="reject_certificate">
-                            <label class="form-check-label w-100" for="reject_certificate">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <i class="bi bi-award text-warning me-2"></i>
-                                        <strong>Certificate of Indigency</strong>
-                                    </div>
-                                    <span class="badge bg-secondary">Code: 03</span>
-                                </div>
-                            </label>
-                        </div>
-
-                        <div class="form-check p-3 mb-2 border rounded">
-                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="04" id="reject_id">
-                            <label class="form-check-label w-100" for="reject_id">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <i class="bi bi-person-badge text-danger me-2"></i>
-                                        <strong>ID Picture</strong>
-                                    </div>
-                                    <span class="badge bg-secondary">Code: 04</span>
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="mt-3">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAllDocuments()">
-                            <i class="bi bi-check-all me-1"></i>Select All
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="clearAllDocuments()">
-                            <i class="bi bi-x me-1"></i>Clear All
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Archive Section -->
-                <div id="archiveSection" style="display: none;">
-                    <h6 class="fw-bold mb-3">
-                        <i class="bi bi-archive me-2"></i>Archive Reason
-                    </h6>
-                    <select class="form-select mb-3" id="archiveReasonSelect">
-                        <option value="">Select a reason...</option>
-                        <option value="Did not meet grade requirements">Did not meet grade requirements</option>
-                        <option value="Incomplete requirements">Incomplete requirements</option>
-                        <option value="Duplicate application">Duplicate application</option>
-                        <option value="Not eligible for the program">Not eligible for the program</option>
-                        <option value="Student withdrew application">Student withdrew application</option>
-                        <option value="Failed verification check">Failed verification check</option>
-                        <option value="custom">Other (specify below)</option>
-                    </select>
-                </div>
-
-                <!-- Common Rejection Notes -->
-                <div class="mt-3">
-                    <label class="form-label fw-bold">Additional Notes <span class="text-muted">(Optional)</span></label>
-                    <textarea class="form-control" id="rejectionNotes" rows="3" 
-                              placeholder="Provide specific feedback to the student about why their documents/application were rejected..."></textarea>
-                    <small class="text-muted">This will be included in the notification sent to the student.</small>
-                </div>
-                
-                <!-- CSRF Token for rejection form -->
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfRejectApplicantToken) ?>">
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="bi bi-x me-1"></i>Cancel
-                </button>
-                <button type="button" class="btn btn-danger" onclick="confirmRejectStudent()">
-                    <i class="bi bi-check-circle me-1"></i>Confirm Rejection
                 </button>
             </div>
         </div>
