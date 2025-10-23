@@ -6362,78 +6362,14 @@ function setupBirthdateValidation() {
 }
 
 function setupTermsAndConditions() {
-    // Handle terms and conditions modal
-    const termsLink = document.querySelector('a[data-bs-target="#termsModal"]');
-    const acceptBtn = document.getElementById('acceptTermsBtn');
-    const agreeCheckbox = document.getElementById('agreeTerms');
-    const termsModal = document.getElementById('termsModal');
+    // Terms and conditions handling is now managed by user_registration.js
+    // This includes:
+    // - Scroll tracking (must scroll to bottom to enable Accept button)
+    // - Checkbox validation (must read modal before checking)
+    // - Modal state management
+    // - Event handlers for Accept button
     
-    console.log('🔍 Terms elements found:', {
-        termsLink: !!termsLink,
-        acceptBtn: !!acceptBtn,
-        agreeCheckbox: !!agreeCheckbox,
-        termsModal: !!termsModal,
-        bootstrap: typeof window.bootstrap
-    });
-    
-    // Bootstrap should handle the modal opening automatically via data-bs-toggle and data-bs-target
-    // No need for custom click handler - just verify Bootstrap is loaded
-    if (!window.bootstrap) {
-        console.warn('⚠️ Bootstrap not loaded! Modal may not work.');
-    }
-    
-    // Handle accept button
-    if (acceptBtn) {
-        acceptBtn.addEventListener('click', function() {
-            // Check the terms checkbox
-            if (agreeCheckbox) {
-                agreeCheckbox.checked = true;
-                agreeCheckbox.dispatchEvent(new Event('change'));
-                console.log('✅ Terms accepted and checkbox checked');
-            }
-            
-            // Close modal using Bootstrap
-            if (window.bootstrap && window.bootstrap.Modal) {
-                const modal = bootstrap.Modal.getInstance(termsModal);
-                if (modal) {
-                    modal.hide();
-                    console.log('✅ Terms modal closed via Bootstrap');
-                }
-            }
-        });
-    }
-    
-    // Handle modal close buttons
-    const closeButtons = termsModal?.querySelectorAll('[data-bs-dismiss="modal"]');
-    closeButtons?.forEach(button => {
-        button.addEventListener('click', function() {
-            if (window.bootstrap && window.bootstrap.Modal) {
-                const modal = bootstrap.Modal.getInstance(termsModal);
-                if (modal) modal.hide();
-            } else {
-                // Fallback close
-                if (termsModal) {
-                    termsModal.style.display = 'none';
-                    termsModal.classList.remove('show');
-                    termsModal.removeAttribute('aria-modal');
-                    termsModal.removeAttribute('role');
-                    document.body.classList.remove('modal-open');
-                }
-            }
-        });
-    });
-    
-    // Add backdrop click to close
-    if (termsModal) {
-        termsModal.addEventListener('click', function(e) {
-            if (e.target === termsModal) {
-                const closeBtn = termsModal.querySelector('[data-bs-dismiss="modal"]');
-                if (closeBtn) closeBtn.click();
-            }
-        });
-    }
-    
-    console.log('✅ Terms and Conditions functionality initialized');
+    console.log('✅ Terms and Conditions (handled by user_registration.js)');
 }
 </script>
 </body>
