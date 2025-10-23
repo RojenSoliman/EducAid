@@ -3022,10 +3022,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         json_response(['status' => 'error', 'message' => 'Invalid mobile number format.']);
     }
 
-    // Validate date of birth (must be at least 10 years ago)
-    $minDate = date('Y-m-d', strtotime('-10 years'));
+    // Validate date of birth (must be at least 16 years ago)
+    $minDate = date('Y-m-d', strtotime('-16 years'));
+    $maxDate = date('Y-m-d', strtotime('-100 years')); // Maximum age 100
     if ($bdate > $minDate) {
-        json_response(['status' => 'error', 'message' => 'Invalid date of birth. You must be at least 10 years old to register.']);
+        json_response(['status' => 'error', 'message' => 'Invalid date of birth. You must be at least 16 years old to register.']);
+    }
+    if ($bdate < $maxDate) {
+        json_response(['status' => 'error', 'message' => 'Invalid date of birth. Please enter a valid birthdate.']);
     }
 
     // Check if email or mobile already exists
@@ -3541,8 +3545,12 @@ if (!$isAjaxRequest) {
                 <!-- Step 2: Birthdate and Sex -->
                 <div class="step-panel d-none" id="step-2">
                     <div class="mb-3">
-                        <label class="form-label">Date of Birth</label>
-                        <input type="date" class="form-control" name="bdate" autocomplete="bday" required />
+                        <label class="form-label">Date of Birth <small class="text-muted">(Must be 16 years or older)</small></label>
+                        <input type="date" class="form-control" name="bdate" autocomplete="bday" 
+                               max="<?php echo date('Y-m-d', strtotime('-16 years')); ?>" 
+                               min="<?php echo date('Y-m-d', strtotime('-100 years')); ?>" 
+                               required />
+                        <small class="form-text text-muted">You must be at least 16 years old to register.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label d-block">Gender</label>
@@ -6130,6 +6138,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // School Student ID duplicate checking
     setupSchoolStudentIdCheck();
     
+    // Birthdate age validation (16 years minimum)
+    setupBirthdateValidation();
+    
     // Wait a moment for external scripts to load
     setTimeout(function() {
         console.log('🔍 Final function check:', {
@@ -6277,6 +6288,77 @@ async function checkSchoolStudentIdDuplicate(schoolStudentId, universityId, warn
     } catch (error) {
         console.error('School student ID check error:', error);
     }
+}
+
+// Birthdate validation - Must be 16 years or older
+function setupBirthdateValidation() {
+    const bdateInput = document.querySelector('input[name="bdate"]');
+    
+    if (!bdateInput) {
+        console.log('⚠️ Birthdate input not found');
+        return;
+    }
+    
+    bdateInput.addEventListener('change', function() {
+        const selectedDate = new Date(this.value);
+        const today = new Date();
+        
+        // Calculate age
+        let age = today.getFullYear() - selectedDate.getFullYear();
+        const monthDiff = today.getMonth() - selectedDate.getMonth();
+        const dayDiff = today.getDate() - selectedDate.getDate();
+        
+        // Adjust age if birthday hasn't occurred this year
+        if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+            age--;
+        }
+        
+        // Validate minimum age of 16
+        if (age < 16) {
+            this.setCustomValidity('You must be at least 16 years old to register.');
+            this.classList.add('is-invalid');
+            
+            // Create or update error message
+            let errorMsg = this.parentElement.querySelector('.invalid-feedback');
+            if (!errorMsg) {
+                errorMsg = document.createElement('div');
+                errorMsg.className = 'invalid-feedback';
+                this.parentElement.appendChild(errorMsg);
+            }
+            errorMsg.textContent = `You must be at least 16 years old to register. You are currently ${age} years old.`;
+            
+            // Show notification
+            showNotifier(`⚠️ Invalid birthdate: You must be at least 16 years old to register. You are currently ${age} years old.`, 'error');
+        } else if (age > 100) {
+            this.setCustomValidity('Please enter a valid birthdate.');
+            this.classList.add('is-invalid');
+            
+            let errorMsg = this.parentElement.querySelector('.invalid-feedback');
+            if (!errorMsg) {
+                errorMsg = document.createElement('div');
+                errorMsg.className = 'invalid-feedback';
+                this.parentElement.appendChild(errorMsg);
+            }
+            errorMsg.textContent = 'Please enter a valid birthdate.';
+            
+            showNotifier('⚠️ Please enter a valid birthdate.', 'error');
+        } else {
+            this.setCustomValidity('');
+            this.classList.remove('is-invalid');
+            this.classList.add('is-valid');
+            
+            // Remove error message if it exists
+            const errorMsg = this.parentElement.querySelector('.invalid-feedback');
+            if (errorMsg) {
+                errorMsg.remove();
+            }
+            
+            // Show success notification
+            showNotifier(`✅ Valid birthdate (Age: ${age} years old)`, 'success');
+        }
+    });
+    
+    console.log('✅ Birthdate validation initialized');
 }
 
 function setupTermsAndConditions() {
