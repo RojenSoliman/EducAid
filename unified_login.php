@@ -1369,9 +1369,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
         </div>
     </div>
 
-    <?php
-    include_once 'includes/footer.php';
-    ?>
+    <!-- Footer - Dynamic CMS Controlled -->
+    <?php include __DIR__ . '/includes/website/footer.php'; ?>
 
     <script src="assets/js/bootstrap.bundle.min.js"></script>
     <script src="assets/js/login.js"></script>

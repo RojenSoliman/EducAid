@@ -22,7 +22,7 @@ class GradeValidationService {
     public function isSubjectPassing($universityKey, $rawGrade) {
         try {
             // First try the PostgreSQL function
-            $sql = "SELECT grading.grading_is_passing(CAST(? AS TEXT), CAST(? AS TEXT)) AS is_passing";
+            $sql = "SELECT grading_is_passing(CAST(? AS TEXT), CAST(? AS TEXT)) AS is_passing";
             $stmt = $this->db->prepare($sql);
             $stmt->execute([$universityKey, $rawGrade]);
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -33,7 +33,7 @@ class GradeValidationService {
             
             // Fallback: Get policy manually and validate in PHP
             try {
-                $sql = "SELECT scale_type, higher_is_better, passing_value FROM grading.university_passing_policy WHERE university_key = ? AND is_active = TRUE";
+                $sql = "SELECT scale_type, higher_is_better, passing_value FROM university_passing_policy WHERE university_key = ? AND is_active = TRUE";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([$universityKey]);
                 $policy = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -108,7 +108,7 @@ class GradeValidationService {
      */
     public function getUniversityGradingPolicy($universityKey) {
         try {
-            $sql = "SELECT * FROM grading.university_passing_policy WHERE university_key = ? AND is_active = TRUE";
+            $sql = "SELECT * FROM university_passing_policy WHERE university_key = ? AND is_active = TRUE";
             $stmt = $this->db->prepare($sql);
             $stmt->execute([$universityKey]);
             return $stmt->fetch(PDO::FETCH_ASSOC);

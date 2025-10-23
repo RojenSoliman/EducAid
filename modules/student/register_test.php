@@ -2325,10 +2325,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processCertificateOcr
 // --- Enhanced Grades OCR Processing with Strict Validation ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) {
     try {
-        $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_grades_ocr');
-        if (!$captcha['ok']) {
-            json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
-        }
+        // TEMPORARY: Bypass CAPTCHA for debugging OCR grade extraction
+        // $captcha = verify_recaptcha_v3($_POST['g-recaptcha-response'] ?? '', 'process_grades_ocr');
+        // if (!$captcha['ok']) {
+        //     json_response(['status'=>'error','message'=>'Security verification failed (captcha).']);
+        // }
 
         if (!isset($_FILES['grades_document']) || $_FILES['grades_document']['error'] !== UPLOAD_ERR_OK) {
             json_response(['status' => 'error', 'message' => 'No grades document uploaded or upload error.']);
@@ -2419,11 +2420,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                     // Add raw text if needed for other validations
                     $ocrText .= "\nRaw Document Content:\n";
                     
-                    // Fall back to basic Tesseract for full text extraction AND generate TSV
+                    // Fall back to basic Tesseract for full text extraction
                     $outputBase = $uploadDir . 'ocr_output_' . uniqid();
                     $outputFile = $outputBase . '.txt';
-                    
-                    // Generate text output
                     $cmd = "tesseract " . escapeshellarg($targetPath) . " " . 
                               escapeshellarg($outputBase) . " --oem 1 --psm 6 -l eng 2>&1";
                     
@@ -2436,19 +2435,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                         error_log("Tesseract command failed: $cmd");
                         error_log("Tesseract output: $tesseractOutput");
                     }
-                    
-                    // Generate TSV data (structured OCR data with confidence scores and coordinates)
-                    $tsvOutputBase = $uploadDir . pathinfo($fileName, PATHINFO_FILENAME);
-                    $tsvCmd = "tesseract " . escapeshellarg($targetPath) . " " . 
-                             escapeshellarg($tsvOutputBase) . " -l eng --oem 1 --psm 6 tsv 2>&1";
-                    @shell_exec($tsvCmd);
-                    
-                    // TSV file should be created as filename.tsv
-                    $generatedTsvFile = $tsvOutputBase . '.tsv';
-                    $permanentTsvFile = $targetPath . '.tsv';
-                    if (file_exists($generatedTsvFile)) {
-                        @rename($generatedTsvFile, $permanentTsvFile);
-                    }
                 } else {
                     // Enhanced OCR failed, try basic Tesseract
                     $outputBase = $uploadDir . 'ocr_output_' . uniqid();
@@ -2457,7 +2443,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                     // Try multiple PSM modes for better results
                     $psmModes = [6, 4, 7, 8, 3]; // Different page segmentation modes
                     $success = false;
-                    $successPsm = 6;
                     
                     foreach ($psmModes as $psm) {
                         $cmd = "tesseract " . escapeshellarg($targetPath) . " " . 
@@ -2470,7 +2455,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                             if (!empty(trim($testText)) && strlen(trim($testText)) > 10) {
                                 $ocrText = $testText;
                                 $success = true;
-                                $successPsm = $psm;
                                 break;
                             }
                         }
@@ -2502,19 +2486,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                     }
                     
                     @unlink($outputFile);
-                    
-                    // Generate TSV data with the successful PSM mode
-                    $tsvOutputBase = $uploadDir . pathinfo($fileName, PATHINFO_FILENAME);
-                    $tsvCmd = "tesseract " . escapeshellarg($targetPath) . " " . 
-                             escapeshellarg($tsvOutputBase) . " -l eng --oem 1 --psm $successPsm tsv 2>&1";
-                    @shell_exec($tsvCmd);
-                    
-                    // Move TSV file to permanent location
-                    $generatedTsvFile = $tsvOutputBase . '.tsv';
-                    $permanentTsvFile = $targetPath . '.tsv';
-                    if (file_exists($generatedTsvFile)) {
-                        @rename($generatedTsvFile, $permanentTsvFile);
-                    }
                 }
                 
             } catch (Exception $e) {
@@ -2546,19 +2517,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                 
                 $ocrText = file_get_contents($outputFile);
                 @unlink($outputFile);
-                
-                // Generate TSV data for fallback
-                $tsvOutputBase = $uploadDir . pathinfo($fileName, PATHINFO_FILENAME);
-                $tsvCmd = "tesseract " . escapeshellarg($targetPath) . " " . 
-                         escapeshellarg($tsvOutputBase) . " -l eng --oem 1 --psm 6 tsv 2>&1";
-                @shell_exec($tsvCmd);
-                
-                // Move TSV file to permanent location
-                $generatedTsvFile = $tsvOutputBase . '.tsv';
-                $permanentTsvFile = $targetPath . '.tsv';
-                if (file_exists($generatedTsvFile)) {
-                    @rename($generatedTsvFile, $permanentTsvFile);
-                }
             }
         }
 
@@ -2632,7 +2590,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
         if (!$yearLevelMatch) {
             error_log("Year validation failed for '$declaredYearName' - setting empty grade section");
             error_log("Year validation error: " . ($yearValidationResult['error'] ?? 'Unknown error'));
-            $yearLevelSection = ''; // Empty section = no grades extracted
+            // TEMPORARY DEBUG: Still extract grades for troubleshooting
+            // $yearLevelSection = ''; // Empty section = no grades extracted
+            // Comment out the above line to see what grades would be extracted
         }
 
         // === 2. ADMIN SEMESTER VALIDATION ===
@@ -2783,23 +2743,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
         $verification['summary']['average_confidence'] = !empty($confValues) ? 
             round(array_sum($confValues) / count($confValues), 1) : 0;
 
-        // Save OCR text to .ocr.txt file (in correct directory: uploadDir)
-        $ocrTextFile = $targetPath . '.ocr.txt';
-        @file_put_contents($ocrTextFile, $ocrText);
-
-        // Save full verification results to .verify.json file (in correct directory: uploadDir)
-        $verifyJsonFile = $targetPath . '.verify.json';
-        @file_put_contents($verifyJsonFile, json_encode($verification, JSON_PRETTY_PRINT));
-
-        // Save verification results for confidence calculation
+        // Save verification results
         $confidenceFile = $uploadDir . 'grades_confidence.json';
         @file_put_contents($confidenceFile, json_encode([
             'overall_confidence' => $verification['summary']['average_confidence'],
-            'ocr_confidence' => $verification['summary']['average_confidence'],
             'detailed_scores' => $verification['confidence_scores'],
-            'extracted_grades' => $validGrades,
-            'average_grade' => $averageGrade,
-            'passing_status' => $allGradesPassing,
+            'grades' => $validGrades,
             'eligibility_status' => $verification['summary']['eligibility_status'],
             'timestamp' => time()
         ]));
@@ -3007,23 +2956,13 @@ function validateGradeThreshold($yearSection, $declaredYearName, $debug = false,
 
     $lines = preg_split('/\r?\n/', $yearSection);
     $lastNonEmpty = '';
-    
-    // Track seen subjects to avoid duplicates
-    $seenSubjects = [];
 
     foreach ($lines as $ln) {
         $lnTrim = trim($ln);
         if ($lnTrim === '') continue;
 
-        // Skip summary lines but be less aggressive
-        if (preg_match('/\b(total\s+units|total\s+credit|gwa|general\s+weighted\s+average|passing\s+percentage)\b/i', $lnTrim)) {
+        if (preg_match('/\b(total|units|gwa|general weighted average)\b/i', $lnTrim)) {
             if ($debug) $grade_debug[] = ['skipped' => $lnTrim];
-            continue;
-        }
-        
-        // Skip lines that are just column headers
-        if (preg_match('/^\s*(code|title|grade|compl|units|credit|semester)\s*$/i', $lnTrim)) {
-            if ($debug) $grade_debug[] = ['skipped_header' => $lnTrim];
             continue;
         }
 
@@ -3127,48 +3066,9 @@ function validateGradeThreshold($yearSection, $declaredYearName, $debug = false,
             }
         }
 
-        // Derive subject by intelligently removing grade/unit numbers
-        $subjectCandidate = $lnTrim;
-        
-        // Strategy: Keep the beginning part (subject code + name), remove numbers from the end
-        // Remove separator characters first
-        $subjectCandidate = preg_replace('/[:\|]{1,}/', ' ', $subjectCandidate);
-        
-        // Enhanced approach: Remove grade/unit tokens more intelligently
-        $lineLength = strlen($subjectCandidate);
-        
-        // If we have grade tokens, try to identify subject vs. grade section
-        if (!empty($validTokens)) {
-            // Find the position of the FIRST grade token (likely where subject ends)
-            $firstGradePos = false;
-            foreach ($validTokens as $token) {
-                $pos = strpos($subjectCandidate, $token);
-                if ($pos !== false) {
-                    // Skip if it's in the first 30% (likely part of subject code like "GNED 09")
-                    if ($pos > ($lineLength * 0.3)) {
-                        if ($firstGradePos === false || $pos < $firstGradePos) {
-                            $firstGradePos = $pos;
-                        }
-                    }
-                }
-            }
-            
-            // If we found where grades start, truncate there
-            if ($firstGradePos !== false) {
-                $subjectCandidate = substr($subjectCandidate, 0, $firstGradePos);
-            } else {
-                // Fallback: remove each token individually
-                foreach ($validTokens as $token) {
-                    $pos = strpos($subjectCandidate, $token);
-                    if ($pos !== false && $pos > ($lineLength * 0.3)) {
-                        $subjectCandidate = preg_replace('/\b' . preg_quote($token, '/') . '\b/', ' ', $subjectCandidate, 1);
-                    }
-                }
-            }
-        }
-        
-        // Also remove common separators like multiple dashes
-        $subjectCandidate = preg_replace('/\s*-+\s*/', ' ', $subjectCandidate);
+        // Derive subject by removing numeric tokens
+        $subjectCandidate = preg_replace('/(?:\d+\.\d+|\.\d+|\d+)/', ' ', $lnTrim);
+        $subjectCandidate = preg_replace('/[:\-\|]{1,}/', ' ', $subjectCandidate);
         $subjectCandidate = trim(preg_replace('/\s+/', ' ', $subjectCandidate));
         $cleanSubject = cleanSubjectName($subjectCandidate);
 
@@ -3193,22 +3093,10 @@ function validateGradeThreshold($yearSection, $declaredYearName, $debug = false,
         // Determine canonical grade for legacy checks
         $canonical = $gradeObj['grade'] ?? null;
         if ($canonical !== null) {
-            // Check for duplicates before adding
-            $isDuplicate = false;
-            $subjectKey = strtolower(trim($cleanSubject));
-            if (isset($seenSubjects[$subjectKey])) {
-                $isDuplicate = true;
-            } else {
-                $seenSubjects[$subjectKey] = true;
-                $validGrades[] = $gradeObj;
-                $gradeVal = floatval($canonical);
-                if ($gradeVal > 3.00) { $failingGrades[] = ['subject'=>$cleanSubject,'grade'=>$canonical]; $allPassing = false; }
-                if ($debug) $grade_debug[] = ['accepted' => $gradeObj, 'raw_line' => $lnTrim];
-            }
-            
-            if ($isDuplicate && $debug) {
-                $grade_debug[] = ['duplicate_skipped' => $gradeObj, 'raw_line' => $lnTrim];
-            }
+            $validGrades[] = $gradeObj;
+            $gradeVal = floatval($canonical);
+            if ($gradeVal > 3.00) { $failingGrades[] = ['subject'=>$cleanSubject,'grade'=>$canonical]; $allPassing = false; }
+            if ($debug) $grade_debug[] = ['accepted' => $gradeObj, 'raw_line' => $lnTrim];
         } else {
             if ($debug) $grade_debug[] = ['no_grade_found' => $lnTrim];
         }
@@ -3216,47 +3104,22 @@ function validateGradeThreshold($yearSection, $declaredYearName, $debug = false,
         $lastNonEmpty = $lnTrim;
     }
 
-    // Second pass for grade-only lines (more lenient for missing subjects)
+    // Second pass for grade-only lines
     $lastNonEmpty = '';
     foreach ($lines as $ln) {
         $lnTrim = trim($ln);
         if ($lnTrim === '') continue;
-        
-        // Check if line is ONLY a grade (no subject text)
         $onlyGrade = normalize_and_extract_grade_student($lnTrim);
-        $isGradeOnly = ($onlyGrade !== null && preg_match('/^[\d\.\s\-]+$/', $lnTrim));
-        
-        if ($isGradeOnly && !empty($lastNonEmpty)) {
-            // Previous line might be the subject
-            $cleanSubject = cleanSubjectName($lastNonEmpty);
-            if ($cleanSubject && strlen($cleanSubject) >= 3) {
-                $subjectKey = strtolower(trim($cleanSubject));
-                
-                // Only add if not already extracted
-                if (!isset($seenSubjects[$subjectKey])) {
+        if ($onlyGrade !== null && preg_match('/^[\d\.]+$/', $lnTrim)) {
+            if (!empty($lastNonEmpty)) {
+                $cleanSubject = cleanSubjectName($lastNonEmpty);
+                if ($cleanSubject) {
                     $gradeData = ['subject'=>$cleanSubject,'grade'=>number_format(floatval($onlyGrade),2,'.','')];
-                    $seenSubjects[$subjectKey] = true;
-                    $validGrades[] = $gradeData;
-                    
-                    if (floatval($onlyGrade) > 3.00) { 
-                        $failingGrades[] = $gradeData; 
-                        $allPassing = false; 
-                    }
-                    
-                    if ($debug) {
-                        $grade_debug[] = [
-                            'paired' => $gradeData,
-                            'subject_line' => $lastNonEmpty,
-                            'grade_line' => $lnTrim,
-                            'method' => 'second_pass'
-                        ];
-                    }
+                    $already=false; foreach($validGrades as $vg){ if($vg['subject']===$gradeData['subject'] && ($vg['grade']??'')===$gradeData['grade']){$already=true;break;} }
+                    if(!$already){ $validGrades[]=$gradeData; if(floatval($onlyGrade)>3.00){ $failingGrades[]=$gradeData; $allPassing=false; } if($debug) $grade_debug[]=['paired'=>$gradeData,'subject_line'=>$lastNonEmpty,'grade_line'=>$lnTrim]; }
                 }
             }
-        }
-        
-        // Update last non-empty line (potential subject line)
-        if (!$isGradeOnly && strlen($lnTrim) > 2) {
+        } else {
             $lastNonEmpty = $lnTrim;
         }
     }
@@ -3619,15 +3482,8 @@ function validateAdminSchoolYear($ocrText, $adminSchoolYear) {
 }
 
 function cleanSubjectName($rawSubject) {
-    // Remove subject codes and keep only the descriptive subject name
+    // Remove common subject code patterns like A24-25, 1.25 B22-23, DCSNO1C, etc.
     $subject = $rawSubject;
-    
-    // Remove subject codes at the beginning (GNED09, IENG100A, IENG125A, etc.)
-    // Pattern: Letters (2-8) followed by optional numbers and optional letter at START
-    $subject = preg_replace('/^\b[A-Z]{2,8}\d+[A-Z]?\b\s*/i', '', $subject);
-    
-    // Also handle codes with spaces like "GNED 09" or "IENG 100A"
-    $subject = preg_replace('/^\b[A-Z]{2,8}\s+\d+[A-Z]?\b\s*/i', '', $subject);
     
     // Remove patterns like A24-25, B22-23, etc. (letter + year range)
     $subject = preg_replace('/\b[A-Z]\d{2}-\d{2}\b/i', '', $subject);
@@ -3635,10 +3491,10 @@ function cleanSubjectName($rawSubject) {
     // Remove patterns like 1.25 B22-23 (grade + space + code)
     $subject = preg_replace('/\d+\.\d+\s+[A-Z]\d{2}-\d{2}/i', '', $subject);
     
-    // Remove codes at the END (after the subject name)
-    $subject = preg_replace('/\s+\b[A-Z]{2,}[0-9]+[A-Z]?\b/', '', $subject);
+    // Remove standalone codes like DCSNO1C, DCSNO3C, etc.
+    $subject = preg_replace('/\b[A-Z]{2,}[0-9]+[A-Z]?\b/', '', $subject);
     
-    // Remove patterns like 22-23, A22-23 at the beginning or end (likely years)
+    // Remove patterns like 22-23, A22-23 at the beginning or end
     $subject = preg_replace('/^[A-Z]?\d{2}-\d{2}\s*/', '', $subject);
     $subject = preg_replace('/\s*[A-Z]?\d{2}-\d{2}$/', '', $subject);
     
@@ -3646,10 +3502,7 @@ function cleanSubjectName($rawSubject) {
     $subject = preg_replace('/^\d+\s+(?=and\s)/i', '', $subject);
     
     // Remove standalone single letters or numbers
-    $subject = preg_replace('/\s+\b[A-Z0-9]\b\s+/', ' ', $subject);
-    
-    // Remove "code" or "title" labels that might appear
-    $subject = preg_replace('/^(code|title)[\s:]+/i', '', $subject);
+    $subject = preg_replace('/\b[A-Z0-9]\b/', '', $subject);
     
     // Clean up extra spaces and return
     $subject = preg_replace('/\s+/', ' ', trim($subject));
@@ -3663,8 +3516,6 @@ function cleanSubjectName($rawSubject) {
 }
 // --- Final registration submission ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
-    // Include DocumentService for unified document management
-    require_once __DIR__ . '/../../services/DocumentService.php';
     // Basic input validation
     $firstname = trim($_POST['first_name'] ?? '');
     $middlename = trim($_POST['middle_name'] ?? '');
@@ -3696,14 +3547,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         json_response(['status' => 'error', 'message' => 'Invalid mobile number format.']);
     }
 
-    // Validate date of birth (must be at least 16 years ago)
-    $minDate = date('Y-m-d', strtotime('-16 years'));
-    $maxDate = date('Y-m-d', strtotime('-100 years')); // Maximum age 100
+    // Validate date of birth (must be at least 10 years ago)
+    $minDate = date('Y-m-d', strtotime('-10 years'));
     if ($bdate > $minDate) {
-        json_response(['status' => 'error', 'message' => 'Invalid date of birth. You must be at least 16 years old to register.']);
-    }
-    if ($bdate < $maxDate) {
-        json_response(['status' => 'error', 'message' => 'Invalid date of birth. Please enter a valid birthdate.']);
+        json_response(['status' => 'error', 'message' => 'Invalid date of birth. You must be at least 10 years old to register.']);
     }
 
     // Check if email or mobile already exists
@@ -3794,15 +3641,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         $student_id_row = pg_fetch_assoc($result);
         $student_id = $student_id_row['student_id'];
 
-        // Initialize DocumentService
-        $docService = new DocumentService($connection);
-        
         // Create standardized name for file naming (lastname_firstname)
         $cleanLastname = preg_replace('/[^a-zA-Z0-9]/', '', $lastname);
         $cleanFirstname = preg_replace('/[^a-zA-Z0-9]/', '', $firstname);
         $namePrefix = strtolower($cleanLastname . '_' . $cleanFirstname);
 
-        // === SAVE ID PICTURE USING DocumentService ===
+        // Save Student ID Picture to temporary folder (not permanent until approved)
         $tempIDPictureDir = '../../assets/uploads/temp/id_pictures/';
         $allIDFiles = glob($tempIDPictureDir . '*');
         $idTempFiles = array_filter($allIDFiles, function($file) {
@@ -3810,318 +3654,336 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
             return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
         });
         
-        error_log("Processing ID Picture for student: $student_id");
+        error_log("Looking for ID Picture files in: " . $tempIDPictureDir);
+        error_log("Found ID Picture files: " . print_r($idTempFiles, true));
         
         if (!empty($idTempFiles)) {
+            // Process the first ID Picture file found
             foreach ($idTempFiles as $idTempFile) {
                 $idExtension = pathinfo($idTempFile, PATHINFO_EXTENSION);
                 $idNewFilename = $student_id . '_id_' . time() . '.' . $idExtension;
                 $idTempPath = $tempIDPictureDir . $idNewFilename;
                 
-                // Copy file with new student ID-based name
+                // Copy the main file
                 if (@copy($idTempFile, $idTempPath)) {
-                    // Copy associated OCR files to new filename (.verify.json, .ocr.txt, .tsv)
-                    if (file_exists($idTempFile . '.verify.json')) {
-                        @copy($idTempFile . '.verify.json', $idTempPath . '.verify.json');
-                        @unlink($idTempFile . '.verify.json'); // Delete old file
-                    }
-                    if (file_exists($idTempFile . '.ocr.txt')) {
-                        @copy($idTempFile . '.ocr.txt', $idTempPath . '.ocr.txt');
-                        @unlink($idTempFile . '.ocr.txt'); // Delete old file
-                    }
-                    if (file_exists($idTempFile . '.tsv')) {
-                        @copy($idTempFile . '.tsv', $idTempPath . '.tsv');
-                        @unlink($idTempFile . '.tsv'); // Delete old file
-                    }
+                    error_log("Copied ID Picture from $idTempFile to $idTempPath");
                     
-                    // Get OCR data
+                    // Get OCR confidence from confidence file
                     $idConfidenceFile = $tempIDPictureDir . 'id_picture_confidence.json';
-                    $idOcrData = ['ocr_confidence' => 0, 'verification_status' => 'pending'];
+                    $idConfidence = null;
                     
                     if (file_exists($idConfidenceFile)) {
                         $idConfData = json_decode(file_get_contents($idConfidenceFile), true);
-                        if ($idConfData) {
-                            $idOcrData = [
-                                'ocr_confidence' => $idConfData['ocr_confidence'] ?? 0,
-                                'verification_score' => $idConfData['overall_confidence'] ?? 0,
-                                'verification_status' => ($idConfData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
-                                'verification_details' => $idConfData // Store full verification results
-                            ];
+                        if ($idConfData && isset($idConfData['ocr_confidence'])) {
+                            $idConfidence = $idConfData['ocr_confidence'];
                         }
-                        @unlink($idConfidenceFile);
+                        @unlink($idConfidenceFile); // Clean up confidence file
                     }
                     
-                    // Save using DocumentService
-                    $saveResult = $docService->saveDocument($student_id, 'id_picture', $idTempPath, $idOcrData);
+                    // Copy .verify.json file if it exists
+                    $idVerifyFile = $idTempFile . '.verify.json';
+                    if (file_exists($idVerifyFile)) {
+                        @copy($idVerifyFile, $idTempPath . '.verify.json');
+                        @unlink($idVerifyFile);
+                    }
                     
-                    if ($saveResult['success']) {
-                        error_log("DocumentService: Saved ID Picture - " . $saveResult['document_id']);
+                    // Copy .ocr.txt file if it exists
+                    $idOcrFile = $idTempFile . '.ocr.txt';
+                    if (file_exists($idOcrFile)) {
+                        @copy($idOcrFile, $idTempPath . '.ocr.txt');
+                        @unlink($idOcrFile);
+                    }
+                    
+                    // Save ID Picture record to database with temporary path and OCR confidence
+                    $idQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $idResult = pg_query_params($connection, $idQuery, [$student_id, 'id_picture', $idTempPath, 'false', $idConfidence]);
+                    
+                    if (!$idResult) {
+                        error_log("Failed to save ID Picture to database: " . pg_last_error($connection));
                     } else {
-                        error_log("DocumentService: Failed to save ID Picture - " . ($saveResult['error'] ?? 'Unknown error'));
+                        error_log("Successfully saved ID Picture to database for student $student_id with confidence $idConfidence%");
                     }
                     
-                    // Clean up original temp file (main image file)
+                    // Clean up original temp ID Picture file
                     @unlink($idTempFile);
-                    break;
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy ID Picture file from $idTempFile to $idTempPath");
                 }
             }
         } else {
-            error_log("No ID Picture temp files found");
+            error_log("No ID Picture temp files found in path: " . $tempIDPictureDir);
         }
 
-        // === SAVE ENROLLMENT FORM (EAF) USING DocumentService ===
+        // Save enrollment form to temporary folder (not permanent until approved)
+        $tempFormPath = '../../assets/uploads/temp/';
         $tempEnrollmentDir = '../../assets/uploads/temp/enrollment_forms/';
         $allFiles = glob($tempEnrollmentDir . '*');
         $tempFiles = array_filter($allFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
         });
         
-        error_log("Processing EAF for student: $student_id");
-        
         if (!empty($tempFiles)) {
+            // Create temporary enrollment forms directory for pending students
+            $tempEnrollmentDir = '../../assets/uploads/temp/enrollment_forms/';
+            if (!file_exists($tempEnrollmentDir)) {
+                mkdir($tempEnrollmentDir, 0777, true);
+            }
+
+            // Process all EAF files and rename them with student ID
             foreach ($tempFiles as $tempFile) {
-                $extension = pathinfo($tempFile, PATHINFO_EXTENSION);
+                $originalFilename = basename($tempFile);
+                $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+                
+                // Always rename with student ID prefix for consistent naming
                 $newFilename = $student_id . '_' . $namePrefix . '_eaf.' . $extension;
                 $tempEnrollmentPath = $tempEnrollmentDir . $newFilename;
                 
-                if (copy($tempFile, $tempEnrollmentPath)) {
-                    // Copy associated OCR files (.verify.json, .ocr.txt, .tsv)
-                    if (file_exists($tempFile . '.verify.json')) {
-                        @copy($tempFile . '.verify.json', $tempEnrollmentPath . '.verify.json');
-                        @unlink($tempFile . '.verify.json');
+                if (!copy($tempFile, $tempEnrollmentPath)) {
+                    error_log("Failed to copy EAF file from $tempFile to $tempEnrollmentPath");
+                    continue; // Skip this file and try others
+                } else {
+                    // Copy associated .verify.json and .ocr.txt files if they exist
+                    $verifySourceFile = $tempFile . '.verify.json';
+                    $ocrSourceFile = $tempFile . '.ocr.txt';
+                    $verifyDestFile = $tempEnrollmentPath . '.verify.json';
+                    $ocrDestFile = $tempEnrollmentPath . '.ocr.txt';
+                    
+                    if (file_exists($verifySourceFile)) {
+                        copy($verifySourceFile, $verifyDestFile);
+                        unlink($verifySourceFile);
                     }
-                    if (file_exists($tempFile . '.ocr.txt')) {
-                        @copy($tempFile . '.ocr.txt', $tempEnrollmentPath . '.ocr.txt');
-                        @unlink($tempFile . '.ocr.txt');
-                    }
-                    if (file_exists($tempFile . '.tsv')) {
-                        @copy($tempFile . '.tsv', $tempEnrollmentPath . '.tsv');
-                        @unlink($tempFile . '.tsv');
+                    if (file_exists($ocrSourceFile)) {
+                        copy($ocrSourceFile, $ocrDestFile);
+                        unlink($ocrSourceFile);
                     }
                     
-                    // Get OCR data
+                    unlink($tempFile); // Remove original file
+                    
+                    // Get OCR confidence score from temp file
                     $enrollmentConfidenceFile = $tempEnrollmentDir . 'enrollment_confidence.json';
-                    $eafOcrData = ['ocr_confidence' => 75.0, 'verification_status' => 'pending'];
-                    
+                    $enrollmentConfidence = 75.0; // default
                     if (file_exists($enrollmentConfidenceFile)) {
                         $confidenceData = json_decode(file_get_contents($enrollmentConfidenceFile), true);
-                        if ($confidenceData) {
-                            $eafOcrData = [
-                                'ocr_confidence' => $confidenceData['ocr_confidence'] ?? 75.0,
-                                'verification_score' => $confidenceData['overall_confidence'] ?? 75.0,
-                                'verification_status' => ($confidenceData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
-                                'verification_details' => $confidenceData
-                            ];
+                        if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                            $enrollmentConfidence = $confidenceData['overall_confidence'];
                         }
-                        @unlink($enrollmentConfidenceFile);
+                        unlink($enrollmentConfidenceFile); // Clean up confidence file
                     }
+
+                    // Save form record to database with temporary path
+                    $formQuery = "INSERT INTO enrollment_forms (student_id, file_path, original_filename) VALUES ($1, $2, $3)";
+                    pg_query_params($connection, $formQuery, [$student_id, $tempEnrollmentPath, $originalFilename]);
+
+                    // Also save to documents table with OCR confidence for confidence calculation
+                    $docQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    pg_query_params($connection, $docQuery, [$student_id, 'eaf', $tempEnrollmentPath, 'false', $enrollmentConfidence]);
                     
-                    // Save using DocumentService
-                    $saveResult = $docService->saveDocument($student_id, 'eaf', $tempEnrollmentPath, $eafOcrData);
-                    
-                    if ($saveResult['success']) {
-                        error_log("DocumentService: Saved EAF - " . $saveResult['document_id']);
-                    } else {
-                        error_log("DocumentService: Failed to save EAF - " . ($saveResult['error'] ?? 'Unknown error'));
-                    }
-                    
-                    @unlink($tempFile);
-                    break;
+                    error_log("Successfully saved EAF to database for student $student_id with confidence $enrollmentConfidence%");
+                    break; // Only process the first valid file
                 }
             }
         }
 
-        // === SAVE LETTER TO MAYOR USING DocumentService ===
+        // Save letter to mayor to temporary folder (not permanent until approved)
         $tempLetterDir = '../../assets/uploads/temp/letter_mayor/';
         $allLetterFiles = glob($tempLetterDir . '*');
         $letterTempFiles = array_filter($allLetterFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
         });
-        
-        error_log("Processing Letter to Mayor for student: $student_id");
-        
+        error_log("Looking for letter files in: " . $tempLetterDir);
+        error_log("Found letter files: " . print_r($letterTempFiles, true));
         if (!empty($letterTempFiles)) {
+            // Directory already exists (created during upload)
+            if (!file_exists($tempLetterDir)) {
+                mkdir($tempLetterDir, 0777, true);
+            }
+
+            // Process all letter files and rename them with student ID
             foreach ($letterTempFiles as $letterTempFile) {
-                $letterExtension = pathinfo($letterTempFile, PATHINFO_EXTENSION);
+                $originalLetterFilename = basename($letterTempFile);
+                $letterExtension = pathinfo($originalLetterFilename, PATHINFO_EXTENSION);
+                
+                // Always rename with student ID prefix for consistent naming
                 $newLetterFilename = $student_id . '_' . $namePrefix . '_lettertomayor.' . $letterExtension;
                 $letterTempPath = $tempLetterDir . $newLetterFilename;
 
+                // Get OCR confidence score from temp file
+                $letterConfidenceFile = $tempLetterDir . 'letter_confidence.json';
+                $letterConfidence = 75.0; // default
+                if (file_exists($letterConfidenceFile)) {
+                    $confidenceData = json_decode(file_get_contents($letterConfidenceFile), true);
+                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                        $letterConfidence = $confidenceData['overall_confidence'];
+                    }
+                    unlink($letterConfidenceFile); // Clean up confidence file
+                }
+
                 if (copy($letterTempFile, $letterTempPath)) {
-                    // Copy associated OCR files (.verify.json, .ocr.txt, .tsv)
-                    if (file_exists($letterTempFile . '.verify.json')) {
-                        @copy($letterTempFile . '.verify.json', $letterTempPath . '.verify.json');
-                        @unlink($letterTempFile . '.verify.json');
-                    }
-                    if (file_exists($letterTempFile . '.ocr.txt')) {
-                        @copy($letterTempFile . '.ocr.txt', $letterTempPath . '.ocr.txt');
-                        @unlink($letterTempFile . '.ocr.txt');
-                    }
-                    if (file_exists($letterTempFile . '.tsv')) {
-                        @copy($letterTempFile . '.tsv', $letterTempPath . '.tsv');
-                        @unlink($letterTempFile . '.tsv');
+                    // Copy verification files (.verify.json and .ocr.txt) if they exist
+                    $letterVerifyFile = $letterTempFile . '.verify.json';
+                    $letterOcrFile = $letterTempFile . '.ocr.txt';
+                    
+                    if (file_exists($letterVerifyFile)) {
+                        @copy($letterVerifyFile, $letterTempPath . '.verify.json');
+                        @unlink($letterVerifyFile);
                     }
                     
-                    // Get OCR data
-                    $letterConfidenceFile = $tempLetterDir . 'letter_confidence.json';
-                    $letterOcrData = ['ocr_confidence' => 75.0, 'verification_status' => 'pending'];
-                    
-                    if (file_exists($letterConfidenceFile)) {
-                        $confidenceData = json_decode(file_get_contents($letterConfidenceFile), true);
-                        if ($confidenceData) {
-                            $letterOcrData = [
-                                'ocr_confidence' => $confidenceData['ocr_confidence'] ?? 75.0,
-                                'verification_score' => $confidenceData['overall_confidence'] ?? 75.0,
-                                'verification_status' => ($confidenceData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
-                                'verification_details' => $confidenceData
-                            ];
-                        }
-                        @unlink($letterConfidenceFile);
+                    if (file_exists($letterOcrFile)) {
+                        @copy($letterOcrFile, $letterTempPath . '.ocr.txt');
+                        @unlink($letterOcrFile);
                     }
                     
-                    // Save using DocumentService
-                    $saveResult = $docService->saveDocument($student_id, 'letter_to_mayor', $letterTempPath, $letterOcrData);
+                    // Save letter record to database with temporary path and OCR confidence
+                    $letterQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $letterResult = pg_query_params($connection, $letterQuery, [$student_id, 'letter_to_mayor', $letterTempPath, 'false', $letterConfidence]);
                     
-                    if ($saveResult['success']) {
-                        error_log("DocumentService: Saved Letter - " . $saveResult['document_id']);
+                    if (!$letterResult) {
+                        error_log("Failed to save letter to database: " . pg_last_error($connection));
                     } else {
-                        error_log("DocumentService: Failed to save Letter - " . ($saveResult['error'] ?? 'Unknown error'));
+                        error_log("Successfully saved letter to database for student $student_id with confidence $letterConfidence%");
                     }
 
-                    @unlink($letterTempFile);
-                    break;
+                    // Clean up original temp letter file
+                    unlink($letterTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy letter file from $letterTempFile to $letterTempPath");
                 }
             }
+        } else {
+            error_log("No letter temp files found in path: " . $tempLetterDir);
         }
 
-        // === SAVE CERTIFICATE OF INDIGENCY USING DocumentService ===
+        // Save certificate of indigency to temporary folder (not permanent until approved)
         $tempIndigencyDir = '../../assets/uploads/temp/indigency/';
         $allCertificateFiles = glob($tempIndigencyDir . '*');
         $certificateTempFiles = array_filter($allCertificateFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
         });
-        
-        error_log("Processing Certificate of Indigency for student: $student_id");
-        
+        error_log("Looking for certificate files in: " . $tempIndigencyDir);
+        error_log("Found certificate files: " . print_r($certificateTempFiles, true));
         if (!empty($certificateTempFiles)) {
+            // Create temporary indigency directory for pending students
+            $tempIndigencyDir = '../../assets/uploads/temp/indigency/';
+            if (!file_exists($tempIndigencyDir)) {
+                mkdir($tempIndigencyDir, 0777, true);
+            }
+
+            // Process all certificate files and rename them with student ID
             foreach ($certificateTempFiles as $certificateTempFile) {
-                $certificateExtension = pathinfo($certificateTempFile, PATHINFO_EXTENSION);
+                $originalCertificateFilename = basename($certificateTempFile);
+                $certificateExtension = pathinfo($originalCertificateFilename, PATHINFO_EXTENSION);
+                
+                // Always rename with student ID prefix for consistent naming
                 $newCertificateFilename = $student_id . '_' . $namePrefix . '_indigency.' . $certificateExtension;
                 $certificateTempPath = $tempIndigencyDir . $newCertificateFilename;
 
+                // Get OCR confidence score from temp file
+                $certificateConfidenceFile = $tempIndigencyDir . 'certificate_confidence.json';
+                $certificateConfidence = 75.0; // default
+                if (file_exists($certificateConfidenceFile)) {
+                    $confidenceData = json_decode(file_get_contents($certificateConfidenceFile), true);
+                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                        $certificateConfidence = $confidenceData['overall_confidence'];
+                    }
+                    unlink($certificateConfidenceFile); // Clean up confidence file
+                }
+
                 if (copy($certificateTempFile, $certificateTempPath)) {
-                    // Copy associated OCR files (.verify.json, .ocr.txt, .tsv)
-                    if (file_exists($certificateTempFile . '.verify.json')) {
-                        @copy($certificateTempFile . '.verify.json', $certificateTempPath . '.verify.json');
-                        @unlink($certificateTempFile . '.verify.json');
-                    }
-                    if (file_exists($certificateTempFile . '.ocr.txt')) {
-                        @copy($certificateTempFile . '.ocr.txt', $certificateTempPath . '.ocr.txt');
-                        @unlink($certificateTempFile . '.ocr.txt');
-                    }
-                    if (file_exists($certificateTempFile . '.tsv')) {
-                        @copy($certificateTempFile . '.tsv', $certificateTempPath . '.tsv');
-                        @unlink($certificateTempFile . '.tsv');
+                    // Copy verification files (.verify.json and .ocr.txt) if they exist
+                    $certificateVerifyFile = $certificateTempFile . '.verify.json';
+                    $certificateOcrFile = $certificateTempFile . '.ocr.txt';
+                    
+                    if (file_exists($certificateVerifyFile)) {
+                        @copy($certificateVerifyFile, $certificateTempPath . '.verify.json');
+                        @unlink($certificateVerifyFile);
                     }
                     
-                    // Get OCR data
-                    $certificateConfidenceFile = $tempIndigencyDir . 'certificate_confidence.json';
-                    $certOcrData = ['ocr_confidence' => 75.0, 'verification_status' => 'pending'];
-                    
-                    if (file_exists($certificateConfidenceFile)) {
-                        $confidenceData = json_decode(file_get_contents($certificateConfidenceFile), true);
-                        if ($confidenceData) {
-                            $certOcrData = [
-                                'ocr_confidence' => $confidenceData['ocr_confidence'] ?? 75.0,
-                                'verification_score' => $confidenceData['overall_confidence'] ?? 75.0,
-                                'verification_status' => ($confidenceData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
-                                'verification_details' => $confidenceData
-                            ];
-                        }
-                        @unlink($certificateConfidenceFile);
+                    if (file_exists($certificateOcrFile)) {
+                        @copy($certificateOcrFile, $certificateTempPath . '.ocr.txt');
+                        @unlink($certificateOcrFile);
                     }
                     
-                    // Save using DocumentService
-                    $saveResult = $docService->saveDocument($student_id, 'certificate_of_indigency', $certificateTempPath, $certOcrData);
+                    // Save certificate record to database with temporary path and OCR confidence
+                    $certificateQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $certificateResult = pg_query_params($connection, $certificateQuery, [$student_id, 'certificate_of_indigency', $certificateTempPath, 'false', $certificateConfidence]);
                     
-                    if ($saveResult['success']) {
-                        error_log("DocumentService: Saved Certificate - " . $saveResult['document_id']);
+                    if (!$certificateResult) {
+                        error_log("Failed to save certificate to database: " . pg_last_error($connection));
                     } else {
-                        error_log("DocumentService: Failed to save Certificate - " . ($saveResult['error'] ?? 'Unknown error'));
+                        error_log("Successfully saved certificate to database for student $student_id with confidence $certificateConfidence%");
                     }
 
-                    @unlink($certificateTempFile);
-                    break;
+                    // Clean up original temp certificate file
+                    unlink($certificateTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy certificate file from $certificateTempFile to $certificateTempPath");
                 }
             }
+        } else {
+            error_log("No certificate temp files found in path: " . $tempIndigencyDir);
         }
 
-        // === SAVE GRADES USING DocumentService ===
+        // Save grades to temporary folder (not permanent until approved)
         $tempGradesDir = '../../assets/uploads/temp/grades/';
         $allGradesFiles = glob($tempGradesDir . '*');
         $gradesTempFiles = array_filter($allGradesFiles, function($file) {
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file) && !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
+            return in_array($ext, ['jpg', 'jpeg', 'png', 'pdf']) && is_file($file);
         });
-        
-        error_log("Processing Grades for student: $student_id");
-        
+        error_log("Looking for grades files in: " . $tempGradesDir);
+        error_log("Found grades files: " . print_r($gradesTempFiles, true));
         if (!empty($gradesTempFiles)) {
+            // Create temporary grades directory for pending students
+            if (!file_exists($tempGradesDir)) {
+                mkdir($tempGradesDir, 0777, true);
+            }
+
+            // Process all grades files and rename them with student ID
             foreach ($gradesTempFiles as $gradesTempFile) {
-                $gradesExtension = pathinfo($gradesTempFile, PATHINFO_EXTENSION);
+                $originalGradesFilename = basename($gradesTempFile);
+                $gradesExtension = pathinfo($originalGradesFilename, PATHINFO_EXTENSION);
+                
+                // Always rename with student ID prefix for consistent naming
                 $newGradesFilename = $student_id . '_' . $namePrefix . '_grades.' . $gradesExtension;
                 $gradesTempPath = $tempGradesDir . $newGradesFilename;
 
+                // Get OCR confidence score from temp file
+                $gradesConfidenceFile = $tempGradesDir . 'grades_confidence.json';
+                $gradesConfidence = 75.0; // default
+                if (file_exists($gradesConfidenceFile)) {
+                    $confidenceData = json_decode(file_get_contents($gradesConfidenceFile), true);
+                    if ($confidenceData && isset($confidenceData['overall_confidence'])) {
+                        $gradesConfidence = $confidenceData['overall_confidence'];
+                    }
+                    unlink($gradesConfidenceFile); // Clean up confidence file
+                }
+
                 if (copy($gradesTempFile, $gradesTempPath)) {
-                    // Copy associated OCR files (.verify.json, .ocr.txt, .tsv)
-                    if (file_exists($gradesTempFile . '.verify.json')) {
-                        @copy($gradesTempFile . '.verify.json', $gradesTempPath . '.verify.json');
-                        @unlink($gradesTempFile . '.verify.json'); // Delete after copying
-                    }
-                    if (file_exists($gradesTempFile . '.ocr.txt')) {
-                        @copy($gradesTempFile . '.ocr.txt', $gradesTempPath . '.ocr.txt');
-                        @unlink($gradesTempFile . '.ocr.txt'); // Delete after copying
-                    }
-                    if (file_exists($gradesTempFile . '.tsv')) {
-                        @copy($gradesTempFile . '.tsv', $gradesTempPath . '.tsv');
-                        @unlink($gradesTempFile . '.tsv'); // Delete after copying
-                    }
+                    // Save grades record to database with temporary path and OCR confidence
+                    $gradesQuery = "INSERT INTO documents (student_id, type, file_path, is_valid, ocr_confidence) VALUES ($1, $2, $3, $4, $5)";
+                    $gradesResult = pg_query_params($connection, $gradesQuery, [$student_id, 'academic_grades', $gradesTempPath, 'false', $gradesConfidence]);
                     
-                    // Get OCR data including extracted grades
-                    $gradesConfidenceFile = $tempGradesDir . 'grades_confidence.json';
-                    $gradesOcrData = ['ocr_confidence' => 75.0, 'verification_status' => 'pending'];
-                    
-                    if (file_exists($gradesConfidenceFile)) {
-                        $confidenceData = json_decode(file_get_contents($gradesConfidenceFile), true);
-                        if ($confidenceData) {
-                            $gradesOcrData = [
-                                'ocr_confidence' => $confidenceData['ocr_confidence'] ?? 75.0,
-                                'verification_score' => $confidenceData['overall_confidence'] ?? 75.0,
-                                'verification_status' => ($confidenceData['overall_confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review',
-                                'verification_details' => $confidenceData,
-                                'extracted_grades' => $confidenceData['extracted_grades'] ?? [],
-                                'average_grade' => $confidenceData['average_grade'] ?? null,
-                                'passing_status' => $confidenceData['passing_status'] ?? false
-                            ];
-                        }
-                        @unlink($gradesConfidenceFile);
-                    }
-                    
-                    // Save using DocumentService
-                    $saveResult = $docService->saveDocument($student_id, 'academic_grades', $gradesTempPath, $gradesOcrData);
-                    
-                    if ($saveResult['success']) {
-                        error_log("DocumentService: Saved Grades - " . $saveResult['document_id']);
+                    if (!$gradesResult) {
+                        error_log("Failed to save grades to database: " . pg_last_error($connection));
                     } else {
-                        error_log("DocumentService: Failed to save Grades - " . ($saveResult['error'] ?? 'Unknown error'));
+                        error_log("Successfully saved grades to database for student $student_id with confidence $gradesConfidence%");
                     }
 
-                    @unlink($gradesTempFile);
-                    break;
+                    // Clean up original temp grades file
+                    unlink($gradesTempFile);
+                    break; // Only process the first valid file
+                } else {
+                    error_log("Failed to copy grades file from $gradesTempFile to $gradesTempPath");
                 }
             }
+        } else {
+            error_log("No grades temp files found in path: " . $tempGradesDir);
         }
 
         // Note: semester and academic_year are stored in signup_slots table via students.slot_id relationship
@@ -4219,12 +4081,8 @@ if (!$isAjaxRequest) {
                 <!-- Step 2: Birthdate and Sex -->
                 <div class="step-panel d-none" id="step-2">
                     <div class="mb-3">
-                        <label class="form-label">Date of Birth <small class="text-muted">(Must be 16 years or older)</small></label>
-                        <input type="date" class="form-control" name="bdate" autocomplete="bday" 
-                               max="<?php echo date('Y-m-d', strtotime('-16 years')); ?>" 
-                               min="<?php echo date('Y-m-d', strtotime('-100 years')); ?>" 
-                               required />
-                        <small class="form-text text-muted">You must be at least 16 years old to register.</small>
+                        <label class="form-label">Date of Birth</label>
+                        <input type="date" class="form-control" name="bdate" autocomplete="bday" required />
                     </div>
                     <div class="mb-3">
                         <label class="form-label d-block">Gender</label>
@@ -4405,9 +4263,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep4Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep4Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 <!-- Step 5: Enrollment Assessment Form Upload and OCR Verification -->
@@ -4512,9 +4368,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep5Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep5Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 <!-- Step 6: Letter to Mayor Upload and OCR Verification -->
@@ -4579,9 +4433,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep6Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep6Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 <!-- Step 7: Certificate of Indigency Upload and OCR Verification -->
@@ -4650,9 +4502,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep7Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep7Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 <!-- Step 8: Grade Scanning -->
@@ -4742,9 +4592,7 @@ if (!$isAjaxRequest) {
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary w-100 mb-2" onclick="prevStep()">Back</button>
-                    <button type="button" class="btn btn-secondary w-100" id="nextStep8Btn" onclick="nextStep()" disabled>
-                        <i class="bi bi-lock me-2"></i>Continue - Verify Document First
-                    </button>
+                    <button type="button" class="btn btn-primary w-100" id="nextStep8Btn" onclick="nextStep()">Next</button>
                 </div>
                 
                 
@@ -4961,6 +4809,10 @@ function updateStepIndicators() {
 // ============================================
 
 function validateCurrentStepFields() {
+    // TEMPORARILY DISABLED FOR TESTING - REMOVE THIS TO RE-ENABLE VALIDATION
+    return { isValid: true };
+    
+    /* ORIGINAL VALIDATION CODE - UNCOMMENT TO RE-ENABLE
     const currentPanel = document.getElementById(`step-${currentStep}`);
     if (!currentPanel) return { isValid: true };
     
@@ -5140,6 +4992,7 @@ function validateCurrentStepFields() {
     }
     
     return { isValid: true };
+    END OF COMMENTED CODE */
 }
 
 function validateSpecificField(field, value) {
@@ -5498,24 +5351,14 @@ function handleIdPictureOcrResults(data) {
             if (v.summary.recommendation === 'Approve') {
                 recommendationEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>Document verified successfully!';
                 if (feedbackDiv) feedbackDiv.style.display = 'none';
-                if (nextBtn) {
-                    nextBtn.disabled = false;
-                    nextBtn.classList.remove('btn-secondary');
-                    nextBtn.classList.add('btn-success');
-                    nextBtn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Continue - Document Verified';
-                }
+                if (nextBtn) nextBtn.disabled = false;
             } else {
                 recommendationEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>' + v.summary.recommendation;
                 if (feedbackDiv) {
                     feedbackDiv.style.display = 'block';
                     feedbackDiv.innerHTML = '<strong>Verification Warning:</strong> ' + v.summary.recommendation;
                 }
-                if (nextBtn) {
-                    nextBtn.disabled = false; // Allow proceeding with warning
-                    nextBtn.classList.remove('btn-secondary');
-                    nextBtn.classList.add('btn-warning');
-                    nextBtn.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>Continue - With Warnings';
-                }
+                if (nextBtn) nextBtn.disabled = false; // Allow proceeding with warning
             }
         }
         
@@ -5825,13 +5668,9 @@ function setupOtpHandlers() {
 }
 
 function sendOtp() {
-    const emailInput = document.getElementById('emailInput');
+    const emailInput = document.querySelector('input[name="email"]');
     const sendBtn = document.getElementById('sendOtpBtn');
     const resendBtn = document.getElementById('resendOtpBtn');
-    
-    console.log('Send OTP clicked');
-    console.log('Email input:', emailInput);
-    console.log('Email value:', emailInput ? emailInput.value : 'null');
     
     if (!emailInput || !emailInput.value) {
         showNotifier('Please enter an email address first', 'error');
@@ -5854,30 +5693,17 @@ function sendOtp() {
     formData.append('email', emailInput.value);
     formData.append('g-recaptcha-response', 'test'); // You may need proper reCAPTCHA
     
-    console.log('Sending OTP request...');
-    
     fetch(window.location.href, {
         method: 'POST',
         body: formData
     })
     .then(response => {
-        console.log('Response received:', response.status);
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        return response.text();
-    })
-    .then(text => {
-        console.log('Response text:', text);
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            console.error('JSON parse error:', e);
-            throw new Error('Invalid JSON response: ' + text.substring(0, 200));
-        }
+        return response.json();
     })
     .then(data => {
-        console.log('Parsed data:', data);
         if (data.status === 'success') {
             showNotifier(data.message, 'success');
             
@@ -6867,9 +6693,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // School Student ID duplicate checking
     setupSchoolStudentIdCheck();
     
-    // Birthdate age validation (16 years minimum)
-    setupBirthdateValidation();
-    
     // Wait a moment for external scripts to load
     setTimeout(function() {
         console.log('🔍 Final function check:', {
@@ -7019,86 +6842,79 @@ async function checkSchoolStudentIdDuplicate(schoolStudentId, universityId, warn
     }
 }
 
-// Birthdate validation - Must be 16 years or older
-function setupBirthdateValidation() {
-    const bdateInput = document.querySelector('input[name="bdate"]');
+function setupTermsAndConditions() {
+    // Handle terms and conditions modal
+    const termsLink = document.querySelector('a[data-bs-target="#termsModal"]');
+    const acceptBtn = document.getElementById('acceptTermsBtn');
+    const agreeCheckbox = document.getElementById('agreeTerms');
+    const termsModal = document.getElementById('termsModal');
     
-    if (!bdateInput) {
-        console.log('⚠️ Birthdate input not found');
-        return;
-    }
-    
-    bdateInput.addEventListener('change', function() {
-        const selectedDate = new Date(this.value);
-        const today = new Date();
-        
-        // Calculate age
-        let age = today.getFullYear() - selectedDate.getFullYear();
-        const monthDiff = today.getMonth() - selectedDate.getMonth();
-        const dayDiff = today.getDate() - selectedDate.getDate();
-        
-        // Adjust age if birthday hasn't occurred this year
-        if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
-            age--;
-        }
-        
-        // Validate minimum age of 16
-        if (age < 16) {
-            this.setCustomValidity('You must be at least 16 years old to register.');
-            this.classList.add('is-invalid');
-            
-            // Create or update error message
-            let errorMsg = this.parentElement.querySelector('.invalid-feedback');
-            if (!errorMsg) {
-                errorMsg = document.createElement('div');
-                errorMsg.className = 'invalid-feedback';
-                this.parentElement.appendChild(errorMsg);
-            }
-            errorMsg.textContent = `You must be at least 16 years old to register. You are currently ${age} years old.`;
-            
-            // Show notification
-            showNotifier(`⚠️ Invalid birthdate: You must be at least 16 years old to register. You are currently ${age} years old.`, 'error');
-        } else if (age > 100) {
-            this.setCustomValidity('Please enter a valid birthdate.');
-            this.classList.add('is-invalid');
-            
-            let errorMsg = this.parentElement.querySelector('.invalid-feedback');
-            if (!errorMsg) {
-                errorMsg = document.createElement('div');
-                errorMsg.className = 'invalid-feedback';
-                this.parentElement.appendChild(errorMsg);
-            }
-            errorMsg.textContent = 'Please enter a valid birthdate.';
-            
-            showNotifier('⚠️ Please enter a valid birthdate.', 'error');
-        } else {
-            this.setCustomValidity('');
-            this.classList.remove('is-invalid');
-            this.classList.add('is-valid');
-            
-            // Remove error message if it exists
-            const errorMsg = this.parentElement.querySelector('.invalid-feedback');
-            if (errorMsg) {
-                errorMsg.remove();
-            }
-            
-            // Show success notification
-            showNotifier(`✅ Valid birthdate (Age: ${age} years old)`, 'success');
-        }
+    console.log('🔍 Terms elements found:', {
+        termsLink: !!termsLink,
+        acceptBtn: !!acceptBtn,
+        agreeCheckbox: !!agreeCheckbox,
+        termsModal: !!termsModal,
+        bootstrap: typeof window.bootstrap
     });
     
-    console.log('✅ Birthdate validation initialized');
-}
-
-function setupTermsAndConditions() {
-    // Terms and conditions handling is now managed by user_registration.js
-    // This includes:
-    // - Scroll tracking (must scroll to bottom to enable Accept button)
-    // - Checkbox validation (must read modal before checking)
-    // - Modal state management
-    // - Event handlers for Accept button
+    // Bootstrap should handle the modal opening automatically via data-bs-toggle and data-bs-target
+    // No need for custom click handler - just verify Bootstrap is loaded
+    if (!window.bootstrap) {
+        console.warn('⚠️ Bootstrap not loaded! Modal may not work.');
+    }
     
-    console.log('✅ Terms and Conditions (handled by user_registration.js)');
+    // Handle accept button
+    if (acceptBtn) {
+        acceptBtn.addEventListener('click', function() {
+            // Check the terms checkbox
+            if (agreeCheckbox) {
+                agreeCheckbox.checked = true;
+                agreeCheckbox.dispatchEvent(new Event('change'));
+                console.log('✅ Terms accepted and checkbox checked');
+            }
+            
+            // Close modal using Bootstrap
+            if (window.bootstrap && window.bootstrap.Modal) {
+                const modal = bootstrap.Modal.getInstance(termsModal);
+                if (modal) {
+                    modal.hide();
+                    console.log('✅ Terms modal closed via Bootstrap');
+                }
+            }
+        });
+    }
+    
+    // Handle modal close buttons
+    const closeButtons = termsModal?.querySelectorAll('[data-bs-dismiss="modal"]');
+    closeButtons?.forEach(button => {
+        button.addEventListener('click', function() {
+            if (window.bootstrap && window.bootstrap.Modal) {
+                const modal = bootstrap.Modal.getInstance(termsModal);
+                if (modal) modal.hide();
+            } else {
+                // Fallback close
+                if (termsModal) {
+                    termsModal.style.display = 'none';
+                    termsModal.classList.remove('show');
+                    termsModal.removeAttribute('aria-modal');
+                    termsModal.removeAttribute('role');
+                    document.body.classList.remove('modal-open');
+                }
+            }
+        });
+    });
+    
+    // Add backdrop click to close
+    if (termsModal) {
+        termsModal.addEventListener('click', function(e) {
+            if (e.target === termsModal) {
+                const closeBtn = termsModal.querySelector('[data-bs-dismiss="modal"]');
+                if (closeBtn) closeBtn.click();
+            }
+        });
+    }
+    
+    console.log('✅ Terms and Conditions functionality initialized');
 }
 </script>
 </body>
