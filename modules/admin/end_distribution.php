@@ -192,6 +192,12 @@ $compressionService = new FileCompressionService();
 
 // Handle AJAX requests BEFORE workflow check
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Start output buffering to catch any stray output
+    ob_start();
+    
+    // Clear any previous output
+    if (ob_get_length()) ob_clean();
+    
     header('Content-Type: application/json');
     
     $action = $_POST['action'] ?? '';
@@ -206,11 +212,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if ($result && $row = pg_fetch_assoc($result)) {
             if (password_verify($password, $row['password'])) {
+                ob_clean();
                 echo json_encode(['success' => true, 'message' => 'Password verified']);
             } else {
+                ob_clean();
                 echo json_encode(['success' => false, 'message' => 'Incorrect password']);
             }
         } else {
+            ob_clean();
             echo json_encode(['success' => false, 'message' => 'Authentication failed']);
         }
         exit();
@@ -247,6 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($emptyFailure && !$allowEmptyOverride) {
                     pg_query($connection, "ROLLBACK");
+                    ob_clean();
                     echo json_encode([
                         'success' => false,
                         'message' => $compressionMessage,
@@ -258,6 +268,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if (!$emptyFailure || !$allowEmptyOverride) {
                     pg_query($connection, "ROLLBACK");
+                    ob_clean();
                     echo json_encode(['success' => false, 'message' => 'Compression failed: ' . $compressionMessage]);
                     exit();
                 }
@@ -267,6 +278,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $compressionResult['override_used'] = true;
                 if (empty($compressionResult['message'])) {
                     $compressionResult['message'] = 'Compression skipped: no files were detected.';
+                }
+            }
+            
+            // Update distribution_snapshots with compression information
+            if (!empty($compressionResult['success']) && !empty($compressionResult['archive_path'])) {
+                $archive_filename = basename($compressionResult['archive_path']);
+                $compressed_size = isset($compressionResult['size']) ? intval($compressionResult['size']) : 0;
+                $file_count = isset($compressionResult['file_count']) ? intval($compressionResult['file_count']) : 0;
+                $compression_ratio = isset($compressionResult['compression_ratio']) ? floatval($compressionResult['compression_ratio']) : 0.0;
+                
+                // Find the snapshot by distribution_id
+                $update_snapshot_query = "
+                    UPDATE distribution_snapshots 
+                    SET 
+                        files_compressed = true,
+                        compression_date = NOW(),
+                        archive_filename = $1,
+                        compressed_size = $2,
+                        compression_ratio = $3,
+                        total_files_count = $4
+                    WHERE distribution_id = $5
+                ";
+                $update_result = pg_query_params($connection, $update_snapshot_query, [
+                    $archive_filename,
+                    $compressed_size,
+                    $compression_ratio,
+                    $file_count,
+                    $distributionId
+                ]);
+                
+                if (!$update_result) {
+                    error_log("Warning: Failed to update distribution snapshot with compression info: " . pg_last_error($connection));
                 }
             }
             
@@ -299,10 +342,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'compression' => $compressionResult
             ];
             
+            ob_clean();
             echo json_encode($result);
             
         } catch (Exception $e) {
             pg_query($connection, "ROLLBACK");
+            ob_clean();
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
         exit();
@@ -311,6 +356,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'compress_distribution') {
         $distributionId = intval($_POST['distribution_id'] ?? 0);
         $result = $compressionService->compressDistribution($distributionId, $_SESSION['admin_id']);
+        ob_clean();
         echo json_encode($result);
         exit();
     }
@@ -325,32 +371,51 @@ if (!$workflow_status['can_manage_applicants']) {
     exit;
 }
 
+// CRITICAL ACCESS CONTROL: Check if distribution has been completed
+// Admin must click "Complete Distribution" in scan_qr.php before accessing this page
+$has_completed_snapshot = false;
+$completed_snapshot_id = null;
+$check_snapshot_query = "
+    SELECT snapshot_id, distribution_id, academic_year, semester, total_students_count, finalized_at
+    FROM distribution_snapshots 
+    WHERE finalized_at IS NOT NULL 
+    AND finalized_at >= CURRENT_DATE - INTERVAL '7 days'
+    ORDER BY finalized_at DESC
+    LIMIT 1
+";
+$check_result = pg_query($connection, $check_snapshot_query);
+if ($check_result && pg_num_rows($check_result) > 0) {
+    $has_completed_snapshot = true;
+    $completed_snapshot = pg_fetch_assoc($check_result);
+    $completed_snapshot_id = $completed_snapshot['snapshot_id'];
+}
+
+// If no completed snapshot exists, redirect back to scan_qr.php
+if (!$has_completed_snapshot) {
+    $_SESSION['error_message'] = "Please complete the distribution first using the 'Complete Distribution' button in the QR Scanner page. You must finalize the distribution before ending it.";
+    header("Location: scan_qr.php");
+    exit;
+}
+
 // Get current distribution info from config and students
 $activeDistributions = [];
 $distribution_status = $workflow_status['distribution_status'] ?? 'inactive';
 
-if (in_array($distribution_status, ['preparing', 'active'])) {
-    // Get academic period from config
-    $academic_year = '';
-    $semester = '';
-    $config_query = pg_query($connection, "SELECT key, value FROM config WHERE key IN ('current_academic_year', 'current_semester')");
-    if ($config_query) {
-        while ($row = pg_fetch_assoc($config_query)) {
-            if ($row['key'] === 'current_academic_year') $academic_year = $row['value'];
-            if ($row['key'] === 'current_semester') $semester = $row['value'];
-        }
-    }
+if (in_array($distribution_status, ['preparing', 'active']) && $has_completed_snapshot) {
+    // Use data from completed snapshot
+    $distribution_id = $completed_snapshot['distribution_id'];
+    $academic_year = $completed_snapshot['academic_year'];
+    $semester = $completed_snapshot['semester'];
+    $student_count = $completed_snapshot['total_students_count'];
     
-    // Generate distribution ID based on municipality and date
-    $municipality_name = 'GENERALTRIAS'; // You can get this from config or database
-    $distribution_id = "#{$municipality_name}-DISTR-" . date('Y-m-d-His');
-    
-    // Count students with 'given' status and their files
-    $student_count_query = pg_query($connection, "SELECT COUNT(*) as count FROM students WHERE status = 'given'");
-    $student_count = 0;
-    if ($student_count_query) {
-        $row = pg_fetch_assoc($student_count_query);
-        $student_count = intval($row['count']);
+    // Count students in distribution_student_records for accuracy
+    $record_count_query = pg_query_params($connection, 
+        "SELECT COUNT(*) as count FROM distribution_student_records WHERE snapshot_id = $1",
+        [$completed_snapshot_id]
+    );
+    if ($record_count_query) {
+        $record_row = pg_fetch_assoc($record_count_query);
+        $student_count = intval($record_row['count']); // More accurate than students table
     }
     
     // Count total files in student folders
@@ -372,12 +437,14 @@ if (in_array($distribution_status, ['preparing', 'active'])) {
     
     $activeDistributions[] = [
         'id' => $distribution_id,
-        'created_at' => date('Y-m-d H:i:s'), // Using current date as placeholder
+        'created_at' => $completed_snapshot['finalized_at'], // Actual finalization time
         'year_level' => null,
         'semester' => $semester,
+        'academic_year' => $academic_year,
         'student_count' => $student_count,
         'file_count' => $file_count,
-        'total_size' => $total_size
+        'total_size' => $total_size,
+        'snapshot_id' => $completed_snapshot_id
     ];
 }
 
@@ -418,7 +485,7 @@ $pageTitle = "End Distribution";
                                     <tr>
                                         <th>ID</th>
                                         <th>Created</th>
-                                        <th>Year Level</th>
+                                        <th>Academic Year</th>
                                         <th>Semester</th>
                                         <th>Students</th>
                                         <th>Files</th>
@@ -432,7 +499,7 @@ $pageTitle = "End Distribution";
                                         <tr>
                                             <td>#<?php echo $dist['id']; ?></td>
                                             <td><?php echo date('M d, Y', strtotime($dist['created_at'])); ?></td>
-                                            <td><?php echo $dist['year_level'] ?: 'N/A'; ?></td>
+                                            <td><?php echo $dist['academic_year'] ?: 'N/A'; ?></td>
                                             <td><?php echo $dist['semester'] ?: 'N/A'; ?></td>
                                             <td><?php echo $dist['student_count']; ?></td>
                                             <td><?php echo $dist['file_count']; ?></td>
@@ -468,7 +535,7 @@ $pageTitle = "End Distribution";
                                     <th>ID</th>
                                     <th>Created</th>
                                     <th>Ended</th>
-                                    <th>Year Level</th>
+                                    <th>Academic Year</th>
                                     <th>Semester</th>
                                     <th>Students</th>
                                     <th>Files</th>
@@ -482,7 +549,7 @@ $pageTitle = "End Distribution";
                                         <td>#<?php echo $dist['id']; ?></td>
                                         <td><?php echo date('M d, Y', strtotime($dist['created_at'])); ?></td>
                                         <td><?php echo date('M d, Y', strtotime($dist['ended_at'])); ?></td>
-                                        <td><?php echo $dist['year_level'] ?: 'N/A'; ?></td>
+                                        <td><?php echo $dist['academic_year'] ?: 'N/A'; ?></td>
                                         <td><?php echo $dist['semester'] ?: 'N/A'; ?></td>
                                         <td><?php echo $dist['student_count']; ?></td>
                                         <td><?php echo $dist['file_count']; ?></td>
