@@ -1,7 +1,8 @@
 <?php
 // Suppress all output and errors for AJAX requests
 if (isset($_POST['processIdPictureOcr']) || isset($_POST['processGradesOcr']) || 
-    isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) || isset($_POST['processCertificateOcr'])) {
+    isset($_POST['processOcr']) || isset($_POST['processLetterOcr']) || isset($_POST['processCertificateOcr']) ||
+    (isset($_POST['action']) && $_POST['action'] === 'check_full_duplicate')) {
     @ini_set('display_errors', '0');
     error_reporting(0);
     if (!ob_get_level()) ob_start();
@@ -598,7 +599,8 @@ $isAjaxRequest = isset($_POST['sendOtp']) || isset($_POST['verifyOtp']) ||
                  isset($_POST['processOcr']) || isset($_POST['processIdPictureOcr']) || isset($_POST['processLetterOcr']) ||
                  isset($_POST['processCertificateOcr']) || isset($_POST['processGradesOcr']) ||
                  isset($_POST['cleanup_temp']) || isset($_POST['check_existing']) || isset($_POST['test_db']) ||
-                 isset($_POST['check_school_student_id']);
+                 isset($_POST['check_school_student_id']) ||
+                 (isset($_POST['action']) && $_POST['action'] === 'check_full_duplicate');
 
 // Only output HTML for non-AJAX requests
 if (!$isAjaxRequest) {
@@ -769,6 +771,96 @@ if (!$isAjaxRequest) {
 
 <?php
 } // End of HTML output for non-AJAX requests
+
+// --- Check Full Duplicate (First Name + Last Name + University + School Student ID) ---
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action']) && $_POST['action'] === 'check_full_duplicate') {
+    $firstName = trim($_POST['first_name'] ?? '');
+    $lastName = trim($_POST['last_name'] ?? '');
+    $universityId = intval($_POST['university_id'] ?? 0);
+    $schoolStudentId = trim($_POST['school_student_id'] ?? '');
+    
+    error_log("Duplicate check - FirstName: $firstName, LastName: $lastName, UnivID: $universityId, SchoolID: $schoolStudentId");
+    
+    if (empty($firstName) || empty($lastName) || empty($schoolStudentId) || $universityId <= 0) {
+        error_log("Duplicate check - Missing required fields");
+        json_response(['is_duplicate' => false]);
+    }
+    
+    try {
+        // First check: Check school_student_ids table (approved students only)
+        $query1 = "SELECT 
+                    ssi.student_id,
+                    ssi.first_name,
+                    ssi.last_name,
+                    ssi.school_student_id,
+                    ssi.university_name,
+                    ssi.status,
+                    s.email,
+                    s.status as student_status
+                FROM school_student_ids ssi
+                INNER JOIN students s ON ssi.student_id = s.student_id
+                WHERE LOWER(ssi.first_name) = LOWER($1)
+                  AND LOWER(ssi.last_name) = LOWER($2)
+                  AND ssi.university_id = $3
+                  AND ssi.school_student_id = $4
+                  AND ssi.status = 'active'
+                LIMIT 1";
+        
+        $result1 = pg_query_params($connection, $query1, [$firstName, $lastName, $universityId, $schoolStudentId]);
+        
+        if ($result1 && pg_num_rows($result1) > 0) {
+            $duplicate = pg_fetch_assoc($result1);
+            error_log("Duplicate found in school_student_ids: " . json_encode($duplicate));
+            json_response([
+                'is_duplicate' => true,
+                'student_name' => trim($duplicate['first_name'] . ' ' . $duplicate['last_name']),
+                'student_email' => $duplicate['email'] ?? '',
+                'student_status' => ucfirst($duplicate['student_status'] ?? 'approved'),
+                'university_name' => $duplicate['university_name'] ?? '',
+                'school_student_id' => $duplicate['school_student_id']
+            ]);
+        }
+        
+        // Second check: Check students table directly (for pending registrations)
+        $query2 = "SELECT 
+                    s.student_id,
+                    s.first_name,
+                    s.last_name,
+                    s.email,
+                    s.status,
+                    s.school_student_id,
+                    u.name as university_name
+                FROM students s
+                LEFT JOIN universities u ON s.university_id = u.university_id
+                WHERE LOWER(s.first_name) = LOWER($1)
+                  AND LOWER(s.last_name) = LOWER($2)
+                  AND s.university_id = $3
+                  AND s.school_student_id = $4
+                LIMIT 1";
+        
+        $result2 = pg_query_params($connection, $query2, [$firstName, $lastName, $universityId, $schoolStudentId]);
+        
+        if ($result2 && pg_num_rows($result2) > 0) {
+            $duplicate = pg_fetch_assoc($result2);
+            error_log("Duplicate found in students table: " . json_encode($duplicate));
+            json_response([
+                'is_duplicate' => true,
+                'student_name' => trim($duplicate['first_name'] . ' ' . $duplicate['last_name']),
+                'student_email' => $duplicate['email'] ?? '',
+                'student_status' => ucfirst($duplicate['status']),
+                'university_name' => $duplicate['university_name'] ?? '',
+                'school_student_id' => $duplicate['school_student_id']
+            ]);
+        }
+        
+        error_log("No duplicate found");
+        json_response(['is_duplicate' => false]);
+        
+    } catch (Exception $e) {
+        error_log("Error checking full duplicate: " . $e->getMessage());
+        json_response(['is_duplicate' => false]);
+    }
+}
 
 // --- Check School Student ID Duplicate ---
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['check_school_student_id'])) {
@@ -4875,10 +4967,139 @@ if (!$isAjaxRequest) {
 // Simple working navigation functions (fallback if main script fails)
 let currentStep = 1;
 
-function nextStep() {
+// Check for duplicate registration (first name, last name, university, school student ID)
+async function checkForDuplicateRegistration() {
+    console.log('🔍 Starting duplicate check...');
+    
+    const firstName = document.querySelector('input[name="first_name"]')?.value.trim();
+    const lastName = document.querySelector('input[name="last_name"]')?.value.trim();
+    const universityId = document.querySelector('select[name="university_id"]')?.value;
+    const schoolStudentId = document.querySelector('input[name="school_student_id"]')?.value.trim();
+    
+    console.log('📋 Form values:', {firstName, lastName, universityId, schoolStudentId});
+    
+    if (!firstName || !lastName || !universityId || !schoolStudentId) {
+        console.log('❌ Missing required fields for duplicate check');
+        return false; // Missing data, let normal validation handle it
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('action', 'check_full_duplicate');
+        formData.append('first_name', firstName);
+        formData.append('last_name', lastName);
+        formData.append('university_id', universityId);
+        formData.append('school_student_id', schoolStudentId);
+        
+        console.log('📡 Sending duplicate check request...');
+        
+        const response = await fetch('student_register.php', {
+            method: 'POST',
+            body: formData
+        });
+        
+        console.log('📨 Response status:', response.status);
+        const text = await response.text();
+        console.log('📨 Response text:', text);
+        
+        const data = JSON.parse(text);
+        console.log('📨 Parsed data:', data);
+        
+        if (data.is_duplicate) {
+            console.log('⚠️ DUPLICATE FOUND!', data);
+            // Show modal with duplicate warning
+            showDuplicateWarningModal(data);
+            return true; // Duplicate found, block progression
+        }
+        
+        console.log('✅ No duplicate found, allowing progression');
+        return false; // No duplicate, allow progression
+    } catch (error) {
+        console.error('❌ Error checking for duplicates:', error);
+        return false; // On error, allow progression
+    }
+}
+
+// Show duplicate warning modal
+function showDuplicateWarningModal(data) {
+    const modalHtml = `
+        <div class="modal fade" id="duplicateWarningModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-danger">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            Duplicate Registration Detected
+                        </h5>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-danger mb-3">
+                            <i class="bi bi-shield-fill-exclamation me-2"></i>
+                            <strong>Registration Not Allowed</strong>
+                        </div>
+                        <p class="mb-3">A student with the following information is already registered in our system:</p>
+                        <ul class="list-unstyled mb-3">
+                            <li><strong>Name:</strong> ${data.student_name}</li>
+                            <li><strong>University:</strong> ${data.university_name}</li>
+                            <li><strong>School Student ID:</strong> ${data.school_student_id}</li>
+                            <li><strong>Status:</strong> <span class="badge bg-info">${data.student_status}</span></li>
+                        </ul>
+                        <div class="alert alert-warning">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Note:</strong> Creating multiple accounts with the same information is strictly prohibited. 
+                            If you believe this is an error, please contact the administrator.
+                        </div>
+                        ${data.student_email ? `<p class="text-muted small mb-0">Registered Email: ${data.student_email}</p>` : ''}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="goBackToEdit()">
+                            <i class="bi bi-arrow-left me-1"></i> Go Back and Edit
+                        </button>
+                        <button type="button" class="btn btn-primary" onclick="window.location.href='../../unified_login.php'">
+                            <i class="bi bi-box-arrow-right me-1"></i> Return to Login
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Remove existing modal if any
+    const existingModal = document.getElementById('duplicateWarningModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Add modal to body
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('duplicateWarningModal'));
+    modal.show();
+}
+
+// Go back to step 1 to edit information
+function goBackToEdit() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('duplicateWarningModal'));
+    if (modal) modal.hide();
+    
+    // Go back to step 1
+    currentStep = 1;
+    showStep(1);
+}
+
+async function nextStep() {
     console.log('🔧 Enhanced nextStep called - Step:', currentStep);
     
     if (currentStep >= 10) return; // Allow navigation through all 10 steps
+    
+    // Special check for Step 3: Check for duplicate registration before proceeding to ID upload
+    if (currentStep === 3) {
+        const isDuplicate = await checkForDuplicateRegistration();
+        if (isDuplicate) {
+            return; // Stop here if duplicate found
+        }
+    }
     
     // Validate current step before proceeding
     const validationResult = validateCurrentStepFields();
