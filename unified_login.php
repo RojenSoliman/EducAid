@@ -204,10 +204,10 @@ if (
     $em = trim($_POST['email']);
     $pw = $_POST['password'];
 
-    // Check if user is a student (only allow active students to login)
+    // Check if user is a student (only allow active students to login, block archived students)
     $studentRes = pg_query_params($connection,
-        "SELECT student_id, password, first_name, last_name, status, 'student' as role FROM students
-         WHERE email = $1 AND status != 'under_registration'",
+        "SELECT student_id, password, first_name, last_name, status, is_archived, 'student' as role FROM students
+         WHERE email = $1 AND status != 'under_registration' AND (is_archived = FALSE OR is_archived IS NULL)",
         [$em]
     );
     
@@ -288,10 +288,22 @@ if (
             [$em]
         );
         
+        // Check if the email exists but is archived
+        $archivedCheck = pg_query_params($connection,
+            "SELECT student_id, archive_reason FROM students WHERE email = $1 AND (is_archived = TRUE OR status = 'archived')",
+            [$em]
+        );
+        
         if (pg_fetch_assoc($underRegistrationCheck)) {
             echo json_encode([
                 'status'=>'error',
                 'message'=>'Your account is still under review. Please wait for admin approval before logging in.'
+            ]);
+        } elseif ($archivedRow = pg_fetch_assoc($archivedCheck)) {
+            $reason = $archivedRow['archive_reason'] ?? 'Account archived';
+            echo json_encode([
+                'status'=>'error',
+                'message'=>'Your account has been archived and is no longer active. Reason: ' . htmlspecialchars($reason) . '. Please contact the administrator for assistance.'
             ]);
         } else {
             echo json_encode(['status'=>'error','message'=>'Email not found.']);

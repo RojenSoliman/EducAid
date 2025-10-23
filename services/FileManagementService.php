@@ -398,4 +398,25 @@ class FileManagementService {
             'files' => $extractedFiles
         ];
     }
+    
+    /**
+     * Delete archived ZIP file for a student
+     * Used after successful unarchival
+     */
+    public function deleteArchivedZip($studentId) {
+        $zipFile = $this->getArchivedStudentZip($studentId);
+        
+        if ($zipFile && file_exists($zipFile)) {
+            if (@unlink($zipFile)) {
+                error_log("FileManagement: Deleted archive ZIP for student: $studentId");
+                return true;
+            } else {
+                error_log("FileManagement: Failed to delete archive ZIP for student: $studentId");
+                return false;
+            }
+        }
+        
+        error_log("FileManagement: No archive ZIP found for student: $studentId");
+        return false;
+    }
 }

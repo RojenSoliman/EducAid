@@ -109,47 +109,85 @@ try {
         }
     }
     
-    // Academic Grades - Get detailed grade validation
+    // Academic Grades - Get detailed grade validation from JSON file
     elseif ($doc_type === 'grades') {
-        // Get from grade_uploads table
-        $grades_query = pg_query_params($connection,
-            "SELECT * FROM grade_uploads WHERE student_id = $1 AND file_path = $2 ORDER BY upload_date DESC LIMIT 1",
-            [$student_id, $file_path]
-        );
+        // Use JSON verification file which contains all grade information
+        $verify_json_path = $file_path . '.verify.json';
         
-        if ($grades_query && pg_num_rows($grades_query) > 0) {
-            $grade_upload = pg_fetch_assoc($grades_query);
-            $upload_id = $grade_upload['upload_id'];
-            $validation_data['validation_status'] = $grade_upload['validation_status'];
+        if (file_exists($verify_json_path)) {
+            // Load verification JSON
+            $verify_data = json_decode(file_get_contents($verify_json_path), true);
             
-            // Get extracted grades with confidence
-            $extracted_query = pg_query_params($connection,
-                "SELECT * FROM extracted_grades WHERE upload_id = $1 ORDER BY grade_id",
-                [$upload_id]
-            );
-            
-            $extracted_grades = [];
-            while ($grade = pg_fetch_assoc($extracted_query)) {
-                $extracted_grades[] = [
-                    'subject_name' => $grade['subject_name'],
-                    'grade_value' => $grade['grade_value'],
-                    'extraction_confidence' => $grade['extraction_confidence'],
-                    'is_passing' => $grade['is_passing']
-                ];
-            }
-            
-            if (!empty($extracted_grades)) {
-                $validation_data['extracted_grades'] = $extracted_grades;
+            if ($verify_data && is_array($verify_data)) {
+                // Extract validation status
+                $validation_data['validation_status'] = $verify_data['overall_success'] 
+                    ? ($verify_data['is_eligible'] ? 'passed' : 'failed') 
+                    : 'pending';
                 
-                // Calculate average confidence from extracted grades
-                $total_conf = 0;
-                foreach ($extracted_grades as $g) {
-                    $total_conf += floatval($g['extraction_confidence'] ?? 0);
+                // Get OCR confidence from summary or confidence_scores
+                if (isset($verify_data['summary']['average_confidence'])) {
+                    $validation_data['ocr_confidence'] = floatval($verify_data['summary']['average_confidence']);
+                } elseif (isset($verify_data['confidence_scores']['grades'])) {
+                    $validation_data['ocr_confidence'] = floatval($verify_data['confidence_scores']['grades']);
+                } else {
+                    $validation_data['ocr_confidence'] = floatval($document['ocr_confidence'] ?? 0);
                 }
-                $validation_data['ocr_confidence'] = round($total_conf / count($extracted_grades), 1);
+                
+                // Extract grades from enhanced_grade_validation if available, otherwise from grades array
+                $extracted_grades = [];
+                
+                if (isset($verify_data['enhanced_grade_validation']['extracted_subjects'])) {
+                    // Use enhanced validation data (has confidence per subject)
+                    foreach ($verify_data['enhanced_grade_validation']['extracted_subjects'] as $subject) {
+                        // Determine if grade is passing (typically <= 3.0 for Philippine grading, or <= 5.0 for some schools)
+                        $grade_val = floatval($subject['rawGrade'] ?? 0);
+                        $is_passing = ($grade_val > 0 && $grade_val <= 3.0) || 
+                                     (isset($verify_data['failing_grades']) && !in_array($subject['name'], $verify_data['failing_grades']));
+                        
+                        $extracted_grades[] = [
+                            'subject_name' => $subject['name'] ?? 'Unknown Subject',
+                            'grade_value' => $subject['rawGrade'] ?? 'N/A',
+                            'extraction_confidence' => floatval($subject['confidence'] ?? 95),
+                            'is_passing' => $is_passing ? 't' : 'f'
+                        ];
+                    }
+                } elseif (isset($verify_data['grades']) && is_array($verify_data['grades'])) {
+                    // Fallback to basic grades array
+                    $default_confidence = floatval($verify_data['confidence_scores']['grades'] ?? 90);
+                    
+                    foreach ($verify_data['grades'] as $grade_item) {
+                        if (!isset($grade_item['subject']) || !isset($grade_item['grade'])) continue;
+                        
+                        $grade_val = floatval($grade_item['grade']);
+                        $is_passing = ($grade_val > 0 && $grade_val <= 3.0) || 
+                                     (isset($verify_data['failing_grades']) && !in_array($grade_item['subject'], $verify_data['failing_grades']));
+                        
+                        $extracted_grades[] = [
+                            'subject_name' => $grade_item['subject'],
+                            'grade_value' => $grade_item['grade'],
+                            'extraction_confidence' => $default_confidence,
+                            'is_passing' => $is_passing ? 't' : 'f'
+                        ];
+                    }
+                }
+                
+                if (!empty($extracted_grades)) {
+                    $validation_data['extracted_grades'] = $extracted_grades;
+                }
+                
+                // Add summary information
+                if (isset($verify_data['summary'])) {
+                    $validation_data['summary'] = $verify_data['summary'];
+                }
+                
+                // Add eligibility status
+                $validation_data['is_eligible'] = $verify_data['is_eligible'] ?? false;
+                $validation_data['all_grades_passing'] = $verify_data['all_grades_passing'] ?? false;
             }
-        } else {
-            // Fallback: check if OCR text exists
+        }
+        
+        // Fallback: check if OCR text exists
+        if (empty($validation_data['extracted_text'])) {
             $ocr_text_path = $file_path . '.ocr.txt';
             if (file_exists($ocr_text_path)) {
                 $validation_data['extracted_text'] = file_get_contents($ocr_text_path);
