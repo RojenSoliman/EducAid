@@ -137,6 +137,7 @@ class FileManagementService {
     /**
      * Compress archived student's files into a ZIP
      * Called when student is archived
+     * Handles both temp folders (for rejected applicants) and permanent folders (for archived students)
      */
     public function compressArchivedStudent($studentId) {
         error_log("FileManagement: Compressing files for archived student: $studentId");
@@ -167,13 +168,50 @@ class FileManagementService {
             return ['success' => false, 'message' => 'Failed to create ZIP file'];
         }
         
-        $studentFolders = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_to_mayor'];
         $filesAdded = 0;
         $filesToDelete = [];
         $totalOriginalSize = 0;
         
-        foreach ($studentFolders as $folder) {
-            $folderPath = $this->basePath . '/student/' . $folder;
+        // Define folders to check - both temp and permanent
+        $folderPairs = [
+            ['temp' => 'enrollment_forms', 'permanent' => 'enrollment_forms'],
+            ['temp' => 'grades', 'permanent' => 'grades'],
+            ['temp' => 'id_pictures', 'permanent' => 'id_pictures'],
+            ['temp' => 'indigency', 'permanent' => 'indigency'],
+            ['temp' => 'letter_mayor', 'permanent' => 'letter_to_mayor']
+        ];
+        
+        // First, check temp folders (for rejected applicants who never got approved)
+        foreach ($folderPairs as $folderPair) {
+            $tempPath = $this->basePath . '/temp/' . $folderPair['temp'];
+            
+            if (is_dir($tempPath)) {
+                $files = glob($tempPath . '/*.*');
+                
+                foreach ($files as $file) {
+                    if (!is_file($file)) continue;
+                    
+                    $filename = basename($file);
+                    
+                    // Check if file belongs to this student (temp files are named: STUDENTID_timestamp.ext)
+                    if (strpos($filename, $studentId . '_') === 0) {
+                        // Add to ZIP in folder structure
+                        $zipPath = $folderPair['permanent'] . '/' . $filename;
+                        
+                        if ($zip->addFile($file, $zipPath)) {
+                            $filesAdded++;
+                            $filesToDelete[] = $file;
+                            $totalOriginalSize += filesize($file);
+                            error_log("FileManagement: Added temp file to ZIP: $zipPath");
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Then check permanent folders (for students who were previously approved)
+        foreach ($folderPairs as $folderPair) {
+            $folderPath = $this->basePath . '/student/' . $folderPair['permanent'];
             
             if (!is_dir($folderPath)) {
                 continue;
@@ -189,13 +227,31 @@ class FileManagementService {
                 // Check if file belongs to this student
                 if (strpos($filename, $studentId) === 0 || stripos($filename, strtolower($studentId)) === 0) {
                     // Add to ZIP in folder structure
-                    $zipPath = $folder . '/' . $filename;
+                    $zipPath = $folderPair['permanent'] . '/' . $filename;
                     
                     if ($zip->addFile($file, $zipPath)) {
                         $filesAdded++;
                         $filesToDelete[] = $file;
                         $totalOriginalSize += filesize($file);
-                        error_log("FileManagement: Added to ZIP: $zipPath");
+                        error_log("FileManagement: Added permanent file to ZIP: $zipPath");
+                    }
+                }
+            }
+        }
+        
+        // Also check temp_ocr folder for any OCR files
+        $tempOcrPath = $this->basePath . '/temp/temp_ocr';
+        if (is_dir($tempOcrPath)) {
+            $ocrFiles = glob($tempOcrPath . '/' . $studentId . '_*');
+            foreach ($ocrFiles as $file) {
+                if (is_file($file)) {
+                    $filename = basename($file);
+                    $zipPath = 'ocr/' . $filename;
+                    if ($zip->addFile($file, $zipPath)) {
+                        $filesAdded++;
+                        $filesToDelete[] = $file;
+                        $totalOriginalSize += filesize($file);
+                        error_log("FileManagement: Added OCR file to ZIP: $zipPath");
                     }
                 }
             }

@@ -147,8 +147,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $remarks = trim($_POST['remarks'] ?? '');
         
         if ($action === 'approve') {
-            // Update student status to applicant
-            $updateQuery = "UPDATE students SET status = 'applicant' WHERE student_id = $1";
+            // Update student status to applicant and mark as new registration (no upload needed)
+            $updateQuery = "UPDATE students SET status = 'applicant', needs_document_upload = FALSE WHERE student_id = $1";
             $result = pg_query_params($connection, $updateQuery, [$student_id]);
             
             if ($result) {

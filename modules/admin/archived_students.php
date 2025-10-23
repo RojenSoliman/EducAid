@@ -91,6 +91,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
+// Handle ZIP file download
+if (isset($_GET['download_zip']) && !empty($_GET['student_id'])) {
+    $studentId = $_GET['student_id'];
+    
+    // Security check - verify student is archived and admin has permission
+    $checkQuery = pg_query_params($connection,
+        "SELECT first_name, last_name, is_archived FROM students WHERE student_id = $1",
+        [$studentId]
+    );
+    
+    if (!$checkQuery || pg_num_rows($checkQuery) === 0) {
+        $_SESSION['error_message'] = 'Student not found';
+        header('Location: archived_students.php');
+        exit;
+    }
+    
+    $studentData = pg_fetch_assoc($checkQuery);
+    
+    if ($studentData['is_archived'] !== 't') {
+        $_SESSION['error_message'] = 'Student is not archived';
+        header('Location: archived_students.php');
+        exit;
+    }
+    
+    // Get ZIP file path
+    require_once '../../services/FileManagementService.php';
+    $fileService = new FileManagementService($connection);
+    $zipFile = $fileService->getArchivedStudentZip($studentId);
+    
+    if (!$zipFile || !file_exists($zipFile)) {
+        $_SESSION['error_message'] = 'Archive file not found for this student';
+        header('Location: archived_students.php');
+        exit;
+    }
+    
+    // Log the download action
+    $auditLogger->logEvent(
+        'student_archive_download',
+        'student_management',
+        "Downloaded archived documents for student: {$studentData['first_name']} {$studentData['last_name']} (ID: {$studentId})",
+        [
+            'admin_id' => $adminId,
+            'admin_username' => $adminUsername,
+            'student_id' => $studentId,
+            'student_name' => $studentData['first_name'] . ' ' . $studentData['last_name']
+        ]
+    );
+    
+    // Send file for download
+    $fileName = $studentId . '_archived_documents.zip';
+    
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $fileName . '"');
+    header('Content-Length: ' . filesize($zipFile));
+    header('Cache-Control: no-cache, must-revalidate');
+    header('Pragma: no-cache');
+    
+    readfile($zipFile);
+    exit;
+}
+
 // Handle CSV export
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $whereConditions = ["s.is_archived = TRUE"];
@@ -624,6 +685,11 @@ $stats = pg_fetch_assoc($statsResult);
                                                 onclick="viewDetails('<?php echo htmlspecialchars($student['student_id'], ENT_QUOTES); ?>')">
                                             <i class="bi bi-eye"></i>
                                         </button>
+                                        <a href="?download_zip=1&student_id=<?php echo urlencode($student['student_id']); ?>" 
+                                           class="btn btn-sm btn-primary"
+                                           title="Download archived documents">
+                                            <i class="bi bi-download"></i> ZIP
+                                        </a>
                                         <button class="btn btn-sm btn-success btn-unarchive" 
                                                 onclick="unarchiveStudent('<?php echo htmlspecialchars($student['student_id'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($fullName, ENT_QUOTES); ?>')">
                                             <i class="bi bi-arrow-counterclockwise"></i> Unarchive
