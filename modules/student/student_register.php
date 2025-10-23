@@ -5037,19 +5037,19 @@ function showDuplicateWarningModal(data) {
                             <i class="bi bi-shield-fill-exclamation me-2"></i>
                             <strong>Registration Not Allowed</strong>
                         </div>
-                        <p class="mb-3">A student with the following information is already registered in our system:</p>
-                        <ul class="list-unstyled mb-3">
-                            <li><strong>Name:</strong> ${data.student_name}</li>
-                            <li><strong>University:</strong> ${data.university_name}</li>
-                            <li><strong>School Student ID:</strong> ${data.school_student_id}</li>
-                            <li><strong>Status:</strong> <span class="badge bg-info">${data.student_status}</span></li>
-                        </ul>
+                        <p class="mb-3 lead">
+                            <i class="bi bi-person-fill-exclamation me-2"></i>
+                            The student information you provided is already registered in our system.
+                        </p>
                         <div class="alert alert-warning">
                             <i class="bi bi-info-circle me-2"></i>
-                            <strong>Note:</strong> Creating multiple accounts with the same information is strictly prohibited. 
-                            If you believe this is an error, please contact the administrator.
+                            <strong>Important:</strong> Creating multiple accounts with the same personal information is strictly prohibited 
+                            and violates our registration policy. Each student is only allowed one account in the system.
                         </div>
-                        ${data.student_email ? `<p class="text-muted small mb-0">Registered Email: ${data.student_email}</p>` : ''}
+                        <div class="alert alert-info mb-0">
+                            <i class="bi bi-question-circle me-2"></i>
+                            If you believe this is an error or need assistance, please contact the administrator for support.
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="goBackToEdit()">
