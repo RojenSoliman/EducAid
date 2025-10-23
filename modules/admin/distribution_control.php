@@ -121,13 +121,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $message = 'Academic year and semester are required to start distribution.';
                 break;
             }
-            // Validate documents deadline (optional but recommended) - must be a valid date when provided
+            
+            // CONSTRAINT 1: Check if a finalized distribution already exists for this academic year/semester
+            $duplicate_check = pg_query_params($connection, 
+                "SELECT snapshot_id, finalized_at, distribution_date 
+                 FROM distribution_snapshots 
+                 WHERE academic_year = $1 AND semester = $2 AND finalized_at IS NOT NULL
+                 LIMIT 1",
+                [$academic_year, $semester]
+            );
+            
+            if ($duplicate_check && pg_num_rows($duplicate_check) > 0) {
+                $existing = pg_fetch_assoc($duplicate_check);
+                $finalized_date = date('F j, Y', strtotime($existing['finalized_at']));
+                $message = "A distribution for <strong>$semester $academic_year</strong> has already been completed and finalized on $finalized_date. You cannot create a duplicate distribution for the same academic period. Please use a different academic year or semester.";
+                break;
+            }
+            
+            // CONSTRAINT 2: Validate documents deadline must be after the last finalized distribution
             if (!empty($documents_deadline)) {
                 $d = DateTime::createFromFormat('Y-m-d', $documents_deadline);
                 $dateValid = $d && $d->format('Y-m-d') === $documents_deadline;
                 if (!$dateValid) {
                     $message = 'Invalid documents deadline date. Use a valid date (YYYY-MM-DD).';
                     break;
+                }
+                
+                // Check against last finalized distribution date
+                $last_distribution_query = pg_query($connection,
+                    "SELECT distribution_date, academic_year, semester, finalized_at
+                     FROM distribution_snapshots 
+                     WHERE finalized_at IS NOT NULL 
+                     ORDER BY finalized_at DESC 
+                     LIMIT 1"
+                );
+                
+                if ($last_distribution_query && pg_num_rows($last_distribution_query) > 0) {
+                    $last_dist = pg_fetch_assoc($last_distribution_query);
+                    $last_dist_date = $last_dist['distribution_date'];
+                    
+                    // Document deadline must be AFTER the last distribution date
+                    if (strtotime($documents_deadline) <= strtotime($last_dist_date)) {
+                        $formatted_last_date = date('F j, Y', strtotime($last_dist_date));
+                        $formatted_deadline = date('F j, Y', strtotime($documents_deadline));
+                        $message = "Document submission deadline (<strong>$formatted_deadline</strong>) must be after the last finalized distribution date (<strong>$formatted_last_date</strong> for {$last_dist['semester']} {$last_dist['academic_year']}). Please choose a later deadline date.";
+                        break;
+                    }
                 }
             }
             
@@ -407,30 +446,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if (strpos($e->getMessage(), 'transaction is aborted') !== false) {
                     $message .= ' (This usually indicates a database table or column doesn\'t exist. Please check your database schema.)';
                 }
-            }
-            break;
-            
-        case 'reset_distribution':
-            // Emergency reset for stuck distributions
-            try {
-                $reset_configs = [
-                    ['distribution_status', 'inactive'],
-                    ['uploads_enabled', '0']
-                ];
-                
-                foreach ($reset_configs as [$key, $value]) {
-                    $query = "INSERT INTO config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2";
-                    $result = pg_query_params($connection, $query, [$key, $value]);
-                    if (!$result) {
-                        throw new Exception("Failed to reset configuration key '$key': " . pg_last_error($connection));
-                    }
-                }
-                
-                $success = true;
-                $message = 'Distribution system has been reset to inactive state. You can now start a new distribution.';
-                
-            } catch (Exception $e) {
-                $message = 'Failed to reset distribution: ' . $e->getMessage();
             }
             break;
     }
@@ -985,50 +1000,6 @@ $history_result = pg_query($connection, $history_query);
                                 </div>
                             </div>
                         </div>
-                        
-                        <!-- Emergency Reset Option -->
-                        <?php if ($distribution_status === 'active' || $distribution_status === 'finalized'): ?>
-                            <div class="card border-0 shadow-sm mt-4" style="border-radius: 12px; overflow: hidden; border-left: 5px solid #dc3545;">
-                                <div class="card-header" style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); padding: 1.25rem;">
-                                    <h5 class="mb-0 text-white fw-bold">
-                                        <i class="fas fa-exclamation-triangle me-2"></i>
-                                        Emergency Reset
-                                    </h5>
-                                </div>
-                                <div class="card-body" style="background: #fff5f5; padding: 1.75rem;">
-                                    <div class="alert alert-danger d-flex align-items-start" style="border-left: 4px solid #dc3545; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(220,53,69,0.1);">
-                                        <div class="me-3" style="font-size: 2rem; color: #dc3545;">
-                                            <i class="fas fa-exclamation-triangle"></i>
-                                        </div>
-                                        <div class="flex-grow-1">
-                                            <h6 class="fw-bold text-danger mb-2">⚠️ Critical Action Warning</h6>
-                                            <p class="mb-0 text-dark" style="font-size: 0.95rem;">
-                                                This will <strong>immediately reset</strong> the distribution system to inactive state. 
-                                                Use only if the system is stuck, experiencing critical errors, or requires emergency intervention.
-                                            </p>
-                                            <p class="mb-0 mt-2 text-muted small">
-                                                <i class="fas fa-info-circle me-1"></i>
-                                                This action cannot be undone. All active distribution workflows will be terminated.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div class="d-flex justify-content-end mt-3">
-                                        <form method="POST" class="d-inline">
-                                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
-                                            <button type="submit" name="action" value="reset_distribution" 
-                                                    class="btn btn-danger btn-lg fw-bold" 
-                                                    style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); border: none; padding: 0.75rem 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(220,53,69,0.3); transition: all 0.3s ease;"
-                                                    onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(220,53,69,0.4)';"
-                                                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(220,53,69,0.3)';"
-                                                    onclick="return confirm('⚠️ CRITICAL WARNING ⚠️\n\nAre you absolutely sure you want to reset the distribution system?\n\nThis will:\n• Deactivate the current distribution\n• Stop all active workflows\n• Reset system to inactive state\n\nThis action CANNOT be undone!\n\nClick OK to proceed or Cancel to abort.')">
-                                                <i class="fas fa-power-off me-2"></i>
-                                                Reset Distribution System
-                                            </button>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
                         </div>
                     </div>
                 </div>

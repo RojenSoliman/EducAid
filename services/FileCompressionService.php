@@ -12,7 +12,8 @@ class FileCompressionService {
     
     public function compressDistribution($distributionId, $adminId) {
         try {
-            pg_query($this->conn, "BEGIN");
+            // DO NOT start a new transaction here - caller should manage transactions
+            // Removed: pg_query($this->conn, "BEGIN");
             
             $distribution = null;
             $distQuery = "SELECT d.*
@@ -169,11 +170,30 @@ class FileCompressionService {
                 );
             }
             
-            $zip->close();
+            // Close the ZIP file
+            if (!$zip->close()) {
+                throw new Exception("Failed to close ZIP archive - compression may have failed");
+            }
+            
+            // CRITICAL: Verify ZIP file was created and has content before deleting originals
+            if (!file_exists($zipPath)) {
+                throw new Exception("ZIP file was not created at: $zipPath");
+            }
             
             $totalCompressedSize = filesize($zipPath);
             
-            // Delete original files after successful compression
+            if ($totalCompressedSize === 0) {
+                throw new Exception("ZIP file is empty - aborting to preserve original files");
+            }
+            
+            // Verify ZIP integrity
+            $zipCheck = new ZipArchive();
+            if ($zipCheck->open($zipPath, ZipArchive::CHECKCONS) !== TRUE) {
+                throw new Exception("ZIP file integrity check failed - archive may be corrupted");
+            }
+            $zipCheck->close();
+            
+            // Only NOW is it safe to delete original files
             $filesDeleted = 0;
             foreach ($filesToDelete as $filePath) {
                 if (file_exists($filePath) && unlink($filePath)) {
@@ -200,16 +220,6 @@ class FileCompressionService {
                  WHERE distribution_id = $1 OR archive_filename = $2",
                 [$distributionId, $zipFilename]);
             
-            // Log the operation
-            $spaceSaved = $totalOriginalSize - $totalCompressedSize;
-            $this->logOperation(
-                'compress_distribution', $adminId, $distributionId, null,
-                $filesCompressed, $totalOriginalSize, $totalCompressedSize, $spaceSaved,
-                'success', null
-            );
-            
-            pg_query($this->conn, "COMMIT");
-            
             $spaceSaved = $totalOriginalSize - $totalCompressedSize;
             
             // Log the operation (optional, may not have file_archive_log table)
@@ -223,7 +233,8 @@ class FileCompressionService {
                 error_log("Failed to log operation: " . $e->getMessage());
             }
             
-            pg_query($this->conn, "COMMIT");
+            // DO NOT commit here - let the caller handle transaction management
+            // Removed: pg_query($this->conn, "COMMIT");
             
             return [
                 'success' => true,
@@ -255,6 +266,9 @@ class FileCompressionService {
             } catch (Exception $e2) {
                 error_log("Failed to log error: " . $e2->getMessage());
             }
+            
+            // DO NOT rollback here - let the caller handle transaction management
+            // Removed: pg_query($this->conn, "ROLLBACK");
             
             return [
                 'success' => false,

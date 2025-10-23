@@ -373,14 +373,21 @@ if (!$workflow_status['can_manage_applicants']) {
 
 // CRITICAL ACCESS CONTROL: Check if distribution has been completed
 // Admin must click "Complete Distribution" in scan_qr.php before accessing this page
+// AND the distribution must have actual students who received aid
 $has_completed_snapshot = false;
 $completed_snapshot_id = null;
 $check_snapshot_query = "
-    SELECT snapshot_id, distribution_id, academic_year, semester, total_students_count, finalized_at
-    FROM distribution_snapshots 
-    WHERE finalized_at IS NOT NULL 
-    AND finalized_at >= CURRENT_DATE - INTERVAL '7 days'
-    ORDER BY finalized_at DESC
+    SELECT ds.snapshot_id, ds.distribution_id, ds.academic_year, ds.semester, 
+           ds.total_students_count, ds.finalized_at,
+           COUNT(dsr.student_id) as actual_distributed_count
+    FROM distribution_snapshots ds
+    LEFT JOIN distribution_student_records dsr ON ds.snapshot_id = dsr.snapshot_id
+    WHERE ds.finalized_at IS NOT NULL 
+    AND ds.finalized_at >= CURRENT_DATE - INTERVAL '7 days'
+    GROUP BY ds.snapshot_id, ds.distribution_id, ds.academic_year, ds.semester, 
+             ds.total_students_count, ds.finalized_at
+    HAVING COUNT(dsr.student_id) > 0
+    ORDER BY ds.finalized_at DESC
     LIMIT 1
 ";
 $check_result = pg_query($connection, $check_snapshot_query);
@@ -392,7 +399,7 @@ if ($check_result && pg_num_rows($check_result) > 0) {
 
 // If no completed snapshot exists, redirect back to scan_qr.php
 if (!$has_completed_snapshot) {
-    $_SESSION['error_message'] = "Please complete the distribution first using the 'Complete Distribution' button in the QR Scanner page. You must finalize the distribution before ending it.";
+    $_SESSION['error_message'] = "Please complete the distribution first using the 'Complete Distribution' button in the QR Scanner page. You must finalize the distribution AND have at least one student who received aid before ending it.";
     header("Location: scan_qr.php");
     exit;
 }
