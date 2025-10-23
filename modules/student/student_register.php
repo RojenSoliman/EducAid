@@ -3022,10 +3022,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['register'])) {
         json_response(['status' => 'error', 'message' => 'Invalid mobile number format.']);
     }
 
-    // Validate date of birth (must be at least 10 years ago)
-    $minDate = date('Y-m-d', strtotime('-10 years'));
+    // Validate date of birth (must be at least 16 years ago)
+    $minDate = date('Y-m-d', strtotime('-16 years'));
+    $maxDate = date('Y-m-d', strtotime('-100 years')); // Maximum age 100
     if ($bdate > $minDate) {
-        json_response(['status' => 'error', 'message' => 'Invalid date of birth. You must be at least 10 years old to register.']);
+        json_response(['status' => 'error', 'message' => 'Invalid date of birth. You must be at least 16 years old to register.']);
+    }
+    if ($bdate < $maxDate) {
+        json_response(['status' => 'error', 'message' => 'Invalid date of birth. Please enter a valid birthdate.']);
     }
 
     // Check if email or mobile already exists
@@ -3541,8 +3545,12 @@ if (!$isAjaxRequest) {
                 <!-- Step 2: Birthdate and Sex -->
                 <div class="step-panel d-none" id="step-2">
                     <div class="mb-3">
-                        <label class="form-label">Date of Birth</label>
-                        <input type="date" class="form-control" name="bdate" autocomplete="bday" required />
+                        <label class="form-label">Date of Birth <small class="text-muted">(Must be 16 years or older)</small></label>
+                        <input type="date" class="form-control" name="bdate" autocomplete="bday" 
+                               max="<?php echo date('Y-m-d', strtotime('-16 years')); ?>" 
+                               min="<?php echo date('Y-m-d', strtotime('-100 years')); ?>" 
+                               required />
+                        <small class="form-text text-muted">You must be at least 16 years old to register.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label d-block">Gender</label>
@@ -6130,6 +6138,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // School Student ID duplicate checking
     setupSchoolStudentIdCheck();
     
+    // Birthdate age validation (16 years minimum)
+    setupBirthdateValidation();
+    
     // Wait a moment for external scripts to load
     setTimeout(function() {
         console.log('🔍 Final function check:', {
@@ -6279,79 +6290,86 @@ async function checkSchoolStudentIdDuplicate(schoolStudentId, universityId, warn
     }
 }
 
-function setupTermsAndConditions() {
-    // Handle terms and conditions modal
-    const termsLink = document.querySelector('a[data-bs-target="#termsModal"]');
-    const acceptBtn = document.getElementById('acceptTermsBtn');
-    const agreeCheckbox = document.getElementById('agreeTerms');
-    const termsModal = document.getElementById('termsModal');
+// Birthdate validation - Must be 16 years or older
+function setupBirthdateValidation() {
+    const bdateInput = document.querySelector('input[name="bdate"]');
     
-    console.log('🔍 Terms elements found:', {
-        termsLink: !!termsLink,
-        acceptBtn: !!acceptBtn,
-        agreeCheckbox: !!agreeCheckbox,
-        termsModal: !!termsModal,
-        bootstrap: typeof window.bootstrap
-    });
-    
-    // Bootstrap should handle the modal opening automatically via data-bs-toggle and data-bs-target
-    // No need for custom click handler - just verify Bootstrap is loaded
-    if (!window.bootstrap) {
-        console.warn('⚠️ Bootstrap not loaded! Modal may not work.');
+    if (!bdateInput) {
+        console.log('⚠️ Birthdate input not found');
+        return;
     }
     
-    // Handle accept button
-    if (acceptBtn) {
-        acceptBtn.addEventListener('click', function() {
-            // Check the terms checkbox
-            if (agreeCheckbox) {
-                agreeCheckbox.checked = true;
-                agreeCheckbox.dispatchEvent(new Event('change'));
-                console.log('✅ Terms accepted and checkbox checked');
+    bdateInput.addEventListener('change', function() {
+        const selectedDate = new Date(this.value);
+        const today = new Date();
+        
+        // Calculate age
+        let age = today.getFullYear() - selectedDate.getFullYear();
+        const monthDiff = today.getMonth() - selectedDate.getMonth();
+        const dayDiff = today.getDate() - selectedDate.getDate();
+        
+        // Adjust age if birthday hasn't occurred this year
+        if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+            age--;
+        }
+        
+        // Validate minimum age of 16
+        if (age < 16) {
+            this.setCustomValidity('You must be at least 16 years old to register.');
+            this.classList.add('is-invalid');
+            
+            // Create or update error message
+            let errorMsg = this.parentElement.querySelector('.invalid-feedback');
+            if (!errorMsg) {
+                errorMsg = document.createElement('div');
+                errorMsg.className = 'invalid-feedback';
+                this.parentElement.appendChild(errorMsg);
+            }
+            errorMsg.textContent = `You must be at least 16 years old to register. You are currently ${age} years old.`;
+            
+            // Show notification
+            showNotifier(`⚠️ Invalid birthdate: You must be at least 16 years old to register. You are currently ${age} years old.`, 'error');
+        } else if (age > 100) {
+            this.setCustomValidity('Please enter a valid birthdate.');
+            this.classList.add('is-invalid');
+            
+            let errorMsg = this.parentElement.querySelector('.invalid-feedback');
+            if (!errorMsg) {
+                errorMsg = document.createElement('div');
+                errorMsg.className = 'invalid-feedback';
+                this.parentElement.appendChild(errorMsg);
+            }
+            errorMsg.textContent = 'Please enter a valid birthdate.';
+            
+            showNotifier('⚠️ Please enter a valid birthdate.', 'error');
+        } else {
+            this.setCustomValidity('');
+            this.classList.remove('is-invalid');
+            this.classList.add('is-valid');
+            
+            // Remove error message if it exists
+            const errorMsg = this.parentElement.querySelector('.invalid-feedback');
+            if (errorMsg) {
+                errorMsg.remove();
             }
             
-            // Close modal using Bootstrap
-            if (window.bootstrap && window.bootstrap.Modal) {
-                const modal = bootstrap.Modal.getInstance(termsModal);
-                if (modal) {
-                    modal.hide();
-                    console.log('✅ Terms modal closed via Bootstrap');
-                }
-            }
-        });
-    }
-    
-    // Handle modal close buttons
-    const closeButtons = termsModal?.querySelectorAll('[data-bs-dismiss="modal"]');
-    closeButtons?.forEach(button => {
-        button.addEventListener('click', function() {
-            if (window.bootstrap && window.bootstrap.Modal) {
-                const modal = bootstrap.Modal.getInstance(termsModal);
-                if (modal) modal.hide();
-            } else {
-                // Fallback close
-                if (termsModal) {
-                    termsModal.style.display = 'none';
-                    termsModal.classList.remove('show');
-                    termsModal.removeAttribute('aria-modal');
-                    termsModal.removeAttribute('role');
-                    document.body.classList.remove('modal-open');
-                }
-            }
-        });
+            // Show success notification
+            showNotifier(`✅ Valid birthdate (Age: ${age} years old)`, 'success');
+        }
     });
     
-    // Add backdrop click to close
-    if (termsModal) {
-        termsModal.addEventListener('click', function(e) {
-            if (e.target === termsModal) {
-                const closeBtn = termsModal.querySelector('[data-bs-dismiss="modal"]');
-                if (closeBtn) closeBtn.click();
-            }
-        });
-    }
+    console.log('✅ Birthdate validation initialized');
+}
+
+function setupTermsAndConditions() {
+    // Terms and conditions handling is now managed by user_registration.js
+    // This includes:
+    // - Scroll tracking (must scroll to bottom to enable Accept button)
+    // - Checkbox validation (must read modal before checking)
+    // - Modal state management
+    // - Event handlers for Accept button
     
-    console.log('✅ Terms and Conditions functionality initialized');
+    console.log('✅ Terms and Conditions (handled by user_registration.js)');
 }
 </script>
 </body>

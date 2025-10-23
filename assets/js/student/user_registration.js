@@ -1005,6 +1005,12 @@ const strengthBar = document.getElementById('strengthBar');
 const strengthText = document.getElementById('strengthText');
 
 function updatePasswordStrength() {
+    // Safety check - ensure elements exist
+    if (!passwordInput || !strengthBar || !strengthText) {
+        console.warn('Password validation elements not found');
+        return;
+    }
+    
     const password = passwordInput.value;
 
     if (password.length === 0) {
@@ -1142,18 +1148,27 @@ function updatePasswordStrength() {
     }
 }
 
-passwordInput.addEventListener('input', updatePasswordStrength);
+// Add event listeners only if elements exist
+if (passwordInput) {
+    passwordInput.addEventListener('input', updatePasswordStrength);
+} else {
+    console.warn('Password input not found - password strength validation disabled');
+}
 
-confirmPasswordInput.addEventListener('input', function() {
-    if (passwordInput.value !== confirmPasswordInput.value) {
-        confirmPasswordInput.setCustomValidity('Passwords do not match');
-        this.classList.add('missing-field');
-    } else {
-        confirmPasswordInput.setCustomValidity('');
-        this.classList.remove('missing-field');
-        triggerMobileVibration('success'); // Vibrate when passwords match
-    }
-});
+if (confirmPasswordInput && passwordInput) {
+    confirmPasswordInput.addEventListener('input', function() {
+        if (passwordInput.value !== confirmPasswordInput.value) {
+            confirmPasswordInput.setCustomValidity('Passwords do not match');
+            this.classList.add('missing-field');
+        } else {
+            confirmPasswordInput.setCustomValidity('');
+            this.classList.remove('missing-field');
+            triggerMobileVibration('success'); // Vibrate when passwords match
+        }
+    });
+} else {
+    console.warn('Confirm password input not found - password match validation disabled');
+}
 
 // ----- FIX FOR REQUIRED FIELD ERROR -----
 let isSubmitting = false; // Flag to prevent multiple submissions
