@@ -6,6 +6,22 @@ config/env.d/*.env
 # Allow example env fragments
 !config/env.d/*.env.example
 
+# ========================================
+# DEVELOPER BYPASS TOOLS (DO NOT COMMIT)
+# ========================================
+dev_bypass_test.php
+dev_*.php
+dev_*.js
+test_bypass_*.php
+bypass_*.php
+*_bypass_tool.php
+DEV_BYPASS_GUIDE.md
+DEV_TESTING_SUMMARY.md
+DEV_*.md
+
+# ========================================
+# UPLOADED FILES
+# ========================================
 assets/uploads/enrollment_forms/30_SOLIMAN_ROJEN_EAF.png
 assets/uploads/students/Rojen Soliman/Bermido_Gabriel_EAF.png
 assets/uploads/students/Rojen Soliman/grades/grades_1757837736_68c679a85d0f9.png
@@ -157,5 +173,84 @@ assets/uploads/student/letter_to_mayor/GENERALTRIAS-2025-3-DWXA3N_Soliman_Rojen_
 assets/uploads/student/letter_to_mayor/GENERALTRIAS-2025-3-DWXA3N_Soliman_Rojen_lettertomayor.jpg.ocr.txt
 assets/uploads/student/letter_to_mayor/GENERALTRIAS-2025-3-DWXA3N_Soliman_Rojen_lettertomayor.jpg.verify.json
 modules/student/ocr_68f9ee897adcd.tsv
-temp/grades/grades_confidence.json
-temp/grades/Grades ni eric.jpg
+assets/uploads/temp/enrollment_forms/Soliman_Rojen_EAF.png.ocr.txt
+assets/uploads/temp/enrollment_forms/Soliman_Rojen_EAF.png.verify.json
+assets/uploads/temp/grades/Soliman_Rojen_Grades.jpg.ocr.txt
+assets/uploads/temp/grades/Soliman_Rojen_Grades.jpg.tsv
+assets/uploads/temp/grades/Soliman_Rojen_Grades.jpg.verify.json
+assets/uploads/temp/id_pictures/Soliman_Rojen_IDpicture.jpg
+assets/uploads/temp/id_pictures/Soliman_Rojen_IDpicture.jpg.ocr.txt
+assets/uploads/temp/id_pictures/Soliman_Rojen_IDpicture.jpg.verify.json
+assets/uploads/temp/indigency/Soliman_Rojen_Indigency.jpg.ocr.txt
+assets/uploads/temp/indigency/Soliman_Rojen_Indigency.jpg.verify.json
+assets/uploads/temp/letter_mayor/Soliman_Rojen_Letter to mayor.jpg.ocr.txt
+assets/uploads/temp/letter_mayor/Soliman_Rojen_Letter to mayor.jpg.verify.json
+modules/student/ocr_68fa3f32e3dca.tsv
+assets/uploads/temp/enrollment_forms/GENERALTRIAS-2025-3-E970A9_soliman_rojen_eaf.png
+assets/uploads/temp/enrollment_forms/GENERALTRIAS-2025-3-E970A9_soliman_rojen_eaf.png.ocr.txt
+assets/uploads/temp/enrollment_forms/GENERALTRIAS-2025-3-E970A9_soliman_rojen_eaf.png.verify.json
+assets/uploads/temp/grades/GENERALTRIAS-2025-3-E970A9_soliman_rojen_grades.jpg
+assets/uploads/temp/grades/GENERALTRIAS-2025-3-E970A9_soliman_rojen_grades.jpg.ocr.txt
+assets/uploads/temp/grades/GENERALTRIAS-2025-3-E970A9_soliman_rojen_grades.jpg.tsv
+assets/uploads/temp/grades/GENERALTRIAS-2025-3-E970A9_soliman_rojen_grades.jpg.verify.json
+assets/uploads/temp/id_pictures/GENERALTRIAS-2025-3-E970A9_id_1761231396.jpg
+assets/uploads/temp/id_pictures/GENERALTRIAS-2025-3-E970A9_id_1761231396.jpg.ocr.txt
+assets/uploads/temp/id_pictures/GENERALTRIAS-2025-3-E970A9_id_1761231396.jpg.verify.json
+assets/uploads/temp/indigency/GENERALTRIAS-2025-3-E970A9_soliman_rojen_indigency.jpg
+assets/uploads/temp/indigency/GENERALTRIAS-2025-3-E970A9_soliman_rojen_indigency.jpg.ocr.txt
+assets/uploads/temp/indigency/GENERALTRIAS-2025-3-E970A9_soliman_rojen_indigency.jpg.verify.json
+assets/uploads/temp/letter_mayor/GENERALTRIAS-2025-3-E970A9_soliman_rojen_lettertomayor.jpg
+assets/uploads/temp/letter_mayor/GENERALTRIAS-2025-3-E970A9_soliman_rojen_lettertomayor.jpg.ocr.txt
+assets/uploads/temp/letter_mayor/GENERALTRIAS-2025-3-E970A9_soliman_rojen_lettertomayor.jpg.verify.json
+modules/student/ocr_68fa41f5e0e90.tsv
+assets/uploads/student/enrollment_forms/GENERALTRIAS-2025-3-E970A9_soliman_rojen_eaf.png
+assets/uploads/student/enrollment_forms/GENERALTRIAS-2025-3-E970A9_soliman_rojen_eaf.png.ocr.txt
+assets/uploads/student/enrollment_forms/GENERALTRIAS-2025-3-E970A9_soliman_rojen_eaf.png.verify.json
+assets/uploads/student/grades/GENERALTRIAS-2025-3-E970A9_soliman_rojen_grades.jpg
+assets/uploads/student/grades/GENERALTRIAS-2025-3-E970A9_soliman_rojen_grades.jpg.ocr.txt
+assets/uploads/student/grades/GENERALTRIAS-2025-3-E970A9_soliman_rojen_grades.jpg.tsv
+assets/uploads/student/grades/GENERALTRIAS-2025-3-E970A9_soliman_rojen_grades.jpg.verify.json
+assets/uploads/student/id_pictures/GENERALTRIAS-2025-3-E970A9_id_1761231396.jpg
+assets/uploads/student/id_pictures/GENERALTRIAS-2025-3-E970A9_id_1761231396.jpg.ocr.txt
+assets/uploads/student/id_pictures/GENERALTRIAS-2025-3-E970A9_id_1761231396.jpg.verify.json
+assets/uploads/student/indigency/GENERALTRIAS-2025-3-E970A9_soliman_rojen_indigency.jpg
+assets/uploads/student/indigency/GENERALTRIAS-2025-3-E970A9_soliman_rojen_indigency.jpg.ocr.txt
+assets/uploads/student/indigency/GENERALTRIAS-2025-3-E970A9_soliman_rojen_indigency.jpg.verify.json
+assets/uploads/student/letter_mayor/GENERALTRIAS-2025-3-E970A9_soliman_rojen_lettertomayor.jpg
+assets/uploads/student/letter_mayor/GENERALTRIAS-2025-3-E970A9_soliman_rojen_lettertomayor.jpg.ocr.txt
+assets/uploads/student/letter_mayor/GENERALTRIAS-2025-3-E970A9_soliman_rojen_lettertomayor.jpg.verify.json
+modules/student/ocr_68fa5afcc0a76.tsv
+assets/uploads/student/enrollment_forms/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_eaf.png
+assets/uploads/student/enrollment_forms/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_eaf.png.ocr.txt
+assets/uploads/student/enrollment_forms/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_eaf.png.verify.json
+assets/uploads/student/grades/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_grades.jpg
+assets/uploads/student/grades/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_grades.jpg.ocr.txt
+assets/uploads/student/grades/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_grades.jpg.tsv
+assets/uploads/student/grades/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_grades.jpg.verify.json
+assets/uploads/student/id_pictures/GENERALTRIAS-2025-3-LN82PT_id_1761238056.jpg
+assets/uploads/student/id_pictures/GENERALTRIAS-2025-3-LN82PT_id_1761238056.jpg.ocr.txt
+assets/uploads/student/id_pictures/GENERALTRIAS-2025-3-LN82PT_id_1761238056.jpg.verify.json
+assets/uploads/student/indigency/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_indigency.jpg
+assets/uploads/student/indigency/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_indigency.jpg.ocr.txt
+assets/uploads/student/indigency/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_indigency.jpg.verify.json
+assets/uploads/student/letter_mayor/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_lettertomayor.jpg
+assets/uploads/student/letter_mayor/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_lettertomayor.jpg.ocr.txt
+assets/uploads/student/letter_mayor/GENERALTRIAS-2025-3-LN82PT_soliman_rojen_lettertomayor.jpg.verify.json
+modules/student/ocr_68fa5bf33a048.tsv
+assets/uploads/student/enrollment_forms/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_eaf.png
+assets/uploads/student/enrollment_forms/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_eaf.png.ocr.txt
+assets/uploads/student/enrollment_forms/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_eaf.png.verify.json
+assets/uploads/student/grades/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_grades.jpg
+assets/uploads/student/grades/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_grades.jpg.ocr.txt
+assets/uploads/student/grades/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_grades.jpg.tsv
+assets/uploads/student/grades/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_grades.jpg.verify.json
+assets/uploads/student/id_pictures/GENERALTRIAS-2025-3-7VK8NM_id_1761241506.jpg
+assets/uploads/student/id_pictures/GENERALTRIAS-2025-3-7VK8NM_id_1761241506.jpg.ocr.txt
+assets/uploads/student/id_pictures/GENERALTRIAS-2025-3-7VK8NM_id_1761241506.jpg.verify.json
+assets/uploads/student/indigency/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_indigency.jpg
+assets/uploads/student/indigency/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_indigency.jpg.ocr.txt
+assets/uploads/student/indigency/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_indigency.jpg.verify.json
+assets/uploads/student/letter_mayor/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_lettertomayor.jpg
+assets/uploads/student/letter_mayor/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_lettertomayor.jpg.ocr.txt
+assets/uploads/student/letter_mayor/GENERALTRIAS-2025-3-7VK8NM_soliman_rojen_lettertomayor.jpg.verify.json
+modules/student/ocr_68fa6968555cc.tsv

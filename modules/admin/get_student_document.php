@@ -65,23 +65,27 @@ if (!isset($_SESSION['admin_username'])) {
 }
 
 $student_id = trim($_GET['student_id']); // Remove intval for TEXT student_id
-$document_type = $_GET['type'];
+$document_type_code = $_GET['type'];
 
-// Valid document types
-$valid_types = ['certificate_of_indigency', 'letter_to_mayor', 'eaf'];
+// Valid document type codes: 00=EAF, 01=Grades, 02=Letter, 03=Certificate, 04=ID Picture
+$valid_codes = ['00', '01', '02', '03', '04'];
 
-if (!in_array($document_type, $valid_types)) {
+if (!in_array($document_type_code, $valid_codes)) {
     header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'Invalid document type']);
+    echo json_encode(['success' => false, 'message' => 'Invalid document type code']);
     exit;
 }
 
 // Get document information
-$query = "SELECT file_path FROM documents WHERE student_id = $1 AND type = $2 ORDER BY upload_date DESC LIMIT 1";
-$result = pg_query_params($connection, $query, [$student_id, $document_type]);
+$query = "SELECT file_path, ocr_text_path, verification_data_path, 
+                 ocr_confidence, verification_score, verification_status 
+          FROM documents 
+          WHERE student_id = $1 AND document_type_code = $2 
+          ORDER BY upload_date DESC LIMIT 1";
+$result = pg_query_params($connection, $query, [$student_id, $document_type_code]);
 
 // Debug logging
-error_log("Looking for document: student_id=$student_id, type=$document_type");
+error_log("Looking for document: student_id=$student_id, document_type_code=$document_type_code");
 error_log("Session admin: " . ($_SESSION['admin_username'] ?? 'NOT SET'));
 
 if ($result && pg_num_rows($result) > 0) {
@@ -91,40 +95,46 @@ if ($result && pg_num_rows($result) > 0) {
     // Debug logging
     error_log("Found document in DB: file_path=" . $file_path);
     
+    // Map document type codes to folder names
+    $code_to_folder = [
+        '04' => 'id_pictures',
+        '00' => 'enrollment_forms',
+        '02' => 'letter_mayor',
+        '03' => 'indigency',
+        '01' => 'grades'
+    ];
+    
+    $folder_name = $code_to_folder[$document_type_code] ?? '';
+    
     // Check if the file exists at the stored path
     if (!file_exists($file_path)) {
         error_log("File does not exist at stored path: " . $file_path);
         
-        // Try to find the file with the new naming convention
-        $temp_dirs = [
-            __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
-            __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
-            __DIR__ . '/../../assets/uploads/temp/indigency/',
-            __DIR__ . '/../../assets/uploads/student/enrollment_forms/',
-            __DIR__ . '/../../assets/uploads/student/letter_to_mayor/',
-            __DIR__ . '/../../assets/uploads/student/indigency/'
-        ];
+        // Try to find the file in temp or student directories
+        $search_dirs = [];
+        if ($folder_name) {
+            $search_dirs = [
+                __DIR__ . '/../../assets/uploads/temp/' . $folder_name . '/',
+                __DIR__ . '/../../assets/uploads/student/' . $folder_name . '/'
+            ];
+        }
         
         $found_file = null;
-        foreach ($temp_dirs as $dir) {
+        foreach ($search_dirs as $dir) {
             if (is_dir($dir)) {
-                // Look for files with student_id prefix and document type
-                $pattern_mappings = [
-                    'eaf' => ['*eaf*', '*EAF*', '*enrollment*'],
-                    'letter_to_mayor' => ['*lettertomayor*', '*letter_to_mayor*', '*letter*mayor*'],
-                    'certificate_of_indigency' => ['*indigency*', '*certificate*']
-                ];
+                // Look for files with student_id prefix
+                $pattern = $dir . $student_id . '_*';
+                $files = glob($pattern);
                 
-                if (isset($pattern_mappings[$document_type])) {
-                    foreach ($pattern_mappings[$document_type] as $pattern) {
-                        $search_pattern = $dir . $student_id . '_' . $pattern;
-                        $files = glob($search_pattern);
-                        if (!empty($files)) {
-                            $found_file = $files[0]; // Take the first match
-                            error_log("Found file using pattern search: " . $found_file);
-                            break 2;
-                        }
-                    }
+                // Filter out associated files (.ocr.txt, .tsv, .verify.json, .confidence.json)
+                $files = array_filter($files, function($f) {
+                    return !preg_match('/\.(ocr\.txt|tsv|verify\.json|confidence\.json)$/', $f);
+                });
+                
+                if (!empty($files)) {
+                    $found_file = $files[0]; // Take the first match
+                    error_log("Found file using pattern search: " . $found_file);
+                    break;
                 }
             }
         }
@@ -133,8 +143,8 @@ if ($result && pg_num_rows($result) > 0) {
             $file_path = $found_file;
             
             // Update the database with the correct path
-            $update_query = "UPDATE documents SET file_path = $1 WHERE student_id = $2 AND type = $3";
-            pg_query_params($connection, $update_query, [$file_path, $student_id, $document_type]);
+            $update_query = "UPDATE documents SET file_path = $1 WHERE student_id = $2 AND document_type_code = $3";
+            pg_query_params($connection, $update_query, [$file_path, $student_id, $document_type_code]);
             error_log("Updated database with correct file path: " . $file_path);
         } else {
             // Try alternative paths if the stored path doesn't work
@@ -158,7 +168,7 @@ if ($result && pg_num_rows($result) > 0) {
         
         // If still not found, log the issue
         if (!file_exists($file_path)) {
-            error_log("File not found for student $student_id, type $document_type. Checked paths: " . implode(', ', array_merge([$document['file_path']], $alternative_paths)));
+            error_log("File not found for student $student_id, document_type_code $document_type_code. Checked paths: " . implode(', ', array_merge([$document['file_path']], $alternative_paths)));
             header('Content-Type: application/json');
             echo json_encode(['success' => false, 'message' => 'File not found on server']);
             exit;
@@ -169,14 +179,16 @@ if ($result && pg_num_rows($result) > 0) {
     error_log("Final file path: " . $file_path);
     error_log("Web path will be: " . convertToWebPath($file_path));
     
-    // Generate a user-friendly filename based on document type
+    // Generate a user-friendly filename based on document type code
     $type_names = [
-        'certificate_of_indigency' => 'Certificate of Indigency',
-        'letter_to_mayor' => 'Letter to Mayor', 
-        'eaf' => 'Enrollment Assessment Form'
+        '04' => 'ID Picture',
+        '00' => 'Enrollment Assessment Form',
+        '02' => 'Letter to Mayor', 
+        '03' => 'Certificate of Indigency',
+        '01' => 'Academic Grades'
     ];
     
-    $filename = $type_names[$document_type] . ' - Student ' . $student_id;
+    $filename = ($type_names[$document_type_code] ?? 'Document') . ' - Student ' . $student_id;
     
     // Add appropriate extension based on file
     $path_info = pathinfo($file_path);
@@ -194,62 +206,95 @@ if ($result && pg_num_rows($result) > 0) {
 
     $webPath = convertToWebPath($file_path);
     $absolute_url = $webPath; // front-end relative usage
+    
+    // Check if verification data should be included
+    $include_verification = isset($_GET['include_verification']) && $_GET['include_verification'] == '1';
+    $verification_data = null;
+    
+    if ($include_verification && !empty($document['verification_data_path']) && file_exists($document['verification_data_path'])) {
+        $verification_json = file_get_contents($document['verification_data_path']);
+        $verification_data = json_decode($verification_json, true);
+    }
 
     header('Content-Type: application/json');
-    echo json_encode([
+    $response = [
         'success' => true,
-        'file_path' => $webPath,
+        'filePath' => $webPath,
         'filename' => $filename,
+        'documentName' => $type_names[$document_type_code] ?? 'Document',
+        'downloadUrl' => $webPath,
         'mime' => $mime,
         'debug_original_path' => $file_path,
         'debug_web_path' => $webPath
-    ]);
+    ];
+    
+    if ($include_verification && $verification_data) {
+        $response['verification'] = $verification_data;
+    }
+    
+    echo json_encode($response);
 } else {
     // As a last resort attempt to discover a file even if DB row missing
-    error_log("No document row. Attempting filesystem discovery for $student_id / $document_type");
-    $searchDirs = [
-        __DIR__ . '/../../assets/uploads/temp/enrollment_forms',
-        __DIR__ . '/../../assets/uploads/temp/letter_mayor',
-        __DIR__ . '/../../assets/uploads/temp/indigency',
-        __DIR__ . '/../../assets/uploads/student/enrollment_forms',
-        __DIR__ . '/../../assets/uploads/student/letter_to_mayor',
-        __DIR__ . '/../../assets/uploads/student/indigency'
+    error_log("No document row. Attempting filesystem discovery for $student_id / document_type_code: $document_type_code");
+    
+    // Map document type codes to folder names
+    $code_to_folder = [
+        '04' => 'id_pictures',
+        '00' => 'enrollment_forms',
+        '02' => 'letter_mayor',
+        '03' => 'indigency',
+        '01' => 'grades'
     ];
-    $patterns = [
-        'eaf' => ['eaf', 'enrollment'],
-        'letter_to_mayor' => ['letter', 'mayor'],
-        'certificate_of_indigency' => ['indigency', 'certificate']
-    ];
+    
+    $folder_name = $code_to_folder[$document_type_code] ?? '';
+    $searchDirs = [];
+    
+    if ($folder_name) {
+        $searchDirs = [
+            __DIR__ . '/../../assets/uploads/temp/' . $folder_name,
+            __DIR__ . '/../../assets/uploads/student/' . $folder_name
+        ];
+    }
+    
     $foundFS = null;
     foreach ($searchDirs as $d) {
         if (!is_dir($d)) continue;
         $glob = glob($d . '/' . $student_id . '_*');
+        
+        // Filter out associated files (.ocr.txt, .tsv, .verify.json, .confidence.json)
         foreach ($glob as $g) {
-            $bn = strtolower(basename($g));
-            $matchTokens = $patterns[$document_type] ?? [];
-            $tokenHit = false;
-            foreach ($matchTokens as $tok) {
-                if (strpos($bn, $tok) !== false) { $tokenHit = true; break; }
+            if (!preg_match('/\.(ocr\.txt|tsv|verify\.json|confidence\.json)$/', $g)) {
+                $foundFS = $g;
+                break 2;
             }
-            if ($tokenHit) { $foundFS = $g; break 2; }
         }
     }
+    
     if ($foundFS) {
         $webPath = convertToWebPath($foundFS);
         $ext = strtolower(pathinfo($foundFS, PATHINFO_EXTENSION));
         $mimeMap = [ 'jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png','gif'=>'image/gif','pdf'=>'application/pdf'];
         $mime = $mimeMap[$ext] ?? 'application/octet-stream';
+        
+        $type_names = [
+            '04' => 'ID Picture',
+            '00' => 'Enrollment Assessment Form',
+            '02' => 'Letter to Mayor', 
+            '03' => 'Certificate of Indigency',
+            '01' => 'Academic Grades'
+        ];
+        
         header('Content-Type: application/json');
         echo json_encode([
             'success' => true,
             'file_path' => $webPath,
-            'filename' => ucfirst(str_replace('_',' ', $document_type)) . ' - Student ' . $student_id . '.' . $ext,
+            'filename' => ($type_names[$document_type_code] ?? 'Document') . ' - Student ' . $student_id . '.' . $ext,
             'mime' => $mime,
             'debug_fallback' => true,
             'debug_found_path' => $foundFS
         ]);
     } else {
-        error_log("Still no file after filesystem scan for $student_id / $document_type");
+        error_log("Still no file after filesystem scan for $student_id / document_type_code: $document_type_code");
         header('Content-Type: application/json');
         echo json_encode(['success' => false, 'message' => 'Document not found (no DB row, no filesystem match)']);
     }

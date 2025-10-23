@@ -1,5 +1,7 @@
 <?php
 include __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../services/DocumentService.php';
+
 session_start();
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -11,6 +13,9 @@ if (!isset($_SESSION['admin_username'])) {
     header("Location: ../../unified_login.php");
     exit;
 }
+
+// Initialize DocumentService
+$docService = new DocumentService($connection);
 
 // Handle approval/rejection
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -31,90 +36,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $result = pg_query_params($connection, $updateQuery, [$student_id]);
                     
                     if ($result && pg_affected_rows($result) > 0) {
-                        // Move enrollment form from temporary to permanent location
-                        $enrollmentQuery = "SELECT file_path, original_filename FROM enrollment_forms WHERE student_id = $1";
-                        $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student_id]);
+                        // Use DocumentService to move all documents from temp to permanent storage
+                        $moveResult = $docService->moveToPermStorage($student_id);
                         
-                        if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
-                            $tempPath = $enrollmentRow['file_path'];
-                            $originalFilename = $enrollmentRow['original_filename'];
-                            
-                            // Create permanent directory if it doesn't exist
-                            $permanentDir = __DIR__ . '/../../assets/uploads/student/enrollment_forms/';
-                            if (!file_exists($permanentDir)) {
-                                mkdir($permanentDir, 0777, true);
-                            }
-                            
-                            // Define permanent path
-                            $permanentPath = $permanentDir . $student_id . '_' . $originalFilename;
-                            
-                            // Move file from temporary to permanent location
-                            if (file_exists($tempPath) && copy($tempPath, $permanentPath)) {
-                                // Update database with permanent path
-                                $updateFilePathQuery = "UPDATE enrollment_forms SET file_path = $1 WHERE student_id = $2";
-                                pg_query_params($connection, $updateFilePathQuery, [$permanentPath, $student_id]);
-                                
-                                // Delete temporary file
-                                unlink($tempPath);
-                            }
-                        }
-
-                        // Move documents from temporary to permanent locations
-                        $documentsQuery = "SELECT document_id, type, file_path FROM documents WHERE student_id = $1";
-                        $documentsResult = pg_query_params($connection, $documentsQuery, [$student_id]);
-                        
-                        while ($docRow = pg_fetch_assoc($documentsResult)) {
-                            $tempDocPath = $docRow['file_path'];
-                            $docType = $docRow['type'];
-                            $docId = $docRow['document_id'];
-                            
-                            // Determine permanent directory based on document type
-                            if ($docType === 'letter_to_mayor') {
-                                $permanentDocDir = __DIR__ . '/../../assets/uploads/student/letter_to_mayor/';
-                            } elseif ($docType === 'certificate_of_indigency') {
-                                $permanentDocDir = __DIR__ . '/../../assets/uploads/student/indigency/';
-                            } elseif ($docType === 'eaf') {
-                                $permanentDocDir = __DIR__ . '/../../assets/uploads/student/enrollment_forms/';
-                            } else {
-                                continue; // Skip unknown document types
-                            }
-                            
-                            // Create permanent directory if it doesn't exist
-                            if (!file_exists($permanentDocDir)) {
-                                mkdir($permanentDocDir, 0777, true);
-                            }
-                            
-                            // Define permanent path
-                            $filename = basename($tempDocPath);
-                            $permanentDocPath = $permanentDocDir . $filename;
-                            
-                            // Move file from temporary to permanent location
-                            if (file_exists($tempDocPath) && copy($tempDocPath, $permanentDocPath)) {
-                                // Update database with permanent path
-                                $updateDocPathQuery = "UPDATE documents SET file_path = $1, is_valid = true WHERE document_id = $2";
-                                pg_query_params($connection, $updateDocPathQuery, [$permanentDocPath, $docId]);
-                                
-                                // Delete temporary file
-                                unlink($tempDocPath);
-                            }
-                        }
-                        
-                        // Clean up any remaining temp files in organized directories (safety net)
-                        $tempDirs = [
-                            __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
-                            __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
-                            __DIR__ . '/../../assets/uploads/temp/indigency/'
-                        ];
-                        
-                        foreach ($tempDirs as $dir) {
-                            if (is_dir($dir)) {
-                                $remainingFiles = glob($dir . $student_id . '_*');
-                                foreach ($remainingFiles as $file) {
-                                    if (is_file($file)) {
-                                        unlink($file); // Clean up any leftover files
-                                    }
-                                }
-                            }
+                        if ($moveResult['success']) {
+                            error_log("DocumentService: Successfully moved " . $moveResult['moved_count'] . " documents for student $student_id");
+                        } else {
+                            error_log("DocumentService: Error moving documents for student $student_id - " . ($moveResult['error'] ?? 'Unknown error'));
                         }
                         
                         $success_count++;
@@ -219,98 +147,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $remarks = trim($_POST['remarks'] ?? '');
         
         if ($action === 'approve') {
-            // Update student status to applicant
-            $updateQuery = "UPDATE students SET status = 'applicant' WHERE student_id = $1";
+            // Update student status to applicant and mark as new registration (no upload needed)
+            $updateQuery = "UPDATE students SET status = 'applicant', needs_document_upload = FALSE WHERE student_id = $1";
             $result = pg_query_params($connection, $updateQuery, [$student_id]);
             
             if ($result) {
-                // Move enrollment form from temporary to permanent location
-                $enrollmentQuery = "SELECT file_path, original_filename FROM enrollment_forms WHERE student_id = $1";
-                $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student_id]);
+                // Use DocumentService to move all documents from temp to permanent storage
+                $moveResult = $docService->moveToPermStorage($student_id);
                 
-                if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
-                    $tempPath = $enrollmentRow['file_path'];
-                    $originalFilename = $enrollmentRow['original_filename'];
-                    
-                    // Create permanent directory if it doesn't exist
-                    $permanentDir = __DIR__ . '/../../assets/uploads/student/enrollment_forms/';
-                    if (!file_exists($permanentDir)) {
-                        mkdir($permanentDir, 0777, true);
-                    }
-                    
-                    // Define permanent path
-                    $permanentPath = $permanentDir . $student_id . '_' . $originalFilename;
-                    
-                    // Move file from temporary to permanent location
-                    if (file_exists($tempPath) && copy($tempPath, $permanentPath)) {
-                        // Update database with permanent path
-                        $updateFilePathQuery = "UPDATE enrollment_forms SET file_path = $1 WHERE student_id = $2";
-                        pg_query_params($connection, $updateFilePathQuery, [$permanentPath, $student_id]);
-                        
-                        // Delete temporary file
-                        unlink($tempPath);
-                    }
-                }
-                
-                // Move documents from temporary to permanent locations
-                $documentsQuery = "SELECT document_id, type, file_path FROM documents WHERE student_id = $1";
-                $documentsResult = pg_query_params($connection, $documentsQuery, [$student_id]);
-                
-                while ($docRow = pg_fetch_assoc($documentsResult)) {
-                    $tempDocPath = $docRow['file_path'];
-                    $docType = $docRow['type'];
-                    $docId = $docRow['document_id'];
-                    
-                    // Determine permanent directory based on document type
-                    if ($docType === 'letter_to_mayor') {
-                        $permanentDocDir = __DIR__ . '/../../assets/uploads/student/letter_to_mayor/';
-                    } elseif ($docType === 'certificate_of_indigency') {
-                        $permanentDocDir = __DIR__ . '/../../assets/uploads/student/indigency/';
-                    } elseif ($docType === 'eaf') {
-                        $permanentDocDir = __DIR__ . '/../../assets/uploads/student/enrollment_forms/';
-                    } elseif ($docType === 'academic_grades') {
-                        $permanentDocDir = __DIR__ . '/../../assets/uploads/student/grades/';
-                    } else {
-                        continue; // Skip unknown document types
-                    }
-                    
-                    // Create permanent directory if it doesn't exist
-                    if (!file_exists($permanentDocDir)) {
-                        mkdir($permanentDocDir, 0777, true);
-                    }
-                    
-                    // Define permanent path
-                    $filename = basename($tempDocPath);
-                    $permanentDocPath = $permanentDocDir . $filename;
-                    
-                    // Move file from temporary to permanent location
-                    if (file_exists($tempDocPath) && copy($tempDocPath, $permanentDocPath)) {
-                        // Update database with permanent path and mark as valid
-                        $updateDocPathQuery = "UPDATE documents SET file_path = $1, is_valid = true WHERE document_id = $2";
-                        pg_query_params($connection, $updateDocPathQuery, [$permanentDocPath, $docId]);
-                        
-                        // Delete temporary file
-                        unlink($tempDocPath);
-                    }
-                }
-                
-                // Clean up any remaining temp files in organized directories (safety net)
-                $tempDirs = [
-                    __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
-                    __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
-                    __DIR__ . '/../../assets/uploads/temp/indigency/',
-                    __DIR__ . '/../../assets/uploads/temp/grades/'
-                ];
-                
-                foreach ($tempDirs as $dir) {
-                    if (is_dir($dir)) {
-                        $remainingFiles = glob($dir . $student_id . '_*');
-                        foreach ($remainingFiles as $file) {
-                            if (is_file($file)) {
-                                unlink($file); // Clean up any leftover files
-                            }
-                        }
-                    }
+                if ($moveResult['success']) {
+                    error_log("DocumentService: Successfully moved " . $moveResult['moved_count'] . " documents for student $student_id");
+                } else {
+                    error_log("DocumentService: Error moving documents for student $student_id - " . ($moveResult['error'] ?? 'Unknown error'));
                 }
                 
                 // Get student email for notification
@@ -326,6 +174,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $notification_msg = "Registration approved for student: " . $student_name . " (ID: " . $student_id . ")";
                 pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                 
+                // Log to audit trail
+                $audit_query = "INSERT INTO audit_logs (
+                    user_id, user_type, username, event_type, event_category, 
+                    action_description, status, ip_address, affected_table, 
+                    affected_record_id, metadata
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)";
+                
+                pg_query_params($connection, $audit_query, [
+                    $_SESSION['admin_id'] ?? null,
+                    'admin',
+                    $_SESSION['admin_username'] ?? 'unknown',
+                    'applicant_approved',
+                    'applicant_management',
+                    "Student $student_id registered and approved",
+                    'success',
+                    $_SERVER['REMOTE_ADDR'] ?? null,
+                    'students',
+                    null,
+                    json_encode([
+                        'student_id' => $student_id,
+                        'student_name' => $student_name,
+                        'remarks' => $remarks,
+                        'files_moved' => $moveResult['moved_count'] ?? 0
+                    ])
+                ]);
+                
                 $_SESSION['success_message'] = "Registration approved successfully!";
             }
         } elseif ($action === 'reject') {
@@ -335,53 +209,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $student = pg_fetch_assoc($studentResult);
             
             if ($student) {
-                // Get and delete ALL temporary files before deleting database records
+                $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
+                $files_deleted = 0;
                 
-                // 1. Delete enrollment form file
-                $enrollmentQuery = "SELECT file_path FROM enrollment_forms WHERE student_id = $1";
-                $enrollmentResult = pg_query_params($connection, $enrollmentQuery, [$student_id]);
-                
-                if ($enrollmentRow = pg_fetch_assoc($enrollmentResult)) {
-                    $tempFilePath = $enrollmentRow['file_path'];
-                    if (file_exists($tempFilePath)) {
-                        unlink($tempFilePath);
-                    }
-                }
-                
-                // 2. Delete document files (letter to mayor and certificate of indigency)
-                $documentsQuery = "SELECT file_path FROM documents WHERE student_id = $1";
+                // Get all document file paths from documents table
+                $documentsQuery = "SELECT file_path, ocr_text_path, verification_data_path FROM documents WHERE student_id = $1";
                 $documentsResult = pg_query_params($connection, $documentsQuery, [$student_id]);
                 
                 while ($docRow = pg_fetch_assoc($documentsResult)) {
-                    $docFilePath = $docRow['file_path'];
-                    if (file_exists($docFilePath)) {
-                        unlink($docFilePath);
+                    // Delete main file
+                    if (!empty($docRow['file_path']) && file_exists($docRow['file_path'])) {
+                        unlink($docRow['file_path']);
+                        $files_deleted++;
+                    }
+                    
+                    // Delete OCR text file
+                    if (!empty($docRow['ocr_text_path']) && file_exists($docRow['ocr_text_path'])) {
+                        unlink($docRow['ocr_text_path']);
+                        $files_deleted++;
+                    }
+                    
+                    // Delete verification JSON file
+                    if (!empty($docRow['verification_data_path']) && file_exists($docRow['verification_data_path'])) {
+                        unlink($docRow['verification_data_path']);
+                        $files_deleted++;
+                    }
+                    
+                    // Delete associated files (.tsv, .confidence.json) based on main file path
+                    if (!empty($docRow['file_path'])) {
+                        $base_path = pathinfo($docRow['file_path'], PATHINFO_DIRNAME) . '/' . pathinfo($docRow['file_path'], PATHINFO_FILENAME);
+                        
+                        // Delete .tsv file
+                        $tsv_file = $base_path . '.tsv';
+                        if (file_exists($tsv_file)) {
+                            unlink($tsv_file);
+                            $files_deleted++;
+                        }
+                        
+                        // Delete .confidence.json file
+                        $confidence_file = $base_path . '.confidence.json';
+                        if (file_exists($confidence_file)) {
+                            unlink($confidence_file);
+                            $files_deleted++;
+                        }
                     }
                 }
                 
-                // 3. Clean up any remaining files in organized temp directories
+                // Clean up any remaining files in temp directories using glob patterns
                 $tempDirs = [
+                    __DIR__ . '/../../assets/uploads/temp/id_pictures/',
                     __DIR__ . '/../../assets/uploads/temp/enrollment_forms/',
                     __DIR__ . '/../../assets/uploads/temp/letter_mayor/',
-                    __DIR__ . '/../../assets/uploads/temp/indigency/'
+                    __DIR__ . '/../../assets/uploads/temp/indigency/',
+                    __DIR__ . '/../../assets/uploads/temp/grades/'
                 ];
                 
                 foreach ($tempDirs as $dir) {
                     if (is_dir($dir)) {
+                        // Get all files matching student_id pattern (including associated files)
                         $files = glob($dir . $student_id . '_*');
                         foreach ($files as $file) {
                             if (is_file($file)) {
                                 unlink($file);
+                                $files_deleted++;
                             }
                         }
                     }
                 }
                 
-                // Delete related records first (due to foreign key constraints)
+                // Delete database records (respecting foreign key constraints)
                 pg_query_params($connection, "DELETE FROM qr_logs WHERE student_id = $1", [$student_id]);
                 pg_query_params($connection, "DELETE FROM distributions WHERE student_id = $1", [$student_id]);
-                pg_query_params($connection, "DELETE FROM enrollment_forms WHERE student_id = $1", [$student_id]);
                 pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$student_id]);
+                pg_query_params($connection, "DELETE FROM grade_uploads WHERE student_id = $1", [$student_id]);
                 
                 // Finally delete the student record - this frees up the slot completely
                 $deleteResult = pg_query_params($connection, "DELETE FROM students WHERE student_id = $1", [$student_id]);
@@ -391,11 +291,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     sendApprovalEmail($student['email'], $student['first_name'], $student['last_name'], $student['extension_name'], false, $remarks);
                     
                     // Add admin notification
-                    $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
-                    $notification_msg = "Registration rejected and removed for student: " . $student_name . " (ID: " . $student_id . ")" . ($remarks ? " - Reason: " . $remarks : "") . " - Slot freed up and files deleted";
+                    $notification_msg = "Registration rejected for student: " . $student_name . " (ID: " . $student_id . ")" . ($remarks ? " - Reason: " . $remarks : "");
                     pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                     
-                    $_SESSION['success_message'] = "Registration rejected, student data removed, and files deleted. Slot has been freed up.";
+                    // Log to audit trail
+                    $audit_query = "INSERT INTO audit_logs (
+                        user_id, user_type, username, event_type, event_category, 
+                        action_description, status, ip_address, affected_table, 
+                        affected_record_id, metadata
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)";
+                    
+                    pg_query_params($connection, $audit_query, [
+                        $_SESSION['admin_id'] ?? null,
+                        'admin',
+                        $_SESSION['admin_username'] ?? 'unknown',
+                        'applicant_rejected',
+                        'applicant_management',
+                        "Student $student_id registration rejected and deleted",
+                        'success',
+                        $_SERVER['REMOTE_ADDR'] ?? null,
+                        'students',
+                        null,
+                        json_encode([
+                            'student_id' => $student_id,
+                            'student_name' => $student_name,
+                            'remarks' => $remarks,
+                            'files_deleted' => $files_deleted
+                        ])
+                    ]);
+                    
+                    $_SESSION['success_message'] = "Registration rejected. Student data removed and $files_deleted files deleted. Slot has been freed up.";
                 } else {
                     $_SESSION['error_message'] = "Error rejecting registration.";
                 }
@@ -531,14 +456,12 @@ $totalPages = ceil($totalRecords / $limit);
 
 // Fetch pending registrations with pagination including confidence scores
 $query = "SELECT s.*, b.name as barangay_name, u.name as university_name, yl.name as year_level_name,
-                 ef.file_path as enrollment_form_path, ef.original_filename,
                  COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) as confidence_score,
                  get_confidence_level(COALESCE(s.confidence_score, calculate_confidence_score(s.student_id))) as confidence_level
           FROM students s
           LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
           LEFT JOIN universities u ON s.university_id = u.university_id
           LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
-          LEFT JOIN enrollment_forms ef ON s.student_id = ef.student_id
           WHERE $whereClause
           ORDER BY s.$sort_by $sort_order
           LIMIT $limit OFFSET $offset";
@@ -1382,65 +1305,62 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             body.innerHTML = '<div class="text-center py-5 text-muted small">Loading document...</div>';
             dlBtn.style.display = 'none';
             title.textContent = 'Document';
+            
             fetch('get_student_document.php?student_id=' + encodeURIComponent(studentId) + '&type=' + encodeURIComponent(docType))
                 .then(r => r.json())
                 .then(data => {
-                    if (!data.success) {
-                        body.innerHTML = '<div class="alert alert-warning mb-0">Document not found.</div>';
-                        return;
+                    if (!data.success) { 
+                        body.innerHTML = '<div class="alert alert-danger m-3">' + (data.message || 'Error loading document') + '</div>'; 
+                        return; 
                     }
-                    title.textContent = data.filename || 'Document';
-                    // Normalize path: ensure it starts relative to this page
-                    let path = data.file_path || '';
-                    const originalPath = path;
-                    if (path.startsWith('/')) {
-                        // absolute to domain, leave it
-                    } else if (!path.startsWith('../') && !path.startsWith('assets/')) {
-                        // If backend gave something like uploads/... prepend ../../
-                        if (!path.startsWith('assets/')) path = 'assets/' + path.replace(/^\.\/+/, '');
-                        path = '../../' + path.replace(/^\.\.\/+/, '');
-                    } else if (path.startsWith('assets/')) {
-                        path = '../../' + path;
+                    
+                    title.textContent = data.documentName || data.filename || 'Document';
+                    if (data.downloadUrl) { 
+                        dlBtn.href = data.downloadUrl; 
+                        dlBtn.style.display = 'inline-block'; 
                     }
-                    // Avoid duplicate ../../../../
-                    path = path.replace(/(\.\.\/){3,}/g, '../../');
-                    const ext = (path.split('.').pop() || '').toLowerCase();
-                    let html = '';
-                                        if (['jpg','jpeg','png','gif','webp'].includes(ext)) {
-                                                html = `
-                                                <div class="doc-viewer-wrapper">
-                                                    <div class="doc-controls">
-                                                        <button type="button" data-action="zoom-in" title="Zoom In">+</button>
-                                                        <button type="button" data-action="zoom-out" title="Zoom Out">−</button>
-                                                        <button type="button" data-action="reset" title="Reset">Reset</button>
-                                                    </div>
-                                                    <div class="doc-zoom-indicator" data-zoom-indicator>100%</div>
-                                                    <div class="doc-viewer-stage" data-stage>
-                                                        <img data-doc-preview="1" src="${path}" alt="Document" draggable="false" />
-                                                    </div>
-                                                    <div class="doc-hint">Scroll / pinch to zoom • Drag to pan</div>
-                                                </div>`;
+                    
+                    let filePath = data.filePath || data.file_path || '';
+                    
+                    // Fix path for module location: if path starts with assets/, prepend ../../
+                    if (filePath.startsWith('assets/') || filePath.startsWith('modules/')) {
+                        filePath = '../../' + filePath;
+                    }
+                    
+                    const ext = filePath.split('.').pop().toLowerCase();
+                    
+                    // Debug logging
+                    console.log('Document API response:', data);
+                    console.log('Using filePath:', filePath);
+                    
+                    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                        body.innerHTML = `
+                            <div class="doc-viewer-wrapper">
+                                <div class="doc-zoom-indicator" data-zoom-indicator>100%</div>
+                                <div class="doc-controls">
+                                    <button type="button" data-zoom-in title="Zoom In"><i class="bi bi-zoom-in"></i></button>
+                                    <button type="button" data-zoom-out title="Zoom Out"><i class="bi bi-zoom-out"></i></button>
+                                    <button type="button" data-reset title="Reset"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                </div>
+                                <div class="doc-viewer-stage" data-stage>
+                                    <img src="${filePath}" alt="Document" draggable="false" loading="lazy" 
+                                         onerror="this.parentElement.parentElement.innerHTML='<div class=\\'alert alert-danger m-3\\'>Image failed to load.<br>Path: <code>${filePath}</code><br>Original: <code>${data.debug_original_path || ''}</code></div>'">
+                                </div>
+                                <div class="doc-hint">Scroll to zoom • Drag to pan</div>
+                            </div>
+                        `;
+                        setTimeout(() => initImageViewer(body.querySelector('.doc-viewer-wrapper')), 100);
                     } else if (ext === 'pdf') {
-                        html = '<div class="ratio ratio-16x9"><iframe src="' + path + '#toolbar=0" class="w-100 h-100 border rounded" frameborder="0"></iframe></div>';
+                        body.innerHTML = `<iframe src="${filePath}" style="width:100%;height:70vh;border:none;"></iframe>`;
                     } else {
-                        html = '<div class="alert alert-info mb-3">Preview not available for this file type.</div>' +
-                               '<a class="btn btn-primary" href="' + path + '" target="_blank"><i class="bi bi-box-arrow-up-right"></i> Open</a>';
+                        body.innerHTML = `<div class="alert alert-info m-3">Cannot preview this file type. <a href="${data.downloadUrl || filePath}" class="alert-link">Download instead</a></div>`;
                     }
-                    body.innerHTML = html + '<div class="mt-2 small text-muted">Source path: <code>' + originalPath + '</code><br>Resolved: <code>' + path + '</code></div>';
-                    const previewImg = body.querySelector('img[data-doc-preview]');
-                    if (previewImg) {
-                        previewImg.addEventListener('error', function() {
-                            body.innerHTML = '<div class="alert alert-danger mb-0">Failed to load image. Path attempted: <code>' + path + '</code></div>';
-                        }, { once: true });
-                        // Initialize interactive viewer
-                        initImageViewer(body.querySelector('.doc-viewer-wrapper'));
-                    }
-                    dlBtn.onclick = () => { const a=document.createElement('a'); a.href=path; a.download=''; a.click(); };
-                    dlBtn.style.display = 'inline-block';
                 })
-                .catch(() => {
-                    body.innerHTML = '<div class="alert alert-danger mb-0">Error loading document.</div>';
+                .catch(err => {
+                    console.error(err);
+                    body.innerHTML = '<div class="alert alert-danger m-3">Network error loading document.</div>';
                 });
+                
             new bootstrap.Modal(modalEl).show();
         }
 
@@ -1533,9 +1453,12 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             // Buttons
             if(controls){
                 controls.addEventListener('click', e=>{
-                    const action = e.target.getAttribute('data-action');
-                    if(!action) return;
-                    if(action==='zoom-in') zoom(-1); // negative delta => zoom in by our logic
+                    const btn = e.target.closest('button');
+                    if (!btn) return;
+                    const action = btn.getAttribute('data-zoom-in') !== null ? 'zoom-in' : 
+                                   btn.getAttribute('data-zoom-out') !== null ? 'zoom-out' :
+                                   btn.getAttribute('data-reset') !== null ? 'reset' : null;
+                    if(action==='zoom-in') zoom(-1); // negative delta => zoom in
                     else if(action==='zoom-out') zoom(1);
                     else if(action==='reset'){ scale=1; originX=originY=0; applyTransform(); }
                 });

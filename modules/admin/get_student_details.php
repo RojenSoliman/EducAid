@@ -10,14 +10,12 @@ if (!isset($_SESSION['admin_username']) || !isset($_GET['id'])) {
 $student_id = trim($_GET['id']); // Remove intval for TEXT student_id
 
 $query = "SELECT s.*, b.name as barangay_name, u.name as university_name, yl.name as year_level_name,
-                 ef.file_path as enrollment_form_path, ef.original_filename,
                  COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) as confidence_score,
                  get_confidence_level(COALESCE(s.confidence_score, calculate_confidence_score(s.student_id))) as confidence_level
           FROM students s
           LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
           LEFT JOIN universities u ON s.university_id = u.university_id
           LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
-          LEFT JOIN enrollment_forms ef ON s.student_id = ef.student_id
           WHERE s.student_id = $1 AND s.status = 'under_registration'";
 
 $result = pg_query_params($connection, $query, [$student_id]);
@@ -27,23 +25,35 @@ if (!$student) {
     echo '<div class="alert alert-warning">Student not found or already processed.</div>';
     exit;
 }
-// Fetch documents (latest per type)
-$docQuery = "SELECT type, file_path FROM documents WHERE student_id = $1 ORDER BY upload_date DESC";
+
+// Fetch documents (latest per type) using document_type_code
+$docQuery = "SELECT document_type_code, file_path, ocr_text_path, verification_data_path, 
+                    ocr_confidence, verification_score, verification_status, status
+             FROM documents 
+             WHERE student_id = $1 
+             ORDER BY upload_date DESC";
 $docResult = pg_query_params($connection, $docQuery, [$student_id]);
 $documents = [];
 if ($docResult) {
     while ($row = pg_fetch_assoc($docResult)) {
-        $type = $row['type'];
-        if (!isset($documents[$type])) { // keep first (latest due to DESC)
-            $documents[$type] = $row['file_path'];
+        $code = $row['document_type_code'];
+        if (!isset($documents[$code])) { // keep first (latest due to DESC)
+            // Calculate overall document confidence as average of OCR and verification
+            $ocr_conf = floatval($row['ocr_confidence'] ?? 0);
+            $verif_score = floatval($row['verification_score'] ?? 0);
+            $row['overall_confidence'] = ($ocr_conf + $verif_score) / 2;
+            $documents[$code] = $row;
         }
     }
 }
-// Friendly names
+
+// Document type codes to friendly names
 $docNames = [
-    'eaf' => 'Enrollment Assessment Form',
-    'letter_to_mayor' => 'Letter to Mayor',
-    'certificate_of_indigency' => 'Certificate of Indigency'
+    '04' => 'ID Picture',
+    '00' => 'Enrollment Assessment Form',
+    '02' => 'Letter to Mayor',
+    '03' => 'Certificate of Indigency',
+    '01' => 'Academic Grades'
 ];
 ?>
 
@@ -104,10 +114,10 @@ $docNames = [
     </div>
 </div>
 
-<!-- Confidence Score Breakdown -->
+<!-- Document Verification Results -->
 <div class="mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="fw-bold text-primary mb-0">Confidence Score Analysis</h6>
+        <h6 class="fw-bold text-primary mb-0">Document Verification Results</h6>
         <div>
             <?php 
             $score = $student['confidence_score'];
@@ -123,172 +133,173 @@ $docNames = [
         </div>
     </div>
     
-    <div id="confidenceBreakdown">
-        <div class="text-center py-3">
-            <div class="spinner-border spinner-border-sm text-primary" role="status">
-                <span class="visually-hidden">Loading confidence breakdown...</span>
+    <div id="verificationResults">
+        <?php if (empty($documents)): ?>
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                No documents uploaded yet. Waiting for student to submit required documents.
             </div>
-            <small class="d-block mt-2 text-muted">Loading detailed analysis...</small>
-        </div>
-    </div>
-</div>
-
-<script>
-// Load confidence breakdown
-fetch(`get_confidence_breakdown.php?id=<?php echo $student_id; ?>`)
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            displayConfidenceBreakdown(data.breakdown);
-        } else {
-            document.getElementById('confidenceBreakdown').innerHTML = '<div class="alert alert-warning">Could not load confidence breakdown.</div>';
-        }
-    })
-    .catch(error => {
-        document.getElementById('confidenceBreakdown').innerHTML = '<div class="alert alert-danger">Error loading confidence breakdown.</div>';
-    });
-
-function displayConfidenceBreakdown(breakdown) {
-    const container = document.getElementById('confidenceBreakdown');
-    
-    let html = '<div class="row">';
-    
-    // Personal Information
-    html += `
-        <div class="col-md-6 mb-3">
-            <div class="card h-100">
-                <div class="card-header bg-light py-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <small class="fw-bold text-primary">Personal Information</small>
-                        <span class="badge bg-secondary">${breakdown.personal.score}/${breakdown.personal.max_score} pts</span>
-                    </div>
-                </div>
-                <div class="card-body py-2">
-                    <small class="text-muted d-block mb-2">${breakdown.personal.summary}</small>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-borderless mb-0">`;
-    
-    breakdown.personal.details.forEach(detail => {
-        const iconClass = detail.value === '✓' ? 'text-success' : 'text-danger';
-        html += `
-            <tr>
-                <td class="py-1"><small>${detail.field}:</small></td>
-                <td class="py-1 text-end"><small class="${iconClass}">${detail.value}</small></td>
-            </tr>`;
-    });
-    
-    html += `
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-    
-    // Document Upload
-    html += `
-        <div class="col-md-6 mb-3">
-            <div class="card h-100">
-                <div class="card-header bg-light py-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <small class="fw-bold text-primary">Document Upload</small>
-                        <span class="badge bg-secondary">${breakdown.documents.score}/${breakdown.documents.max_score} pts</span>
-                    </div>
-                </div>
-                <div class="card-body py-2">
-                    <small class="text-muted d-block mb-2">${breakdown.documents.summary}</small>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-borderless mb-0">`;
-    
-    breakdown.documents.details.forEach(detail => {
-        const iconClass = detail.status === 'Uploaded' ? 'text-success' : 'text-danger';
-        const icon = detail.status === 'Uploaded' ? '✓' : '✗';
-        html += `
-            <tr>
-                <td class="py-1"><small>${detail.document}:</small></td>
-                <td class="py-1 text-end"><small class="${iconClass}">${icon} (+${detail.points})</small></td>
-            </tr>`;
-    });
-    
-    html += `
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-    
-    // OCR & Verification
-    html += `
-        <div class="col-md-6 mb-3">
-            <div class="card h-100">
-                <div class="card-header bg-light py-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <small class="fw-bold text-primary">Document Quality</small>
-                        <span class="badge bg-secondary">${breakdown.ocr.score.toFixed(1)}/${breakdown.ocr.max_score} pts</span>
-                    </div>
-                </div>
-                <div class="card-body py-2">
-                    <small class="text-muted">${breakdown.ocr.summary}</small>
-                </div>
-            </div>
-        </div>
-        
-        <div class="col-md-6 mb-3">
-            <div class="card h-100">
-                <div class="card-header bg-light py-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <small class="fw-bold text-primary">Email Verification</small>
-                        <span class="badge bg-secondary">${breakdown.verification.score}/${breakdown.verification.max_score} pts</span>
-                    </div>
-                </div>
-                <div class="card-body py-2">
-                    <small class="text-muted">${breakdown.verification.summary}</small>
-                </div>
-            </div>
-        </div>`;
-    
-    html += '</div>';
-    
-    // Total Score Summary
-    html += `
-        <div class="alert alert-info mt-3">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <strong>Total Confidence Score</strong>
-                    <br><small class="text-muted">Based on data completeness, document uploads, and verification status</small>
-                </div>
-                <div class="text-end">
-                    <h4 class="mb-0">${breakdown.total.score.toFixed(1)}%</h4>
-                    <small class="text-muted">${breakdown.total.score}/${breakdown.total.max_score} points</small>
-                </div>
-            </div>
-        </div>`;
-    
-    container.innerHTML = html;
-}
-</script>
-<!-- Documents Section -->
-<div class="mt-4">
-    <h6 class="fw-bold text-primary mb-3">Documents</h6>
-    <div class="row g-3">
-        <?php foreach ($docNames as $type => $label): $has = isset($documents[$type]); ?>
-            <div class="col-md-4">
-                <div class="border rounded p-3 h-100 d-flex flex-column justify-content-between">
-                    <div>
-                        <div class="d-flex align-items-center mb-1">
-                            <i class="bi bi-file-earmark<?php echo $has ? '-check text-success' : ' text-muted'; ?> me-2"></i>
-                            <strong class="small mb-0"><?php echo htmlspecialchars($label); ?></strong>
+        <?php else: ?>
+            <div class="accordion" id="verificationAccordion">
+                <?php 
+                $index = 0;
+                foreach ($documents as $code => $doc): 
+                    $index++;
+                    $docLabel = $docNames[$code] ?? 'Document';
+                    $verificationPath = $doc['verification_data_path'];
+                    $verificationData = null;
+                    
+                    // Try to load verification JSON if it exists
+                    if ($verificationPath && file_exists($verificationPath)) {
+                        $verificationData = json_decode(file_get_contents($verificationPath), true);
+                    }
+                    
+                    $overallConf = floatval($doc['overall_confidence']);
+                    $confBadge = $overallConf >= 85 ? 'success' : ($overallConf >= 70 ? 'primary' : ($overallConf >= 50 ? 'warning' : 'danger'));
+                ?>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="heading<?php echo $index; ?>">
+                            <button class="accordion-button <?php echo $index > 1 ? 'collapsed' : ''; ?>" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?php echo $index; ?>">
+                                <i class="bi bi-file-earmark-check text-<?php echo $confBadge; ?> me-2"></i>
+                                <strong><?php echo htmlspecialchars($docLabel); ?></strong>
+                                <span class="badge bg-<?php echo $confBadge; ?> ms-2"><?php echo number_format($overallConf, 1); ?>%</span>
+                                <?php if ($doc['verification_status'] === 'passed'): ?>
+                                    <span class="badge bg-success ms-1"><i class="bi bi-check-circle"></i> Passed</span>
+                                <?php elseif ($doc['verification_status'] === 'failed'): ?>
+                                    <span class="badge bg-danger ms-1"><i class="bi bi-x-circle"></i> Failed</span>
+                                <?php elseif ($doc['verification_status'] === 'manual_review'): ?>
+                                    <span class="badge bg-warning ms-1"><i class="bi bi-exclamation-triangle"></i> Review</span>
+                                <?php else: ?>
+                                    <span class="badge bg-secondary ms-1">Pending</span>
+                                <?php endif; ?>
+                            </button>
+                        </h2>
+                        <div id="collapse<?php echo $index; ?>" class="accordion-collapse collapse <?php echo $index === 1 ? 'show' : ''; ?>" data-bs-parent="#verificationAccordion">
+                            <div class="accordion-body">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-4">
+                                        <small class="text-muted d-block">OCR Confidence</small>
+                                        <h5 class="mb-0"><?php echo number_format($doc['ocr_confidence'] ?? 0, 1); ?>%</h5>
+                                        <small class="text-muted">Text extraction quality</small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted d-block">Verification Score</small>
+                                        <h5 class="mb-0"><?php echo number_format($doc['verification_score'] ?? 0, 1); ?>%</h5>
+                                        <small class="text-muted">Validation checks passed</small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <small class="text-muted d-block">Overall Confidence</small>
+                                        <h5 class="mb-0 text-<?php echo $confBadge; ?>"><?php echo number_format($overallConf, 1); ?>%</h5>
+                                        <small class="text-muted">Combined score</small>
+                                    </div>
+                                </div>
+                                
+                                <?php if ($verificationData): ?>
+                                    <hr>
+                                    <h6 class="text-primary mb-3"><i class="bi bi-clipboard-check me-2"></i>Validation Details</h6>
+                                    
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th width="30%">Validation Check</th>
+                                                    <th width="15%" class="text-center">Status</th>
+                                                    <th width="45%">Details</th>
+                                                    <th width="10%" class="text-center">Confidence</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php 
+                                                // Parse the actual JSON structure
+                                                foreach ($verificationData as $key => $value):
+                                                    // Skip non-check fields
+                                                    if (in_array($key, ['confidence_scores', 'found_text_snippets', 'overall_success', 'summary', 'ocr_text_preview'])) continue;
+                                                    
+                                                    // Check if this is a boolean field (e.g., first_name_match, year_level_match)
+                                                    if (is_bool($value)):
+                                                        $passed = $value;
+                                                        $checkName = ucwords(str_replace('_', ' ', $key));
+                                                        
+                                                        // Get confidence score if available
+                                                        $confidenceKey = str_replace('_match', '', $key);
+                                                        $confidence = isset($verificationData['confidence_scores'][$confidenceKey]) 
+                                                            ? floatval($verificationData['confidence_scores'][$confidenceKey]) 
+                                                            : 0;
+                                                        
+                                                        // Get found text if available
+                                                        $foundText = isset($verificationData['found_text_snippets'][$confidenceKey])
+                                                            ? $verificationData['found_text_snippets'][$confidenceKey]
+                                                            : '';
+                                                        
+                                                        $confClass = $confidence >= 85 ? 'success' : ($confidence >= 70 ? 'primary' : ($confidence >= 50 ? 'warning' : 'danger'));
+                                                ?>
+                                                    <tr>
+                                                        <td><strong><?php echo htmlspecialchars($checkName); ?></strong></td>
+                                                        <td class="text-center">
+                                                            <span class="badge bg-<?php echo $passed ? 'success' : 'danger'; ?>">
+                                                                <i class="bi bi-<?php echo $passed ? 'check-circle-fill' : 'x-circle-fill'; ?>"></i> 
+                                                                <?php echo $passed ? 'Pass' : 'Fail'; ?>
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <?php if ($foundText): ?>
+                                                                <div class="mb-1">Found: <?php echo htmlspecialchars(substr($foundText, 0, 100)); ?><?php echo strlen($foundText) > 100 ? '...' : ''; ?></div>
+                                                            <?php else: ?>
+                                                                <div class="text-muted">-</div>
+                                                            <?php endif; ?>
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <?php if ($confidence > 0): ?>
+                                                                <span class="badge bg-<?php echo $confClass; ?>"><?php echo number_format($confidence, 1); ?>%</span>
+                                                            <?php else: ?>
+                                                                <span class="text-muted">-</span>
+                                                            <?php endif; ?>
+                                                        </td>
+                                                    </tr>
+                                                <?php 
+                                                    endif; // end is_bool check
+                                                endforeach; // end foreach verificationData
+                                                ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    
+                                    <?php if (isset($verificationData['summary'])): ?>
+                                        <div class="alert alert-info mt-3 mb-0">
+                                            <i class="bi bi-info-circle me-2"></i>
+                                            <strong>Summary:</strong>
+                                            <?php 
+                                            $summary = $verificationData['summary'];
+                                            if (is_array($summary)) {
+                                                echo "Passed: {$summary['passed_checks']}/{$summary['total_checks']} checks | ";
+                                                echo "Average Confidence: " . number_format($summary['average_confidence'], 1) . "% | ";
+                                                echo $summary['recommendation'];
+                                            } else {
+                                                echo htmlspecialchars($summary);
+                                            }
+                                            ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    
+                                    <div class="mt-3">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" 
+                                                onclick="viewStudentDocument('<?php echo htmlspecialchars($student_id); ?>','<?php echo $code; ?>')">
+                                            <i class="bi bi-eye me-1"></i> View Document
+                                        </button>
+                                    </div>
+                                    
+                                <?php else: ?>
+                                    <div class="alert alert-warning mb-0">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>
+                                        No verification data available. Document may not have been processed yet.
+                                    </div>
+                                <?php endif; ?>
+                            </div>
                         </div>
-                        <small class="text-muted d-block">Status: <?php echo $has ? '<span class="text-success">Uploaded</span>' : '<span class="text-danger">Missing</span>'; ?></small>
                     </div>
-                    <div class="mt-2">
-                        <button type="button" class="btn btn-outline-primary btn-sm w-100" 
-                                <?php if ($has): ?>onclick="viewStudentDocument('<?php echo htmlspecialchars($student['student_id']); ?>','<?php echo $type; ?>')"<?php else: ?>disabled<?php endif; ?>>
-                            <i class="bi bi-eye"></i> View
-                        </button>
-                    </div>
-                </div>
+                <?php endforeach; ?>
             </div>
-        <?php endforeach; ?>
+        <?php endif; ?>
     </div>
 </div>
 

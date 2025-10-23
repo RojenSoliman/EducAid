@@ -214,6 +214,101 @@ function send_migration_email($toEmail, $toName, $passwordPlain) {
     } catch (Exception $e) { return false; }
 }
 
+function send_archive_notification_email($toEmail, $toName, $archiveReason, $adminName) {
+    try {
+        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+        
+        // Server settings - using same configuration
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = 'dilucayaka02@gmail.com';
+        $mail->Password   = 'jlld eygl hksj flvg';
+        $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+        
+        // Recipients
+        $mail->setFrom('dilucayaka02@gmail.com', 'EducAid System');
+        $mail->addAddress($toEmail, $toName ?: $toEmail);
+        $mail->isHTML(true);
+        $mail->Subject = 'EducAid Application Status - Application Not Approved';
+        
+        $mail->Body = '
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+            <div style="background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #dc3545; margin: 0; font-size: 28px;">Application Status Update</h1>
+                    <p style="color: #6c757d; margin: 10px 0 0 0;">EducAid Educational Assistance Program</p>
+                </div>
+                
+                <div style="background-color: #f8d7da; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #dc3545;">
+                    <h3 style="color: #721c24; margin: 0 0 15px 0;">⚠️ Application Not Approved</h3>
+                    <p style="color: #721c24; margin: 0;">Dear <strong>' . htmlspecialchars($toName) . '</strong>,</p>
+                    <p style="color: #721c24; margin: 10px 0 0 0;">We regret to inform you that your application for the EducAid Educational Assistance Program has not been approved at this time.</p>
+                </div>
+                
+                <div style="background-color: #fff3cd; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #ffc107;">
+                    <h3 style="color: #856404; margin: 0 0 15px 0;">📋 Reason for Not Approving</h3>
+                    <p style="color: #856404; margin: 0; padding: 15px; background-color: #fff; border-radius: 4px; border: 1px solid #ffc107;">
+                        ' . nl2br(htmlspecialchars($archiveReason)) . '
+                    </p>
+                </div>
+                
+                <div style="background-color: #d1ecf1; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #17a2b8;">
+                    <h3 style="color: #0c5460; margin: 0 0 15px 0;">ℹ️ What This Means</h3>
+                    <ul style="margin: 0; padding-left: 20px; color: #0c5460;">
+                        <li>Your application has been archived in our system</li>
+                        <li>Your account access has been suspended</li>
+                        <li>All uploaded documents have been securely stored</li>
+                    </ul>
+                </div>
+                
+                <div style="background-color: #d4edda; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #28a745;">
+                    <h3 style="color: #155724; margin: 0 0 15px 0;">🔄 Next Steps</h3>
+                    <p style="color: #155724; margin: 0 0 10px 0;">If you believe this decision was made in error, or if you have questions about the reason for not approving your application, please:</p>
+                    <ul style="margin: 0; padding-left: 20px; color: #155724;">
+                        <li>Contact your local EducAid administrator for clarification</li>
+                        <li>Visit your municipality office during business hours</li>
+                        <li>Provide any additional documentation that may support your application</li>
+                    </ul>
+                </div>
+                
+                <div style="background-color: #e2e3e5; padding: 20px; border-radius: 6px; margin-bottom: 25px;">
+                    <h3 style="color: #383d41; margin: 0 0 15px 0;">👤 Reviewed By</h3>
+                    <p style="margin: 0; color: #383d41;"><strong>' . htmlspecialchars($adminName) . '</strong></p>
+                    <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">EducAid Administrator</p>
+                </div>
+                
+                <div style="border-top: 1px solid #dee2e6; padding-top: 20px; margin-top: 30px; text-align: center; color: #6c757d; font-size: 14px;">
+                    <p>Thank you for your interest in the EducAid Educational Assistance Program.</p>
+                    <p style="margin: 5px 0 0 0;">This is an automated message. For inquiries, please contact your local EducAid office.</p>
+                </div>
+            </div>
+        </div>';
+        
+        $mail->AltBody = "Application Status Update - EducAid\n\n" .
+            "Dear " . $toName . ",\n\n" .
+            "We regret to inform you that your application for the EducAid Educational Assistance Program has not been approved at this time.\n\n" .
+            "REASON FOR NOT APPROVING:\n" .
+            $archiveReason . "\n\n" .
+            "WHAT THIS MEANS:\n" .
+            "- Your application has been archived in our system\n" .
+            "- Your account access has been suspended\n" .
+            "- All uploaded documents have been securely stored\n\n" .
+            "NEXT STEPS:\n" .
+            "If you believe this decision was made in error, or if you have questions, please contact your local EducAid administrator.\n\n" .
+            "Reviewed by: " . $adminName . "\n" .
+            "EducAid Administrator\n\n" .
+            "Thank you for your interest in the EducAid Educational Assistance Program.";
+        
+        $mail->send();
+        return true;
+    } catch (Exception $e) { 
+        error_log("Failed to send archive notification email: " . $e->getMessage());
+        return false; 
+    }
+}
+
 // Handle Migration POST actions
 $migration_preview = $_SESSION['migration_preview'] ?? null;
 $migration_result = $_SESSION['migration_result'] ?? null;
@@ -600,7 +695,8 @@ function find_student_documents_in_students_dir($student_id) {
 
 // Function to check if all required documents are uploaded
 function check_documents($connection, $student_id) {
-    $required = ['eaf', 'letter_to_mayor', 'certificate_of_indigency'];
+    // Required document type codes: EAF, Letter to Mayor, Certificate of Indigency
+    $required_codes = ['00', '02', '03'];
     
     // Check if student needs upload tab (existing student) or uses registration docs (new student)
     // Detect if column exists; if not, default to true (existing flow)
@@ -614,7 +710,10 @@ function check_documents($connection, $student_id) {
             [$student_id]
         );
         $student_info = $student_info_query ? pg_fetch_assoc($student_info_query) : null;
-        $needs_upload_tab = $student_info ? (bool)$student_info['needs_document_upload'] : true;
+        // Default to FALSE (new registration) if NULL
+        // PostgreSQL returns 'f'/'t' strings, not PHP booleans
+        $needs_upload_tab = $student_info ? 
+                           ($student_info['needs_document_upload'] === 't' || $student_info['needs_document_upload'] === true) : false;
     } else {
         // Column not present, assume existing students require upload tab
         $student_info_query = pg_query_params($connection, 
@@ -625,33 +724,70 @@ function check_documents($connection, $student_id) {
         $needs_upload_tab = true;
     }
     
-    $uploaded = [];
+    $uploaded_codes = [];
     
     if ($needs_upload_tab) {
-        // Existing student: check upload_documents table/system
-        $query = pg_query_params($connection, "SELECT type FROM documents WHERE student_id = $1", [$student_id]);
-        while ($row = pg_fetch_assoc($query)) $uploaded[] = $row['type'];
+        // Existing student: check documents table for document_type_codes
+        $query = pg_query_params($connection, "SELECT document_type_code FROM documents WHERE student_id = $1", [$student_id]);
+        while ($row = pg_fetch_assoc($query)) {
+            $uploaded_codes[] = $row['document_type_code'];
+        }
         
-        // Also check file system for new structure by student name
+        // Also check file system - convert document names to codes
         $found_documents = find_student_documents_by_id($connection, $student_id);
-        $uploaded = array_unique(array_merge($uploaded, array_keys($found_documents)));
+        $name_to_code_map = [
+            'eaf' => '00',
+            'letter_to_mayor' => '02',
+            'certificate_of_indigency' => '03',
+            'id_picture' => '04',
+            'grades' => '01'
+        ];
+        foreach (array_keys($found_documents) as $doc_name) {
+            if (isset($name_to_code_map[$doc_name])) {
+                $uploaded_codes[] = $name_to_code_map[$doc_name];
+            }
+        }
+        $uploaded_codes = array_unique($uploaded_codes);
         
-        // Check if grades are uploaded via upload system
-        $grades_query = pg_query_params($connection, "SELECT COUNT(*) as count FROM grade_uploads WHERE student_id = $1", [$student_id]);
-        $grades_row = pg_fetch_assoc($grades_query);
-        $has_grades = $grades_row['count'] > 0;
+        // Check if grades are uploaded via documents table (document_type_code = '01')
+        $has_grades = in_array('01', $uploaded_codes);
     } else {
-        // New student: check registration documents (temp files moved to permanent storage)
-        $registration_docs = find_student_documents_by_id($connection, $student_id);
-        $uploaded = array_keys($registration_docs);
+        // New student: check BOTH documents table AND file system
+        // After approval, documents are moved to permanent storage and recorded in documents table
         
-        // For new registrants, check if they have temporary grade files or completed registration
-        // They should have uploaded grades during registration process
-        $has_grades = in_array('grades', $uploaded) || 
+        // 1. Check documents table first
+        $query = pg_query_params($connection, "SELECT document_type_code FROM documents WHERE student_id = $1", [$student_id]);
+        while ($row = pg_fetch_assoc($query)) {
+            $uploaded_codes[] = $row['document_type_code'];
+        }
+        
+        // 2. Also check file system (in case documents are only in filesystem)
+        $registration_docs = find_student_documents_by_id($connection, $student_id);
+        
+        // Convert document names to codes
+        $name_to_code_map = [
+            'eaf' => '00',
+            'letter_to_mayor' => '02',
+            'certificate_of_indigency' => '03',
+            'id_picture' => '04',
+            'grades' => '01'
+        ];
+        foreach (array_keys($registration_docs) as $doc_name) {
+            if (isset($name_to_code_map[$doc_name])) {
+                $uploaded_codes[] = $name_to_code_map[$doc_name];
+            }
+        }
+        
+        // Remove duplicates
+        $uploaded_codes = array_unique($uploaded_codes);
+        
+        // For new registrants, check if they have grades
+        $has_grades = in_array('01', $uploaded_codes) || 
                      file_exists("../../assets/uploads/student/" . $student_id . "/grades/");
     }
     
-    return count(array_diff($required, $uploaded)) === 0 && $has_grades;
+    // Check if all required document codes are present
+    return count(array_diff($required_codes, $uploaded_codes)) === 0 && $has_grades;
 }
 
 // Pagination & Filtering logic
@@ -687,17 +823,29 @@ function render_table($applicants, $connection) {
                 <th>Name</th>
                 <th>Contact</th>
                 <th>Email</th>
+                <th>Type</th>
                 <th>Documents</th>
                 <th>Action</th>
             </tr>
         </thead>
         <tbody id="applicantsTableBody">
         <?php if (pg_num_rows($applicants) === 0): ?>
-            <tr><td colspan="5" class="text-center no-applicants">No applicants found.</td></tr>
+            <tr><td colspan="6" class="text-center no-applicants">No applicants found.</td></tr>
         <?php else: ?>
             <?php while ($applicant = pg_fetch_assoc($applicants)) {
                 $student_id = $applicant['student_id'];
                 $isComplete = check_documents($connection, $student_id);
+                
+                // Determine applicant type
+                // NULL or FALSE = New registrant (from registration system)
+                // TRUE = Existing student requiring re-upload
+                // PostgreSQL returns 'f'/'t' strings, not PHP booleans
+                $needs_upload = isset($applicant['needs_document_upload']) ? 
+                               ($applicant['needs_document_upload'] === 't' || $applicant['needs_document_upload'] === true) : false;
+                $applicant_type = $needs_upload ? 're-upload' : 'new';
+                $type_label = $needs_upload ? 'Re-upload' : 'New Registration';
+                $type_icon = $needs_upload ? 'arrow-repeat' : 'person-plus';
+                $type_color = $needs_upload ? 'bg-warning' : 'bg-info';
                 ?>
                 <tr>
                     <td data-label="Name">
@@ -708,6 +856,11 @@ function render_table($applicants, $connection) {
                     </td>
                     <td data-label="Email">
                         <?= htmlspecialchars($applicant['email']) ?>
+                    </td>
+                    <td data-label="Type">
+                        <span class="badge <?= $type_color ?> text-white" title="<?= $needs_upload ? 'Existing student required to re-upload documents' : 'New applicant from registration system' ?>">
+                            <i class="bi bi-<?= $type_icon ?>"></i> <?= $type_label ?>
+                        </span>
                     </td>
                     <td data-label="Documents">
                         <span class="badge <?= $isComplete ? 'badge-success' : 'badge-secondary' ?>">
@@ -735,23 +888,72 @@ function render_table($applicants, $connection) {
                     <div class="modal-dialog modal-lg">
                         <div class="modal-content">
                             <div class="modal-header">
-                                <h5 class="modal-title">Documents for <?= htmlspecialchars($applicant['first_name']) ?> <?= htmlspecialchars($applicant['last_name']) ?></h5>
+                                <h5 class="modal-title">
+                                    Documents for <?= htmlspecialchars($applicant['first_name']) ?> <?= htmlspecialchars($applicant['last_name']) ?>
+                                    <span class="badge <?= $type_color ?> ms-2 text-white" style="font-size: 0.75rem;">
+                                        <i class="bi bi-<?= $type_icon ?>"></i> <?= $type_label ?>
+                                    </span>
+                                </h5>
                                 <button class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
+                                <?php if ($needs_upload): ?>
+                                <div class="alert alert-warning mb-3">
+                                    <i class="bi bi-info-circle"></i> 
+                                    <strong>Re-upload Required:</strong> This student is an existing applicant who needs to upload/re-upload their documents via the Upload Documents tab.
+                                </div>
+                                <?php else: ?>
+                                <div class="alert alert-info mb-3">
+                                    <i class="bi bi-check-circle"></i> 
+                                    <strong>New Registration:</strong> This student registered through the online registration system and submitted documents during registration.
+                                </div>
+                                <?php endif; ?>
                                 <?php
+                                // Map document type codes to readable names
+                                $doc_type_map = [
+                                    '04' => 'id_picture',
+                                    '00' => 'eaf',
+                                    '02' => 'letter_to_mayor',
+                                    '03' => 'certificate_of_indigency',
+                                    '01' => 'grades'
+                                ];
+                                
                                 // First, get documents from database (only those with valid file paths that exist)
-                                $docs = pg_query_params($connection, "SELECT * FROM documents WHERE student_id = $1", [$student_id]);
+                                $docs = pg_query_params($connection, "SELECT document_type_code, file_path FROM documents WHERE student_id = $1", [$student_id]);
                                 $db_documents = [];
                                 while ($doc = pg_fetch_assoc($docs)) {
                                     // Only include documents where the file actually exists
+                                    // Try both temp and student directories
                                     $filePath = $doc['file_path'];
-                                    $server_root = dirname(__DIR__, 2);
-                                    $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
-                                    $server_path = $server_root . '/' . $relative_from_root;
+                                    $docTypeCode = $doc['document_type_code'];
+                                    $docTypeName = $doc_type_map[$docTypeCode] ?? 'unknown';
                                     
-                                    if (file_exists($server_path)) {
-                                        $db_documents[$doc['type']] = $doc['file_path'];
+                                    $server_root = dirname(__DIR__, 2);
+                                    
+                                    // Check if path contains 'temp' - replace with 'student' for approved students
+                                    if (strpos($filePath, '/temp/') !== false) {
+                                        $permanentPath = str_replace('/temp/', '/student/', $filePath);
+                                        // Check if permanent file exists
+                                        $relative_from_root = ltrim(str_replace('../../', '', $permanentPath), '/');
+                                        $server_path = $server_root . '/' . $relative_from_root;
+                                        
+                                        if (file_exists($server_path)) {
+                                            $db_documents[$docTypeName] = $permanentPath;
+                                        } else {
+                                            // Fallback to temp path
+                                            $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+                                            $server_path = $server_root . '/' . $relative_from_root;
+                                            if (file_exists($server_path)) {
+                                                $db_documents[$docTypeName] = $filePath;
+                                            }
+                                        }
+                                    } else {
+                                        // Already permanent path
+                                        $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+                                        $server_path = $server_root . '/' . $relative_from_root;
+                                        if (file_exists($server_path)) {
+                                            $db_documents[$docTypeName] = $filePath;
+                                        }
                                     }
                                 }
                                 
@@ -760,13 +962,45 @@ function render_table($applicants, $connection) {
                                     $db_documents['grades'] = $db_documents['academic_grades'];
                                 }
 
-                                // Then, search for documents in new file structure by applicant name
-                                $found_documents = find_student_documents($applicant['first_name'] ?? '', $applicant['last_name'] ?? '');
-                                // Also, scan the students/ directory for files named with student_id prefix
-                                $student_dir_docs = find_student_documents_in_students_dir($student_id);
+                                // Then, search for documents in student directory using student_id pattern
+                                $found_documents = [];
+                                $server_base = dirname(__DIR__, 2) . '/assets/uploads/student/';
+                                $web_base = '../../assets/uploads/student/';
+                                
+                                $document_folders = [
+                                    'id_pictures' => 'id_picture',
+                                    'enrollment_forms' => 'eaf',
+                                    'letter_to_mayor' => 'letter_to_mayor',
+                                    'indigency' => 'certificate_of_indigency',
+                                    'grades' => 'grades'
+                                ];
+                                
+                                foreach ($document_folders as $folder => $type) {
+                                    $dir = $server_base . $folder . '/';
+                                    if (is_dir($dir)) {
+                                        // Look for files starting with student_id
+                                        $pattern = $dir . $student_id . '_*';
+                                        $matches = glob($pattern);
+                                        if (!empty($matches)) {
+                                            // Filter out associated files (.verify.json, .ocr.txt, etc)
+                                            $matches = array_filter($matches, function($file) {
+                                                return !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
+                                            });
+                                            
+                                            if (!empty($matches)) {
+                                                // Get the newest file
+                                                usort($matches, function($a, $b) {
+                                                    return filemtime($b) - filemtime($a);
+                                                });
+                                                $newest = $matches[0];
+                                                $found_documents[$type] = $web_base . $folder . '/' . basename($newest);
+                                            }
+                                        }
+                                    }
+                                }
 
                                 // Merge all sources, prioritizing file system results over DB
-                                $all_documents = array_merge($db_documents, $found_documents, $student_dir_docs);
+                                $all_documents = array_merge($db_documents, $found_documents);
 
                                 $document_labels = [
                                     'id_picture' => 'ID Picture',
@@ -809,16 +1043,28 @@ function render_table($applicants, $connection) {
                                         }
 
                                         // Fetch OCR confidence for this document
+                                        // Map type name back to document_type_code
+                                        $type_to_code = [
+                                            'id_picture' => '04',
+                                            'eaf' => '00',
+                                            'letter_to_mayor' => '02',
+                                            'certificate_of_indigency' => '03',
+                                            'grades' => '01'
+                                        ];
+                                        $doc_code = $type_to_code[$type] ?? null;
+                                        
                                         $ocr_confidence_badge = '';
-                                        $ocr_query = pg_query_params($connection, 
-                                            "SELECT ocr_confidence FROM documents WHERE student_id = $1 AND type = $2 ORDER BY upload_date DESC LIMIT 1", 
-                                            [$student_id, $type]);
-                                        if ($ocr_query && pg_num_rows($ocr_query) > 0) {
-                                            $ocr_data = pg_fetch_assoc($ocr_query);
-                                            if ($ocr_data['ocr_confidence'] !== null && $ocr_data['ocr_confidence'] > 0) {
-                                                $conf_val = round($ocr_data['ocr_confidence'], 1);
-                                                $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
-                                                $ocr_confidence_badge = "<span class='badge bg-{$conf_color} ms-2'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+                                        if ($doc_code) {
+                                            $ocr_query = pg_query_params($connection, 
+                                                "SELECT ocr_confidence FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
+                                                [$student_id, $doc_code]);
+                                            if ($ocr_query && pg_num_rows($ocr_query) > 0) {
+                                                $ocr_data = pg_fetch_assoc($ocr_query);
+                                                if ($ocr_data['ocr_confidence'] !== null && $ocr_data['ocr_confidence'] > 0) {
+                                                    $conf_val = round($ocr_data['ocr_confidence'], 1);
+                                                    $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
+                                                    $ocr_confidence_badge = "<span class='badge bg-{$conf_color} ms-2'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+                                                }
                                             }
                                         }
 
@@ -827,8 +1073,44 @@ function render_table($applicants, $connection) {
                                             : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
 
                                         $safeSrc = htmlspecialchars($webPath);
+                                        
+                                        // Get verification status and score from documents table
+                                        $verification_badge = '';
+                                        $verification_btn = '';
+                                        if ($doc_code) {
+                                            $verify_query = pg_query_params($connection, 
+                                                "SELECT verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
+                                                [$student_id, $doc_code]);
+                                            if ($verify_query && pg_num_rows($verify_query) > 0) {
+                                                $verify_data = pg_fetch_assoc($verify_query);
+                                                $verify_score = $verify_data['verification_score'];
+                                                $verify_status = $verify_data['verification_status'];
+                                                
+                                                if ($verify_score !== null && $verify_score > 0) {
+                                                    $verify_val = round($verify_score, 1);
+                                                    $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
+                                                    $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
+                                                    $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
+                                                    
+                                                    // Add view validation button
+                                                    $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
+                                                        onclick=\"event.stopPropagation(); loadValidationData('$type', '$student_id'); showValidationModal();\">
+                                                        <i class='bi bi-clipboard-check me-1'></i>View Validation Details
+                                                    </button>";
+                                                }
+                                            }
+                                        }
+                                        
                                         echo "<div class='doc-card'>
-                                                <div class='doc-card-header'>$cardTitle $ocr_confidence_badge</div>
+                                                <div class='doc-card-header'>
+                                                    <div class='d-flex justify-content-between align-items-center'>
+                                                        <span>$cardTitle</span>
+                                                        <div class='d-flex gap-1'>
+                                                            $ocr_confidence_badge
+                                                            $verification_badge
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
                                                 <div class='doc-meta'>" .
                                                     ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
@@ -837,20 +1119,17 @@ function render_table($applicants, $connection) {
                                                 <div class='doc-actions'>
                                                     <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\" title='View Document'><i class='bi bi-eye'></i></button>
                                                     <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank' title='Open in New Tab'><i class='bi bi-box-arrow-up-right'></i></a>
-                                                    <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>";
+                                                    <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>
+                                                </div>";
                                         
-                                        // Add validation details button if OCR data exists (full width, new row)
-                                        if ($ocr_confidence_badge) {
-                                            echo "</div><div class='doc-actions' style='border-top: 0; padding-top: 0;'>
-                                                  <button type='button' class='btn btn-sm btn-outline-info w-100' 
-                                                  data-bs-toggle='modal' data-bs-target='#validationModal' 
-                                                  onclick=\"loadValidationData('$type', '$student_id')\">
-                                                  <i class='bi bi-clipboard-data me-1'></i>View Validation
-                                                  </button>";
+                                        // Add validation button if verification data exists (full width, new row)
+                                        if ($verification_btn) {
+                                            echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
+                                                  $verification_btn
+                                                  </div>";
                                         }
                                         
-                                        echo "</div>
-                                              </div>";
+                                        echo "</div>";
                                     } else {
                                         echo "<div class='doc-card doc-card-missing'>
                                                 <div class='doc-card-header'>$cardTitle</div>
@@ -906,20 +1185,51 @@ function render_table($applicants, $connection) {
 
                                     $safeSrc = htmlspecialchars($webPath);
                                     
-                                    // Check for OCR confidence from documents table
+                                    // Check for OCR confidence and verification from documents table (document_type_code '01' = grades)
                                     $ocr_confidence = '';
-                                    $docs_query = pg_query_params($connection, "SELECT ocr_confidence FROM documents WHERE student_id = $1 AND type = 'academic_grades' ORDER BY upload_date DESC LIMIT 1", [$student_id]);
+                                    $verification_badge = '';
+                                    $verification_btn = '';
+                                    
+                                    $docs_query = pg_query_params($connection, 
+                                        "SELECT ocr_confidence, verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = '01' ORDER BY upload_date DESC LIMIT 1", 
+                                        [$student_id]);
+                                    
                                     if ($docs_query && pg_num_rows($docs_query) > 0) {
                                         $doc_data = pg_fetch_assoc($docs_query);
+                                        
+                                        // OCR Confidence
                                         if ($doc_data['ocr_confidence'] !== null && $doc_data['ocr_confidence'] > 0) {
                                             $conf_val = round($doc_data['ocr_confidence'], 1);
                                             $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
-                                            $ocr_confidence = "<span class='badge bg-{$conf_color} ms-2'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+                                            $ocr_confidence = "<span class='badge bg-{$conf_color}'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+                                        }
+                                        
+                                        // Verification Score
+                                        $verify_score = $doc_data['verification_score'];
+                                        if ($verify_score !== null && $verify_score > 0) {
+                                            $verify_val = round($verify_score, 1);
+                                            $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
+                                            $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
+                                            $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
+                                            
+                                            // Add view validation button
+                                            $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
+                                                onclick=\"event.stopPropagation(); loadValidationData('grades', '$student_id'); showValidationModal();\">
+                                                <i class='bi bi-clipboard-check me-1'></i>View Validation Details
+                                            </button>";
                                         }
                                     }
                                     
                                     echo "<div class='doc-card'>
-                                            <div class='doc-card-header'>$cardTitle $ocr_confidence</div>
+                                            <div class='doc-card-header'>
+                                                <div class='d-flex justify-content-between align-items-center'>
+                                                    <span>$cardTitle</span>
+                                                    <div class='d-flex gap-1'>
+                                                        $ocr_confidence
+                                                        $verification_badge
+                                                    </div>
+                                                </div>
+                                            </div>
                                             <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
                                             <div class='doc-meta'>" .
                                                 ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
@@ -931,21 +1241,14 @@ function render_table($applicants, $connection) {
                                                 <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>
                                             </div>";
                                     
-                                    // Add validation and review buttons on separate rows (full width)
-                                    if ($ocr_confidence) {
+                                    // Add validation button if verification data exists (full width, new row)
+                                    if ($verification_btn) {
                                         echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
-                                              <button type='button' class='btn btn-sm btn-outline-info w-100' 
-                                              data-bs-toggle='modal' data-bs-target='#validationModal' 
-                                              onclick=\"loadValidationData('grades', '$student_id')\">
-                                              <i class='bi bi-clipboard-data me-1'></i>View Validation
-                                              </button>
+                                              $verification_btn
                                               </div>";
                                     }
                                     
-                                    echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
-                                          <a class='btn btn-sm btn-outline-primary w-100' href='validate_grades.php'><i class='bi bi-check2-square me-1'></i>Review in Validator</a>
-                                          </div>
-                                          </div>";
+                                    echo "</div>";
                                 } else {
                                     echo "<div class='doc-card doc-card-missing'>
                                             <div class='doc-card-header'>$cardTitle</div>
@@ -974,12 +1277,10 @@ function render_table($applicants, $connection) {
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfApproveApplicantToken) ?>">
                                         <button class="btn btn-success btn-sm"><i class="bi bi-check-circle me-1"></i> Verify</button>
                                     </form>
-                                    <form method="POST" class="d-inline ms-2" onsubmit="return confirm('Reject and reset uploads?');">
-                                        <input type="hidden" name="student_id" value="<?= $student_id ?>">
-                                        <input type="hidden" name="reject_applicant" value="1">
-                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfRejectApplicantToken) ?>">
-                                        <button class="btn btn-danger btn-sm"><i class="bi bi-x-circle me-1"></i> Reject</button>
-                                    </form>
+                                    <button type="button" class="btn btn-danger btn-sm ms-2" 
+                                            onclick="showRejectModal('<?= htmlspecialchars($student_id, ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>')">
+                                        <i class="bi bi-x-circle me-1"></i> Reject
+                                    </button>
                                 <?php else: ?>
                                     <span class="text-muted">Incomplete documents</span>
                                     <?php if (!empty($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'super_admin'): ?>
@@ -994,12 +1295,6 @@ function render_table($applicants, $connection) {
                                 
                                 <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
                                 <div class="ms-auto">
-                                    <button class="btn btn-outline-warning btn-sm me-2" 
-                                            onclick="showArchiveModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>')"
-                                            data-bs-dismiss="modal"
-                                            title="Archive Student">
-                                        <i class="bi bi-archive me-1"></i> Archive Student
-                                    </button>
                                     <button class="btn btn-outline-danger btn-sm" 
                                             onclick="showBlacklistModal('<?= $student_id ?>', '<?= htmlspecialchars($applicant['first_name'] . ' ' . $applicant['last_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($applicant['email'], ENT_QUOTES) ?>', {
                                                 barangay: '<?= htmlspecialchars($applicant['barangay'] ?? 'N/A', ENT_QUOTES) ?>',
@@ -1154,51 +1449,433 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
     }
-    // Reject applicant and reset documents
+    // Reject applicant with document-specific rejection or archive
     if (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
-        $sid = trim($_POST['student_id']); // Remove intval for TEXT student_id
+        // CSRF Protection - validate token first
+        $token = $_POST['csrf_token'] ?? '';
+        if (!CSRFProtection::validateToken('reject_applicant', $token)) {
+            $_SESSION['error_message'] = 'Invalid security token. Please try again.';
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
         
-        // Get student name for notification
-        $studentQuery = pg_query_params($connection, "SELECT first_name, last_name, email FROM students WHERE student_id = $1", [$sid]);
+        $sid = trim($_POST['student_id']);
+        $rejection_type = $_POST['rejection_type'] ?? 'document'; // 'document' or 'archive'
+        $archive_reason = trim($_POST['archive_reason'] ?? '');
+        $rejected_documents = $_POST['rejected_documents'] ?? []; // Array of document type codes to reject
+        $rejection_notes = trim($_POST['rejection_notes'] ?? '');
+        
+        // Get student info
+        $studentQuery = pg_query_params($connection, 
+            "SELECT first_name, last_name, middle_name, email, year_level_id, expected_graduation_year, needs_document_upload 
+             FROM students WHERE student_id = $1", [$sid]);
         $student = pg_fetch_assoc($studentQuery);
         
-        // Delete uploaded files
-        /** @phpstan-ignore-next-line */
-        $docs = pg_query_params($connection, "SELECT file_path FROM documents WHERE student_id = $1", [$sid]);
-        while ($d = pg_fetch_assoc($docs)) {
-            $path = $d['file_path'];
-            if ($path && file_exists($path)) {
-                @unlink($path);
-            }
+        if (!$student) {
+            $_SESSION['error_message'] = 'Student not found';
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
         }
-        /** @phpstan-ignore-next-line */
-        pg_query_params($connection, "DELETE FROM documents WHERE student_id = $1", [$sid]);
         
-        // Student notification
-        $msg = 'Your uploaded documents were rejected on ' . date('F j, Y, g:i a') . '. Please re-upload.';
-        /** @phpstan-ignore-next-line */
-        pg_query_params($connection, "INSERT INTO notifications (student_id, message) VALUES ($1, $2)", [$sid, $msg]);
-        
-        // Add admin notification
-        if ($student) {
-            $student_name = $student['first_name'] . ' ' . $student['last_name'];
-            $notification_msg = "Documents rejected for applicant: " . $student_name . " (ID: " . $sid . ")";
-            pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+        // Handle Archive Rejection
+        if ($rejection_type === 'archive') {
+            if (empty($archive_reason)) {
+                $_SESSION['error_message'] = 'Archive reason is required';
+                header('Location: ' . $_SERVER['PHP_SELF']);
+                exit;
+            }
             
-            // Log applicant rejection in audit trail
-            require_once __DIR__ . '/../../services/AuditLogger.php';
-            $auditLogger = new AuditLogger($connection);
-            $auditLogger->logApplicantRejected(
-                $_SESSION['admin_id'],
-                $_SESSION['admin_username'],
-                $sid,
-                [
-                    'first_name' => $student['first_name'],
-                    'last_name' => $student['last_name'],
-                    'email' => $student['email']
-                ],
-                'Documents rejected by admin'
-            );
+            // Archive the student directly in database
+            $fullName = trim($student['first_name'] . ' ' . ($student['middle_name'] ?? '') . ' ' . $student['last_name']);
+            $final_reason = $archive_reason . ($rejection_notes ? ' - ' . $rejection_notes : '');
+            
+            // Begin transaction
+            pg_query($connection, "BEGIN");
+            
+            try {
+                // Update student record to mark as archived
+                $archiveUpdate = pg_query_params($connection,
+                    "UPDATE students 
+                     SET is_archived = TRUE,
+                         archived_at = NOW(),
+                         archived_by = $1,
+                         archive_reason = $2,
+                         archive_type = 'manual',
+                         status = 'archived'
+                     WHERE student_id = $3",
+                    [$_SESSION['admin_id'], $final_reason, $sid]
+                );
+                
+                if (!$archiveUpdate) {
+                    throw new Exception('Failed to update student archive status');
+                }
+                
+                // Compress and archive student files
+                require_once __DIR__ . '/../../services/FileManagementService.php';
+                $fileService = new FileManagementService($connection);
+                $compressionResult = $fileService->compressArchivedStudent($sid);
+                
+                // Log to audit trail
+                require_once __DIR__ . '/../../services/AuditLogger.php';
+                $auditLogger = new AuditLogger($connection);
+                $final_reason = $archive_reason;
+                if (!empty($rejection_notes)) {
+                    $final_reason .= ' - Additional notes: ' . $rejection_notes;
+                }
+                $auditLogger->logStudentArchived(
+                    $_SESSION['admin_id'],
+                    $_SESSION['admin_username'],
+                    $sid,
+                    [
+                        'student_name' => $fullName,
+                        'year_level_id' => $student['year_level_id'],
+                        'expected_graduation_year' => $student['expected_graduation_year']
+                    ],
+                    $final_reason,
+                    false // Manual archiving (not automatic)
+                );
+                
+                // Commit transaction
+                pg_query($connection, "COMMIT");
+                
+                // Send email notification to student
+                $adminName = $_SESSION['admin_username'] ?? 'EducAid Administrator';
+                $emailSent = send_archive_notification_email(
+                    $student['email'],
+                    $fullName,
+                    $final_reason,
+                    $adminName
+                );
+                
+                $successMsg = 'Student archived successfully: ' . $archive_reason;
+                if (($compressionResult['files_archived'] ?? 0) > 0) {
+                    $successMsg .= ' (' . $compressionResult['files_archived'] . ' files archived)';
+                }
+                if ($emailSent) {
+                    $successMsg .= '. Email notification sent to student.';
+                } else {
+                    $successMsg .= '. Warning: Failed to send email notification.';
+                }
+                $_SESSION['success_message'] = $successMsg;
+                
+            } catch (Exception $e) {
+                // Rollback on error
+                pg_query($connection, "ROLLBACK");
+                error_log("Archive rejection failed: " . $e->getMessage());
+                $_SESSION['error_message'] = 'Failed to archive student: ' . $e->getMessage();
+            }
+            
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
+        
+        // Handle Document Rejection (for re-upload)
+        if ($rejection_type === 'document') {
+            if (empty($rejected_documents)) {
+                $_SESSION['error_message'] = 'Please select at least one document to reject';
+                header('Location: ' . $_SERVER['PHP_SELF']);
+                exit;
+            }
+            
+            error_log("========== DOCUMENT REJECTION START ==========");
+            error_log("Student ID: " . $sid);
+            error_log("Rejected documents: " . json_encode($rejected_documents));
+            error_log("Rejection notes: " . $rejection_notes);
+            
+            $deleted_files = [];
+            $deletion_errors = [];
+            
+            // Begin transaction
+            pg_query($connection, "BEGIN");
+            
+            try {
+                // Delete only the rejected documents
+                foreach ($rejected_documents as $doc_code) {
+                    $doc_code = trim($doc_code);
+                    $docQuery = pg_query_params($connection, 
+                        "SELECT file_path FROM documents WHERE student_id = $1 AND document_type_code = $2", 
+                        [$sid, $doc_code]);
+                    
+                    $doc_count = pg_num_rows($docQuery);
+                    error_log("Documents found for code $doc_code: " . $doc_count);
+                    
+                    if ($doc_count === 0) {
+                        $deletion_errors[] = "No document found for code $doc_code in database";
+                        continue;
+                    }
+                    
+                    while ($d = pg_fetch_assoc($docQuery)) {
+                        $path = $d['file_path'];
+                        
+                        // Handle multiple path formats
+                        // 1. First try the path as-is (for absolute paths)
+                        $absolute_path = $path;
+                        
+                        // 2. If not found, try prepending root directory (for relative paths like "assets/uploads/...")
+                        if (!file_exists($absolute_path)) {
+                            $absolute_path = dirname(__DIR__, 2) . '/' . ltrim($path, '/');
+                        }
+                        
+                        // 3. If still not found, try with backslashes (Windows compatibility)
+                        if (!file_exists($absolute_path)) {
+                            $absolute_path = dirname(__DIR__, 2) . '\\' . str_replace('/', '\\', ltrim($path, '/\\'));
+                        }
+                        
+                        // Debug logging
+                        error_log("Document Deletion Debug:");
+                        error_log("  Original path from DB: " . $path);
+                        error_log("  Resolved absolute path: " . $absolute_path);
+                        error_log("  File exists: " . (file_exists($absolute_path) ? 'YES' : 'NO'));
+                        error_log("  Base directory: " . dirname(__DIR__, 2));
+                        
+                        if (file_exists($absolute_path)) {
+                            if (@unlink($absolute_path)) {
+                                $deleted_files[] = basename($absolute_path);
+                                error_log("  Successfully deleted: " . $absolute_path);
+                                
+                                // Also delete associated OCR files
+                                $associated_files = [
+                                    $absolute_path . '.ocr.txt',
+                                    $absolute_path . '.verify.json',
+                                    $absolute_path . '.tsv',
+                                    $absolute_path . '.confidence.json'
+                                ];
+                                foreach ($associated_files as $assoc_file) {
+                                    if (file_exists($assoc_file)) {
+                                        @unlink($assoc_file);
+                                        error_log("    Deleted associated file: " . basename($assoc_file));
+                                    }
+                                }
+                            } else {
+                                $deletion_errors[] = basename($absolute_path) . ' (permission denied)';
+                                error_log("  FAILED to delete (permission denied): " . $absolute_path);
+                            }
+                        } else {
+                            $deletion_errors[] = basename($path) . ' (file not found at any attempted path)';
+                            error_log("  FAILED to delete (file not found)");
+                        }
+                    }
+                    
+                    // Delete document record from database
+                    $deleteResult = pg_query_params($connection, 
+                        "DELETE FROM documents WHERE student_id = $1 AND document_type_code = $2", 
+                        [$sid, $doc_code]);
+                    
+                    if ($deleteResult) {
+                        error_log("  Database record deleted for student $sid, document code $doc_code");
+                    } else {
+                        throw new Exception("Failed to delete database record: " . pg_last_error($connection));
+                    }
+                }
+                
+                // Set needs_document_upload to TRUE (student needs to re-upload)
+                // This applies to BOTH new registrants and existing students
+                $updateResult = pg_query_params($connection, 
+                    "UPDATE students SET needs_document_upload = TRUE WHERE student_id = $1", 
+                    [$sid]);
+                
+                if (!$updateResult) {
+                    throw new Exception("Failed to update needs_document_upload: " . pg_last_error($connection));
+                }
+                
+                error_log("Set needs_document_upload = TRUE for student " . $sid);
+                
+                // Store rejected document codes in a JSON field for selective re-upload
+                // First check if column exists
+                $colCheck = pg_query($connection, 
+                    "SELECT 1 FROM information_schema.columns 
+                     WHERE table_name='students' AND column_name='documents_to_reupload'");
+                $hasReuploadCol = $colCheck ? (pg_num_rows($colCheck) > 0) : false;
+                
+                if ($hasReuploadCol) {
+                    $rejected_json = json_encode($rejected_documents);
+                    pg_query_params($connection, 
+                        "UPDATE students SET documents_to_reupload = $1 WHERE student_id = $2", 
+                        [$rejected_json, $sid]);
+                }
+                
+                // Build document names for notification
+                $doc_names = [
+                    '00' => 'EAF (Enrollment Assistance Form)',
+                    '01' => 'Academic Grades',
+                    '02' => 'Letter to Mayor',
+                    '03' => 'Certificate of Indigency',
+                    '04' => 'ID Picture'
+                ];
+                $rejected_names = array_map(function($code) use ($doc_names) {
+                    return $doc_names[$code] ?? 'Document ' . $code;
+                }, $rejected_documents);
+                
+                // Create urgent notification for student (priority notification)
+                $msg = 'URGENT: Some of your documents were rejected on ' . date('F j, Y, g:i a') . '. ' .
+                       'Please re-upload the following: ' . implode(', ', $rejected_names) . '.';
+                if ($rejection_notes) {
+                    $msg .= ' Reason: ' . $rejection_notes;
+                }
+                
+                // Check if notifications table has priority column
+                $notifColCheck = pg_query($connection, 
+                    "SELECT 1 FROM information_schema.columns 
+                     WHERE table_name='notifications' AND column_name='is_priority'");
+                $hasPriorityCol = $notifColCheck ? (pg_num_rows($notifColCheck) > 0) : false;
+                
+                if ($hasPriorityCol) {
+                    $notifResult = pg_query_params($connection, 
+                        "INSERT INTO notifications (student_id, message, is_priority, is_read) VALUES ($1, $2, TRUE, FALSE)", 
+                        [$sid, $msg]);
+                } else {
+                    $notifResult = pg_query_params($connection, 
+                        "INSERT INTO notifications (student_id, message) VALUES ($1, $2)", 
+                        [$sid, $msg]);
+                }
+                
+                if (!$notifResult) {
+                    throw new Exception("Failed to create notification: " . pg_last_error($connection));
+                }
+                
+                error_log("Created priority notification for student " . $sid);
+                
+                // Add admin notification
+                $student_name = $student['first_name'] . ' ' . $student['last_name'];
+                $notification_msg = "Documents rejected for applicant: " . $student_name . " (ID: " . $sid . "). " .
+                                  "Documents to re-upload: " . implode(', ', $rejected_names);
+                if (!empty($deleted_files)) {
+                    $notification_msg .= ". Deleted files: " . implode(', ', $deleted_files);
+                }
+                if (!empty($deletion_errors)) {
+                    $notification_msg .= ". Deletion errors: " . implode(', ', $deletion_errors);
+                }
+                $adminNotifResult = pg_query_params($connection, 
+                    "INSERT INTO admin_notifications (message) VALUES ($1)", 
+                    [$notification_msg]);
+                
+                if (!$adminNotifResult) {
+                    error_log("Warning: Failed to create admin notification: " . pg_last_error($connection));
+                }
+                
+                // Log in audit trail
+                require_once __DIR__ . '/../../services/AuditLogger.php';
+                $auditLogger = new AuditLogger($connection);
+                $auditLogger->logApplicantRejected(
+                    $_SESSION['admin_id'],
+                    $_SESSION['admin_username'],
+                    $sid,
+                    [
+                        'first_name' => $student['first_name'],
+                        'last_name' => $student['last_name'],
+                        'email' => $student['email']
+                    ],
+                    'Specific documents rejected: ' . implode(', ', $rejected_names) . 
+                    ($rejection_notes ? ' - ' . $rejection_notes : '') .
+                    (count($deleted_files) > 0 ? ' | Deleted: ' . count($deleted_files) . ' files' : '')
+                );
+                
+                // Commit transaction
+                pg_query($connection, "COMMIT");
+                error_log("========== DOCUMENT REJECTION SUCCESS ==========");
+                
+                $success_msg = 'Documents rejected. Student can now re-upload the selected documents.';
+                if (!empty($deleted_files)) {
+                    $success_msg .= ' Deleted ' . count($deleted_files) . ' file(s).';
+                }
+                if (!empty($deletion_errors)) {
+                    $success_msg .= ' Warning: ' . count($deletion_errors) . ' file(s) could not be deleted.';
+                }
+                $_SESSION['success_message'] = $success_msg;
+        } catch (Exception $e) {
+            // Rollback transaction on error
+            pg_query($connection, "ROLLBACK");
+            error_log("========== DOCUMENT REJECTION FAILED ==========");
+            error_log("Error: " . $e->getMessage());
+            error_log("Trace: " . $e->getTraceAsString());
+            $_SESSION['error_message'] = 'Failed to reject documents: ' . $e->getMessage();
+        }
+        
+        // Send email notification to student (outside transaction - always send even if transaction fails)
+        if (!empty($student['email']) && !empty($rejected_names)) {
+                require_once __DIR__ . '/../../phpmailer/vendor/autoload.php';
+                try {
+                    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+                    $mail->isSMTP();
+                    $mail->Host       = 'smtp.gmail.com';
+                    $mail->SMTPAuth   = true;
+                    $mail->Username   = 'dilucayaka02@gmail.com';
+                    $mail->Password   = 'jlld eygl hksj flvg';
+                    $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+                    $mail->Port       = 587;
+                    
+                    $mail->setFrom('dilucayaka02@gmail.com', 'EducAid System');
+                    $mail->addAddress($student['email'], $student['first_name'] . ' ' . $student['last_name']);
+                    $mail->isHTML(true);
+                    $mail->Subject = 'URGENT: Document Rejection - Action Required';
+                    
+                    $loginUrl = (isset($_SERVER['HTTPS'])?'https':'http') . '://' . $_SERVER['HTTP_HOST'] . '/EducAid/unified_login.php';
+                    
+                    $mail->Body = '
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+                        <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
+                            <h1 style="margin: 0; font-size: 28px;">⚠️ Document Rejection Notice</h1>
+                        </div>
+                        
+                        <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <p>Dear ' . htmlspecialchars($student['first_name']) . ',</p>
+                            
+                            <p><strong>Some of your documents have been rejected and require re-upload.</strong></p>
+                            
+                            <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                                <p style="margin: 0 0 10px 0; font-weight: 600; color: #dc2626;">Documents requiring re-upload:</p>
+                                <ul style="margin: 0; padding-left: 20px;">
+                                    ' . implode('', array_map(function($name) {
+                                        return '<li>' . htmlspecialchars($name) . '</li>';
+                                    }, $rejected_names)) . '
+                                </ul>
+                            </div>
+                            
+                            ' . ($rejection_notes ? '
+                            <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                                <p style="margin: 0; font-weight: 600; color: #d97706;">Admin Notes:</p>
+                                <p style="margin: 5px 0 0 0;">' . htmlspecialchars($rejection_notes) . '</p>
+                            </div>
+                            ' : '') . '
+                            
+                            <p><strong>What you need to do:</strong></p>
+                            <ol>
+                                <li>Log in to your EducAid student portal</li>
+                                <li>Go to "Upload Documents" page</li>
+                                <li>Re-upload only the rejected documents listed above</li>
+                                <li>Ensure documents meet all requirements</li>
+                            </ol>
+                            
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="' . $loginUrl . '" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
+                                    Log In to Re-upload Documents
+                                </a>
+                            </div>
+                            
+                            <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">
+                                <strong>Note:</strong> Please re-upload the required documents as soon as possible to avoid delays in processing your application.
+                            </p>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 20px; color: #6b7280; font-size: 12px;">
+                            <p>This is an automated message from EducAid System. Please do not reply to this email.</p>
+                        </div>
+                    </div>';
+                    
+                    $mail->AltBody = "URGENT: Document Rejection Notice\n\n" .
+                        "Dear " . $student['first_name'] . ",\n\n" .
+                        "Some of your documents have been rejected and require re-upload.\n\n" .
+                        "Documents requiring re-upload:\n" .
+                        implode("\n", array_map(function($name) { return "- " . $name; }, $rejected_names)) . "\n\n" .
+                        ($rejection_notes ? "Admin Notes: " . $rejection_notes . "\n\n" : "") .
+                        "Please log in to your EducAid student portal and re-upload the required documents.\n\n" .
+                        "Login at: " . $loginUrl;
+                    
+                    $mail->send();
+                } catch (Exception $e) {
+                    error_log("Failed to send rejection email to student $sid: " . $e->getMessage());
+                }
+            }
         }
         
         // Redirect to refresh list
@@ -1566,6 +2243,7 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
 <!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/admin/sidebar.js"></script>
+<script src="../../assets/js/admin/rejection_modal.js"></script>
 <!-- Removed external manage_applicants.js include (404 caused script parse error) -->
 <script>
 // Image Zoom Functionality
@@ -1693,11 +2371,15 @@ function updateTableData() {
 // Start real-time updates when page loads
 document.addEventListener('DOMContentLoaded', function() {
     // Move all modals to be direct children of body to avoid stacking context issues
-    document.querySelectorAll('.modal').forEach(function(modalEl){
-        if (modalEl.parentElement !== document.body) {
-            document.body.appendChild(modalEl);
-        }
-    });
+    // But do this AFTER a delay to let sidebar.js and Bootstrap initialize first
+    setTimeout(() => {
+        document.querySelectorAll('.modal').forEach(function(modalEl){
+            if (modalEl.parentElement !== document.body) {
+                document.body.appendChild(modalEl);
+            }
+        });
+    }, 100);
+    
     setTimeout(updateTableData, 300);
     // Auto-open migration modal if preview/result exists
     <?php if (!empty($_SESSION['migration_preview']) || !empty($_SESSION['migration_result'])): ?>
@@ -2061,21 +2743,111 @@ document.addEventListener('DOMContentLoaded', function() {
 .modal { z-index: 200000 !important; }
 .modal-backdrop { z-index: 199999 !important; }
 /* Document grid */
-.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.doc-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; display: flex; flex-direction: column; }
-.doc-card-header { font-weight: 600; padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
-.doc-card-body { padding: 8px; display: flex; align-items: center; justify-content: center; min-height: 160px; cursor: zoom-in; background: #fafafa; }
-.doc-thumb { max-width: 100%; max-height: 150px; border-radius: 4px; }
-.doc-thumb-pdf { font-size: 48px; color: #d32f2f; display: flex; align-items: center; justify-content: center; height: 150px; width: 100%; }
-.doc-meta { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; color: #6b7280; font-size: 12px; border-top: 1px dashed #eee; }
-.doc-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-top: 1px solid #f0f0f0; }
-.doc-actions .btn { flex: 1 1 auto; min-width: 70px; font-size: 0.75rem; padding: 4px 8px; }
-.doc-card-missing .missing { background: #fff7e6; color: #8a6d3b; min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.doc-card-missing .missing-icon { font-size: 28px; margin-bottom: 6px; }
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.doc-card { 
+    border: 1px solid #e5e7eb; 
+    border-radius: 10px; 
+    background: #fff; 
+    display: flex; 
+    flex-direction: column;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: box-shadow 0.2s, transform 0.2s;
+}
+.doc-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transform: translateY(-2px);
+}
+.doc-card-header { 
+    font-weight: 600; 
+    font-size: 0.95rem;
+    padding: 12px 14px; 
+    border-bottom: 1px solid #f0f0f0; 
+    background: linear-gradient(to bottom, #f8f9fa, #fff);
+}
+.doc-card-header .badge {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.35em 0.6em;
+}
+.doc-card-body { 
+    padding: 10px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    min-height: 180px; 
+    cursor: zoom-in; 
+    background: #fafafa;
+    border-radius: 4px;
+    margin: 8px;
+}
+.doc-card-body:hover {
+    background: #f5f5f5;
+}
+.doc-thumb { 
+    max-width: 100%; 
+    max-height: 165px; 
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.doc-thumb-pdf { 
+    font-size: 56px; 
+    color: #dc3545; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    height: 165px; 
+    width: 100%; 
+}
+.doc-meta { 
+    display: flex; 
+    justify-content: space-between; 
+    gap: 10px; 
+    padding: 8px 14px; 
+    color: #6b7280; 
+    font-size: 0.75rem; 
+    border-top: 1px dashed #eee; 
+    background: #fafbfc;
+}
+.doc-meta i {
+    opacity: 0.7;
+}
+.doc-actions { 
+    display: flex; 
+    flex-wrap: wrap; 
+    gap: 6px; 
+    padding: 10px 12px; 
+    border-top: 1px solid #f0f0f0; 
+}
+.doc-actions .btn { 
+    flex: 1 1 auto; 
+    min-width: 40px; 
+    font-size: 0.8rem; 
+    padding: 6px 10px; 
+}
+.doc-actions .w-100 {
+    flex: 1 1 100%;
+}
+.doc-card-missing .missing { 
+    background: #fff7e6; 
+    color: #8a6d3b; 
+    min-height: 180px; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center;
+    border-radius: 8px;
+    margin: 8px;
+    border: 2px dashed #ffc107;
+}
+.doc-card-missing .missing-icon { 
+    font-size: 36px; 
+    margin-bottom: 8px; 
+    opacity: 0.6;
+}
 
-/* Fullscreen viewer */
-.doc-viewer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; z-index: 1500; }
-.doc-viewer { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 95vw; max-width: 1280px; height: 85vh; background: #111; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+/* Fullscreen viewer - Must appear ABOVE modals (z-index 200000+) */
+.doc-viewer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; z-index: 210000 !important; }
+.doc-viewer { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 95vw; max-width: 1280px; height: 85vh; background: #111; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
 .doc-viewer-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; padding: 8px 12px; background: #1f2937; color: #fff; }
 .doc-viewer-toolbar .btn { padding: 4px 8px; }
 .doc-viewer-content { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
@@ -2083,6 +2855,83 @@ document.addEventListener('DOMContentLoaded', function() {
 .doc-viewer-content img { will-change: transform; transform-origin: center center; user-select: none; -webkit-user-drag: none; }
 .doc-viewer-content iframe { width: 100%; height: 100%; border: none; }
 .doc-viewer-close { background: transparent; border: 0; color: #fff; font-size: 20px; }
+
+/* Validation modal should appear above student info modal but below document viewer */
+#validationModal { z-index: 205000 !important; }
+#validationModal + .modal-backdrop { z-index: 204999 !important; }
+
+/* Rejection modal should appear above student info modal */
+#rejectModal { z-index: 206000 !important; }
+#rejectModal + .modal-backdrop { z-index: 205999 !important; }
+
+/* Custom backdrop for validation modal to dim the student info modal behind it */
+.validation-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 204998 !important;
+    display: none;
+}
+
+.validation-backdrop.show {
+    display: block;
+}
+
+/* Custom backdrop for rejection modal to dim the student info modal behind it */
+.rejection-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 205998 !important;
+    display: none;
+}
+
+.rejection-backdrop.show {
+    display: block;
+}
+
+/* Verification checklist styling (matching registration page) */
+.verification-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.verification-checklist .form-check {
+    padding: 0.75rem 1rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    margin: 0;
+}
+
+.verification-checklist .form-check.check-passed {
+    background: #d1e7dd;
+    border-color: #badbcc;
+}
+
+.verification-checklist .form-check.check-failed {
+    background: #f8d7da;
+    border-color: #f5c2c7;
+}
+
+.verification-checklist .form-check.check-warning {
+    background: #fff3cd;
+    border-color: #ffe69c;
+}
+
+.confidence-score {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem;
+    min-width: 50px;
+    text-align: center;
+}
 
 @media (max-width: 576px) {
     .doc-grid { grid-template-columns: 1fr; }
@@ -2446,7 +3295,14 @@ async function loadValidationData(docType, studentId) {
 }
 
 function generateValidationHTML(validation, docType) {
-    console.log('generateValidationHTML called with:', {validation, docType});
+    console.log('=== generateValidationHTML DEBUG ===');
+    console.log('docType:', docType);
+    console.log('validation object:', validation);
+    console.log('Has identity_verification?', !!validation.identity_verification);
+    if (validation.identity_verification) {
+        console.log('identity_verification keys:', Object.keys(validation.identity_verification));
+        console.log('identity_verification data:', validation.identity_verification);
+    }
     
     if (!validation || typeof validation !== 'object') {
         return `<div class="alert alert-warning p-4">
@@ -2456,258 +3312,194 @@ function generateValidationHTML(validation, docType) {
         </div>`;
     }
     
-    let html = '<div class="p-3">';
+    let html = '';
     
+    // === OCR CONFIDENCE BANNER ===
     if (validation.ocr_confidence !== undefined) {
         const conf = parseFloat(validation.ocr_confidence);
         const confColor = conf >= 80 ? 'success' : (conf >= 60 ? 'warning' : 'danger');
-        html += `<div class="alert alert-${confColor} d-flex justify-content-between mb-4">
-            <div><h6 class="mb-0"><i class="bi bi-robot me-2"></i>Overall OCR Confidence</h6></div>
-            <h4 class="mb-0">${conf.toFixed(1)}%</h4>
+        html += `<div class="alert alert-${confColor} d-flex justify-content-between align-items-center mb-4">
+            <div><h5 class="mb-0"><i class="bi bi-robot me-2"></i>Overall OCR Confidence</h5></div>
+            <h3 class="mb-0 fw-bold">${conf.toFixed(1)}%</h3>
         </div>`;
     }
     
-    // === VERIFICATION RESULTS (styled like your image) ===
+    // === DETAILED VERIFICATION CHECKLIST ===
     if (validation.identity_verification) {
         const idv = validation.identity_verification;
-        const isLetterOrCert = (idv.document_type === 'letter_to_mayor' || idv.document_type === 'certificate_of_indigency');
-        html += '<h5 class="mb-3"><i class="bi bi-shield-check me-2"></i>VERIFICATION RESULTS:</h5>';
+        const isIdOrEaf = (docType === 'id_picture' || docType === 'eaf');
+        const isLetter = (docType === 'letter_to_mayor');
+        const isCert = (docType === 'certificate_of_indigency');
         
-        // First Name Check
-        const fnConf = parseFloat(idv.first_name_confidence || 0);
+        html += '<div class="card mb-4"><div class="card-header bg-primary text-white">';
+        html += '<h5 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Verification Checklist</h5>';
+        html += '</div><div class="card-body"><div class="verification-checklist">';
+        
+        // FIRST NAME
         const fnMatch = idv.first_name_match;
-        html += `<div class="verification-check ${fnMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${fnMatch ? 'success' : 'danger'}">
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="d-flex align-items-center gap-3">
-                    <i class="bi ${fnMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                    <div>
-                        <strong class="d-block" style="font-size:1.1rem;">${fnMatch ? 'First Name Found' : 'First Name Not Found'}</strong>
-                        <small class="text-muted">${fnConf.toFixed(0)}% match${fnMatch && idv.found_text_snippets && idv.found_text_snippets.first_name ? ', found: "' + idv.found_text_snippets.first_name + '"' : ''}</small>
-                    </div>
-                </div>
-                <span class="badge ${fnMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${fnConf.toFixed(0)}%</span>
-            </div>
+        const fnConf = parseFloat(idv.first_name_confidence || 0);
+        const fnClass = fnMatch ? 'check-passed' : 'check-failed';
+        const fnIcon = fnMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+        html += `<div class="form-check ${fnClass} d-flex justify-content-between align-items-center">
+            <div><i class="bi bi-${fnIcon} me-2" style="font-size:1.2rem;"></i>
+            <span><strong>First Name</strong> ${fnMatch ? 'Match' : 'Not Found'}</span></div>
+            <span class="badge ${fnMatch ? 'bg-success' : 'bg-danger'} confidence-score">${fnConf.toFixed(0)}%</span>
         </div>`;
         
-        // Middle Name Check (only for ID/EAF)
-        if (!isLetterOrCert) {
-            const mnConf = parseFloat(idv.middle_name_confidence || 0);
+        // MIDDLE NAME (ID/EAF only)
+        if (isIdOrEaf) {
             const mnMatch = idv.middle_name_match;
-            html += `<div class="verification-check ${mnMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${mnMatch ? 'success' : 'danger'}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${mnMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${mnMatch ? 'Middle Name Found' : 'Middle Name Not Found'}</strong>
-                            <small class="text-muted">${mnConf.toFixed(0)}% match${mnMatch && idv.found_text_snippets && idv.found_text_snippets.middle_name ? ', found: "' + idv.found_text_snippets.middle_name + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge ${mnMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${mnConf.toFixed(0)}%</span>
-                </div>
+            const mnConf = parseFloat(idv.middle_name_confidence || 0);
+            const mnClass = mnMatch ? 'check-passed' : 'check-failed';
+            const mnIcon = mnMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${mnClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${mnIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Middle Name</strong> ${mnMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${mnMatch ? 'bg-success' : 'bg-danger'} confidence-score">${mnConf.toFixed(0)}%</span>
             </div>`;
         }
         
-        // Last Name Check
-        const lnConf = parseFloat(idv.last_name_confidence || 0);
+        // LAST NAME
         const lnMatch = idv.last_name_match;
-        html += `<div class="verification-check ${lnMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${lnMatch ? 'success' : 'danger'}">
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="d-flex align-items-center gap-3">
-                    <i class="bi ${lnMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                    <div>
-                        <strong class="d-block" style="font-size:1.1rem;">${lnMatch ? 'Last Name Found' : 'Last Name Not Found'}</strong>
-                        <small class="text-muted">${lnConf.toFixed(0)}% match${lnMatch && idv.found_text_snippets && idv.found_text_snippets.last_name ? ', found: "' + idv.found_text_snippets.last_name + '"' : ''}</small>
-                    </div>
-                </div>
-                <span class="badge ${lnMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${lnConf.toFixed(0)}%</span>
-            </div>
+        const lnConf = parseFloat(idv.last_name_confidence || 0);
+        const lnClass = lnMatch ? 'check-passed' : 'check-failed';
+        const lnIcon = lnMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+        html += `<div class="form-check ${lnClass} d-flex justify-content-between align-items-center">
+            <div><i class="bi bi-${lnIcon} me-2" style="font-size:1.2rem;"></i>
+            <span><strong>Last Name</strong> ${lnMatch ? 'Match' : 'Not Found'}</span></div>
+            <span class="badge ${lnMatch ? 'bg-success' : 'bg-danger'} confidence-score">${lnConf.toFixed(0)}%</span>
         </div>`;
         
-        // Check 4: Year Level (for ID/EAF) OR Barangay (for Letter/Certificate)
-        if (isLetterOrCert) {
-            // Barangay Match
+        // YEAR LEVEL or BARANGAY
+        if (isIdOrEaf) {
+            const ylMatch = idv.year_level_match;
+            const ylClass = ylMatch ? 'check-passed' : 'check-failed';
+            const ylIcon = ylMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${ylClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${ylIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Year Level</strong> ${ylMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${ylMatch ? 'bg-success' : 'bg-secondary'} confidence-score">${ylMatch ? '✓' : '✗'}</span>
+            </div>`;
+        } else if (isLetter || isCert) {
             const brgyMatch = idv.barangay_match;
             const brgyConf = parseFloat(idv.barangay_confidence || 0);
-            html += `<div class="verification-check ${brgyMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${brgyMatch ? 'success' : 'danger'}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${brgyMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${brgyMatch ? 'Barangay Match' : 'Barangay Not Found'}</strong>
-                            <small class="text-muted">${brgyConf.toFixed(0)}% match${brgyMatch && idv.found_text_snippets && idv.found_text_snippets.barangay ? ', found: "' + idv.found_text_snippets.barangay + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge ${brgyMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${brgyConf.toFixed(0)}%</span>
-                </div>
-            </div>`;
-        } else {
-            // Year Level Match (for ID/EAF)
-            const ylMatch = idv.year_level_match;
-            const ylConf = parseFloat(idv.year_level_confidence || 0);
-            html += `<div class="verification-check ${ylMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${ylMatch ? 'success' : 'danger'}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${ylMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${ylMatch ? 'Year Level Match' : 'Year Level Not Found'}</strong>
-                            <small class="text-muted">${ylMatch ? 'Found in document' : 'Not detected'}</small>
-                        </div>
-                    </div>
-                    <span class="badge ${ylMatch ? 'bg-success' : 'bg-secondary'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${ylMatch ? '100%' : 'N/A'}</span>
-                </div>
+            const brgyClass = brgyMatch ? 'check-passed' : 'check-failed';
+            const brgyIcon = brgyMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${brgyClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${brgyIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Barangay</strong> ${brgyMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${brgyMatch ? 'bg-success' : 'bg-danger'} confidence-score">${brgyConf.toFixed(0)}%</span>
             </div>`;
         }
         
-        // Check 5: University (for ID/EAF) OR Office Header (for Letter) OR Certificate Title (for Certificate)
-        if (idv.document_type === 'letter_to_mayor') {
-            // Office Header Match for Letter
+        // UNIVERSITY/SCHOOL (ID/EAF only)
+        if (isIdOrEaf) {
+            const schoolMatch = idv.school_match || idv.university_match;
+            const schoolConf = parseFloat(idv.school_confidence || idv.university_confidence || 0);
+            const schoolClass = schoolMatch ? 'check-passed' : 'check-failed';
+            const schoolIcon = schoolMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${schoolClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${schoolIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>University/School</strong> ${schoolMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${schoolMatch ? 'bg-success' : 'bg-danger'} confidence-score">${schoolConf.toFixed(0)}%</span>
+            </div>`;
+        } else if (isLetter) {
             const officeMatch = idv.office_header_found;
             const officeConf = parseFloat(idv.office_header_confidence || 0);
-            const officeColor = officeConf >= 80 ? 'success' : (officeConf >= 60 ? 'warning' : 'danger');
-            html += `<div class="verification-check ${officeMatch ? 'bg-success' : 'bg-warning'} bg-opacity-10 p-3 rounded mb-2 border border-${officeColor}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${officeMatch ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-warning'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${officeMatch ? 'Mayor\'s Office Header' : 'Office Header Not Found'}</strong>
-                            <small class="text-muted">${officeConf.toFixed(0)}% match${officeMatch && idv.found_text_snippets && idv.found_text_snippets.mayor_header ? ', found: "' + idv.found_text_snippets.mayor_header + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge bg-${officeColor}" style="font-size:1.2rem; padding:0.5rem 1rem;">${officeConf.toFixed(0)}%</span>
-                </div>
+            const officeClass = officeMatch ? 'check-passed' : 'check-warning';
+            const officeIcon = officeMatch ? 'check-circle-fill text-success' : 'exclamation-circle-fill text-warning';
+            html += `<div class="form-check ${officeClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${officeIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Mayor's Office Header</strong> ${officeMatch ? 'Found' : 'Not Found'}</span></div>
+                <span class="badge ${officeMatch ? 'bg-success' : 'bg-warning'} confidence-score">${officeConf.toFixed(0)}%</span>
             </div>`;
-        } else if (idv.document_type === 'certificate_of_indigency') {
-            // Certificate Title for Certificate
+        } else if (isCert) {
             const certMatch = idv.certificate_title_found;
             const certConf = parseFloat(idv.certificate_title_confidence || 0);
-            const certColor = certConf >= 80 ? 'success' : (certConf >= 60 ? 'warning' : 'danger');
-            html += `<div class="verification-check ${certMatch ? 'bg-success' : 'bg-warning'} bg-opacity-10 p-3 rounded mb-2 border border-${certColor}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${certMatch ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-warning'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${certMatch ? 'Certificate Title Found' : 'Certificate Title Not Found'}</strong>
-                            <small class="text-muted">${certConf.toFixed(0)}% match${certMatch && idv.found_text_snippets && idv.found_text_snippets.certificate_title ? ', found: "' + idv.found_text_snippets.certificate_title + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge bg-${certColor}" style="font-size:1.2rem; padding:0.5rem 1rem;">${certConf.toFixed(0)}%</span>
-                </div>
-            </div>`;
-            
-            // General Trias for Certificate (5th check)
-            const gtMatch = idv.general_trias_found;
-            const gtConf = parseFloat(idv.general_trias_confidence || 0);
-            const gtColor = gtConf >= 80 ? 'success' : (gtConf >= 60 ? 'warning' : 'danger');
-            html += `<div class="verification-check ${gtMatch ? 'bg-success' : 'bg-warning'} bg-opacity-10 p-3 rounded mb-2 border border-${gtColor}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${gtMatch ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-warning'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${gtMatch ? 'General Trias Found' : 'General Trias Not Found'}</strong>
-                            <small class="text-muted">${gtConf.toFixed(0)}% match${gtMatch && idv.found_text_snippets && idv.found_text_snippets.general_trias ? ', found: "' + idv.found_text_snippets.general_trias + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge bg-${gtColor}" style="font-size:1.2rem; padding:0.5rem 1rem;">${gtConf.toFixed(0)}%</span>
-                </div>
-            </div>`;
-        } else {
-            // University/School Check (for ID/EAF)
-            const uniConf = parseFloat(idv.school_confidence || 0);
-            const uniMatch = idv.school_match;
-            const uniColor = uniConf >= 80 ? 'success' : (uniConf >= 60 ? 'warning' : 'danger');
-            html += `<div class="verification-check ${uniMatch ? 'bg-success' : 'bg-warning'} bg-opacity-10 p-3 rounded mb-2 border border-${uniColor}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${uniMatch ? 'bi-check-circle-fill text-success' : 'bi-exclamation-circle-fill text-warning'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${uniMatch ? 'University Match' : 'University Partial Match'}</strong>
-                            <small class="text-muted">${uniConf.toFixed(0)}% match${uniMatch && idv.found_text_snippets && idv.found_text_snippets.university ? ', found: "' + idv.found_text_snippets.university + '"' : ''}</small>
-                        </div>
-                    </div>
-                    <span class="badge bg-${uniColor}" style="font-size:1.2rem; padding:0.5rem 1rem;">${uniConf.toFixed(0)}%</span>
-                </div>
+            const certClass = certMatch ? 'check-passed' : 'check-warning';
+            const certIcon = certMatch ? 'check-circle-fill text-success' : 'exclamation-circle-fill text-warning';
+            html += `<div class="form-check ${certClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${certIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Certificate Title</strong> ${certMatch ? 'Found' : 'Not Found'}</span></div>
+                <span class="badge ${certMatch ? 'bg-success' : 'bg-warning'} confidence-score">${certConf.toFixed(0)}%</span>
             </div>`;
         }
         
-        // Official Keywords Check (only for ID/EAF)
-        if (!isLetterOrCert) {
-            const kwConf = parseFloat(idv.keywords_confidence || 0);
+        // OFFICIAL KEYWORDS (ID/EAF only)
+        if (isIdOrEaf) {
             const kwMatch = idv.official_keywords;
-            html += `<div class="verification-check ${kwMatch ? 'bg-success' : 'bg-danger'} bg-opacity-10 p-3 rounded mb-2 border border-${kwMatch ? 'success' : 'danger'}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <i class="bi ${kwMatch ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}" style="font-size:2rem;"></i>
-                        <div>
-                            <strong class="d-block" style="font-size:1.1rem;">${kwMatch ? 'Official Document Keywords' : 'Keywords Not Found'}</strong>
-                            <small class="text-muted">${kwMatch ? 'Document contains official markers' : 'Missing required keywords'}</small>
-                        </div>
-                    </div>
-                    <span class="badge ${kwMatch ? 'bg-success' : 'bg-danger'}" style="font-size:1.2rem; padding:0.5rem 1rem;">${kwConf.toFixed(0)}%</span>
-                </div>
+            const kwConf = parseFloat(idv.keywords_confidence || 0);
+            const kwClass = kwMatch ? 'check-passed' : 'check-failed';
+            const kwIcon = kwMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${kwClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${kwIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Official Document Keywords</strong> ${kwMatch ? 'Found' : 'Not Found'}</span></div>
+                <span class="badge ${kwMatch ? 'bg-success' : 'bg-danger'} confidence-score">${kwConf.toFixed(0)}%</span>
             </div>`;
         }
         
-        // === OVERALL ANALYSIS (styled like your image bottom section) ===
-        html += '<div class="mt-4 p-4 bg-light rounded border">';
-        html += '<h6 class="mb-3"><i class="bi bi-clipboard-data me-2"></i>Overall Analysis:</h6>';
+        html += '</div></div></div>'; // Close checklist, card-body, card
         
-        const avgConf = parseFloat(idv.average_confidence || 0);
+        // === OVERALL SUMMARY ===
+        const avgConf = parseFloat(idv.average_confidence || validation.ocr_confidence || 0);
         const passedChecks = idv.passed_checks || 0;
         const totalChecks = idv.total_checks || 6;
-        
-        html += `<div class="row g-3">
-            <div class="col-md-6">
-                <div class="d-flex justify-content-between align-items-center">
-                    <span><strong>Average Confidence:</strong></span>
-                    <h4 class="mb-0 ${avgConf >= 80 ? 'text-success' : avgConf >= 60 ? 'text-warning' : 'text-danger'}">${avgConf.toFixed(1)}%</h4>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="d-flex justify-content-between align-items-center">
-                    <span><strong>Passed Checks:</strong></span>
-                    <h4 class="mb-0 ${passedChecks >= 5 ? 'text-success' : passedChecks >= 4 ? 'text-warning' : 'text-danger'}">${passedChecks}/${totalChecks}</h4>
-                </div>
-            </div>
-        </div>`;
-        
-        // Verification Status Message
         const verificationScore = ((passedChecks / totalChecks) * 100);
+        
         let statusMessage = '';
         let statusClass = '';
+        let statusIcon = '';
         
         if (verificationScore >= 80) {
-            statusMessage = '✓ Document validation successful';
+            statusMessage = 'Document validation successful';
             statusClass = 'alert-success';
+            statusIcon = 'check-circle-fill';
         } else if (verificationScore >= 60) {
-            statusMessage = '⚠ Document validation passed with warnings';
+            statusMessage = 'Document validation passed with warnings';
             statusClass = 'alert-warning';
+            statusIcon = 'exclamation-triangle-fill';
         } else {
-            statusMessage = '✗ Document validation failed - manual review required';
+            statusMessage = 'Document validation failed - manual review required';
             statusClass = 'alert-danger';
+            statusIcon = 'x-circle-fill';
         }
         
-        html += `<div class="alert ${statusClass} mt-3 mb-0">
-            <i class="bi bi-info-circle me-2"></i><strong>${statusMessage}</strong>
+        html += `<div class="card mb-4"><div class="card-header bg-light"><h6 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Overall Analysis</h6></div><div class="card-body">`;
+        html += `<div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <div class="text-center p-3 bg-light rounded">
+                    <small class="text-muted d-block mb-1">Average Confidence</small>
+                    <h4 class="mb-0 fw-bold text-primary">${avgConf.toFixed(1)}%</h4>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-center p-3 bg-light rounded">
+                    <small class="text-muted d-block mb-1">Passed Checks</small>
+                    <h4 class="mb-0 fw-bold text-success">${passedChecks}/${totalChecks}</h4>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-center p-3 bg-light rounded">
+                    <small class="text-muted d-block mb-1">Verification Score</small>
+                    <h4 class="mb-0 fw-bold ${verificationScore >= 80 ? 'text-success' : (verificationScore >= 60 ? 'text-warning' : 'text-danger')}">${verificationScore.toFixed(0)}%</h4>
+                </div>
+            </div>
         </div>`;
         
-        html += '</div>'; // close overall analysis
-    }
-    
-    // === NO VERIFICATION DATA AVAILABLE ===
-    if (!validation.identity_verification && docType !== 'grades') {
-        html += '<div class="alert alert-info mt-3">';
-        html += '<h6 class="mb-2"><i class="bi bi-info-circle me-2"></i>Verification Status</h6>';
-        html += '<p class="mb-0">Detailed verification checks are not available for this document type. ';
-        html += 'The document has been processed with OCR text extraction only.</p>';
-        if (validation.extracted_text) {
-            html += '<p class="mb-0 mt-2"><small class="text-muted">Review the extracted text below to manually verify the document content.</small></p>';
+        html += `<div class="alert ${statusClass} mb-0">
+            <h6 class="mb-0"><i class="bi bi-${statusIcon} me-2"></i>${statusMessage}</h6>`;
+        if (idv.recommendation) {
+            html += `<small class="mt-2 d-block"><strong>Recommendation:</strong> ${idv.recommendation}</small>`;
         }
-        html += '</div>';
+        html += `</div></div></div>`; // Close card-body, card
     }
     
+    // === EXTRACTED GRADES (for grades document) ===
     if (docType === 'grades' && validation.extracted_grades) {
-        html += '<h6 class="mb-3"><i class="bi bi-list-check me-2"></i>EXTRACTED GRADES:</h6>';
-        html += '<table class="table table-bordered table-sm"><thead class="table-light"><tr><th>Subject</th><th>Grade</th><th>Confidence</th><th>Status</th></tr></thead><tbody>';
+        html += '<div class="card mb-4"><div class="card-header bg-success text-white">';
+        html += '<h6 class="mb-0"><i class="bi bi-list-check me-2"></i>Extracted Grades</h6>';
+        html += '</div><div class="card-body p-0"><div class="table-responsive">';
+        html += '<table class="table table-bordered table-hover mb-0"><thead class="table-light"><tr><th>Subject</th><th>Grade</th><th>Confidence</th><th>Status</th></tr></thead><tbody>';
         
         validation.extracted_grades.forEach(grade => {
             const conf = parseFloat(grade.extraction_confidence || 0);
@@ -2723,36 +3515,245 @@ function generateValidationHTML(validation, docType) {
             </tr>`;
         });
         
-        html += '</tbody></table>';
+        html += '</tbody></table></div></div></div>';
         
         if (validation.validation_status) {
             const statusColors = {'passed': 'success', 'failed': 'danger', 'manual_review': 'warning', 'pending': 'info'};
             const statusColor = statusColors[validation.validation_status] || 'secondary';
-            html += `<div class="alert alert-${statusColor}"><strong>Status:</strong> ${validation.validation_status.toUpperCase().replace('_', ' ')}</div>`;
+            html += `<div class="alert alert-${statusColor}"><strong>Grade Validation Status:</strong> ${validation.validation_status.toUpperCase().replace('_', ' ')}</div>`;
         }
     }
     
+    // === EXTRACTED TEXT ===
     if (validation.extracted_text) {
-        html += '<h6 class="mb-3"><i class="bi bi-file-text me-2"></i>EXTRACTED TEXT:</h6>';
-        html += `<pre style="max-height:300px;overflow-y:auto;font-size:0.85em;white-space:pre-wrap;background:#f8f9fa;padding:15px;border-radius:4px;">${validation.extracted_text.substring(0, 1000)}${validation.extracted_text.length > 1000 ? '...' : ''}</pre>`;
+        html += '<div class="card"><div class="card-header bg-secondary text-white">';
+        html += '<h6 class="mb-0"><i class="bi bi-file-text me-2"></i>Extracted Text (OCR)</h6>';
+        html += '</div><div class="card-body">';
+        const textPreview = validation.extracted_text.substring(0, 2000);
+        const hasMore = validation.extracted_text.length > 2000;
+        html += `<pre style="max-height:400px;overflow-y:auto;font-size:0.85em;white-space:pre-wrap;background:#f8f9fa;padding:15px;border-radius:4px;border:1px solid #dee2e6;">${textPreview}${hasMore ? '\n\n... (text truncated)' : ''}</pre>`;
+        html += '</div></div>';
     }
     
-    html += '</div>';
     return html;
+}
+
+// Show validation modal without closing parent student info modal
+function showValidationModal() {
+    // Get or create the validation modal instance
+    const validationModalEl = document.getElementById('validationModal');
+    let validationModal = bootstrap.Modal.getInstance(validationModalEl);
+    
+    if (!validationModal) {
+        validationModal = new bootstrap.Modal(validationModalEl, {
+            backdrop: 'static',
+            keyboard: true,
+            focus: true
+        });
+    }
+    
+    // Create custom backdrop to dim the student info modal
+    let backdrop = document.getElementById('validationModalBackdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.id = 'validationModalBackdrop';
+        backdrop.className = 'validation-backdrop';
+        document.body.appendChild(backdrop);
+    }
+    
+    // Show backdrop
+    backdrop.classList.add('show');
+    
+    // Show the validation modal (it will appear on top of student info modal)
+    validationModal.show();
+    
+    // Hide backdrop when modal is closed
+    validationModalEl.addEventListener('hidden.bs.modal', function() {
+        backdrop.classList.remove('show');
+    }, { once: true });
 }
 </script>
 
 <!-- Validation Modal -->
 <div class="modal fade" id="validationModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header bg-info text-white">
-                <h5 class="modal-title" id="validationModalLabel">Validation Results</h5>
+                <h5 class="modal-title" id="validationModalLabel">
+                    <i class="bi bi-clipboard-check me-2"></i>Validation Results
+                </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="validationModalBody"></div>
+            <div class="modal-body" id="validationModalBody">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-info" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3 text-muted">Loading validation data...</p>
+                </div>
+            </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i>Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rejection Modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-x-circle me-2"></i>Reject Applicant
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Student:</strong> <span id="rejectStudentName"></span>
+                </div>
+
+                <!-- Rejection Type Selection -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Rejection Type</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="rejection_type" id="rejectTypeDocument" value="document" checked>
+                        <label class="btn btn-outline-warning" for="rejectTypeDocument">
+                            <i class="bi bi-file-earmark-x me-2"></i>Document Re-upload
+                            <small class="d-block text-muted">Student can fix and re-upload</small>
+                        </label>
+
+                        <input type="radio" class="btn-check" name="rejection_type" id="rejectTypeArchive" value="archive">
+                        <label class="btn btn-outline-danger" for="rejectTypeArchive">
+                            <i class="bi bi-archive me-2"></i>Archive & Reject
+                            <small class="d-block text-muted">Student does not qualify</small>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Document Re-upload Section -->
+                <div id="documentReuploadSection">
+                    <h6 class="fw-bold mb-3">
+                        <i class="bi bi-list-check me-2"></i>Select Documents to Reject
+                    </h6>
+                    <p class="text-muted small">Check the documents that need to be re-uploaded. Unchecked documents will remain view-only.</p>
+                    
+                    <div class="document-checklist">
+                        <div class="form-check p-3 mb-2 border rounded">
+                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="00" id="reject_eaf">
+                            <label class="form-check-label w-100" for="reject_eaf">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="bi bi-file-earmark-text text-primary me-2"></i>
+                                        <strong>EAF (Enrollment Assistance Form)</strong>
+                                    </div>
+                                    <span class="badge bg-secondary">Code: 00</span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div class="form-check p-3 mb-2 border rounded">
+                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="01" id="reject_grades">
+                            <label class="form-check-label w-100" for="reject_grades">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="bi bi-mortarboard text-success me-2"></i>
+                                        <strong>Academic Grades</strong>
+                                    </div>
+                                    <span class="badge bg-secondary">Code: 01</span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div class="form-check p-3 mb-2 border rounded">
+                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="02" id="reject_letter">
+                            <label class="form-check-label w-100" for="reject_letter">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="bi bi-envelope text-info me-2"></i>
+                                        <strong>Letter to Mayor</strong>
+                                    </div>
+                                    <span class="badge bg-secondary">Code: 02</span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div class="form-check p-3 mb-2 border rounded">
+                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="03" id="reject_certificate">
+                            <label class="form-check-label w-100" for="reject_certificate">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="bi bi-award text-warning me-2"></i>
+                                        <strong>Certificate of Indigency</strong>
+                                    </div>
+                                    <span class="badge bg-secondary">Code: 03</span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div class="form-check p-3 mb-2 border rounded">
+                            <input class="form-check-input" type="checkbox" name="rejected_documents[]" value="04" id="reject_id">
+                            <label class="form-check-label w-100" for="reject_id">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="bi bi-person-badge text-danger me-2"></i>
+                                        <strong>ID Picture</strong>
+                                    </div>
+                                    <span class="badge bg-secondary">Code: 04</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAllDocuments()">
+                            <i class="bi bi-check-all me-1"></i>Select All
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="clearAllDocuments()">
+                            <i class="bi bi-x me-1"></i>Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Archive Section -->
+                <div id="archiveSection" style="display: none;">
+                    <h6 class="fw-bold mb-3">
+                        <i class="bi bi-archive me-2"></i>Archive Reason
+                    </h6>
+                    <select class="form-select mb-3" id="archiveReasonSelect">
+                        <option value="">Select a reason...</option>
+                        <option value="Did not meet grade requirements">Did not meet grade requirements</option>
+                        <option value="Incomplete requirements">Incomplete requirements</option>
+                        <option value="Duplicate application">Duplicate application</option>
+                        <option value="Not eligible for the program">Not eligible for the program</option>
+                        <option value="Student withdrew application">Student withdrew application</option>
+                        <option value="Failed verification check">Failed verification check</option>
+                        <option value="custom">Other (specify below)</option>
+                    </select>
+                </div>
+
+                <!-- Common Rejection Notes -->
+                <div class="mt-3">
+                    <label class="form-label fw-bold">Additional Notes <span class="text-muted">(Optional)</span></label>
+                    <textarea class="form-control" id="rejectionNotes" rows="3" 
+                              placeholder="Provide specific feedback to the student about why their documents/application were rejected..."></textarea>
+                    <small class="text-muted">This will be included in the notification sent to the student.</small>
+                </div>
+                
+                <!-- CSRF Token for rejection form -->
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfRejectApplicantToken) ?>">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x me-1"></i>Cancel
+                </button>
+                <button type="button" class="btn btn-danger" onclick="confirmRejectStudent()">
+                    <i class="bi bi-check-circle me-1"></i>Confirm Rejection
+                </button>
             </div>
         </div>
     </div>
