@@ -254,10 +254,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
         }
         
         if ($snapshot_result) {
+            // AUTO-CLOSE ACTIVE SLOTS when distribution is completed
+            // This prevents new registrations after distribution is finalized
+            $close_slots_query = "UPDATE signup_slots SET is_active = FALSE WHERE is_active = TRUE";
+            $close_slots_result = pg_query($connection, $close_slots_query);
+            
+            if ($close_slots_result) {
+                $closed_slots_count = pg_affected_rows($close_slots_result);
+                error_log("Auto-closed $closed_slots_count active slot(s) after distribution completion");
+            } else {
+                error_log("Warning: Failed to auto-close slots: " . pg_last_error($connection));
+            }
+            
             pg_query($connection, "COMMIT");
             $action_type = $snapshot_exists ? 'updated' : 'created';
+            $slot_message = ($closed_slots_count > 0) ? " Active signup slots have been automatically closed." : "";
             $_SESSION['success_message'] = "Distribution snapshot $action_type successfully! Recorded $total_students students for " . 
-                trim($academic_year . ' ' . ($semester ?? '')) . ". You can now proceed to End Distribution when ready.";
+                trim($academic_year . ' ' . ($semester ?? '')) . ". You can now proceed to End Distribution when ready." . $slot_message;
         } else {
             $error = pg_last_error($connection);
             pg_query($connection, "ROLLBACK");
