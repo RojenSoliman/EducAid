@@ -858,6 +858,24 @@ if ($res) {
       <?php if (!empty($pastReleases)): ?>
         <div class="accordion" id="pastSlotsAccordion">
           <?php foreach ($pastReleases as $i => $h): ?>
+            <?php
+            // Get participants for this slot
+            $participants_query = pg_query_params($connection, "
+                SELECT s.first_name, s.last_name, s.status, s.application_date
+                FROM students s
+                WHERE s.slot_id = $1 AND s.municipality_id = $2
+                ORDER BY s.application_date ASC
+            ", [$h['slot_id'], $municipality_id]);
+            
+            $participants = [];
+            $participants_count = 0;
+            if ($participants_query) {
+                while ($p = pg_fetch_assoc($participants_query)) {
+                    $participants[] = $p;
+                    $participants_count++;
+                }
+            }
+            ?>
             <div class="accordion-item">
               <h2 class="accordion-header" id="heading<?= $i ?>">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
@@ -865,21 +883,85 @@ if ($res) {
                   <div class="d-flex justify-content-between align-items-center w-100 me-3">
                     <span>
                       <i class="bi bi-calendar-event"></i>
-                      <?= date('F j, Y — h:i A', strtotime($h['created_at'])) ?> — <?= $h['slot_count'] ?> slots
+                      <?= htmlspecialchars($h['semester']) ?> <?= htmlspecialchars($h['academic_year']) ?> —
+                      <?= date('M j, Y', strtotime($h['created_at'])) ?>
                     </span>
                     <span class="badge bg-secondary">
-                      Past Release
+                      <?= $participants_count ?> / <?= $h['slot_count'] ?> slots used
                     </span>
                   </div>
                 </button>
               </h2>
               <div id="collapse<?= $i ?>" class="accordion-collapse collapse" data-bs-parent="#pastSlotsAccordion">
                 <div class="accordion-body">
-                  <p><strong>Semester:</strong> <?= $h['semester'] ?> | <strong>AY:</strong> <?= $h['academic_year'] ?></p>
-                  <p><strong>Used:</strong> <?= $h['slots_used'] ?> / <?= $h['slot_count'] ?></p>
-                  <form method="POST" onsubmit="return confirm('Are you sure you want to delete this slot?')">
+                  <div class="row mb-3">
+                    <div class="col-md-6">
+                      <p class="mb-1"><strong><i class="bi bi-calendar3"></i> Semester:</strong> <?= htmlspecialchars($h['semester']) ?></p>
+                      <p class="mb-1"><strong><i class="bi bi-bookmark"></i> Academic Year:</strong> <?= htmlspecialchars($h['academic_year']) ?></p>
+                    </div>
+                    <div class="col-md-6">
+                      <p class="mb-1"><strong><i class="bi bi-people"></i> Capacity:</strong> <?= $h['slot_count'] ?> slots</p>
+                      <p class="mb-1"><strong><i class="bi bi-check-circle"></i> Registered:</strong> <?= $participants_count ?> students</p>
+                    </div>
+                  </div>
+                  
+                  <?php if ($participants_count > 0): ?>
+                    <div class="card bg-light">
+                      <div class="card-header">
+                        <strong><i class="bi bi-person-lines-fill"></i> Slot Participants</strong>
+                      </div>
+                      <div class="card-body p-0">
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                          <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                              <tr>
+                                <th style="width: 5%">#</th>
+                                <th style="width: 45%">Name</th>
+                                <th style="width: 25%">Application Date</th>
+                                <th style="width: 25%">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <?php foreach ($participants as $idx => $participant): ?>
+                                <tr>
+                                  <td><?= $idx + 1 ?></td>
+                                  <td><?= htmlspecialchars($participant['first_name'] . ' ' . $participant['last_name']) ?></td>
+                                  <td><?= date('M j, Y', strtotime($participant['application_date'])) ?></td>
+                                  <td>
+                                    <?php
+                                    $status_badges = [
+                                        'under_registration' => '<span class="badge bg-warning text-dark">Pending</span>',
+                                        'applicant' => '<span class="badge bg-info">Approved</span>',
+                                        'active' => '<span class="badge bg-success">Verified</span>',
+                                        'given' => '<span class="badge bg-primary">Distributed</span>',
+                                        'archived' => '<span class="badge bg-secondary">Archived</span>'
+                                    ];
+                                    echo $status_badges[$participant['status']] ?? '<span class="badge bg-secondary">' . ucfirst($participant['status']) . '</span>';
+                                    ?>
+                                  </td>
+                                </tr>
+                              <?php endforeach; ?>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  <?php else: ?>
+                    <div class="alert alert-info mb-0">
+                      <i class="bi bi-info-circle"></i> No students registered for this slot.
+                    </div>
+                  <?php endif; ?>
+                  
+                  <hr class="my-3">
+                  
+                  <form method="POST" onsubmit="return confirm('Are you sure you want to delete this slot? This will remove the slot record but will NOT delete the students who registered.')">
                     <input type="hidden" name="delete_slot_id" value="<?= $h['slot_id'] ?>">
-                    <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-trash"></i> Delete</button>
+                    <button type="submit" class="btn btn-sm btn-danger">
+                      <i class="bi bi-trash"></i> Delete Slot Record
+                    </button>
+                    <small class="text-muted ms-2">
+                      <i class="bi bi-info-circle"></i> Students will remain in the system
+                    </small>
                   </form>
                 </div>
               </div>
