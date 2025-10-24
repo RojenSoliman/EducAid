@@ -151,7 +151,7 @@ $__hdr = educaid_get_student_header_theme($connection ?? null);
   right: 0;
   height: 56px;
   color: <?= htmlspecialchars($__hdr['header_text_color']) ?>;
-  overflow: hidden;
+  overflow: visible;
   max-width: calc(100% - 250px);
   box-sizing: border-box;
 }
@@ -239,6 +239,7 @@ $__hdr = educaid_get_student_header_theme($connection ?? null);
 .student-header-actions .dropdown-menu {
   min-width: 320px;
   max-width: 400px;
+  z-index: 1060 !important;
 }
 .student-header-actions .dropdown-item {
   padding: 0.75rem 1rem;
