@@ -1,19 +1,18 @@
-<?php
+﻿<?php
 /**
  * DocumentReuploadService - Handles document re-upload for rejected applicants
  * 
- * For applicants who had documents rejected:
- * - Uploads directly to permanent storage (not temp)
- * - Processes OCR and verification
- * - Updates database with new document
- * - Maintains audit trail
+ * Key differences from registration:
+ * - Uploads directly to permanent storage (skips temp folder)
+ * - Uses DocumentService for database operations
+ * - Minimal OCR processing (only for grades)
  */
 
 class DocumentReuploadService {
     private $db;
     private $baseDir;
+    private $docService;
     
-    // Document type mapping
     const DOCUMENT_TYPES = [
         '04' => ['name' => 'id_picture', 'folder' => 'id_pictures'],
         '00' => ['name' => 'eaf', 'folder' => 'enrollment_forms'],
@@ -25,17 +24,16 @@ class DocumentReuploadService {
     public function __construct($dbConnection) {
         $this->db = $dbConnection;
         $this->baseDir = dirname(__DIR__) . '/assets/uploads/';
+        
+        // Initialize DocumentService for database operations
+        require_once __DIR__ . '/DocumentService.php';
+        $this->docService = new DocumentService($dbConnection);
     }
+    
     
     /**
      * Upload document directly to permanent storage for re-upload
-     * 
-     * @param string $studentId Student ID
-     * @param string $docTypeCode Document type code (00-04)
-     * @param string $tmpPath Temporary file path from $_FILES
-     * @param string $originalName Original filename
-     * @param array $studentData Student information for OCR validation
-     * @return array ['success' => bool, 'message' => string, 'document_id' => string]
+     * Follows same pattern as student_register.php but skips temp folder
      */
     public function uploadDocument($studentId, $docTypeCode, $tmpPath, $originalName, $studentData = []) {
         try {
@@ -53,59 +51,68 @@ class DocumentReuploadService {
                 return ['success' => false, 'message' => 'Invalid file type. Only JPG, PNG, and PDF allowed.'];
             }
             
-            // Generate unique filename
+            // Generate filename: STUDENTID_doctype_timestamp.ext
             $timestamp = time();
-            $uniqueId = uniqid();
-            $newFilename = "{$studentId}_{$docTypeCode}_{$timestamp}_{$uniqueId}.{$extension}";
+            $newFilename = "{$studentId}_{$docInfo['name']}_{$timestamp}.{$extension}";
             
-            // Determine permanent storage path
-            $targetFolder = $this->baseDir . 'student/' . $docInfo['folder'] . '/';
-            if (!is_dir($targetFolder)) {
-                mkdir($targetFolder, 0755, true);
+            // Create permanent path
+            $permanentFolder = $this->baseDir . 'student/' . $docInfo['folder'] . '/';
+            if (!is_dir($permanentFolder)) {
+                mkdir($permanentFolder, 0755, true);
             }
             
-            $targetPath = $targetFolder . $newFilename;
+            $permanentPath = $permanentFolder . $newFilename;
             
-            // Move uploaded file to permanent storage
-            if (!move_uploaded_file($tmpPath, $targetPath)) {
+            // Move file to permanent storage
+            if (!move_uploaded_file($tmpPath, $permanentPath)) {
                 return ['success' => false, 'message' => 'Failed to move uploaded file'];
             }
             
-            // Process OCR and verification
-            $ocrData = $this->processOCRAndVerification($targetPath, $docTypeCode, $studentData);
+            error_log("DocumentReuploadService: File uploaded to $permanentPath");
             
-            // Generate document ID
-            $currentYear = date('Y');
-            $documentId = "{$studentId}-DOCU-{$currentYear}-{$docTypeCode}";
+            // Prepare OCR data structure (similar to registration)
+            $ocrData = [
+                'ocr_confidence' => 0,
+                'verification_score' => 0,
+                'verification_status' => 'pending',
+                'verification_details' => null
+            ];
             
-            // Save to database
-            $saveResult = $this->saveToDatabase(
-                $documentId,
+            // Only process OCR for grades (like registration does)
+            if ($docTypeCode === '01') {
+                $ocrData = $this->processGradesOCR($permanentPath, $studentData);
+            }
+            
+            // Use DocumentService to save to database (same as registration)
+            $saveResult = $this->docService->saveDocument(
                 $studentId,
-                $docTypeCode,
-                $targetPath,
-                $newFilename,
-                $extension,
-                filesize($targetPath),
+                $docInfo['name'],  // Use document type name (e.g., 'academic_grades')
+                $permanentPath,
                 $ocrData
             );
             
             if (!$saveResult['success']) {
                 // Cleanup file if database save failed
-                @unlink($targetPath);
-                return $saveResult;
+                @unlink($permanentPath);
+                return [
+                    'success' => false,
+                    'message' => $saveResult['error'] ?? 'Failed to save to database'
+                ];
             }
             
-            // Log to audit trail
-            $this->logAudit($studentId, $docTypeCode, $documentId, $ocrData);
+            error_log("DocumentReuploadService: Saved to database - " . ($saveResult['document_id'] ?? 'unknown ID'));
             
-            // Check if all rejected documents are now uploaded
+            // Log audit trail
+            $this->logAudit($studentId, $docInfo['name'], $ocrData);
+            
+            // Check if all rejected documents are uploaded
             $this->checkAndClearRejectionStatus($studentId);
             
             return [
                 'success' => true,
                 'message' => 'Document uploaded successfully',
-                'document_id' => $documentId,
+                'document_id' => $saveResult['document_id'] ?? null,
+                'file_path' => $permanentPath,
                 'ocr_confidence' => $ocrData['ocr_confidence'] ?? 0,
                 'verification_score' => $ocrData['verification_score'] ?? 0
             ];
@@ -120,235 +127,65 @@ class DocumentReuploadService {
     }
     
     /**
-     * Process OCR and verification for uploaded document
+     * Process OCR for grades document only (minimal processing)
      */
-    private function processOCRAndVerification($filePath, $docTypeCode, $studentData) {
+    private function processGradesOCR($filePath, $studentData) {
         $ocrData = [
             'ocr_confidence' => 0,
             'verification_score' => 0,
             'verification_status' => 'pending',
-            'verification_details' => null,
-            'extracted_text' => '',
-            'extracted_grades' => null,
-            'average_grade' => null,
-            'passing_status' => false
+            'verification_details' => null
         ];
         
         try {
-            // Initialize OCR service
+            // Use OCRProcessingService for grade extraction
             require_once __DIR__ . '/OCRProcessingService.php';
-            $ocrService = new OCRProcessingService($this->db);
+            $ocrService = new OCRProcessingService([
+                'tesseract_path' => 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
+                'temp_dir' => dirname(__DIR__) . '/temp',
+                'max_file_size' => 10 * 1024 * 1024,
+                'allowed_extensions' => ['pdf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp']
+            ]);
             
-            // Process based on document type
-            if ($docTypeCode === '01') {
-                // Academic Grades - extract grades
-                $result = $ocrService->processGradesDocument($filePath, $studentData['student_id'] ?? null);
+            $result = $ocrService->processGradeDocument($filePath);
+            
+            if ($result['success']) {
+                $ocrData['ocr_confidence'] = $result['confidence'] ?? 0;
+                $ocrData['verification_score'] = $result['confidence'] ?? 0;
+                $ocrData['verification_status'] = ($result['confidence'] ?? 0) >= 70 ? 'passed' : 'manual_review';
+                $ocrData['verification_details'] = $result;
                 
-                if ($result['success']) {
-                    $ocrData['ocr_confidence'] = $result['confidence'] ?? 0;
-                    $ocrData['extracted_text'] = $result['extracted_text'] ?? '';
-                    $ocrData['extracted_grades'] = $result['grades'] ?? [];
-                    $ocrData['average_grade'] = $result['average_grade'] ?? null;
-                    $ocrData['passing_status'] = $result['passing_status'] ?? false;
-                    $ocrData['verification_status'] = 'completed';
-                    
-                    // Save OCR text file
-                    if (!empty($ocrData['extracted_text'])) {
-                        file_put_contents($filePath . '.ocr.txt', $ocrData['extracted_text']);
-                    }
-                }
-            } elseif (in_array($docTypeCode, ['00', '04'])) {
-                // EAF or ID Picture - verify identity
-                $result = $ocrService->processIdentityDocument(
-                    $filePath,
-                    $studentData['first_name'] ?? '',
-                    $studentData['middle_name'] ?? '',
-                    $studentData['last_name'] ?? '',
-                    $studentData['year_level_name'] ?? '',
-                    $studentData['student_id'] ?? ''
-                );
-                
-                if ($result['success']) {
-                    $ocrData['ocr_confidence'] = $result['confidence'] ?? 0;
-                    $ocrData['extracted_text'] = $result['extracted_text'] ?? '';
-                    $ocrData['verification_score'] = $result['verification_score'] ?? 0;
-                    $ocrData['verification_details'] = $result['verification_details'] ?? null;
-                    $ocrData['verification_status'] = 'completed';
-                    
-                    // Save OCR text file
-                    if (!empty($ocrData['extracted_text'])) {
-                        file_put_contents($filePath . '.ocr.txt', $ocrData['extracted_text']);
-                    }
-                    
-                    // Save verification details
-                    if ($ocrData['verification_details']) {
-                        file_put_contents($filePath . '.verify.json', json_encode($ocrData['verification_details']));
-                    }
-                }
-            } elseif (in_array($docTypeCode, ['02', '03'])) {
-                // Letter or Certificate - verify barangay
-                $result = $ocrService->processBarangayDocument(
-                    $filePath,
-                    $studentData['first_name'] ?? '',
-                    $studentData['last_name'] ?? '',
-                    $studentData['barangay_name'] ?? ''
-                );
-                
-                if ($result['success']) {
-                    $ocrData['ocr_confidence'] = $result['confidence'] ?? 0;
-                    $ocrData['extracted_text'] = $result['extracted_text'] ?? '';
-                    $ocrData['verification_score'] = $result['verification_score'] ?? 0;
-                    $ocrData['verification_details'] = $result['verification_details'] ?? null;
-                    $ocrData['verification_status'] = 'completed';
-                    
-                    // Save OCR text file
-                    if (!empty($ocrData['extracted_text'])) {
-                        file_put_contents($filePath . '.ocr.txt', $ocrData['extracted_text']);
-                    }
-                    
-                    // Save verification details
-                    if ($ocrData['verification_details']) {
-                        file_put_contents($filePath . '.verify.json', json_encode($ocrData['verification_details']));
-                    }
+                // Save OCR text file
+                if (!empty($result['raw_text'])) {
+                    file_put_contents($filePath . '.ocr.txt', $result['raw_text']);
                 }
             }
         } catch (Exception $e) {
-            error_log("OCR processing error: " . $e->getMessage());
-            // Continue without OCR - admin can manually verify
+            error_log("DocumentReuploadService::processGradesOCR error: " . $e->getMessage());
         }
         
         return $ocrData;
     }
     
     /**
-     * Save document to database
+     * Log audit trail for document upload
      */
-    private function saveToDatabase($documentId, $studentId, $docTypeCode, $filePath, $fileName, $extension, $fileSize, $ocrData) {
+    private function logAudit($studentId, $docTypeName, $ocrData) {
         try {
-            $docInfo = self::DOCUMENT_TYPES[$docTypeCode];
-            $currentYear = date('Y');
+            $description = "Student re-uploaded {$docTypeName} (Confidence: " . ($ocrData['ocr_confidence'] ?? 0) . "%)";
             
-            // Prepare OCR paths (relative to document root for portability)
-            $relativeFilePath = str_replace($this->baseDir, 'assets/uploads/', $filePath);
-            $ocrTextPath = file_exists($filePath . '.ocr.txt') ? $relativeFilePath . '.ocr.txt' : null;
-            $verificationDataPath = file_exists($filePath . '.verify.json') ? $relativeFilePath . '.verify.json' : null;
-            
-            // Prepare verification details JSONB
-            $verificationDetails = $ocrData['verification_details'] ? json_encode($ocrData['verification_details']) : null;
-            
-            // Prepare extracted grades JSONB
-            $extractedGrades = !empty($ocrData['extracted_grades']) ? json_encode($ocrData['extracted_grades']) : null;
-            
-            // Insert or update document
-            $query = "INSERT INTO documents (
-                document_id,
-                student_id,
-                document_type_code,
-                document_type_name,
-                file_path,
-                file_name,
-                file_extension,
-                file_size_bytes,
-                ocr_text_path,
-                ocr_confidence,
-                verification_data_path,
-                verification_status,
-                verification_score,
-                verification_details,
-                extracted_grades,
-                average_grade,
-                passing_status,
-                status,
-                upload_year,
-                upload_date
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
-                $11, $12, $13, $14, $15, $16, $17, 'pending', $18, NOW()
-            )
-            ON CONFLICT (document_id) 
-            DO UPDATE SET
-                file_path = EXCLUDED.file_path,
-                file_name = EXCLUDED.file_name,
-                file_size_bytes = EXCLUDED.file_size_bytes,
-                ocr_text_path = EXCLUDED.ocr_text_path,
-                ocr_confidence = EXCLUDED.ocr_confidence,
-                verification_data_path = EXCLUDED.verification_data_path,
-                verification_status = EXCLUDED.verification_status,
-                verification_score = EXCLUDED.verification_score,
-                verification_details = EXCLUDED.verification_details,
-                extracted_grades = EXCLUDED.extracted_grades,
-                average_grade = EXCLUDED.average_grade,
-                passing_status = EXCLUDED.passing_status,
-                status = 'pending',
-                upload_date = NOW(),
-                last_modified = NOW()
-            RETURNING document_id";
-            
-            $result = pg_query_params($this->db, $query, [
-                $documentId,
-                $studentId,
-                $docTypeCode,
-                $docInfo['name'],
-                $relativeFilePath,
-                $fileName,
-                $extension,
-                $fileSize,
-                $ocrTextPath,
-                $ocrData['ocr_confidence'],
-                $verificationDataPath,
-                $ocrData['verification_status'],
-                $ocrData['verification_score'],
-                $verificationDetails,
-                $extractedGrades,
-                $ocrData['average_grade'],
-                $ocrData['passing_status'] ? 't' : 'f',
-                $currentYear
-            ]);
-            
-            if (!$result) {
-                throw new Exception('Database insert failed: ' . pg_last_error($this->db));
-            }
-            
-            return ['success' => true];
-            
-        } catch (Exception $e) {
-            error_log("DocumentReuploadService::saveToDatabase error: " . $e->getMessage());
-            return ['success' => false, 'message' => $e->getMessage()];
-        }
-    }
-    
-    /**
-     * Log document upload to audit trail
-     */
-    private function logAudit($studentId, $docTypeCode, $documentId, $ocrData) {
-        try {
-            $query = "INSERT INTO audit_logs (
-                user_id, user_type, username, event_type, event_category,
-                action_description, status, ip_address, user_agent,
-                affected_table, metadata
-            ) VALUES (
-                $1, 'student', $2, 'document_reuploaded', 'applicant_management',
-                $3, 'success', $4, $5, 'documents', $6
-            )";
-            
-            $description = "Student re-uploaded document after rejection";
-            $metadata = json_encode([
-                'document_id' => $documentId,
-                'document_type_code' => $docTypeCode,
-                'ocr_confidence' => $ocrData['ocr_confidence'] ?? 0,
-                'verification_score' => $ocrData['verification_score'] ?? 0
-            ]);
+            $query = "INSERT INTO audit_logs (user_id, student_id, action, description, ip_address, created_at)
+                      VALUES ($1, $2, $3, $4, $5, NOW())";
             
             pg_query_params($this->db, $query, [
-                null, // user_id is NULL for student actions
+                null,
                 $studentId,
+                'student_document_reupload',
                 $description,
-                $_SERVER['REMOTE_ADDR'] ?? null,
-                $_SERVER['HTTP_USER_AGENT'] ?? null,
-                $metadata
+                $_SERVER['REMOTE_ADDR'] ?? 'unknown'
             ]);
         } catch (Exception $e) {
-            error_log("Audit log failed: " . $e->getMessage());
+            error_log("DocumentReuploadService::logAudit error: " . $e->getMessage());
         }
     }
     
@@ -357,7 +194,6 @@ class DocumentReuploadService {
      */
     private function checkAndClearRejectionStatus($studentId) {
         try {
-            // Get list of documents that need re-upload
             $studentQuery = pg_query_params($this->db,
                 "SELECT documents_to_reupload FROM students WHERE student_id = $1",
                 [$studentId]
@@ -368,18 +204,15 @@ class DocumentReuploadService {
             }
             
             $student = pg_fetch_assoc($studentQuery);
-            $documentsToReupload = json_decode($student['documents_to_reupload'] ?? '[]', true);
+            $documentsToReupload = json_decode($student['documents_to_reupload'], true) ?: [];
             
             if (empty($documentsToReupload)) {
                 return;
             }
             
-            // Check if all rejected documents are now uploaded
-            $placeholders = implode(',', array_fill(0, count($documentsToReupload), '?'));
-            $query = "SELECT COUNT(*) as count FROM documents 
-                      WHERE student_id = $1 
-                      AND document_type_code = ANY($2)
-                      AND status != 'rejected'";
+            // Check if all required documents are now uploaded
+            $query = "SELECT document_type_code FROM documents 
+                      WHERE student_id = $1 AND document_type_code = ANY($2::text[])";
             
             $result = pg_query_params($this->db, $query, [
                 $studentId,
@@ -387,11 +220,13 @@ class DocumentReuploadService {
             ]);
             
             if ($result) {
-                $row = pg_fetch_assoc($result);
-                $uploadedCount = $row['count'];
+                $uploadedDocs = [];
+                while ($row = pg_fetch_assoc($result)) {
+                    $uploadedDocs[] = $row['document_type_code'];
+                }
                 
-                // If all rejected documents are re-uploaded, clear rejection status
-                if ($uploadedCount >= count($documentsToReupload)) {
+                // If all documents are uploaded, clear the rejection status
+                if (count($uploadedDocs) >= count($documentsToReupload)) {
                     pg_query_params($this->db,
                         "UPDATE students 
                          SET documents_to_reupload = NULL,
@@ -400,20 +235,15 @@ class DocumentReuploadService {
                         [$studentId]
                     );
                     
-                    // Create notification for student
                     pg_query_params($this->db,
-                        "INSERT INTO notifications (student_id, message, is_read) 
-                         VALUES ($1, $2, FALSE)",
-                        [
-                            $studentId,
-                            'All rejected documents have been re-uploaded successfully. Your application is now being reviewed by the admin.'
-                        ]
+                        "INSERT INTO notifications (student_id, message, is_read, created_at) 
+                         VALUES ($1, $2, FALSE, NOW())",
+                        [$studentId, 'All required documents have been re-uploaded successfully. An admin will review them shortly.']
                     );
                 }
             }
         } catch (Exception $e) {
-            error_log("checkAndClearRejectionStatus error: " . $e->getMessage());
+            error_log("DocumentReuploadService::checkAndClearRejectionStatus error: " . $e->getMessage());
         }
     }
 }
-?>
