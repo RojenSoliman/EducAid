@@ -1494,7 +1494,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <div class="edit-mode-banner">
         <i class="bi bi-pencil-square me-2"></i>
         <strong>EDIT MODE ACTIVE</strong> - Click the <i class="bi bi-pencil-fill"></i> buttons to edit content
-        <a href="unified_login.php" style="color: white; text-decoration: underline; margin-left: 1rem;">Exit Edit Mode</a>
+        <a href="modules/admin/municipality_content.php" style="color: white; text-decoration: underline; margin-left: 1rem;">Exit Edit Mode</a>
     </div>
     
     <!-- Edit Modal -->
