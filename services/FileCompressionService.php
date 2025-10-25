@@ -32,18 +32,42 @@ class FileCompressionService {
                 ];
             }
             
-            // Get all students with 'given' status (they received aid in this distribution)
+            // Get snapshot for this distribution
+            $snapshotQuery = "SELECT snapshot_id FROM distribution_snapshots WHERE distribution_id = $1 LIMIT 1";
+            $snapshotResult = pg_query_params($this->conn, $snapshotQuery, [$distributionId]);
+            $snapshotId = null;
+            
+            if ($snapshotResult && pg_num_rows($snapshotResult) > 0) {
+                $snapshotRow = pg_fetch_assoc($snapshotResult);
+                $snapshotId = $snapshotRow['snapshot_id'];
+            }
+            
+            if (!$snapshotId) {
+                throw new Exception("No distribution snapshot found for distribution ID: $distributionId");
+            }
+            
+            // CRITICAL FIX: Get students from distribution_student_records, not from current 'given' status
+            // This allows compression to work even after students have been reset to 'applicant'
             $studentsQuery = "SELECT s.student_id, s.first_name, s.middle_name, s.last_name
                              FROM students s
-                             WHERE s.status = 'given'
+                             INNER JOIN distribution_student_records dsr ON s.student_id = dsr.student_id
+                             WHERE dsr.snapshot_id = $1
                              ORDER BY s.student_id";
-            $studentsResult = pg_query($this->conn, $studentsQuery);
+            $studentsResult = pg_query_params($this->conn, $studentsQuery, [$snapshotId]);
             
             if (!$studentsResult || pg_num_rows($studentsResult) === 0) {
-                throw new Exception("No students found with 'given' status");
+                throw new Exception("No students found in distribution snapshot $snapshotId");
             }
             
             $students = pg_fetch_all($studentsResult);
+            
+            error_log("=== Distribution Compression Started ===");
+            error_log("Distribution ID: $distributionId");
+            error_log("Snapshot ID: $snapshotId");
+            error_log("Students in snapshot: " . count($students));
+            foreach ($students as $student) {
+                error_log("  - Student ID: " . $student['student_id'] . " | Name: " . $student['first_name'] . " " . $student['last_name']);
+            }
             
             // Prepare to scan actual files from shared upload folders
             $uploadsPath = __DIR__ . '/../assets/uploads';
@@ -65,17 +89,34 @@ class FileCompressionService {
                 'student/grades' => 'grades',
                 'student/id_pictures' => 'id_pictures',
                 'student/indigency' => 'indigency',
-                'student/letter_to_mayor' => 'letter_to_mayor'
+                'student/letter_mayor' => 'letter_mayor' // Fixed: folder name is letter_mayor not letter_to_mayor
             ];
+            
+            $totalFilesFound = 0;
+            $totalFilesMatched = 0;
             
             foreach ($folders as $folderPath => $folderType) {
                 $fullPath = $uploadsPath . '/' . $folderPath;
+                error_log("Scanning folder: $fullPath");
+                
                 if (is_dir($fullPath)) {
-                    $files = glob($fullPath . '/*.*');
+                    // Use scandir instead of glob to catch ALL files including those with multiple extensions
+                    $allFiles = scandir($fullPath);
+                    $files = [];
+                    foreach ($allFiles as $file) {
+                        if ($file !== '.' && $file !== '..' && is_file($fullPath . '/' . $file)) {
+                            $files[] = $fullPath . '/' . $file;
+                        }
+                    }
+                    error_log("  Found " . count($files) . " files in $folderType");
+                    $totalFilesFound += count($files);
+                    
                     foreach ($files as $file) {
                         if (is_file($file)) {
                             $filename = basename($file);
                             $filenameLower = strtolower($filename);
+                            $matched = false;
+                            
                             // Check which student this file belongs to
                             foreach ($students as $student) {
                                 $studentId = $student['student_id'];
@@ -89,13 +130,27 @@ class FileCompressionService {
                                         'size' => filesize($file),
                                         'name' => $filename
                                     ];
+                                    $matched = true;
+                                    $totalFilesMatched++;
+                                    error_log("  ✓ Matched: $filename -> Student $studentId");
                                     break; // Move to next file
                                 }
                             }
+                            
+                            if (!$matched) {
+                                error_log("  ✗ NO MATCH: $filename (file not linked to any student with 'given' status)");
+                            }
                         }
                     }
+                } else {
+                    error_log("  Directory not found: $fullPath");
                 }
             }
+            
+            error_log("=== File Scan Summary ===");
+            error_log("Total files found: $totalFilesFound");
+            error_log("Total files matched to students: $totalFilesMatched");
+            error_log("Unmatched files: " . ($totalFilesFound - $totalFilesMatched));
             
             // Filter out students with no files
             $studentFiles = array_filter($studentFiles, function($data) {
@@ -137,20 +192,17 @@ class FileCompressionService {
                     continue; // Skip students with no files
                 }
                 
-                $studentName = sprintf(
-                    "%s_%s_%s",
-                    $studentId,
-                    preg_replace('/[^A-Za-z0-9]/', '_', $studentInfo['last_name']),
-                    preg_replace('/[^A-Za-z0-9]/', '_', $studentInfo['first_name'])
-                );
+                // Use just the student ID as the folder name
+                $studentFolderName = $studentId;
                 
                 $studentOriginalSize = 0;
                 
-                // Add each file to ZIP under student's folder
+                // Add each file to ZIP under student's folder (no subfolders by type)
                 foreach ($studentFilesList as $file) {
                     if (file_exists($file['path'])) {
-                        // Create path inside ZIP: StudentName/folder_type/filename
-                        $zipEntryName = $studentName . '/' . $file['type'] . '/' . $file['name'];
+                        // Create path inside ZIP: StudentID/filename
+                        // All files go directly in the student's folder regardless of type
+                        $zipEntryName = $studentFolderName . '/' . $file['name'];
                         $zip->addFile($file['path'], $zipEntryName);
                         $studentOriginalSize += $file['size'];
                         $totalOriginalSize += $file['size'];
@@ -163,8 +215,10 @@ class FileCompressionService {
                 
                 $studentsProcessed++;
                 $compressionLog[] = sprintf(
-                    "Student %s: %d files, %.2f KB",
-                    $studentName,
+                    "Student %s (%s %s): %d files, %.2f KB",
+                    $studentId,
+                    $studentInfo['first_name'],
+                    $studentInfo['last_name'],
                     count($studentFilesList),
                     $studentOriginalSize / 1024
                 );

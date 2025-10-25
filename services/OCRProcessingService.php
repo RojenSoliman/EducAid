@@ -17,6 +17,80 @@ class OCRProcessingService {
         $this->maxFileSize = $config['max_file_size'] ?? 10 * 1024 * 1024; // 10MB
         $this->allowedExtensions = $config['allowed_extensions'] ?? ['pdf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp'];
     }
+
+    /**
+     * Extract raw text and compute overall confidence for a document.
+     * Returns combined text plus the average word confidence from Tesseract TSV output.
+     */
+    public function extractTextAndConfidence($filePath, $options = []) {
+        try {
+            if (!$this->validateFile($filePath)) {
+                throw new Exception("Invalid file format or size");
+            }
+
+            $processedFiles = $this->preprocessDocument($filePath);
+
+            $combinedTextParts = [];
+            $confidenceSum = 0;
+            $confidenceCount = 0;
+
+            foreach ($processedFiles as $processedFile) {
+                // Get TSV data for confidence metrics
+                $tsvData = $this->runTesseract($processedFile, $options);
+                $lines = explode("\n", $tsvData);
+
+                if (!empty($lines)) {
+                    array_shift($lines); // remove header
+                }
+
+                foreach ($lines as $line) {
+                    if (!trim($line)) {
+                        continue;
+                    }
+
+                    $columns = explode("\t", $line);
+                    if (count($columns) < 12) {
+                        continue;
+                    }
+
+                    $conf = floatval($columns[10]);
+                    $text = trim($columns[11]);
+
+                    if ($conf <= 0 || $text === '') {
+                        continue;
+                    }
+
+                    $combinedTextParts[] = $text;
+                    $confidenceSum += $conf;
+                    $confidenceCount++;
+                }
+
+                if ($processedFile !== $filePath && file_exists($processedFile)) {
+                    @unlink($processedFile);
+                }
+            }
+
+            $combinedText = trim(implode(' ', $combinedTextParts));
+            $averageConfidence = $confidenceCount > 0 ? round($confidenceSum / $confidenceCount, 2) : 0;
+
+            return [
+                'success' => true,
+                'text' => $combinedText,
+                'confidence' => $averageConfidence,
+                'word_count' => $confidenceCount
+            ];
+
+        } catch (Exception $e) {
+            error_log("OCR extract error: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'text' => '',
+                'confidence' => 0,
+                'word_count' => 0
+            ];
+        }
+    }
     
     /**
      * Process uploaded grade document and extract subjects with grades
@@ -34,8 +108,10 @@ class OCRProcessingService {
             $allSubjects = [];
             
             // Process each page/file
+            $options = ['language' => 'eng', 'psm' => 6];
+
             foreach ($preprocessedFiles as $processedFile) {
-                $tsvData = $this->runTesseract($processedFile);
+                $tsvData = $this->runTesseract($processedFile, $options);
                 $subjects = $this->parseTSVData($tsvData);
                 $allSubjects = array_merge($allSubjects, $subjects);
                 
@@ -247,36 +323,60 @@ class OCRProcessingService {
     /**
      * Run Tesseract OCR on processed file
      */
-    private function runTesseract($filePath) {
+    private function runTesseract($filePath, $options = []) {
+        $language = $options['language'] ?? 'eng';
+        $psm = intval($options['psm'] ?? 6);
+        $oem = intval($options['oem'] ?? 1);
+
         // Clean up temp directory path to avoid double slashes
         $cleanTempDir = rtrim($this->tempDir, '/\\');
-        $tsvFile = $cleanTempDir . '/ocr_' . uniqid() . '.tsv';
         
+        // Generate output base name WITHOUT extension - Tesseract adds .tsv automatically
+        $outputBase = $cleanTempDir . '/ocr_' . uniqid();
+        $tsvFile = $outputBase . '.tsv'; // This is where Tesseract will create the file
+
         // Build Tesseract command for TSV output
-        $outputFile = pathinfo($tsvFile, PATHINFO_FILENAME);
+        // Note: outputBase should NOT include extension - Tesseract adds it
         $command = sprintf(
-            '"%s" "%s" "%s" -l eng --oem 1 --psm 6 tsv 2>&1',
+            '"%s" "%s" "%s" -l %s --oem %d --psm %d tsv 2>&1',
             $this->tesseractPath,
             $filePath,
-            $outputFile
+            $outputBase,  // Changed from pathinfo() call - use full path without extension
+            $language,
+            $oem,
+            $psm
         );
-        
+
+        error_log("Tesseract command: " . $command);
+
         // Execute Tesseract
         exec($command, $output, $returnCode);
-        
+
         if ($returnCode !== 0) {
             error_log("Tesseract execution failed: " . implode("\n", $output));
-            throw new Exception("OCR processing failed");
+            throw new Exception("OCR processing failed: " . implode(' ', $output));
         }
-        
+
+        // Check if TSV file was created
+        if (!file_exists($tsvFile)) {
+            error_log("TSV file not found at: " . $tsvFile);
+            error_log("Command output: " . implode("\n", $output));
+            throw new Exception("Tesseract did not create expected output file");
+        }
+
         // Read TSV output
         $tsvContent = file_get_contents($tsvFile);
-        
+
+        if ($tsvContent === false) {
+            error_log("Failed to read TSV file: " . $tsvFile);
+            throw new Exception("Failed to read OCR output file");
+        }
+
         // Clean up
         if (file_exists($tsvFile)) {
-            unlink($tsvFile);
+            @unlink($tsvFile);
         }
-        
+
         return $tsvContent;
     }
     
@@ -339,7 +439,7 @@ class OCRProcessingService {
         
         foreach ($lineData as $lineKey => $line) {
             $extracted = $this->extractSubjectGradeFromLine($line);
-            if ($extracted) {
+            if ($extracted && isset($extracted['subject']) && isset($extracted['grade'])) {
                 $subjects[] = $extracted;
                 error_log("OCR Found subject: " . $extracted['subject'] . " Grade: " . $extracted['grade']);
             }
