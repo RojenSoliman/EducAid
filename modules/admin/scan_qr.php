@@ -345,6 +345,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
                 $backfilled_count = pg_affected_rows($backfill_result);
                 error_log("Backfilled $backfilled_count student record(s) into distribution_student_records");
             }
+            
+            // OPTION 2 IMPLEMENTATION: Create student profile snapshots
+            // This preserves student data at the time of distribution, even if they edit their profile later
+            error_log("Creating student profile snapshots using distribution_id: $distribution_id");
+            
+            $snapshot_insert_query = "
+                INSERT INTO distribution_student_snapshot 
+                (distribution_id, student_id, first_name, last_name, middle_name, email, mobile,
+                 year_level_name, university_name, barangay_name, payroll_number, 
+                 amount_received, distribution_date)
+                SELECT 
+                    $1,
+                    s.student_id,
+                    s.first_name,
+                    s.last_name,
+                    s.middle_name,
+                    s.email,
+                    s.mobile,
+                    yl.name as year_level_name,
+                    u.name as university_name,
+                    b.name as barangay_name,
+                    s.payroll_no::text as payroll_number,
+                    3000.00 as amount_received,
+                    CURRENT_DATE as distribution_date
+                FROM students s
+                LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
+                LEFT JOIN universities u ON s.university_id = u.university_id
+                LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
+                WHERE s.status = 'given'
+                ON CONFLICT (distribution_id, student_id) DO UPDATE
+                SET first_name = EXCLUDED.first_name,
+                    last_name = EXCLUDED.last_name,
+                    middle_name = EXCLUDED.middle_name,
+                    email = EXCLUDED.email,
+                    mobile = EXCLUDED.mobile,
+                    year_level_name = EXCLUDED.year_level_name,
+                    university_name = EXCLUDED.university_name,
+                    barangay_name = EXCLUDED.barangay_name,
+                    payroll_number = EXCLUDED.payroll_number,
+                    amount_received = EXCLUDED.amount_received,
+                    distribution_date = EXCLUDED.distribution_date
+            ";
+            
+            $snapshot_student_result = pg_query_params($connection, $snapshot_insert_query, [$distribution_id]);
+            
+            if (!$snapshot_student_result) {
+                error_log("ERROR: Failed to create student snapshots: " . pg_last_error($connection));
+                throw new Exception("Failed to create student profile snapshots");
+            } else {
+                $snapshot_count = pg_affected_rows($snapshot_student_result);
+                error_log("Created/updated $snapshot_count student profile snapshot(s) for distribution: $distribution_id");
+            }
         }
         
         // AUTO-CLOSE ACTIVE SLOTS when distribution is completed
@@ -363,8 +415,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
         pg_query($connection, "COMMIT");
         $action_type = $snapshot_exists ? 'updated' : 'created';
         $slot_message = ($closed_slots_count > 0) ? " Active signup slots have been automatically closed." : "";
+        
+        // Send email notifications to all students about distribution completion
+        require_once __DIR__ . '/../../services/DistributionEmailService.php';
+        $emailService = new DistributionEmailService($connection);
+        $emailResult = $emailService->notifyDistributionClosed($academic_year, $semester);
+        
+        $email_message = '';
+        if ($emailResult['success']) {
+            $email_message = " Email notifications sent to {$emailResult['sent']} student(s).";
+        }
+        
         $_SESSION['success_message'] = "Distribution snapshot $action_type successfully! Recorded $total_students students for " . 
-            trim($academic_year . ' ' . ($semester ?? '')) . ". You can now proceed to End Distribution when ready." . $slot_message;
+            trim($academic_year . ' ' . ($semester ?? '')) . ". You can now proceed to End Distribution when ready." . $slot_message . $email_message;
     } catch (Exception $e) {
         pg_query($connection, "ROLLBACK");
         $error_details = $e->getMessage() . " | Line: " . $e->getLine();

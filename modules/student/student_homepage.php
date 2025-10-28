@@ -120,6 +120,7 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
   <!-- Custom CSS -->
   <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
   <link rel="stylesheet" href="../../assets/css/student/sidebar.css" />
+  <link rel="stylesheet" href="../../assets/css/student/distribution_notifications.css" />
   <style>
     body:not(.js-ready) .sidebar { visibility: hidden; transition: none !important; }
     
@@ -891,6 +892,9 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
   <script src="../../assets/js/student/sidebar.js"></script>
   <script src="../../assets/js/deadline.js"></script>
   <script src="../../assets/js/student/student_homepage.js"></script>
+  
+  <!-- Real-Time Distribution Monitor -->
+  <script src="../../assets/js/student/distribution_monitor.js"></script>
   
   <!-- Announcement Read More Toggle -->
   <script>

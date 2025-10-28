@@ -217,6 +217,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     . (!empty($documents_deadline) ? " Document deadline set to $documents_deadline." : "")
                     . " The distribution is now active and all features are unlocked!";
                 
+                // Send email notifications to all applicants
+                require_once __DIR__ . '/../../services/DistributionEmailService.php';
+                $emailService = new DistributionEmailService($connection);
+                $emailResult = $emailService->notifyDistributionOpened($academic_year, $semester, $documents_deadline);
+                
+                if ($emailResult['success']) {
+                    $message .= " Email notifications sent to {$emailResult['sent']} student(s).";
+                } else {
+                    $message .= " (Note: Email notifications could not be sent)";
+                }
+                
             } catch (Exception $e) {
                 pg_query($connection, "ROLLBACK");
                 $message = 'Failed to start distribution: ' . $e->getMessage();

@@ -345,6 +345,7 @@ $page_title = 'Upload Documents';
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="../../assets/css/student/sidebar.css">
+    <link rel="stylesheet" href="../../assets/css/student/distribution_notifications.css">
     
     <style>
         body:not(.js-ready) .sidebar { visibility: hidden; transition: none !important; }
@@ -1000,6 +1001,10 @@ $page_title = 'Upload Documents';
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../../assets/js/student/sidebar.js"></script>
+    
+    <!-- Real-Time Distribution Monitor -->
+    <script src="../../assets/js/student/distribution_monitor.js"></script>
+    
     <script>
         // Mark body as ready after scripts load
         document.body.classList.add('js-ready');

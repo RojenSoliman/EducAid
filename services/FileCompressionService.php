@@ -33,17 +33,39 @@ class FileCompressionService {
             }
             
             // Get snapshot for this distribution
-            $snapshotQuery = "SELECT snapshot_id FROM distribution_snapshots WHERE distribution_id = $1 LIMIT 1";
+            error_log("FileCompressionService: Looking for snapshot with distribution_id = '$distributionId'");
+            $snapshotQuery = "SELECT snapshot_id, files_compressed FROM distribution_snapshots WHERE distribution_id = $1 LIMIT 1";
             $snapshotResult = pg_query_params($this->conn, $snapshotQuery, [$distributionId]);
             $snapshotId = null;
+            $alreadyCompressed = false;
             
-            if ($snapshotResult && pg_num_rows($snapshotResult) > 0) {
+            if (!$snapshotResult) {
+                error_log("FileCompressionService ERROR: Query failed - " . pg_last_error($this->conn));
+                throw new Exception("Database error while looking for distribution snapshot");
+            }
+            
+            $rowCount = pg_num_rows($snapshotResult);
+            error_log("FileCompressionService: Query returned $rowCount rows");
+            
+            if ($rowCount > 0) {
                 $snapshotRow = pg_fetch_assoc($snapshotResult);
                 $snapshotId = $snapshotRow['snapshot_id'];
+                $alreadyCompressed = ($snapshotRow['files_compressed'] === 't' || $snapshotRow['files_compressed'] === true);
+                error_log("FileCompressionService: Found snapshot_id = $snapshotId, compressed = " . ($alreadyCompressed ? 'YES' : 'NO'));
             }
             
             if (!$snapshotId) {
+                error_log("FileCompressionService ERROR: No snapshot found for distribution_id = '$distributionId'");
                 throw new Exception("No distribution snapshot found for distribution ID: $distributionId");
+            }
+            
+            // Prevent re-compression
+            if ($alreadyCompressed) {
+                return [
+                    'success' => false,
+                    'message' => 'This distribution has already been compressed and archived. Files have been deleted.',
+                    'already_compressed' => true
+                ];
             }
             
             // CRITICAL FIX: Get students from distribution_student_records, not from current 'given' status
@@ -209,7 +231,14 @@ class FileCompressionService {
                         $filesCompressed++;
                         
                         // Mark file for deletion after successful compression
-                        $filesToDelete[] = $file['path'];
+                        $filesToDelete[] = [
+                            'path' => $file['path'],
+                            'student_id' => $studentId,
+                            'type' => $file['type'],
+                            'name' => $file['name'],
+                            'size' => $file['size'],
+                            'archived_path' => $zipEntryName
+                        ];
                     }
                 }
                 
@@ -247,11 +276,56 @@ class FileCompressionService {
             }
             $zipCheck->close();
             
+            // OPTION 2 IMPLEMENTATION: Insert file manifest records BEFORE deleting files
+            error_log("=== Populating distribution_file_manifest ===");
+            $manifestInserted = 0;
+            
+            foreach ($filesToDelete as $fileData) {
+                // Calculate file hash for verification
+                $fileHash = file_exists($fileData['path']) ? md5_file($fileData['path']) : null;
+                
+                $manifestInsert = @pg_query_params($this->conn,
+                    "INSERT INTO distribution_file_manifest 
+                     (snapshot_id, student_id, document_type_code, original_file_path, 
+                      file_size, file_hash, archived_path)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    [
+                        $snapshotId,
+                        $fileData['student_id'],
+                        $fileData['type'],
+                        $fileData['path'],
+                        $fileData['size'],
+                        $fileHash,
+                        $fileData['archived_path']
+                    ]
+                );
+                
+                if ($manifestInsert) {
+                    $manifestInserted++;
+                } else {
+                    error_log("Warning: Failed to insert manifest for file: " . $fileData['path']);
+                }
+            }
+            
+            error_log("Inserted $manifestInserted file manifest record(s)");
+            $compressionLog[] = "Recorded $manifestInserted files in distribution_file_manifest";
+            
             // Only NOW is it safe to delete original files
             $filesDeleted = 0;
-            foreach ($filesToDelete as $filePath) {
+            foreach ($filesToDelete as $fileData) {
+                $filePath = $fileData['path'];
                 if (file_exists($filePath) && unlink($filePath)) {
                     $filesDeleted++;
+                    
+                    // OPTION 2: Update manifest to mark file as deleted
+                    @pg_query_params($this->conn,
+                        "UPDATE distribution_file_manifest 
+                         SET deleted_at = NOW()
+                         WHERE snapshot_id = $1 
+                         AND student_id = $2 
+                         AND original_file_path = $3",
+                        [$snapshotId, $fileData['student_id'], $fileData['path']]
+                    );
                 }
             }
             $compressionLog[] = "Deleted $filesDeleted original files from uploads";
