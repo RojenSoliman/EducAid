@@ -144,13 +144,25 @@ class DocumentReuploadService {
             
             $permanentPath = $permanentFolder . $filename;
             
-            // Collect associated OCR files BEFORE moving main file
-            $associatedFiles = ['.ocr.txt', '.verify.json', '.confidence.json'];
+            // Collect ALL associated OCR files BEFORE moving main file
+            // Include .tsv (Tesseract TSV output), .txt (temp OCR outputs), and any other artifacts
+            $associatedExtensions = ['.ocr.txt', '.verify.json', '.confidence.json', '.tsv'];
             $tempAssociatedFiles = [];
-            foreach ($associatedFiles as $ext) {
+            foreach ($associatedExtensions as $ext) {
                 $tempAssocPath = $tempPath . $ext;
                 if (file_exists($tempAssocPath)) {
                     $tempAssociatedFiles[$ext] = $tempAssocPath;
+                }
+            }
+            
+            // Also check for any temp output files in the same directory (ocr_output_*, etc.)
+            $tempDir = dirname($tempPath);
+            $baseFilename = pathinfo($tempPath, PATHINFO_FILENAME);
+            $tempOutputPattern = $tempDir . '/ocr_output_*';
+            $tempOutputFiles = glob($tempOutputPattern);
+            foreach ($tempOutputFiles as $tempFile) {
+                if (is_file($tempFile)) {
+                    $tempAssociatedFiles['_temp_' . basename($tempFile)] = $tempFile;
                 }
             }
             
@@ -166,8 +178,15 @@ class DocumentReuploadService {
             
             error_log("DocumentReuploadService: Moved from TEMP to PERMANENT: $permanentPath");
             
-            // Move associated OCR files (.ocr.txt, .verify.json, .confidence.json)
+            // Move associated OCR files (.ocr.txt, .verify.json, .confidence.json, .tsv, etc.)
             foreach ($tempAssociatedFiles as $ext => $tempAssocPath) {
+                // For temp output files, just delete them instead of moving
+                if (strpos($ext, '_temp_') === 0) {
+                    @unlink($tempAssocPath);
+                    error_log("DocumentReuploadService: Deleted temp file: " . basename($tempAssocPath));
+                    continue;
+                }
+                
                 $permAssocPath = $permanentPath . $ext;
                 $assocMoveSuccess = @rename($tempAssocPath, $permAssocPath);
                 if (!$assocMoveSuccess) {
@@ -277,6 +296,21 @@ class DocumentReuploadService {
                     'verification_score' => $ocrData['verification_score'] ?? 0,
                     'verification_status' => $ocrData['verification_status'] ?? 'manual_review'
                 ];
+            }
+
+            // EAF comprehensive verification (matching registration)
+            if ($docTypeCode === '00') {
+                return $this->processEafOCR($tempPath, $studentData);
+            }
+
+            // Letter to Mayor comprehensive verification
+            if ($docTypeCode === '02') {
+                return $this->processLetterOCR($tempPath, $studentData);
+            }
+
+            // Certificate of Indigency comprehensive verification
+            if ($docTypeCode === '03') {
+                return $this->processCertificateOCR($tempPath, $studentData);
             }
 
             // Use DIRECT Tesseract approach (same as registration) for better quality
@@ -487,6 +521,10 @@ class DocumentReuploadService {
     /**
      * Process OCR for grades document only (minimal processing)
      */
+    /**
+     * Process grades OCR using the SAME comprehensive approach as registration
+     * This includes validation against grading systems, year level verification, etc.
+     */
     private function processGradesOCR($filePath, $studentData) {
         $ocrData = [
             'ocr_confidence' => 0,
@@ -496,65 +534,941 @@ class DocumentReuploadService {
         ];
         
         try {
-            // Use OCRProcessingService for grade extraction
-            $ocrService = $this->buildOcrService();
+            $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+            $ocrText = '';
+            $uploadDir = dirname($filePath) . '/';
             
-            $result = $ocrService->processGradeDocument($filePath);
-            
-            if ($result['success']) {
-                $confidence = $result['confidence'] ?? 0;
-                $ocrData['ocr_confidence'] = $confidence;
-                $ocrData['verification_score'] = $confidence;
-
-                $inferredStatus = $result['passing_status'];
-                if ($inferredStatus === true) {
-                    $ocrData['verification_status'] = 'passed';
-                } elseif ($inferredStatus === false) {
-                    $ocrData['verification_status'] = 'failed';
+            // STEP 1: Extract text from document (PDF or Image)
+            if ($extension === 'pdf') {
+                // Try pdftotext first
+                $pdfTextCommand = "pdftotext " . escapeshellarg($filePath) . " - 2>nul";
+                $pdfText = @shell_exec($pdfTextCommand);
+                if (!empty(trim($pdfText))) {
+                    $ocrText = $pdfText;
                 } else {
-                    $ocrData['verification_status'] = $confidence >= 70 ? 'passed' : 'manual_review';
+                    // Fallback PDF extraction
+                    $pdfContent = @file_get_contents($filePath);
+                    if ($pdfContent !== false) {
+                        preg_match_all('/\(([^)]+)\)/', $pdfContent, $matches);
+                        if (!empty($matches[1])) {
+                            $extractedText = implode(' ', $matches[1]);
+                            $extractedText = preg_replace('/[^\x20-\x7E]/', ' ', $extractedText);
+                            $extractedText = preg_replace('/\s+/', ' ', trim($extractedText));
+                            if (strlen($extractedText) > 10) {
+                                $ocrText = $extractedText;
+                            }
+                        }
+                    }
                 }
-
-                $ocrData['extracted_grades'] = $result['subjects'] ?? [];
-                $ocrData['average_grade'] = $result['average_grade'] ?? null;
-                $ocrData['passing_status'] = ($inferredStatus === true);
-
-                $verificationData = [
-                    'timestamp' => date('c'),
-                    'student_id' => $studentData['student_id'] ?? 'unknown',
-                    'document_type' => 'academic_grades',
-                    'ocr_confidence' => $confidence,
-                    'verification_score' => $confidence,
-                    'verification_status' => $ocrData['verification_status'],
-                    'summary' => [
-                        'total_subjects' => $result['totalSubjects'] ?? 0,
-                        'average_grade' => $result['average_grade'] ?? null,
-                        'grade_scale' => $result['grade_scale'] ?? null,
-                        'semester' => $result['semester'] ?? null,
-                        'school_year' => $result['school_year'] ?? null,
-                        'year_level' => $result['year_level'] ?? null,
-                        'passing_status' => $ocrData['verification_status']
-                    ],
-                    'extracted_subjects' => $result['subjects'] ?? [],
-                    'ocr_text_preview' => substr($result['raw_text'] ?? '', 0, 500),
-                    'processing_notes' => $result['notes'] ?? []
-                ];
-
-                $ocrData['verification_details'] = $verificationData;
-
-                if (!empty($result['raw_text'])) {
-                    file_put_contents($filePath . '.ocr.txt', $result['raw_text']);
-                    error_log("DocumentReuploadService: Saved OCR text to " . $filePath . '.ocr.txt');
+            } else {
+                // Image processing with Tesseract (multiple PSM modes for best results)
+                $psmModes = [6, 4, 7, 8, 3]; // Different page segmentation modes
+                $success = false;
+                $successPsm = 6;
+                
+                foreach ($psmModes as $psm) {
+                    $cmd = "tesseract " . escapeshellarg($filePath) . " stdout --oem 1 --psm $psm -l eng 2>&1";
+                    $tesseractOutput = @shell_exec($cmd);
+                    
+                    if (!empty(trim($tesseractOutput)) && strlen(trim($tesseractOutput)) > 10) {
+                        $ocrText = $tesseractOutput;
+                        $success = true;
+                        $successPsm = $psm;
+                        break;
+                    }
                 }
-
-                file_put_contents($filePath . '.verify.json', json_encode($verificationData, JSON_PRETTY_PRINT));
-                error_log("DocumentReuploadService: Saved verification JSON to " . $filePath . '.verify.json');
+                
+                if (!$success) {
+                    error_log("Grades OCR: Failed to extract text from image");
+                    return $ocrData;
+                }
+                
+                // Generate TSV data with the successful PSM mode
+                $tsvOutputBase = $uploadDir . pathinfo($filePath, PATHINFO_FILENAME);
+                $tsvCmd = "tesseract " . escapeshellarg($filePath) . " " . 
+                         escapeshellarg($tsvOutputBase) . " -l eng --oem 1 --psm $successPsm tsv 2>&1";
+                @shell_exec($tsvCmd);
+                
+                // Move TSV file to permanent location
+                $generatedTsvFile = $tsvOutputBase . '.tsv';
+                $permanentTsvFile = $filePath . '.tsv';
+                if (file_exists($generatedTsvFile)) {
+                    @rename($generatedTsvFile, $permanentTsvFile);
+                }
             }
+            
+            if (empty(trim($ocrText))) {
+                error_log("Grades OCR: No text extracted");
+                return $ocrData;
+            }
+            
+            // STEP 2: Get student information for validation
+            $studentId = $studentData['student_id'] ?? null;
+            $firstName = '';
+            $lastName = '';
+            $yearLevelId = 0;
+            $universityId = 0;
+            $declaredYearName = '';
+            $declaredUniversityName = '';
+            $universityCode = '';
+            
+            if ($studentId) {
+                $studentQuery = pg_query_params($this->db,
+                    "SELECT s.first_name, s.last_name, s.year_level_id, s.university_id,
+                            yl.name as year_level_name, u.name as university_name, u.code as university_code
+                     FROM students s
+                     LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
+                     LEFT JOIN universities u ON s.university_id = u.university_id
+                     WHERE s.student_id = $1",
+                    [$studentId]
+                );
+                
+                if ($studentQuery && pg_num_rows($studentQuery) > 0) {
+                    $student = pg_fetch_assoc($studentQuery);
+                    $firstName = $student['first_name'] ?? '';
+                    $lastName = $student['last_name'] ?? '';
+                    $yearLevelId = $student['year_level_id'] ?? 0;
+                    $universityId = $student['university_id'] ?? 0;
+                    $declaredYearName = $student['year_level_name'] ?? '';
+                    $declaredUniversityName = $student['university_name'] ?? '';
+                    $universityCode = $student['university_code'] ?? '';
+                }
+            }
+            
+            // STEP 3: Get admin-specified semester and school year
+            $adminSemester = '';
+            $adminSchoolYear = '';
+            
+            $configRes = pg_query($this->db, "SELECT key, value FROM config WHERE key IN ('valid_semester', 'valid_school_year')");
+            while ($configRow = pg_fetch_assoc($configRes)) {
+                if ($configRow['key'] === 'valid_semester') {
+                    $adminSemester = $configRow['value'];
+                } elseif ($configRow['key'] === 'valid_school_year') {
+                    $adminSchoolYear = $configRow['value'];
+                }
+            }
+            
+            // STEP 4: Perform comprehensive validation (same as registration)
+            $ocrTextNormalized = strtolower($ocrText);
+            
+            // Include the validation functions from registration
+            require_once __DIR__ . '/../modules/student/grade_validation_functions.php';
+            
+            // Year level validation
+            $yearValidationResult = validateDeclaredYear($ocrText, $declaredYearName, $adminSemester);
+            $yearLevelMatch = $yearValidationResult['match'];
+            $yearLevelSection = $yearValidationResult['section'];
+            $yearLevelConfidence = $yearValidationResult['confidence'];
+            
+            if (!$yearLevelMatch) {
+                $yearLevelSection = '';
+            }
+            
+            // Semester validation
+            $semesterValidationResult = validateAdminSemester($ocrText, $adminSemester);
+            $semesterMatch = $semesterValidationResult['match'];
+            $semesterConfidence = $semesterValidationResult['confidence'];
+            $foundSemesterText = $semesterValidationResult['found_text'];
+            
+            // School year validation (temporarily disabled as in registration)
+            $schoolYearMatch = true;
+            $schoolYearConfidence = 100;
+            $foundSchoolYearText = 'Temporarily disabled for testing';
+            
+            // Grade threshold validation
+            $gradeValidationResult = validateGradeThreshold($yearLevelSection, $declaredYearName, false, $adminSemester);
+            $legacyAllGradesPassing = $gradeValidationResult['all_passing'];
+            $legacyValidGrades = $gradeValidationResult['grades'];
+            $legacyFailingGrades = $gradeValidationResult['failing_grades'];
+            
+            // Enhanced per-subject grade validation
+            $allGradesPassing = $legacyAllGradesPassing;
+            $validGrades = $legacyValidGrades;
+            $failingGrades = $legacyFailingGrades;
+            $enhancedGradeResult = null;
+            
+            if (!empty($universityCode) && !empty($legacyValidGrades)) {
+                $subjectsForValidation = array_map(function($grade) {
+                    $s = [
+                        'name' => $grade['subject'],
+                        'rawGrade' => $grade['grade'],
+                        'confidence' => 95
+                    ];
+                    if (isset($grade['prelim'])) $s['prelim'] = $grade['prelim'];
+                    if (isset($grade['midterm'])) $s['midterm'] = $grade['midterm'];
+                    if (isset($grade['final'])) $s['final'] = $grade['final'];
+                    $s['grade'] = $grade['grade'] ?? ($s['final'] ?? $s['midterm'] ?? $s['prelim'] ?? null);
+                    return $s;
+                }, $legacyValidGrades);
+                
+                $enhancedGradeResult = validatePerSubjectGrades($universityCode, null, $subjectsForValidation);
+                
+                if ($enhancedGradeResult['success']) {
+                    $allGradesPassing = $enhancedGradeResult['eligible'];
+                    $failingGrades = array_map(function($failedSubject) {
+                        $parts = explode(':', $failedSubject, 2);
+                        return [
+                            'subject' => trim($parts[0] ?? ''),
+                            'grade' => trim($parts[1] ?? '')
+                        ];
+                    }, $enhancedGradeResult['failed_subjects']);
+                }
+            }
+            
+            // University verification
+            $universityValidationResult = validateUniversity($ocrText, $declaredUniversityName);
+            $universityMatch = $universityValidationResult['match'];
+            $universityConfidence = $universityValidationResult['confidence'];
+            $foundUniversityText = $universityValidationResult['found_text'];
+            
+            // Name verification
+            $nameMatch = validateStudentName($ocrText, $firstName, $lastName);
+            
+            // Eligibility decision
+            $isEligible = ($yearLevelMatch && $semesterMatch && $schoolYearMatch && $allGradesPassing && $universityMatch && $nameMatch);
+            
+            // Calculate average confidence
+            $confidenceValues = [
+                $yearLevelConfidence,
+                $semesterConfidence,
+                $schoolYearConfidence,
+                $universityConfidence,
+                $nameMatch ? 95 : 0,
+                !empty($validGrades) ? 90 : 0
+            ];
+            $averageConfidence = round(array_sum($confidenceValues) / count($confidenceValues), 1);
+            
+            // Build verification data
+            $verification = [
+                'year_level_match' => $yearLevelMatch,
+                'semester_match' => $semesterMatch,
+                'school_year_match' => $schoolYearMatch,
+                'university_match' => $universityMatch,
+                'name_match' => $nameMatch,
+                'all_grades_passing' => $allGradesPassing,
+                'is_eligible' => $isEligible,
+                'grades' => $validGrades,
+                'failing_grades' => $failingGrades,
+                'enhanced_grade_validation' => $enhancedGradeResult,
+                'university_code' => $universityCode,
+                'validation_method' => !empty($universityCode) && $enhancedGradeResult && $enhancedGradeResult['success'] ? 'enhanced_per_subject' : 'legacy_threshold',
+                'confidence_scores' => [
+                    'year_level' => $yearLevelConfidence,
+                    'semester' => $semesterConfidence,
+                    'school_year' => $schoolYearConfidence,
+                    'university' => $universityConfidence,
+                    'name' => $nameMatch ? 95 : 0,
+                    'grades' => !empty($validGrades) ? 90 : 0
+                ],
+                'found_text_snippets' => [
+                    'year_level' => $declaredYearName,
+                    'semester' => $foundSemesterText,
+                    'school_year' => $foundSchoolYearText,
+                    'university' => $foundUniversityText
+                ],
+                'admin_requirements' => [
+                    'required_semester' => $adminSemester,
+                    'required_school_year' => $adminSchoolYear
+                ],
+                'overall_success' => $isEligible,
+                'summary' => [
+                    'passed_checks' => 
+                        ($yearLevelMatch ? 1 : 0) + 
+                        ($semesterMatch ? 1 : 0) + 
+                        ($schoolYearMatch ? 1 : 0) + 
+                        ($universityMatch ? 1 : 0) + 
+                        ($nameMatch ? 1 : 0) + 
+                        ($allGradesPassing ? 1 : 0),
+                    'total_checks' => 6,
+                    'eligibility_status' => $isEligible ? 'ELIGIBLE' : 'INELIGIBLE',
+                    'recommendation' => $isEligible ? 
+                        'All validations passed - Student is eligible' : 
+                        'Validation failed - Student is not eligible',
+                    'average_confidence' => $averageConfidence
+                ],
+                'timestamp' => date('Y-m-d H:i:s'),
+                'student_id' => $studentId,
+                'document_type' => 'academic_grades'
+            ];
+            
+            // Save OCR text
+            @file_put_contents($filePath . '.ocr.txt', $ocrText);
+            
+            // Save verification JSON
+            @file_put_contents($filePath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
+            
+            // Save confidence file
+            @file_put_contents($filePath . '.confidence.json', json_encode([
+                'overall_confidence' => $averageConfidence,
+                'ocr_confidence' => $averageConfidence,
+                'detailed_scores' => $verification['confidence_scores'],
+                'extracted_grades' => $validGrades,
+                'passing_status' => $allGradesPassing,
+                'eligibility_status' => $verification['summary']['eligibility_status'],
+                'timestamp' => time()
+            ]));
+            
+            // Update return data
+            $ocrData['ocr_confidence'] = $averageConfidence;
+            $ocrData['verification_score'] = $averageConfidence;
+            $ocrData['verification_status'] = $isEligible ? 'passed' : ($averageConfidence >= 50 ? 'manual_review' : 'failed');
+            $ocrData['verification_details'] = $verification;
+            $ocrData['extracted_grades'] = $validGrades;
+            $ocrData['passing_status'] = $allGradesPassing;
+            
+            error_log("Grades OCR completed: Confidence={$averageConfidence}%, Eligible=" . ($isEligible ? 'YES' : 'NO'));
+            
         } catch (Exception $e) {
             error_log("DocumentReuploadService::processGradesOCR error: " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
         }
         
         return $ocrData;
+    }
+    
+    /**
+     * Process EAF OCR with comprehensive field-level verification (matching registration)
+     */
+    private function processEafOCR($tempPath, $studentData) {
+        $ocrData = [
+            'ocr_confidence' => 0,
+            'verification_score' => 0,
+            'verification_status' => 'failed',
+            'extracted_text' => ''
+        ];
+
+        try {
+            // Run Tesseract OCR with multiple PSM modes
+            $ocrResult = $this->runDirectTesseractOCR($tempPath, '00');
+            $ocrText = $ocrResult['text'] ?? '';
+            
+            if (empty(trim($ocrText))) {
+                return ['success' => false, 'message' => 'No text extracted from EAF document'];
+            }
+
+            $ocrData['extracted_text'] = $ocrText;
+            $ocrData['ocr_confidence'] = $ocrResult['confidence'] ?? 0;
+            
+            // Save OCR text
+            @file_put_contents($tempPath . '.ocr.txt', $ocrText);
+            
+            // Initialize verification structure
+            $verification = [
+                'first_name_match' => false,
+                'middle_name_match' => false,
+                'last_name_match' => false,
+                'year_level_match' => false,
+                'university_match' => false,
+                'document_keywords_found' => false,
+                'confidence_scores' => [],
+                'found_text_snippets' => []
+            ];
+            
+            $ocrTextLower = strtolower($ocrText);
+            
+            // Helper function for similarity calculation
+            $calculateSimilarity = function($needle, $haystack) {
+                $needle = strtolower(trim($needle));
+                $haystack = strtolower(trim($haystack));
+                
+                if (stripos($haystack, $needle) !== false) {
+                    return 100;
+                }
+                
+                $words = explode(' ', $haystack);
+                $maxSimilarity = 0;
+                
+                foreach ($words as $word) {
+                    if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                        $similarity = 0;
+                        similar_text($needle, $word, $similarity);
+                        $maxSimilarity = max($maxSimilarity, $similarity);
+                    }
+                }
+                
+                return $maxSimilarity;
+            };
+            
+            // Verify first name
+            if (!empty($studentData['first_name'])) {
+                $similarity = $calculateSimilarity($studentData['first_name'], $ocrTextLower);
+                $verification['confidence_scores']['first_name'] = $similarity;
+                
+                if ($similarity >= 80) {
+                    $verification['first_name_match'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['first_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['first_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify middle name (optional)
+            if (empty($studentData['middle_name'])) {
+                $verification['middle_name_match'] = true;
+                $verification['confidence_scores']['middle_name'] = 100;
+            } else {
+                $similarity = $calculateSimilarity($studentData['middle_name'], $ocrTextLower);
+                $verification['confidence_scores']['middle_name'] = $similarity;
+                
+                if ($similarity >= 70) {
+                    $verification['middle_name_match'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['middle_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['middle_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify last name
+            if (!empty($studentData['last_name'])) {
+                $similarity = $calculateSimilarity($studentData['last_name'], $ocrTextLower);
+                $verification['confidence_scores']['last_name'] = $similarity;
+                
+                if ($similarity >= 80) {
+                    $verification['last_name_match'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['last_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['last_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify year level
+            if (!empty($studentData['year_level_name'])) {
+                $yearLevelName = $studentData['year_level_name'];
+                $selectedYearVariations = [];
+                
+                if (stripos($yearLevelName, '1st') !== false || stripos($yearLevelName, 'first') !== false) {
+                    $selectedYearVariations = ['1st year', 'first year', '1st yr', 'year 1', 'yr 1', 'freshman'];
+                } elseif (stripos($yearLevelName, '2nd') !== false || stripos($yearLevelName, 'second') !== false) {
+                    $selectedYearVariations = ['2nd year', 'second year', '2nd yr', 'year 2', 'yr 2', 'sophomore'];
+                } elseif (stripos($yearLevelName, '3rd') !== false || stripos($yearLevelName, 'third') !== false) {
+                    $selectedYearVariations = ['3rd year', 'third year', '3rd yr', 'year 3', 'yr 3', 'junior'];
+                } elseif (stripos($yearLevelName, '4th') !== false || stripos($yearLevelName, 'fourth') !== false) {
+                    $selectedYearVariations = ['4th year', 'fourth year', '4th yr', 'year 4', 'yr 4', 'senior'];
+                } elseif (stripos($yearLevelName, '5th') !== false || stripos($yearLevelName, 'fifth') !== false) {
+                    $selectedYearVariations = ['5th year', 'fifth year', '5th yr', 'year 5', 'yr 5'];
+                }
+                
+                foreach ($selectedYearVariations as $variation) {
+                    if (stripos($ocrText, $variation) !== false) {
+                        $verification['year_level_match'] = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Verify university
+            if (!empty($studentData['university_name'])) {
+                $universityName = $studentData['university_name'];
+                $universityWords = array_filter(explode(' ', strtolower($universityName)));
+                $foundWords = 0;
+                $totalWords = count($universityWords);
+                $foundSnippets = [];
+                
+                foreach ($universityWords as $word) {
+                    if (strlen($word) > 2) {
+                        $similarity = $calculateSimilarity($word, $ocrTextLower);
+                        if ($similarity >= 70) {
+                            $foundWords++;
+                            $pattern = '/\b\w*' . preg_quote(substr($word, 0, 3), '/') . '\w*\b/i';
+                            if (preg_match($pattern, $ocrText, $matches)) {
+                                $foundSnippets[] = $matches[0];
+                            }
+                        }
+                    }
+                }
+                
+                $universityScore = ($foundWords / max($totalWords, 1)) * 100;
+                $verification['confidence_scores']['university'] = round($universityScore, 1);
+                
+                if ($universityScore >= 60 || ($totalWords <= 2 && $foundWords >= 1)) {
+                    $verification['university_match'] = true;
+                    if (!empty($foundSnippets)) {
+                        $verification['found_text_snippets']['university'] = implode(', ', array_unique($foundSnippets));
+                    }
+                }
+            }
+            
+            // Verify document keywords
+            $documentKeywords = [
+                'enrollment', 'assessment', 'form', 'official', 'academic', 'student',
+                'tuition', 'fees', 'semester', 'registration', 'course', 'subject',
+                'grade', 'transcript', 'record', 'university', 'college', 'school',
+                'eaf', 'assessment form', 'billing', 'statement', 'certificate'
+            ];
+            
+            $keywordMatches = 0;
+            $foundKeywords = [];
+            $keywordScore = 0;
+            
+            foreach ($documentKeywords as $keyword) {
+                $similarity = $calculateSimilarity($keyword, $ocrTextLower);
+                if ($similarity >= 80) {
+                    $keywordMatches++;
+                    $foundKeywords[] = $keyword;
+                    $keywordScore += $similarity;
+                }
+            }
+            
+            $averageKeywordScore = $keywordMatches > 0 ? ($keywordScore / $keywordMatches) : 0;
+            $verification['confidence_scores']['document_keywords'] = round($averageKeywordScore, 1);
+            
+            if ($keywordMatches >= 3) {
+                $verification['document_keywords_found'] = true;
+                $verification['found_text_snippets']['document_keywords'] = implode(', ', $foundKeywords);
+            }
+            
+            // Calculate overall success
+            $requiredChecks = ['first_name_match', 'middle_name_match', 'last_name_match', 'year_level_match', 'university_match', 'document_keywords_found'];
+            $passedChecks = 0;
+            $totalConfidence = 0;
+            $confidenceCount = 0;
+            
+            foreach ($requiredChecks as $check) {
+                if ($verification[$check]) {
+                    $passedChecks++;
+                }
+            }
+            
+            foreach ($verification['confidence_scores'] as $score) {
+                $totalConfidence += $score;
+                $confidenceCount++;
+            }
+            $averageConfidence = $confidenceCount > 0 ? ($totalConfidence / $confidenceCount) : 0;
+            
+            $verification['overall_success'] = ($passedChecks >= 4) || ($passedChecks >= 3 && $averageConfidence >= 80);
+            
+            $verification['summary'] = [
+                'passed_checks' => $passedChecks,
+                'total_checks' => 6,
+                'average_confidence' => round($averageConfidence, 1),
+                'recommendation' => $verification['overall_success'] ? 
+                    'Document validation successful' : 
+                    'Please ensure the document clearly shows your name, university, year level, and appears to be an official enrollment form'
+            ];
+            
+            // Add identity_verification object for modal display
+            $verification['identity_verification'] = [
+                'document_type' => 'eaf',
+                'first_name_match' => $verification['first_name_match'],
+                'first_name_confidence' => $verification['confidence_scores']['first_name'] ?? 0,
+                'middle_name_match' => $verification['middle_name_match'],
+                'middle_name_confidence' => $verification['confidence_scores']['middle_name'] ?? 0,
+                'last_name_match' => $verification['last_name_match'],
+                'last_name_confidence' => $verification['confidence_scores']['last_name'] ?? 0,
+                'year_level_match' => $verification['year_level_match'],
+                'school_match' => $verification['university_match'],
+                'school_confidence' => $verification['confidence_scores']['university'] ?? 0,
+                'official_keywords' => $verification['document_keywords_found'],
+                'keywords_confidence' => $verification['confidence_scores']['document_keywords'] ?? 0,
+                'verification_score' => round($averageConfidence, 1),
+                'passed_checks' => $passedChecks,
+                'total_checks' => 6,
+                'average_confidence' => round($averageConfidence, 1),
+                'recommendation' => $verification['summary']['recommendation']
+            ];
+            
+            $ocrData['ocr_confidence'] = round($averageConfidence, 1);
+            $ocrData['verification_score'] = round($averageConfidence, 1);
+            $ocrData['verification_status'] = $verification['overall_success'] ? 'passed' : 'manual_review';
+            
+            // Save verification data
+            @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
+            
+            error_log("EAF OCR: Confidence={$ocrData['ocr_confidence']}%, Passed={$passedChecks}/6 checks");
+            
+            return [
+                'success' => true,
+                'ocr_confidence' => $ocrData['ocr_confidence'],
+                'verification_score' => $ocrData['verification_score'],
+                'verification_status' => $ocrData['verification_status']
+            ];
+            
+        } catch (Exception $e) {
+            error_log("DocumentReuploadService::processEafOCR error: " . $e->getMessage());
+            return ['success' => false, 'message' => 'EAF OCR failed: ' . $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Process Letter to Mayor OCR with comprehensive verification (matching registration)
+     */
+    private function processLetterOCR($tempPath, $studentData) {
+        $ocrData = [
+            'ocr_confidence' => 0,
+            'verification_score' => 0,
+            'verification_status' => 'failed',
+            'extracted_text' => ''
+        ];
+
+        try {
+            // Run Tesseract OCR
+            $ocrResult = $this->runDirectTesseractOCR($tempPath, '02');
+            $ocrText = $ocrResult['text'] ?? '';
+            
+            if (empty(trim($ocrText))) {
+                return ['success' => false, 'message' => 'No text extracted from Letter document'];
+            }
+
+            $ocrData['extracted_text'] = $ocrText;
+            $ocrData['ocr_confidence'] = $ocrResult['confidence'] ?? 0;
+            
+            // Save OCR text
+            @file_put_contents($tempPath . '.ocr.txt', $ocrText);
+            
+            // Initialize verification structure (matching registration)
+            $verification = [
+                'first_name' => false,
+                'last_name' => false,
+                'barangay' => false,
+                'mayor_header' => false,
+                'confidence_scores' => [],
+                'found_text_snippets' => []
+            ];
+            
+            $ocrTextLower = strtolower($ocrText);
+            
+            // Helper function for similarity calculation
+            $calculateSimilarity = function($needle, $haystack) {
+                $needle = strtolower(trim($needle));
+                $haystack = strtolower(trim($haystack));
+                
+                if (stripos($haystack, $needle) !== false) {
+                    return 100;
+                }
+                
+                $words = explode(' ', $haystack);
+                $maxSimilarity = 0;
+                
+                foreach ($words as $word) {
+                    if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                        $similarity = 0;
+                        similar_text($needle, $word, $similarity);
+                        $maxSimilarity = max($maxSimilarity, $similarity);
+                    }
+                }
+                
+                return $maxSimilarity;
+            };
+            
+            // Verify first name
+            if (!empty($studentData['first_name'])) {
+                $similarity = $calculateSimilarity($studentData['first_name'], $ocrTextLower);
+                $verification['confidence_scores']['first_name'] = $similarity;
+                
+                if ($similarity >= 70) {
+                    $verification['first_name'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['first_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['first_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify last name
+            if (!empty($studentData['last_name'])) {
+                $similarity = $calculateSimilarity($studentData['last_name'], $ocrTextLower);
+                $verification['confidence_scores']['last_name'] = $similarity;
+                
+                if ($similarity >= 70) {
+                    $verification['last_name'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['last_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['last_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify barangay
+            if (!empty($studentData['barangay_name'])) {
+                $barangayName = $studentData['barangay_name'];
+                $barangayWords = array_filter(explode(' ', strtolower($barangayName)));
+                $foundWords = 0;
+                $totalWords = count($barangayWords);
+                
+                foreach ($barangayWords as $word) {
+                    if (strlen($word) > 2 && stripos($ocrText, $word) !== false) {
+                        $foundWords++;
+                    }
+                }
+                
+                $barangayScore = $totalWords > 0 ? ($foundWords / $totalWords) * 100 : 0;
+                $verification['confidence_scores']['barangay'] = round($barangayScore, 1);
+                
+                if ($barangayScore >= 60 || stripos($ocrTextLower, strtolower($barangayName)) !== false) {
+                    $verification['barangay'] = true;
+                    $verification['found_text_snippets']['barangay'] = $barangayName;
+                }
+            }
+            
+            // Verify mayor/office header keywords
+            $mayorKeywords = ['mayor', 'office', 'municipal', 'city hall', 'government', 'hon.', 'honorable'];
+            $mayorMatches = 0;
+            $foundMayorKeywords = [];
+            
+            foreach ($mayorKeywords as $keyword) {
+                if (stripos($ocrTextLower, $keyword) !== false) {
+                    $mayorMatches++;
+                    $foundMayorKeywords[] = $keyword;
+                }
+            }
+            
+            $mayorConfidence = ($mayorMatches / count($mayorKeywords)) * 100;
+            $verification['confidence_scores']['mayor_header'] = round($mayorConfidence, 1);
+            
+            if ($mayorMatches >= 2) {
+                $verification['mayor_header'] = true;
+                $verification['found_text_snippets']['mayor_header'] = implode(', ', $foundMayorKeywords);
+            }
+            
+            // Calculate overall success
+            $requiredChecks = ['first_name', 'last_name', 'barangay', 'mayor_header'];
+            $passedChecks = 0;
+            $totalConfidence = 0;
+            
+            foreach ($requiredChecks as $check) {
+                if ($verification[$check]) {
+                    $passedChecks++;
+                }
+                $totalConfidence += $verification['confidence_scores'][$check] ?? 0;
+            }
+            
+            $averageConfidence = $totalConfidence / 4;
+            
+            $verification['overall_success'] = ($passedChecks >= 3) || ($passedChecks >= 2 && $averageConfidence >= 75);
+            
+            $verification['summary'] = [
+                'passed_checks' => $passedChecks,
+                'total_checks' => 4,
+                'average_confidence' => round($averageConfidence, 1),
+                'recommendation' => $verification['overall_success'] ? 
+                    'Document validation successful' : 
+                    'Please ensure the document contains your name, barangay, and mayor office header clearly'
+            ];
+            
+            $ocrData['ocr_confidence'] = round($averageConfidence, 1);
+            $ocrData['verification_score'] = round($averageConfidence, 1);
+            $ocrData['verification_status'] = $verification['overall_success'] ? 'passed' : 'manual_review';
+            
+            // Save verification data
+            @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
+            
+            error_log("Letter OCR: Confidence={$ocrData['ocr_confidence']}%, Passed={$passedChecks}/4 checks");
+            
+            return [
+                'success' => true,
+                'ocr_confidence' => $ocrData['ocr_confidence'],
+                'verification_score' => $ocrData['verification_score'],
+                'verification_status' => $ocrData['verification_status']
+            ];
+            
+        } catch (Exception $e) {
+            error_log("DocumentReuploadService::processLetterOCR error: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Letter OCR failed: ' . $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Process Certificate of Indigency OCR with comprehensive verification (matching registration)
+     */
+    private function processCertificateOCR($tempPath, $studentData) {
+        $ocrData = [
+            'ocr_confidence' => 0,
+            'verification_score' => 0,
+            'verification_status' => 'failed',
+            'extracted_text' => ''
+        ];
+
+        try {
+            // Run Tesseract OCR
+            $ocrResult = $this->runDirectTesseractOCR($tempPath, '03');
+            $ocrText = $ocrResult['text'] ?? '';
+            
+            if (empty(trim($ocrText))) {
+                return ['success' => false, 'message' => 'No text extracted from Certificate document'];
+            }
+
+            $ocrData['extracted_text'] = $ocrText;
+            $ocrData['ocr_confidence'] = $ocrResult['confidence'] ?? 0;
+            
+            // Save OCR text
+            @file_put_contents($tempPath . '.ocr.txt', $ocrText);
+            
+            // Initialize verification structure (matching registration)
+            $verification = [
+                'certificate_title' => false,
+                'first_name' => false,
+                'last_name' => false,
+                'barangay' => false,
+                'general_trias' => false,
+                'confidence_scores' => [],
+                'found_text_snippets' => []
+            ];
+            
+            $ocrTextLower = strtolower($ocrText);
+            
+            // Helper function for similarity calculation
+            $calculateSimilarity = function($needle, $haystack) {
+                $needle = strtolower(trim($needle));
+                $haystack = strtolower(trim($haystack));
+                
+                if (stripos($haystack, $needle) !== false) {
+                    return 100;
+                }
+                
+                $words = explode(' ', $haystack);
+                $maxSimilarity = 0;
+                
+                foreach ($words as $word) {
+                    if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                        $similarity = 0;
+                        similar_text($needle, $word, $similarity);
+                        $maxSimilarity = max($maxSimilarity, $similarity);
+                    }
+                }
+                
+                return $maxSimilarity;
+            };
+            
+            // Verify certificate title
+            $titleKeywords = ['certificate', 'indigency', 'indigent', 'low income', 'certificate of indigency'];
+            $titleMatches = 0;
+            $foundTitleKeywords = [];
+            
+            foreach ($titleKeywords as $keyword) {
+                $similarity = $calculateSimilarity($keyword, $ocrTextLower);
+                if ($similarity >= 70) {
+                    $titleMatches++;
+                    $foundTitleKeywords[] = $keyword;
+                }
+            }
+            
+            $titleConfidence = ($titleMatches / count($titleKeywords)) * 100;
+            $verification['confidence_scores']['certificate_title'] = round($titleConfidence, 1);
+            
+            if ($titleMatches >= 2) {
+                $verification['certificate_title'] = true;
+                $verification['found_text_snippets']['certificate_title'] = implode(', ', $foundTitleKeywords);
+            }
+            
+            // Verify first name
+            if (!empty($studentData['first_name'])) {
+                $similarity = $calculateSimilarity($studentData['first_name'], $ocrTextLower);
+                $verification['confidence_scores']['first_name'] = $similarity;
+                
+                if ($similarity >= 70) {
+                    $verification['first_name'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['first_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['first_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify last name
+            if (!empty($studentData['last_name'])) {
+                $similarity = $calculateSimilarity($studentData['last_name'], $ocrTextLower);
+                $verification['confidence_scores']['last_name'] = $similarity;
+                
+                if ($similarity >= 70) {
+                    $verification['last_name'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['last_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['last_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify barangay
+            if (!empty($studentData['barangay_name'])) {
+                $barangayName = $studentData['barangay_name'];
+                $barangayWords = array_filter(explode(' ', strtolower($barangayName)));
+                $foundWords = 0;
+                $totalWords = count($barangayWords);
+                
+                foreach ($barangayWords as $word) {
+                    if (strlen($word) > 2 && stripos($ocrText, $word) !== false) {
+                        $foundWords++;
+                    }
+                }
+                
+                $barangayScore = $totalWords > 0 ? ($foundWords / $totalWords) * 100 : 0;
+                $verification['confidence_scores']['barangay'] = round($barangayScore, 1);
+                
+                if ($barangayScore >= 60 || stripos($ocrTextLower, strtolower($barangayName)) !== false) {
+                    $verification['barangay'] = true;
+                    $verification['found_text_snippets']['barangay'] = $barangayName;
+                }
+            }
+            
+            // Verify General Trias mention
+            $generalTriasKeywords = ['general trias', 'city of general trias', 'municipality of general trias', 'gen. trias'];
+            $generalTriasMatches = 0;
+            $foundGeneralTriasText = '';
+            
+            foreach ($generalTriasKeywords as $keyword) {
+                if (stripos($ocrTextLower, $keyword) !== false) {
+                    $generalTriasMatches++;
+                    $foundGeneralTriasText = $keyword;
+                    break;
+                }
+            }
+            
+            $generalTriasConfidence = $generalTriasMatches > 0 ? 100 : 0;
+            $verification['confidence_scores']['general_trias'] = $generalTriasConfidence;
+            
+            if ($generalTriasMatches > 0) {
+                $verification['general_trias'] = true;
+                $verification['found_text_snippets']['general_trias'] = $foundGeneralTriasText;
+            }
+            
+            // Calculate overall success
+            $requiredChecks = ['certificate_title', 'first_name', 'last_name', 'barangay', 'general_trias'];
+            $passedChecks = 0;
+            $totalConfidence = 0;
+            
+            foreach ($requiredChecks as $check) {
+                if ($verification[$check]) {
+                    $passedChecks++;
+                }
+                $totalConfidence += $verification['confidence_scores'][$check] ?? 0;
+            }
+            
+            $averageConfidence = $totalConfidence / 5;
+            
+            $verification['overall_success'] = ($passedChecks >= 4) || ($passedChecks >= 3 && $averageConfidence >= 75);
+            
+            $verification['summary'] = [
+                'passed_checks' => $passedChecks,
+                'total_checks' => 5,
+                'average_confidence' => round($averageConfidence, 1),
+                'recommendation' => $verification['overall_success'] ? 
+                    'Certificate validation successful' : 
+                    'Please ensure the certificate contains your name, barangay, "Certificate of Indigency" title, and "General Trias" clearly'
+            ];
+            
+            $ocrData['ocr_confidence'] = round($averageConfidence, 1);
+            $ocrData['verification_score'] = round($averageConfidence, 1);
+            $ocrData['verification_status'] = $verification['overall_success'] ? 'passed' : 'manual_review';
+            
+            // Save verification data
+            @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
+            
+            error_log("Certificate OCR: Confidence={$ocrData['ocr_confidence']}%, Passed={$passedChecks}/5 checks");
+            
+            return [
+                'success' => true,
+                'ocr_confidence' => $ocrData['ocr_confidence'],
+                'verification_score' => $ocrData['verification_score'],
+                'verification_status' => $ocrData['verification_status']
+            ];
+            
+        } catch (Exception $e) {
+            error_log("DocumentReuploadService::processCertificateOCR error: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Certificate OCR failed: ' . $e->getMessage()];
+        }
     }
     
     /**
