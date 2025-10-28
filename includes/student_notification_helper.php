@@ -1,0 +1,256 @@
+<?php
+/**
+ * Student Notification Helper Functions
+ * 
+ * Use these functions to easily create notifications for students throughout your application
+ */
+
+/**
+ * Send notification to a single student
+ * 
+ * @param mixed $connection PostgreSQL connection
+ * @param string $student_id Student ID
+ * @param string $title Notification title
+ * @param string $message Notification message
+ * @param string $type Type: announcement|document|schedule|warning|error|success|system|info
+ * @param string $priority Priority: low|medium|high
+ * @param string|null $action_url Optional URL to navigate when clicked
+ * @param bool $is_priority Set to TRUE to show as modal
+ * @param string|null $expires_at Optional expiration timestamp
+ * @return bool Success status
+ */
+function createStudentNotification($connection, $student_id, $title, $message, $type = 'info', $priority = 'low', $action_url = null, $is_priority = false, $expires_at = null) {
+    if (!$connection) return false;
+    
+    $query = "INSERT INTO student_notifications 
+              (student_id, title, message, type, priority, action_url, is_priority, expires_at)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
+    
+    $result = @pg_query_params($connection, $query, [
+        $student_id,
+        $title,
+        $message,
+        $type,
+        $priority,
+        $action_url,
+        $is_priority ? 'true' : 'false',
+        $expires_at
+    ]);
+    
+    return $result !== false;
+}
+
+/**
+ * Send notification to all students
+ * 
+ * @param mixed $connection PostgreSQL connection
+ * @param string $title Notification title
+ * @param string $message Notification message
+ * @param string $type Type: announcement|document|schedule|warning|error|success|system|info
+ * @param string $priority Priority: low|medium|high
+ * @param string|null $action_url Optional URL to navigate when clicked
+ * @param string|null $where_clause Optional WHERE clause to filter students (e.g., "WHERE status = 'active'")
+ * @return bool Success status
+ */
+function createBulkStudentNotification($connection, $title, $message, $type = 'info', $priority = 'low', $action_url = null, $where_clause = '') {
+    if (!$connection) return false;
+    
+    $query = "INSERT INTO student_notifications (student_id, title, message, type, priority, action_url)
+              SELECT student_id, $1, $2, $3, $4, $5
+              FROM students " . $where_clause;
+    
+    $result = @pg_query_params($connection, $query, [
+        $title,
+        $message,
+        $type,
+        $priority,
+        $action_url
+    ]);
+    
+    return $result !== false;
+}
+
+/**
+ * Notify student about document status
+ * 
+ * @param mixed $connection PostgreSQL connection
+ * @param string $student_id Student ID
+ * @param string $document_type Type of document (e.g., "Certificate of Indigency")
+ * @param string $status Status: approved|rejected|under_review
+ * @param string|null $rejection_reason Reason for rejection (if rejected)
+ * @return bool Success status
+ */
+function notifyStudentDocumentStatus($connection, $student_id, $document_type, $status, $rejection_reason = null) {
+    switch ($status) {
+        case 'approved':
+            return createStudentNotification(
+                $connection,
+                $student_id,
+                'Document Approved',
+                "Your $document_type has been approved.",
+                'success',
+                'medium',
+                'student_documents.php'
+            );
+            
+        case 'rejected':
+            $message = "Your $document_type was rejected.";
+            if ($rejection_reason) {
+                $message .= "\n\nReason: " . $rejection_reason . "\n\nPlease re-upload a corrected version.";
+            }
+            return createStudentNotification(
+                $connection,
+                $student_id,
+                'Document Rejected',
+                $message,
+                'error',
+                'high',
+                'student_documents.php',
+                true // is_priority - shows as modal
+            );
+            
+        case 'under_review':
+            return createStudentNotification(
+                $connection,
+                $student_id,
+                'Document Under Review',
+                "Your $document_type is currently being reviewed. You will be notified once the review is complete.",
+                'document',
+                'low',
+                'student_documents.php'
+            );
+            
+        default:
+            return false;
+    }
+}
+
+/**
+ * Notify student about application status
+ * 
+ * @param mixed $connection PostgreSQL connection
+ * @param string $student_id Student ID
+ * @param string $status Status: submitted|approved|rejected|pending
+ * @param string|null $additional_info Additional information
+ * @return bool Success status
+ */
+function notifyStudentApplicationStatus($connection, $student_id, $status, $additional_info = null) {
+    switch ($status) {
+        case 'submitted':
+            return createStudentNotification(
+                $connection,
+                $student_id,
+                'Application Submitted',
+                'Your application has been successfully submitted and is awaiting review.',
+                'info',
+                'low'
+            );
+            
+        case 'approved':
+            $message = 'Congratulations! Your application has been approved.';
+            if ($additional_info) $message .= ' ' . $additional_info;
+            return createStudentNotification(
+                $connection,
+                $student_id,
+                'Application Approved!',
+                $message,
+                'success',
+                'high'
+            );
+            
+        case 'rejected':
+            $message = 'Your application has been rejected.';
+            if ($additional_info) $message .= ' Reason: ' . $additional_info;
+            return createStudentNotification(
+                $connection,
+                $student_id,
+                'Application Status Update',
+                $message,
+                'error',
+                'high'
+            );
+            
+        case 'pending':
+            return createStudentNotification(
+                $connection,
+                $student_id,
+                'Application Under Review',
+                'Your application is currently being reviewed by our team.',
+                'info',
+                'medium'
+            );
+            
+        default:
+            return false;
+    }
+}
+
+/**
+ * Send deadline reminder to students
+ * 
+ * @param mixed $connection PostgreSQL connection
+ * @param string $deadline_date Deadline date (Y-m-d format)
+ * @param string $what What is the deadline for
+ * @param string|null $where_clause Optional WHERE clause to filter students
+ * @return bool Success status
+ */
+function sendDeadlineReminder($connection, $deadline_date, $what, $where_clause = '') {
+    if (!$connection) return false;
+    
+    $formatted_date = date('F j, Y', strtotime($deadline_date));
+    $expires_at = $deadline_date . ' 23:59:59';
+    
+    $query = "INSERT INTO student_notifications (student_id, title, message, type, priority, expires_at)
+              SELECT student_id, $1, $2, 'warning', 'medium', $3
+              FROM students " . $where_clause;
+    
+    $result = @pg_query_params($connection, $query, [
+        'Deadline Reminder',
+        "Reminder: $what by $formatted_date. Please ensure you complete this before the deadline.",
+        $expires_at
+    ]);
+    
+    return $result !== false;
+}
+
+/**
+ * Notify student about schedule update
+ * 
+ * @param mixed $connection PostgreSQL connection
+ * @param string $student_id Student ID
+ * @param string $schedule_details Schedule details
+ * @param string $action_url URL to view schedule
+ * @return bool Success status
+ */
+function notifyStudentSchedule($connection, $student_id, $schedule_details, $action_url = 'student_schedule.php') {
+    return createStudentNotification(
+        $connection,
+        $student_id,
+        'Schedule Update',
+        $schedule_details,
+        'schedule',
+        'medium',
+        $action_url
+    );
+}
+
+/**
+ * Send system announcement to all students
+ * 
+ * @param mixed $connection PostgreSQL connection
+ * @param string $title Announcement title
+ * @param string $message Announcement message
+ * @param string|null $action_url Optional URL
+ * @return bool Success status
+ */
+function sendSystemAnnouncement($connection, $title, $message, $action_url = null) {
+    return createBulkStudentNotification(
+        $connection,
+        $title,
+        $message,
+        'announcement',
+        'low',
+        $action_url
+    );
+}
+?>
