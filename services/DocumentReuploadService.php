@@ -89,7 +89,8 @@ class DocumentReuploadService {
             
             error_log("DocumentReuploadService: File uploaded to TEMP: $tempPath");
             
-            // Process OCR for grades ONLY (preview before confirming)
+            // DO NOT process OCR automatically - let user trigger it manually
+            // This prevents creating null JSON files before OCR button is clicked
             $ocrData = [
                 'ocr_confidence' => 0,
                 'verification_score' => 0,
@@ -97,18 +98,14 @@ class DocumentReuploadService {
                 'verification_details' => null
             ];
             
-            if ($docTypeCode === '01') {
-                $ocrData = $this->processGradesOCR($tempPath, $studentData);
-            }
-            
             return [
                 'success' => true,
                 'message' => 'Document uploaded to preview',
                 'temp_path' => $tempPath,
                 'filename' => $newFilename,
-                'ocr_confidence' => $ocrData['ocr_confidence'] ?? 0,
-                'verification_score' => $ocrData['verification_score'] ?? 0,
-                'verification_status' => $ocrData['verification_status'] ?? 'pending'
+                'ocr_confidence' => 0,
+                'verification_score' => 0,
+                'verification_status' => 'pending'
             ];
             
         } catch (Exception $e) {
@@ -147,22 +144,41 @@ class DocumentReuploadService {
             
             $permanentPath = $permanentFolder . $filename;
             
+            // Collect associated OCR files BEFORE moving main file
+            $associatedFiles = ['.ocr.txt', '.verify.json', '.confidence.json'];
+            $tempAssociatedFiles = [];
+            foreach ($associatedFiles as $ext) {
+                $tempAssocPath = $tempPath . $ext;
+                if (file_exists($tempAssocPath)) {
+                    $tempAssociatedFiles[$ext] = $tempAssocPath;
+                }
+            }
+            
             // Move file from TEMP to PERMANENT (using rename for same filesystem)
-            if (!rename($tempPath, $permanentPath)) {
-                // Fallback to copy if rename fails
+            $moveSuccess = @rename($tempPath, $permanentPath);
+            if (!$moveSuccess) {
+                // Fallback to copy if rename fails (different filesystems)
                 if (!copy($tempPath, $permanentPath)) {
                     return ['success' => false, 'message' => 'Failed to move file to permanent storage'];
                 }
-                @unlink($tempPath);
+                @unlink($tempPath); // Delete temp file after successful copy
             }
             
             error_log("DocumentReuploadService: Moved from TEMP to PERMANENT: $permanentPath");
             
-            // Move associated OCR files (.ocr.txt, .verify.json)
-            $associatedFiles = ['.ocr.txt', '.verify.json', '.confidence.json'];
-            foreach ($associatedFiles as $ext) {
-                if (file_exists($tempPath . $ext)) {
-                    rename($tempPath . $ext, $permanentPath . $ext);
+            // Move associated OCR files (.ocr.txt, .verify.json, .confidence.json)
+            foreach ($tempAssociatedFiles as $ext => $tempAssocPath) {
+                $permAssocPath = $permanentPath . $ext;
+                $assocMoveSuccess = @rename($tempAssocPath, $permAssocPath);
+                if (!$assocMoveSuccess) {
+                    // Fallback to copy+delete
+                    if (@copy($tempAssocPath, $permAssocPath)) {
+                        @unlink($tempAssocPath);
+                        error_log("DocumentReuploadService: Copied and deleted associated file: $ext");
+                    } else {
+                        error_log("DocumentReuploadService: Failed to move associated file: $ext");
+                    }
+                } else {
                     error_log("DocumentReuploadService: Moved associated file: $ext");
                 }
             }
@@ -228,6 +244,7 @@ class DocumentReuploadService {
 
     /**
      * Process OCR for a temporary upload and produce artifacts for preview.
+     * Uses the SAME proven OCR approach as registration for consistent quality
      */
     public function processTempOcr($studentId, $docTypeCode, $tempPath, $studentData = []) {
         try {
@@ -262,19 +279,18 @@ class DocumentReuploadService {
                 ];
             }
 
-            $ocrOptions = $this->getOcrOptionsForType($docTypeCode);
-            $ocrService = $this->buildOcrService();
-            $extracted = $ocrService->extractTextAndConfidence($tempPath, $ocrOptions);
-
-            if (!$extracted['success'] || empty(trim($extracted['text']))) {
-                return ['success' => false, 'message' => $extracted['error'] ?? 'No readable text detected'];
+            // Use DIRECT Tesseract approach (same as registration) for better quality
+            $ocrResult = $this->runDirectTesseractOCR($tempPath, $docTypeCode);
+            
+            if (empty($ocrResult['text'])) {
+                return ['success' => false, 'message' => 'No readable text detected'];
             }
 
-            $confidence = $extracted['confidence'] ?? 0;
+            $confidence = $ocrResult['confidence'] ?? 0;
             $status = $confidence >= 75 ? 'passed' : ($confidence >= 50 ? 'manual_review' : 'failed');
 
             // Persist OCR artifacts beside the temp file
-            @file_put_contents($tempPath . '.ocr.txt', $extracted['text'] ?? '');
+            @file_put_contents($tempPath . '.ocr.txt', $ocrResult['text'] ?? '');
 
             $verificationPayload = [
                 'timestamp' => date('Y-m-d H:i:s'),
@@ -283,8 +299,8 @@ class DocumentReuploadService {
                 'ocr_confidence' => $confidence,
                 'verification_score' => $confidence,
                 'verification_status' => $status,
-                'word_count' => $extracted['word_count'] ?? 0,
-                'ocr_text_preview' => substr($extracted['text'] ?? '', 0, 500)
+                'word_count' => str_word_count($ocrResult['text'] ?? ''),
+                'ocr_text_preview' => substr($ocrResult['text'] ?? '', 0, 500)
             ];
 
             @file_put_contents($tempPath . '.verify.json', json_encode($verificationPayload, JSON_PRETTY_PRINT));
@@ -302,12 +318,97 @@ class DocumentReuploadService {
         }
     }
 
+    /**
+     * Run direct Tesseract OCR with multiple passes (same as registration)
+     * This provides much better quality than the generic OCRProcessingService
+     */
+    private function runDirectTesseractOCR($filePath, $docTypeCode) {
+        $result = ['text' => '', 'confidence' => 0];
+        
+        try {
+            // Different PSM modes for different document types
+            $psmMode = $this->getPSMForDocType($docTypeCode);
+            
+            // Primary OCR pass with appropriate PSM
+            $cmd = "tesseract " . escapeshellarg($filePath) . " stdout --oem 1 --psm $psmMode -l eng 2>&1";
+            $tessOut = @shell_exec($cmd);
+            
+            if (!empty($tessOut)) {
+                $result['text'] = $tessOut;
+            }
+            
+            // Additional passes for better text extraction (like registration does)
+            if ($docTypeCode === '04') {
+                // ID Picture: Multiple passes for better name extraction
+                $passA = @shell_exec("tesseract " . escapeshellarg($filePath) . " stdout -l eng --oem 1 --psm 11 2>&1");
+                $passB = @shell_exec("tesseract " . escapeshellarg($filePath) . " stdout -l eng --oem 1 --psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz,.- 2>&1");
+                $result['text'] = trim($result['text'] . "\n" . $passA . "\n" . $passB);
+            } elseif ($docTypeCode === '02') {
+                // Letter to Mayor: Try multiple passes for better text extraction
+                $passA = @shell_exec("tesseract " . escapeshellarg($filePath) . " stdout -l eng --oem 1 --psm 3 2>&1"); // Fully automatic
+                $result['text'] = trim($result['text'] . "\n" . $passA);
+            }
+            
+            // Get confidence from TSV (same as registration)
+            $tsv = @shell_exec("tesseract " . escapeshellarg($filePath) . " stdout -l eng --oem 1 --psm $psmMode tsv 2>&1");
+            if (!empty($tsv)) {
+                $lines = explode("\n", $tsv);
+                if (count($lines) > 1) {
+                    array_shift($lines); // Remove header
+                    $sum = 0;
+                    $cnt = 0;
+                    foreach ($lines as $line) {
+                        if (!trim($line)) continue;
+                        $cols = explode("\t", $line);
+                        if (count($cols) >= 12) {
+                            $conf = floatval($cols[10] ?? 0);
+                            if ($conf > 0) {
+                                $sum += $conf;
+                                $cnt++;
+                            }
+                        }
+                    }
+                    if ($cnt > 0) {
+                        $result['confidence'] = round($sum / $cnt, 2);
+                    }
+                }
+            }
+            
+            error_log("DirectTesseractOCR for $docTypeCode: " . strlen($result['text']) . " chars, confidence: " . $result['confidence']);
+            
+        } catch (Exception $e) {
+            error_log("DirectTesseractOCR error: " . $e->getMessage());
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Get optimal PSM mode for each document type
+     */
+    private function getPSMForDocType($docTypeCode) {
+        switch ($docTypeCode) {
+            case '04': // ID Picture
+                return 6; // Uniform block of text
+            case '00': // EAF
+                return 6; // Uniform block of text
+            case '02': // Letter to Mayor
+                return 4; // Single column text
+            case '03': // Certificate of Indigency
+                return 6; // Uniform block of text
+            default:
+                return 6; // Default
+        }
+    }
+
     private function getOcrOptionsForType($docTypeCode) {
+        // This function is now deprecated - using direct Tesseract instead
+        // Kept for backwards compatibility
         switch ($docTypeCode) {
             case '04':
-                return ['psm' => 7]; // ID pictures benefit from sparse block analysis
+                return ['psm' => 6];
             case '02':
-                return ['psm' => 5]; // Letter layout with multiple columns
+                return ['psm' => 4];
             case '03':
                 return ['psm' => 6];
             case '00':

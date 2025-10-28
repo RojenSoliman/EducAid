@@ -804,10 +804,13 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
 
     // Only show section if there are deadlines
     if ($activeCount > 0) {
-    echo '<section class="section-block section-deadlines section-spacing">';
+    $hasOverdue = count($overdueItems) > 0;
+    $sectionClass = 'section-block section-deadlines section-spacing' . ($hasOverdue ? ' has-overdue' : '');
+    echo '<section class="' . $sectionClass . '">';
     echo '  <div class="section-header d-flex justify-content-between align-items-center">';
     echo '    <div><h3 class="section-title mb-0"><i class="bi bi-hourglass-top me-2"></i>Submission Deadlines</h3><p class="section-lead m-0">Upcoming and active requirements.</p></div>';
-    echo '    <span class="badge bg-danger-subtle text-danger border border-danger">' . $activeCount . ' item(s)</span>';
+    $badgeClass = $hasOverdue ? 'bg-danger-subtle text-danger border border-danger' : 'bg-success-subtle text-success border border-success';
+    echo '    <span class="badge ' . $badgeClass . '">' . $activeCount . ' item(s)</span>';
     echo '  </div>';
 
     echo '  <div class="deadline-list">';

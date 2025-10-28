@@ -731,7 +731,7 @@ $history_result = pg_query($connection, $history_query);
             <?php if (isset($message)): ?>
                 <div class="alert alert-modern alert-<?= $success ? 'success' : 'danger' ?> alert-dismissible fade show" role="alert">
                     <i class="bi bi-<?= $success ? 'check-circle' : 'exclamation-triangle' ?> me-2"></i>
-                    <?= htmlspecialchars($message) ?>
+                    <?= $message ?>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             <?php endif; ?>

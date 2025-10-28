@@ -222,6 +222,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_document'])) 
     exit;
 }
 
+// Handle AJAX file upload to session (preview stage)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_upload']) && $can_upload) {
+    // Clean output buffer and set JSON header immediately
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/json');
+    
+    try {
+        $doc_type_code = $_POST['document_type'] ?? '';
+        
+        if (!isset($document_types[$doc_type_code])) {
+            echo json_encode(['success' => false, 'message' => 'Invalid document type']);
+            exit;
+        }
+        
+        if (!isset($_FILES['document_file']) || $_FILES['document_file']['error'] !== UPLOAD_ERR_OK) {
+            echo json_encode(['success' => false, 'message' => 'File upload error']);
+            exit;
+        }
+        
+        $file = $_FILES['document_file'];
+        
+        // Use DocumentReuploadService to upload to TEMP folder (WITHOUT automatic OCR)
+        $result = $reuploadService->uploadToTemp(
+            $student_id,
+            $doc_type_code,
+            $file['tmp_name'],
+            $file['name'],
+            [
+                'student_id' => $student_id,
+                'first_name' => $student['first_name'],
+                'last_name' => $student['last_name'],
+                'university_id' => $student['university_id'],
+                'year_level_id' => $student['year_level_id']
+            ]
+        );
+        
+        if ($result['success']) {
+            // Store temp file info in session for confirmation
+            $_SESSION['temp_uploads'][$doc_type_code] = [
+                'path' => $result['temp_path'],
+                'original_name' => $file['name'],
+                'extension' => pathinfo($file['name'], PATHINFO_EXTENSION),
+                'size' => $file['size'],
+                'uploaded_at' => time(),
+                'ocr_confidence' => 0,
+                'verification_score' => 0
+            ];
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'File uploaded successfully. Click "Process OCR" to analyze the document.',
+                'data' => [
+                    'filename' => $file['name'],
+                    'size' => $file['size'],
+                    'extension' => pathinfo($file['name'], PATHINFO_EXTENSION)
+                ]
+            ]);
+        } else {
+            echo json_encode(['success' => false, 'message' => $result['message']]);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Upload failed: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
 // Handle file upload to session (preview stage)
 $upload_result = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $can_upload) {
@@ -933,7 +1001,11 @@ $page_title = 'Upload Documents';
                                     <form method="POST" style="display: inline;">
                                         <input type="hidden" name="document_type" value="<?= $type_code ?>">
                                         <input type="hidden" name="confirm_upload" value="1">
-                                        <button type="submit" class="btn btn-success btn-sm">
+                                        <button type="submit" 
+                                                class="btn btn-success btn-sm <?= !$has_ocr || (isset($preview_data['ocr_confidence']) && floatval($preview_data['ocr_confidence']) < 50) ? 'disabled' : '' ?>"
+                                                id="confirm-btn-<?= $type_code ?>"
+                                                <?= !$has_ocr || (isset($preview_data['ocr_confidence']) && floatval($preview_data['ocr_confidence']) < 50) ? 'disabled' : '' ?>
+                                                title="<?= !$has_ocr ? 'Process OCR first before confirming' : (isset($preview_data['ocr_confidence']) && floatval($preview_data['ocr_confidence']) < 50 ? 'OCR confidence too low. Please re-upload a clearer image.' : 'Click to confirm and submit this document') ?>">
                                             <i class="bi bi-check-circle"></i> Confirm & Submit
                                         </button>
                                     </form>
@@ -1009,6 +1081,33 @@ $page_title = 'Upload Documents';
         // Mark body as ready after scripts load
         document.body.classList.add('js-ready');
         
+        // AJAX Upload Function (prevents page refresh)
+        async function handleFileUpload(typeCode, file) {
+            const formData = new FormData();
+            formData.append('ajax_upload', '1');
+            formData.append('document_type', typeCode);
+            formData.append('document_file', file);
+            
+            try {
+                const response = await fetch('upload_document.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Reload the page to show the preview
+                    window.location.reload();
+                } else {
+                    alert('Upload failed: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert('Upload failed. Please try again.');
+            }
+        }
+        
         function viewDocument(filePath, title) {
             const modal = new bootstrap.Modal(document.getElementById('documentViewerModal'));
             const img = document.getElementById('documentViewerImage');
@@ -1043,6 +1142,7 @@ $page_title = 'Upload Documents';
             const button = document.getElementById('process-btn-' + typeCode);
             const statusEl = document.getElementById('ocr-status-' + typeCode);
             const badgesEl = document.getElementById('ocr-badges-' + typeCode);
+            const confirmBtn = document.getElementById('confirm-btn-' + typeCode);
 
             if (!button) {
                 console.error('Process button not found for type:', typeCode);
@@ -1090,6 +1190,7 @@ $page_title = 'Upload Documents';
                 const ocrScore = Math.round(data.ocr_confidence || 0);
                 const verificationScore = Math.round(data.verification_score || ocrScore);
 
+                // Update badges
                 if (badgesEl) {
                     badgesEl.classList.remove('d-none');
                     const ocrColor = getConfidenceColor(ocrScore);
@@ -1111,10 +1212,29 @@ $page_title = 'Upload Documents';
                     badgesEl.innerHTML = badgesHtml;
                 }
 
+                // Update status message
                 if (statusEl) {
                     statusEl.classList.remove('text-muted', 'text-danger');
                     statusEl.classList.add('text-success');
                     statusEl.innerHTML = `<span class="text-success"><i class="bi bi-check-circle"></i> OCR processed successfully. Confidence ${ocrScore}%.</span>`;
+                }
+
+                // Enable/disable confirm button based on confidence
+                if (confirmBtn) {
+                    if (ocrScore < 50) {
+                        confirmBtn.disabled = true;
+                        confirmBtn.classList.add('disabled');
+                        confirmBtn.title = 'OCR confidence too low. Please re-upload a clearer image.';
+                        
+                        // Add warning message
+                        if (statusEl) {
+                            statusEl.innerHTML += '<br><span class="text-danger"><i class="bi bi-exclamation-triangle"></i> <strong>Upload disabled:</strong> OCR confidence is below 50%. Please upload a clearer image.</span>';
+                        }
+                    } else {
+                        confirmBtn.disabled = false;
+                        confirmBtn.classList.remove('disabled');
+                        confirmBtn.title = 'Click to confirm and submit this document';
+                    }
                 }
 
                 button.dataset.defaultLabel = 'Reprocess OCR';
@@ -1127,6 +1247,13 @@ $page_title = 'Upload Documents';
                     statusEl.classList.remove('text-muted', 'text-success');
                     statusEl.classList.add('text-danger');
                     statusEl.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> ${error.message}</span>`;
+                }
+
+                // Disable confirm button on error
+                if (confirmBtn) {
+                    confirmBtn.disabled = true;
+                    confirmBtn.classList.add('disabled');
+                    confirmBtn.title = 'Process OCR first before confirming';
                 }
 
                 button.innerHTML = `<i class="bi bi-cpu"></i> ${originalLabel}`;
@@ -1145,6 +1272,20 @@ $page_title = 'Upload Documents';
             }
             return 'danger';
         }
+        
+        // Attach AJAX upload handlers to file inputs
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('input[type="file"][name="document_file"]').forEach(input => {
+                input.addEventListener('change', function(e) {
+                    e.preventDefault();
+                    
+                    if (this.files.length > 0) {
+                        const typeCode = this.closest('form').querySelector('input[name="document_type"]').value;
+                        handleFileUpload(typeCode, this.files[0]);
+                    }
+                });
+            });
+        });
         
         // Drag and drop support
         document.querySelectorAll('.upload-zone').forEach(zone => {
@@ -1166,11 +1307,9 @@ $page_title = 'Upload Documents';
                 zone.classList.remove('dragover');
                 
                 const zoneId = zone.id.replace('upload-zone-', '');
-                const fileInput = document.getElementById('file-' + zoneId);
                 
                 if (e.dataTransfer.files.length > 0) {
-                    fileInput.files = e.dataTransfer.files;
-                    fileInput.form.submit();
+                    handleFileUpload(zoneId, e.dataTransfer.files[0]);
                 }
             });
         });

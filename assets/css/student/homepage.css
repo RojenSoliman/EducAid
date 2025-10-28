@@ -118,7 +118,11 @@ h5 {
   background: #fff6ed; /* light orange tint */
 }
 .section-block.section-deadlines {
-  border-left: 4px solid #dc3545; /* red */
+  border-left: 4px solid #198754; /* green by default */
+  background: #eef9f2; /* light green tint */
+}
+.section-block.section-deadlines.has-overdue {
+  border-left: 4px solid #dc3545; /* red when overdue */
   background: #fff1f3; /* light red tint */
 }
 .section-block.section-schedule {
@@ -130,7 +134,8 @@ h5 {
   background: #eef9f2; /* light green tint */
 }
 .section-announcements .section-title { color: #d96a00; }
-.section-deadlines .section-title { color: #b02a37; }
+.section-deadlines .section-title { color: #198754; } /* green by default */
+.section-deadlines.has-overdue .section-title { color: #b02a37; } /* red when overdue */
 .section-schedule .section-title { color: #0d6efd; }
 .section-history  .section-title { color: #198754; }
 .section-title {
