@@ -298,7 +298,11 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
             $row = pg_fetch_assoc($result);
             $status = $row['status'];
           }
-          if ($status === 'active') {
+          if ($status === 'given') {
+            $badgeClass = 'bg-primary';
+            $icon = 'bi-gift-fill';
+            $statusText = 'Received Aid';
+          } elseif ($status === 'active') {
             $badgeClass = 'bg-success';
             $icon = 'bi-check2-circle';
             $statusText = 'Verified';
