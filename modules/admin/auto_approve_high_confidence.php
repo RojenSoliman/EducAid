@@ -1,5 +1,6 @@
 <?php
 include __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/student_notification_helper.php';
 session_start();
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -70,6 +71,17 @@ try {
             $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
             $notification_msg = "Auto-approved registration for: " . $student_name . " (ID: " . $student['student_id'] . ") - Confidence: " . number_format($student['confidence_score'], 1) . "%";
             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+            
+            // Add student notification
+            createStudentNotification(
+                $connection,
+                $student['student_id'],
+                'Registration Auto-Approved!',
+                'Great news! Your registration has been automatically approved based on your submitted documents. You can now proceed as an applicant.',
+                'success',
+                'high',
+                'student_dashboard.php'
+            );
             
             $approved_count++;
         }

@@ -6,6 +6,7 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 include '../../config/database.php';
+require_once __DIR__ . '/../../includes/student_notification_helper.php';
 
 // Get workflow permissions to control approval actions
 require_once __DIR__ . '/../../includes/workflow_control.php';
@@ -1387,6 +1388,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notification_msg = "Student promoted to active: " . $student_name . " (ID: " . $sid . ")";
             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
             
+            // Add student notification
+            createStudentNotification(
+                $connection,
+                $sid,
+                'Application Approved!',
+                'Congratulations! Your application has been verified and approved. You are now an active student.',
+                'success',
+                'high',
+                'student_dashboard.php'
+            );
+            
             // Log applicant approval in audit trail
             require_once __DIR__ . '/../../services/AuditLogger.php';
             $auditLogger = new AuditLogger($connection);
@@ -1438,6 +1450,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $student_name = $student['first_name'] . ' ' . $student['last_name'];
                 $notification_msg = "OVERRIDE: Student promoted to active without complete grades/docs: " . $student_name . " (ID: " . $sid . ")";
                 pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                
+                // Add student notification
+                createStudentNotification(
+                    $connection,
+                    $sid,
+                    'Application Approved!',
+                    'Your application has been approved. You are now an active student.',
+                    'success',
+                    'high',
+                    'student_dashboard.php'
+                );
             }
         }
         // Redirect to refresh list

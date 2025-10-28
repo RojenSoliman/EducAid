@@ -84,8 +84,8 @@ $custom_nav_links = [
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Announcements – EducAid</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+<link href="../assets/css/bootstrap.min.css" rel="stylesheet" />
+<link href="../assets/css/bootstrap-icons.css" rel="stylesheet" />
 <link href="../assets/css/website/landing_page.css" rel="stylesheet" />
 <?php if ($IS_EDIT_MODE): ?>
 <link href="../assets/css/content_editor.css" rel="stylesheet" />

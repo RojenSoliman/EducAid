@@ -1,6 +1,7 @@
 <?php
 include __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../services/DocumentService.php';
+require_once __DIR__ . '/../../includes/student_notification_helper.php';
 
 session_start();
 
@@ -57,6 +58,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
                             $notification_msg = "Registration approved for student: " . $student_name . " (ID: " . $student_id . ")";
                             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                            
+                            // Add student notification
+                            createStudentNotification(
+                                $connection,
+                                $student_id,
+                                'Registration Approved!',
+                                'Congratulations! Your registration has been approved. You can now proceed with the next steps.',
+                                'success',
+                                'high',
+                                'student_profile.php'
+                            );
                         }
                     }
                 } elseif ($action === 'reject') {
@@ -206,6 +218,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
                 $notification_msg = "Registration approved for student: " . $student_name . " (ID: " . $student_id . ")";
                 pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                
+                // Add student notification
+                createStudentNotification(
+                    $connection,
+                    $student_id,
+                    'Registration Approved!',
+                    'Congratulations! Your registration has been approved by the admin. You can now proceed with your application.',
+                    'success',
+                    'high',
+                    'student_dashboard.php'
+                );
                 
                 // Log to audit trail
                 $audit_query = "INSERT INTO audit_logs (

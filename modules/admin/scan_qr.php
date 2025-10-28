@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/CSRFProtection.php';
+require_once __DIR__ . '/../../includes/student_notification_helper.php';
 include_once __DIR__ . '/../../includes/workflow_control.php';
 
 // Check admin authentication
@@ -550,14 +551,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_distribution'
             error_log("Warning: Failed to log QR scan for student $student_id: " . pg_last_error($connection));
         }
         
-        // Add notification to student
-        $notif_query = "INSERT INTO notifications (student_id, message) VALUES ($1, $2)";
-        $notif_message = "Your scholarship aid has been successfully distributed. Thank you for participating in the EducAid program.";
-        $notif_result = pg_query_params($connection, $notif_query, [$student_id, $notif_message]);
-        
-        if (!$notif_result) {
-            error_log("Warning: Failed to create notification for student $student_id");
-        }
+        // Add student notification for successful distribution
+        createStudentNotification(
+            $connection,
+            $student_id,
+            'Scholarship Aid Distributed!',
+            'Your scholarship aid has been successfully distributed. Thank you for participating in the EducAid program.',
+            'success',
+            'high',
+            'student_dashboard.php'
+        );
         
         // Commit transaction
         pg_query($connection, "COMMIT");
