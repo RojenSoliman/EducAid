@@ -226,7 +226,7 @@ $csrfMigrationToken = CSRFProtection::generateToken('csv_migration');
 $csrfApproveApplicantToken = CSRFProtection::generateToken('approve_applicant');
 $csrfOverrideApplicantToken = CSRFProtection::generateToken('override_applicant');
 $csrfArchiveStudentToken = CSRFProtection::generateToken('archive_student');
-// Rejection token removed - will be re-implemented from scratch
+$csrfRejectDocumentsToken = CSRFProtection::generateToken('reject_documents');
 
 // Clear migration sessions on GET request to prevent resubmission warnings
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['clear_migration'])) {
@@ -506,7 +506,7 @@ function find_student_documents($first_name, $last_name) {
 
     $document_types = [
         'eaf' => 'enrollment_forms',
-        'letter_to_mayor' => 'letter_to_mayor',
+        'letter_to_mayor' => 'letter_mayor', // Fixed: matches DocumentReuploadService folder name
         'certificate_of_indigency' => 'indigency',
         'grades' => 'grades' // Map to 'grades' key for consistency
     ];
@@ -720,7 +720,7 @@ $applicants = $params ? pg_query_params($connection, $query, $params) : pg_query
 
 // Table rendering function with live preview
 function render_table($applicants, $connection) {
-    global $csrfApproveApplicantToken, $csrfRejectApplicantToken, $csrfOverrideApplicantToken, $workflow_status;
+    global $csrfApproveApplicantToken, $csrfRejectApplicantToken, $csrfOverrideApplicantToken, $csrfArchiveStudentToken, $csrfRejectDocumentsToken, $workflow_status;
     $canApprove = $workflow_status['can_manage_applicants'] ?? false;
     ob_start();
     ?>
@@ -882,7 +882,7 @@ function render_table($applicants, $connection) {
                                 $document_folders = [
                                     'id_pictures' => 'id_picture',
                                     'enrollment_forms' => 'eaf',
-                                    'letter_to_mayor' => 'letter_to_mayor',
+                                    'letter_mayor' => 'letter_to_mayor', // Fixed: matches DocumentReuploadService folder name
                                     'indigency' => 'certificate_of_indigency',
                                     'grades' => 'grades'
                                 ];
@@ -1189,7 +1189,15 @@ function render_table($applicants, $connection) {
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfApproveApplicantToken) ?>">
                                         <button class="btn btn-success btn-sm"><i class="bi bi-check-circle me-1"></i> Verify</button>
                                     </form>
-                                    <!-- Reject button removed - will be re-implemented from scratch -->
+                                    <!-- Reject Documents Button -->
+                                    <form method="POST" class="d-inline ms-2" onsubmit="return confirm('⚠️ DELETE ALL DOCUMENTS?\n\nThis will:\n• Delete all uploaded files from the server\n• Clear all document records from database\n• Require student to re-upload everything\n\nThis action cannot be undone. Continue?');">
+                                        <input type="hidden" name="student_id" value="<?= $student_id ?>">
+                                        <input type="hidden" name="reject_documents" value="1">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfRejectDocumentsToken) ?>">
+                                        <button type="submit" class="btn btn-danger btn-sm" title="Delete all documents and request re-upload">
+                                            <i class="bi bi-trash me-1"></i> Reject Documents
+                                        </button>
+                                    </form>
                                 <?php else: ?>
                                     <span class="text-muted">Incomplete documents</span>
                                     <?php if (!empty($_SESSION['admin_role']) && $_SESSION['admin_role'] === 'super_admin'): ?>
@@ -1200,6 +1208,15 @@ function render_table($applicants, $connection) {
                                         <button class="btn btn-warning btn-sm"><i class="bi bi-exclamation-triangle me-1"></i> Override Verify</button>
                                     </form>
                                     <?php endif; ?>
+                                    <!-- Reject Documents Button (also available for incomplete) -->
+                                    <form method="POST" class="d-inline ms-2" onsubmit="return confirm('⚠️ DELETE ALL DOCUMENTS?\n\nThis will:\n• Delete all uploaded files from the server\n• Clear all document records from database\n• Require student to re-upload everything\n\nThis action cannot be undone. Continue?');">
+                                        <input type="hidden" name="student_id" value="<?= $student_id ?>">
+                                        <input type="hidden" name="reject_documents" value="1">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfRejectDocumentsToken) ?>">
+                                        <button type="submit" class="btn btn-danger btn-sm" title="Delete all documents and request re-upload">
+                                            <i class="bi bi-trash me-1"></i> Reject Documents
+                                        </button>
+                                    </form>
                                 <?php endif; ?>
                                 
                                 <?php if ($_SESSION['admin_role'] === 'super_admin'): ?>
@@ -1262,6 +1279,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $applicantCsrfAction = 'override_applicant';
     } elseif (!empty($_POST['archive_student']) && isset($_POST['student_id'])) {
         $applicantCsrfAction = 'archive_student';
+    } elseif (!empty($_POST['reject_documents']) && isset($_POST['student_id'])) {
+        $applicantCsrfAction = 'reject_documents';
     } elseif (!empty($_POST['reject_applicant']) && isset($_POST['student_id'])) {
         $applicantCsrfAction = 'reject_applicant';
     }
@@ -1470,7 +1489,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     
-    // Rejection functionality removed - will be re-implemented from scratch
+    // Reject Documents - Delete all uploaded files and request re-upload
+    if (!empty($_POST['reject_documents']) && isset($_POST['student_id'])) {
+        $student_id = trim($_POST['student_id']);
+        error_log("Reject documents triggered for student: " . $student_id);
+        
+        try {
+            // Delete all document files from filesystem
+            $uploadsPath = dirname(__DIR__, 2) . '/assets/uploads/student';
+            $documentTypes = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_mayor'];
+            $deletedCount = 0;
+            
+            foreach ($documentTypes as $type) {
+                $folderPath = $uploadsPath . '/' . $type;
+                if (is_dir($folderPath)) {
+                    $files = glob($folderPath . '/' . $student_id . '_*');
+                    foreach ($files as $file) {
+                        if (is_file($file)) {
+                            @unlink($file);
+                            $deletedCount++;
+                        }
+                    }
+                }
+            }
+            
+            // Delete all document records from database
+            $deleteDocsQuery = "DELETE FROM documents WHERE student_id = $1";
+            pg_query_params($connection, $deleteDocsQuery, [$student_id]);
+            
+            // Set needs_document_upload flag and mark documents_to_reupload
+            $updateQuery = "UPDATE students 
+                           SET needs_document_upload = TRUE,
+                               documents_to_reupload = $1
+                           WHERE student_id = $2";
+            pg_query_params($connection, $updateQuery, [
+                json_encode(['00', '01', '02', '03', '04']), // All document types
+                $student_id
+            ]);
+            
+            // Log audit
+            $auditQuery = "INSERT INTO audit_log (admin_id, student_id, action, description, ip_address, created_at)
+                          VALUES ($1, $2, 'reject_documents', $3, $4, NOW())";
+            pg_query_params($connection, $auditQuery, [
+                $_SESSION['admin_id'] ?? null,
+                $student_id,
+                "Admin rejected all documents. Deleted $deletedCount files. Student must re-upload all documents.",
+                $_SERVER['REMOTE_ADDR']
+            ]);
+            
+            $_SESSION['success'] = "All documents rejected. Student will be notified to re-upload.";
+            
+        } catch (Exception $e) {
+            $_SESSION['error'] = "Error rejecting documents: " . $e->getMessage();
+        }
+        
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
 }
 
 // --------- AJAX handler ---------
@@ -1507,22 +1582,22 @@ if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET
     <?php include '../../includes/admin/admin_header.php'; ?>
     <section class="home-section" id="mainContent">
     <div class="container-fluid py-4 px-4">
-            <?php if (!empty($_SESSION['error_message'])): ?>
+            <?php if (!empty($_SESSION['error_message']) || !empty($_SESSION['error'])): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 <i class="bi bi-exclamation-triangle me-2"></i>
-                <?= htmlspecialchars($_SESSION['error_message']) ?>
+                <?= htmlspecialchars($_SESSION['error_message'] ?? $_SESSION['error']) ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-            <?php unset($_SESSION['error_message']); ?>
+            <?php unset($_SESSION['error_message'], $_SESSION['error']); ?>
             <?php endif; ?>
 
-            <?php if (!empty($_SESSION['success_message'])): ?>
+            <?php if (!empty($_SESSION['success_message']) || !empty($_SESSION['success'])): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <i class="bi bi-check-circle me-2"></i>
-                <?= htmlspecialchars($_SESSION['success_message']) ?>
+                <?= htmlspecialchars($_SESSION['success_message'] ?? $_SESSION['success']) ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-            <?php unset($_SESSION['success_message']); ?>
+            <?php unset($_SESSION['success_message'], $_SESSION['success']); ?>
             <?php endif; ?>
 
             <div class="section-header mb-3 d-flex justify-content-between align-items-center">

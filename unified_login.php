@@ -1226,8 +1226,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                             </div>
                                         </div>
                                         
+                                        <!-- reCAPTCHA v2 (visible checkbox) -->
+                                        <div class="form-group mb-4 text-center">
+                                            <div class="g-recaptcha" data-sitekey="<?php echo getenv('RECAPTCHA_V2_SITE_KEY') ?: '6LcQ9NArAAAAALTbYBJn1b2iG9MJcJ6SnA3b6x53'; ?>"></div>
+                                        </div>
+                                        
                                         <div class="d-grid">
-                                            <button type="button" class="btn btn-primary btn-lg" id="loginSubmitBtn" onclick="showRecaptchaModal()">
+                                            <button type="submit" class="btn btn-primary btn-lg" id="loginSubmitBtn">
                                                 <i class="bi bi-envelope me-2"></i>Send Verification Code
                                             </button>
                                         </div>
@@ -1278,7 +1283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                             <input type="email" class="form-control form-control" id="forgot_email" name="forgot_email" required>
                                         </div>
                                         <div class="d-grid">
-                                            <button type="button" class="btn btn-primary btn-lg" id="forgotSubmitBtn" onclick="showRecaptchaModalForgot()">
+                                            <button type="submit" class="btn btn-primary btn-lg">
                                                 <i class="bi bi-envelope me-2"></i>Send Reset Code
                                             </button>
                                         </div>
@@ -1464,7 +1469,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                         
                         if (data.status === 'otp_sent') {
                             showStep2();
-                            showMessage(data.message || 'Verification code sent to your email!', 'success');
+                            showMessage('Verification code sent to your email!', 'success');
                             // Reset reCAPTCHA for next attempt
                             grecaptcha.reset();
                         } else {
@@ -1668,247 +1673,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
         console.log('✅ Login Page Editor ready');
     </script>
     <?php endif; ?>
-
-    <!-- reCAPTCHA Verification Modal -->
-    <div class="modal fade" id="recaptchaModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">
-                        <i class="bi bi-shield-check me-2"></i>Security Verification
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body text-center py-4">
-                    <p class="mb-4">Please verify that you're not a robot before we send the verification code.</p>
-                    <div class="d-flex justify-content-center">
-                        <div class="g-recaptcha" data-sitekey="<?php echo getenv('RECAPTCHA_V2_SITE_KEY') ?: '6LcQ9NArAAAAALTbYBJn1b2iG9MJcJ6SnA3b6x53'; ?>" data-callback="onRecaptchaSuccess"></div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <small class="text-muted">
-                        <i class="bi bi-info-circle me-1"></i>
-                        OTP will be sent automatically after verification
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- reCAPTCHA Modal for Forgot Password -->
-    <div class="modal fade" id="recaptchaModalForgot" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">
-                        <i class="bi bi-shield-check me-2"></i>Security Verification
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body text-center py-4">
-                    <p class="mb-4">Please verify that you're not a robot before we send the reset code.</p>
-                    <div class="d-flex justify-content-center">
-                        <div class="g-recaptcha" data-sitekey="<?php echo getenv('RECAPTCHA_V2_SITE_KEY') ?: '6LcQ9NArAAAAALTbYBJn1b2iG9MJcJ6SnA3b6x53'; ?>" data-callback="onRecaptchaSuccessForgot"></div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <small class="text-muted">
-                        <i class="bi bi-info-circle me-1"></i>
-                        Reset code will be sent automatically after verification
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // Show reCAPTCHA modal for login
-        function showRecaptchaModal() {
-            const email = document.getElementById('email')?.value.trim();
-            const password = document.getElementById('password')?.value.trim();
-            
-            if (!email || !password) {
-                showMessage('Please enter both email and password', 'error');
-                return;
-            }
-            
-            const modal = new bootstrap.Modal(document.getElementById('recaptchaModal'));
-            modal.show();
-        }
-        
-        // Show reCAPTCHA modal for forgot password
-        function showRecaptchaModalForgot() {
-            const email = document.getElementById('forgot_email')?.value.trim();
-            
-            if (!email) {
-                showMessage('Please enter your email address', 'error');
-                return;
-            }
-            
-            if (!isValidEmail(email)) {
-                showMessage('Please enter a valid email address', 'error');
-                return;
-            }
-            
-            const modal = new bootstrap.Modal(document.getElementById('recaptchaModalForgot'));
-            modal.show();
-        }
-        
-        // Callback when reCAPTCHA is completed - automatically submit
-        function onRecaptchaSuccess(token) {
-            console.log('✅ reCAPTCHA verified, automatically sending OTP...');
-            
-            // Hide modal immediately
-            const modal = bootstrap.Modal.getInstance(document.getElementById('recaptchaModal'));
-            if (modal) {
-                modal.hide();
-            }
-            
-            // Submit the login form to send OTP
-            setTimeout(function() {
-                const email = document.getElementById('email')?.value.trim();
-                const password = document.getElementById('password')?.value;
-                
-                if (!email || !password) {
-                    showMessage('Please fill in all fields.', 'danger');
-                    return;
-                }
-                
-                const submitBtn = document.getElementById('loginSubmitBtn');
-                if (submitBtn) {
-                    submitBtn.disabled = true;
-                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending...';
-                }
-                
-                const formData = new FormData();
-                formData.append('email', email);
-                formData.append('password', password);
-                formData.append('g-recaptcha-response', token);
-                
-                fetch('unified_login.php', {
-                    method: 'POST',
-                    body: formData,
-                    credentials: 'same-origin',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.innerHTML = '<i class="bi bi-envelope me-2"></i>Send Verification Code';
-                    }
-                    
-                    if (data.status === 'otp_sent') {
-                        showStep2();
-                        showMessage('Verification code sent to your email!', 'success');
-                    } else {
-                        showMessage(data.message || 'Login failed. Please try again.', 'danger');
-                        if (typeof grecaptcha !== 'undefined') {
-                            grecaptcha.reset();
-                        }
-                    }
-                })
-                .catch(error => {
-                    console.error('Login error:', error);
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.innerHTML = '<i class="bi bi-envelope me-2"></i>Send Verification Code';
-                    }
-                    showMessage('Connection error. Please try again.', 'danger');
-                    if (typeof grecaptcha !== 'undefined') {
-                        grecaptcha.reset();
-                    }
-                });
-            }, 300); // Small delay to ensure modal closes smoothly
-        }
-        
-        // Callback when reCAPTCHA is completed for forgot password - automatically submit
-        function onRecaptchaSuccessForgot(token) {
-            console.log('✅ reCAPTCHA verified for forgot password, automatically sending reset code...');
-            
-            // Hide modal immediately
-            const modal = bootstrap.Modal.getInstance(document.getElementById('recaptchaModalForgot'));
-            if (modal) {
-                modal.hide();
-            }
-            
-            // Submit the forgot password form to send reset code
-            setTimeout(function() {
-                const email = document.getElementById('forgot_email')?.value.trim();
-                
-                if (!email) {
-                    showMessage('Please enter your email address', 'danger');
-                    return;
-                }
-                
-                const submitBtn = document.getElementById('forgotSubmitBtn');
-                if (submitBtn) {
-                    submitBtn.disabled = true;
-                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending...';
-                }
-                
-                const formData = new FormData();
-                formData.append('forgot_email', email);
-                formData.append('forgot_action', 'send_otp');
-                formData.append('g-recaptcha-response', token);
-                
-                fetch('unified_login.php', {
-                    method: 'POST',
-                    body: formData,
-                    credentials: 'same-origin',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.innerHTML = '<i class="bi bi-envelope me-2"></i>Send Reset Code';
-                    }
-                    
-                    if (data.status === 'otp_sent') {
-                        showForgotStep2();
-                        showMessage('Reset code sent to your email!', 'success');
-                    } else {
-                        showMessage(data.message || 'Failed to send reset code. Please try again.', 'danger');
-                        if (typeof grecaptcha !== 'undefined') {
-                            grecaptcha.reset();
-                        }
-                    }
-                })
-                .catch(error => {
-                    console.error('Forgot password error:', error);
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.innerHTML = '<i class="bi bi-envelope me-2"></i>Send Reset Code';
-                    }
-                    showMessage('Connection error. Please try again.', 'danger');
-                    if (typeof grecaptcha !== 'undefined') {
-                        grecaptcha.reset();
-                    }
-                });
-            }, 300); // Small delay to ensure modal closes smoothly
-        }
-        
-        // Reset reCAPTCHA when login modal is closed
-        document.getElementById('recaptchaModal')?.addEventListener('hidden.bs.modal', function() {
-            if (typeof grecaptcha !== 'undefined') {
-                grecaptcha.reset();
-            }
-        });
-        
-        // Reset reCAPTCHA when forgot password modal is closed
-        document.getElementById('recaptchaModalForgot')?.addEventListener('hidden.bs.modal', function() {
-            if (typeof grecaptcha !== 'undefined') {
-                grecaptcha.reset();
-            }
-        });
-    </script>
 
 </body>
 </html>
