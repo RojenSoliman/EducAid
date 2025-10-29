@@ -188,7 +188,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_document'])) 
                 'last_name' => $student['last_name'] ?? '',
                 'middle_name' => $student['middle_name'] ?? '',
                 'university_id' => $student['university_id'] ?? null,
-                'year_level_id' => $student['year_level_id'] ?? null
+                'year_level_id' => $student['year_level_id'] ?? null,
+                'university_name' => $student['university_name'] ?? '',
+                'year_level_name' => $student['year_level_name'] ?? '',
+                'barangay_name' => $student['barangay_name'] ?? ''
             ]
         );
 
@@ -998,6 +1001,14 @@ $page_title = 'Upload Documents';
                                         <i class="bi bi-cpu"></i> <?= htmlspecialchars($processLabel) ?>
                                     </button>
 
+                                    <?php if ($has_ocr): ?>
+                                    <button type="button"
+                                            class="btn btn-info btn-sm"
+                                            onclick="loadStudentValidationData('<?= $type_code ?>', <?= $student_id ?>)">
+                                        <i class="bi bi-clipboard-check"></i> View Validation Details
+                                    </button>
+                                    <?php endif; ?>
+
                                     <form method="POST" style="display: inline;">
                                         <input type="hidden" name="document_type" value="<?= $type_code ?>">
                                         <input type="hidden" name="confirm_upload" value="1">
@@ -1313,6 +1324,286 @@ $page_title = 'Upload Documents';
                 }
             });
         });
+
+        // Load validation data for student view
+        async function loadStudentValidationData(docTypeCode, studentId) {
+            try {
+                // Map document type codes to document types
+                const docTypeMap = {
+                    '00': 'eaf',
+                    '01': 'grades',
+                    '02': 'letter_to_mayor',
+                    '03': 'certificate_of_indigency',
+                    '04': 'id_picture'
+                };
+
+                const docType = docTypeMap[docTypeCode];
+                if (!docType) {
+                    console.error('Unknown document type code:', docTypeCode);
+                    return;
+                }
+
+                const response = await fetch('get_validation_details.php?doc_type=' + encodeURIComponent(docType) + '&student_id=' + studentId);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch validation data');
+                }
+
+                const validation = await response.json();
+                
+                // Generate HTML and show modal
+                const modalBody = document.getElementById('studentValidationModalBody');
+                modalBody.innerHTML = generateStudentValidationHTML(validation, docType);
+                
+                const modal = new bootstrap.Modal(document.getElementById('studentValidationModal'));
+                modal.show();
+            } catch (error) {
+                console.error('Error loading validation data:', error);
+                alert('Failed to load validation details. Please try again.');
+            }
+        }
+
+        // Generate validation HTML for student view
+        function generateStudentValidationHTML(validation, docType) {
+            if (!validation || !validation.identity_verification) {
+                return '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No validation data available.</div>';
+            }
+
+            const identity = validation.identity_verification;
+            const isIdOrEaf = (docType === 'id_picture' || docType === 'eaf');
+            const isLetter = (docType === 'letter_to_mayor');
+            const isCert = (docType === 'certificate_of_indigency');
+
+            let html = '<div class="verification-checklist">';
+
+            // Name checks (all documents)
+            ['first_name', 'middle_name', 'last_name'].forEach(field => {
+                const fieldLabel = field.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                const check = identity[field + '_match'];
+                
+                if (check && check.found !== undefined) {
+                    const passed = check.found;
+                    const confidence = Math.round(parseFloat(check.confidence) || 0);
+                    const checkClass = passed ? 'check-passed' : 'check-failed';
+                    const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+                    
+                    html += `
+                        <div class="form-check ${checkClass}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <label class="form-check-label">
+                                    <i class="bi ${icon}"></i> ${fieldLabel}
+                                </label>
+                                <span class="badge bg-${confidence >= 80 ? 'success' : confidence >= 60 ? 'warning' : 'danger'} confidence-score">
+                                    ${confidence}%
+                                </span>
+                            </div>
+                        </div>`;
+                }
+            });
+
+            // Year level check (for ID and EAF only)
+            if (isIdOrEaf && identity.year_level_match) {
+                const check = identity.year_level_match;
+                const passed = check.found;
+                const checkClass = passed ? 'check-passed' : 'check-failed';
+                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+                
+                html += `
+                    <div class="form-check ${checkClass}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-check-label">
+                                <i class="bi ${icon}"></i> Year Level
+                            </label>
+                            <span class="badge bg-${passed ? 'success' : 'danger'} confidence-score">
+                                ${passed ? '✓' : 'Not Found'}
+                            </span>
+                        </div>
+                    </div>`;
+            }
+
+            // Barangay check (for Letter and Certificate)
+            if ((isLetter || isCert) && identity.barangay_match) {
+                const check = identity.barangay_match;
+                const passed = check.found;
+                const confidence = Math.round(parseFloat(check.confidence) || 0);
+                const checkClass = passed ? 'check-passed' : 'check-failed';
+                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+                
+                html += `
+                    <div class="form-check ${checkClass}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-check-label">
+                                <i class="bi ${icon}"></i> Barangay
+                            </label>
+                            <span class="badge bg-${confidence >= 80 ? 'success' : confidence >= 60 ? 'warning' : 'danger'} confidence-score">
+                                ${confidence}%
+                            </span>
+                        </div>
+                    </div>`;
+            }
+
+            // University check (for ID and EAF only)
+            if (isIdOrEaf && identity.school_match) {
+                const check = identity.school_match;
+                const passed = check.found;
+                const confidence = Math.round(parseFloat(check.confidence) || 0);
+                const checkClass = passed ? 'check-passed' : 'check-failed';
+                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+                
+                html += `
+                    <div class="form-check ${checkClass}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-check-label">
+                                <i class="bi ${icon}"></i> University/College
+                            </label>
+                            <span class="badge bg-${confidence >= 80 ? 'success' : confidence >= 60 ? 'warning' : 'danger'} confidence-score">
+                                ${confidence}%
+                            </span>
+                        </div>
+                    </div>`;
+            }
+
+            // Mayor header check (for Letter only)
+            if (isLetter && identity.office_header_found) {
+                const check = identity.office_header_found;
+                const passed = check.found;
+                const checkClass = passed ? 'check-passed' : 'check-failed';
+                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+                
+                html += `
+                    <div class="form-check ${checkClass}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-check-label">
+                                <i class="bi ${icon}"></i> Mayor/Office Header
+                            </label>
+                            <span class="badge bg-${passed ? 'success' : 'danger'} confidence-score">
+                                ${passed ? '✓' : 'Not Found'}
+                            </span>
+                        </div>
+                    </div>`;
+            }
+
+            // Certificate title check (for Certificate only)
+            if (isCert && identity.certificate_title_found) {
+                const check = identity.certificate_title_found;
+                const passed = check.found;
+                const checkClass = passed ? 'check-passed' : 'check-failed';
+                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+                
+                html += `
+                    <div class="form-check ${checkClass}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-check-label">
+                                <i class="bi ${icon}"></i> Certificate Title
+                            </label>
+                            <span class="badge bg-${passed ? 'success' : 'danger'} confidence-score">
+                                ${passed ? '✓' : 'Not Found'}
+                            </span>
+                        </div>
+                    </div>`;
+            }
+
+            // General Trias check (for Certificate only)
+            if (isCert && identity.general_trias_found) {
+                const check = identity.general_trias_found;
+                const passed = check.found;
+                const checkClass = passed ? 'check-passed' : 'check-failed';
+                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+                
+                html += `
+                    <div class="form-check ${checkClass}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-check-label">
+                                <i class="bi ${icon}"></i> General Trias Location
+                            </label>
+                            <span class="badge bg-${passed ? 'success' : 'danger'} confidence-score">
+                                ${passed ? '✓' : 'Not Found'}
+                            </span>
+                        </div>
+                    </div>`;
+            }
+
+            // Official keywords check (for EAF only)
+            if (docType === 'eaf' && identity.official_keywords) {
+                const check = identity.official_keywords;
+                const passed = check.found;
+                const confidence = Math.round(parseFloat(check.confidence) || 0);
+                const checkClass = passed ? 'check-passed' : 'check-failed';
+                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+                
+                html += `
+                    <div class="form-check ${checkClass}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-check-label">
+                                <i class="bi ${icon}"></i> Official Document Keywords
+                            </label>
+                            <span class="badge bg-${confidence >= 80 ? 'success' : confidence >= 60 ? 'warning' : 'danger'} confidence-score">
+                                ${confidence}%
+                            </span>
+                        </div>
+                    </div>`;
+            }
+
+            html += '</div>';
+            return html;
+        }
     </script>
+
+    <!-- Student Validation Modal -->
+    <div class="modal fade" id="studentValidationModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clipboard-check"></i> Document Validation Details
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="studentValidationModalBody">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* Verification checklist styling */
+        .verification-checklist {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .verification-checklist .form-check {
+            padding: 0.75rem 1rem;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+            margin: 0;
+        }
+
+        .verification-checklist .form-check.check-passed {
+            background: #d1e7dd;
+            border-color: #badbcc;
+        }
+
+        .verification-checklist .form-check.check-failed {
+            background: #f8d7da;
+            border-color: #f5c2c7;
+        }
+
+        .confidence-score {
+            font-size: 0.875rem;
+            padding: 0.25rem 0.5rem;
+            min-width: 50px;
+            text-align: center;
+        }
+    </style>
 </body>
 </html>

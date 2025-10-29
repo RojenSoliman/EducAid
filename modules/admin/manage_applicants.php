@@ -879,6 +879,10 @@ function render_table($applicants, $connection) {
                                 $server_base = dirname(__DIR__, 2) . '/assets/uploads/student/';
                                 $web_base = '../../assets/uploads/student/';
                                 
+                                // Get student's name for fallback search
+                                $first_name = $applicant['first_name'] ?? '';
+                                $last_name = $applicant['last_name'] ?? '';
+                                
                                 $document_folders = [
                                     'id_pictures' => 'id_picture',
                                     'enrollment_forms' => 'eaf',
@@ -890,13 +894,30 @@ function render_table($applicants, $connection) {
                                 foreach ($document_folders as $folder => $type) {
                                     $dir = $server_base . $folder . '/';
                                     if (is_dir($dir)) {
-                                        // Look for files starting with student_id
+                                        // Look for files starting with student_id OR containing student's name
                                         $pattern = $dir . $student_id . '_*';
                                         $matches = glob($pattern);
+                                        
+                                        // If no matches by student_id, try searching by name
+                                        if (empty($matches)) {
+                                            $all_files = glob($dir . '*');
+                                            foreach ($all_files as $file) {
+                                                $basename = strtolower(basename($file));
+                                                $first_norm = strtolower($first_name);
+                                                $last_norm = strtolower($last_name);
+                                                
+                                                // Check if file contains both first and last name
+                                                if (strpos($basename, $first_norm) !== false && 
+                                                    strpos($basename, $last_norm) !== false) {
+                                                    $matches[] = $file;
+                                                }
+                                            }
+                                        }
+                                        
                                         if (!empty($matches)) {
                                             // Filter out associated files (.verify.json, .ocr.txt, etc)
                                             $matches = array_filter($matches, function($file) {
-                                                return !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json)$/', $file);
+                                                return !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/', $file);
                                             });
                                             
                                             if (!empty($matches)) {
@@ -907,6 +928,46 @@ function render_table($applicants, $connection) {
                                                 $newest = $matches[0];
                                                 $found_documents[$type] = $web_base . $folder . '/' . basename($newest);
                                             }
+                                        }
+                                    }
+                                }
+                                
+                                // Also search temp folders for documents not yet moved to permanent storage
+                                $temp_base = dirname(__DIR__, 2) . '/assets/uploads/temp/';
+                                $temp_web_base = '../../assets/uploads/temp/';
+                                
+                                foreach ($document_folders as $folder => $type) {
+                                    // Skip if already found in student directory
+                                    if (isset($found_documents[$type])) {
+                                        continue;
+                                    }
+                                    
+                                    $temp_dir = $temp_base . $folder . '/';
+                                    if (is_dir($temp_dir)) {
+                                        // Search by student_id or name
+                                        $all_files = glob($temp_dir . '*');
+                                        $matches = [];
+                                        
+                                        foreach ($all_files as $file) {
+                                            $basename = strtolower(basename($file));
+                                            
+                                            // Skip associated files
+                                            if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/', $basename)) {
+                                                continue;
+                                            }
+                                            
+                                            // Match by student_id or name
+                                            if (strpos($basename, strtolower($student_id)) !== false ||
+                                                (strpos($basename, strtolower($first_name)) !== false && 
+                                                 strpos($basename, strtolower($last_name)) !== false)) {
+                                                $matches[filemtime($file)] = $file;
+                                            }
+                                        }
+                                        
+                                        if (!empty($matches)) {
+                                            krsort($matches); // newest first
+                                            $newest = reset($matches);
+                                            $found_documents[$type] = $temp_web_base . $folder . '/' . basename($newest);
                                         }
                                     }
                                 }
@@ -2850,6 +2911,8 @@ function generateValidationHTML(validation, docType) {
     console.log('=== generateValidationHTML DEBUG ===');
     console.log('docType:', docType);
     console.log('validation object:', validation);
+    console.log('ocr_confidence type:', typeof validation.ocr_confidence);
+    console.log('ocr_confidence value:', validation.ocr_confidence);
     console.log('Has identity_verification?', !!validation.identity_verification);
     if (validation.identity_verification) {
         console.log('identity_verification keys:', Object.keys(validation.identity_verification));
@@ -2867,13 +2930,51 @@ function generateValidationHTML(validation, docType) {
     let html = '';
     
     // === OCR CONFIDENCE BANNER ===
-    if (validation.ocr_confidence !== undefined) {
-        const conf = parseFloat(validation.ocr_confidence);
+    if (validation.ocr_confidence !== undefined && validation.ocr_confidence !== null) {
+        const conf = parseFloat(validation.ocr_confidence) || 0;
         const confColor = conf >= 80 ? 'success' : (conf >= 60 ? 'warning' : 'danger');
         html += `<div class="alert alert-${confColor} d-flex justify-content-between align-items-center mb-4">
-            <div><h5 class="mb-0"><i class="bi bi-robot me-2"></i>Overall OCR Confidence</h5></div>
+            <div>
+                <h5 class="mb-0"><i class="bi bi-robot me-2"></i>Overall OCR Confidence</h5>
+                <small class="text-muted">How well Tesseract extracted text from the image</small>
+            </div>
             <h3 class="mb-0 fw-bold">${conf.toFixed(1)}%</h3>
         </div>`;
+    }
+    
+    // === CHECK IF VERIFICATION DATA EXISTS ===
+    const hasVerificationData = validation.identity_verification && 
+                                (parseFloat(validation.identity_verification.first_name_confidence || 0) > 0 ||
+                                 parseFloat(validation.identity_verification.last_name_confidence || 0) > 0 ||
+                                 parseFloat(validation.identity_verification.school_confidence || 0) > 0 ||
+                                 parseInt(validation.identity_verification.passed_checks || 0) > 0);
+    
+    if (!hasVerificationData && parseFloat(validation.ocr_confidence || 0) > 0) {
+        html += `<div class="alert alert-warning mb-4">
+            <h6><i class="bi bi-exclamation-triangle me-2"></i>Verification Incomplete</h6>
+            <p><strong>Text was successfully extracted (${parseFloat(validation.ocr_confidence || 0).toFixed(1)}% OCR confidence)</strong>, 
+            but verification against student data has not been performed yet.</p>
+            <p class="mb-0"><small>This usually happens when:</small></p>
+            <ul class="mb-0">
+                <li><small>The document was uploaded but not processed for verification</small></li>
+                <li><small>The .verify.json file is missing or corrupted</small></li>
+                <li><small>The student needs to click "Process OCR" button to complete verification</small></li>
+            </ul>
+        </div>`;
+        
+        // Show extracted text if available
+        if (validation.extracted_text) {
+            html += `<div class="card mb-3">
+                <div class="card-header bg-secondary text-white">
+                    <h6 class="mb-0"><i class="bi bi-file-text me-2"></i>Extracted Text (${parseFloat(validation.ocr_confidence || 0).toFixed(1)}% confidence)</h6>
+                </div>
+                <div class="card-body">
+                    <pre style="max-height: 300px; overflow-y: auto; white-space: pre-wrap; font-size: 0.85rem;">${validation.extracted_text}</pre>
+                </div>
+            </div>`;
+        }
+        
+        return html;
     }
     
     // === DETAILED VERIFICATION CHECKLIST ===

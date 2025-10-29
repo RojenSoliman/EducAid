@@ -10,13 +10,20 @@ if (!isset($_SESSION['student_id']) && !isset($_SESSION['admin_id'])) {
 
 include '../../config/database.php';
 
-// Get POST data
-$input = json_decode(file_get_contents('php://input'), true);
-$doc_type = $input['doc_type'] ?? '';
+// Get data from either GET (for AJAX fetch) or POST (for JSON body)
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    $doc_type = $_GET['doc_type'] ?? '';
+    $student_id_param = $_GET['student_id'] ?? '';
+} else {
+    // Get POST data
+    $input = json_decode(file_get_contents('php://input'), true);
+    $doc_type = $input['doc_type'] ?? '';
+    $student_id_param = $input['student_id'] ?? '';
+}
 
 // For admins, they can pass student_id. For students, use their own session student_id
-$student_id = isset($_SESSION['admin_id']) && !empty($input['student_id']) 
-    ? $input['student_id'] 
+$student_id = isset($_SESSION['admin_id']) && !empty($student_id_param) 
+    ? $student_id_param 
     : ($_SESSION['student_id'] ?? null);
 
 if (empty($doc_type) || empty($student_id)) {
@@ -49,16 +56,95 @@ try {
         [$student_id, $document_type_code]
     );
     
-    if (!$doc_query || pg_num_rows($doc_query) === 0) {
-        echo json_encode(['success' => false, 'message' => 'Document not found in database']);
-        exit;
+    $document = null;
+    $file_path = null;
+    $verification_data_path = null;
+    
+    // If document found in database, use that
+    if ($doc_query && pg_num_rows($doc_query) > 0) {
+        $document = pg_fetch_assoc($doc_query);
+        $file_path = $document['file_path'];
+        $verification_data_path = $document['verification_data_path'];
+        $validation_data['ocr_confidence'] = floatval($document['ocr_confidence'] ?? 0);
+        $validation_data['upload_date'] = $document['upload_date'];
+    } else {
+        // Document not in database - search filesystem for registration documents
+        // This handles new applicants whose documents haven't been moved to permanent storage yet
+        
+        // Get student name for file search
+        $student_query = pg_query_params($connection,
+            "SELECT first_name, last_name FROM students WHERE student_id = $1",
+            [$student_id]
+        );
+        
+        if (!$student_query || pg_num_rows($student_query) === 0) {
+            echo json_encode(['success' => false, 'message' => 'Student not found']);
+            exit;
+        }
+        
+        $student_info = pg_fetch_assoc($student_query);
+        $first_name = $student_info['first_name'];
+        $last_name = $student_info['last_name'];
+        
+        // Build search paths based on document type
+        $server_base = dirname(__DIR__, 2) . '/assets/uploads/';
+        $folder_map = [
+            '04' => 'temp/id_pictures/', // ID Picture
+            '00' => 'temp/enrollment_forms/', // EAF
+            '01' => 'temp/grades/', // Grades
+            '02' => 'temp/letter_mayor/', // Letter to Mayor
+            '03' => 'temp/indigency/' // Certificate of Indigency
+        ];
+        
+        $search_folder = $server_base . ($folder_map[$document_type_code] ?? '');
+        
+        if (is_dir($search_folder)) {
+            // Search for files containing student's name or student_id
+            $matches = [];
+            foreach (glob($search_folder . '*.*') as $file) {
+                $basename = basename($file);
+                // Skip associated files
+                if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/', $basename)) {
+                    continue;
+                }
+                
+                // Match by student_id or name
+                $normalized_name = strtolower($basename);
+                if (strpos($normalized_name, strtolower($student_id)) !== false ||
+                    (strpos($normalized_name, strtolower($first_name)) !== false && 
+                     strpos($normalized_name, strtolower($last_name)) !== false)) {
+                    $matches[filemtime($file)] = $file;
+                }
+            }
+            
+            if (!empty($matches)) {
+                krsort($matches); // newest first
+                $file_path = reset($matches);
+                $verification_data_path = $file_path . '.verify.json';
+                
+                // Get OCR confidence from .confidence.json or .verify.json
+                $confidence_file = $file_path . '.confidence.json';
+                if (file_exists($confidence_file)) {
+                    $conf_data = json_decode(file_get_contents($confidence_file), true);
+                    $validation_data['ocr_confidence'] = floatval($conf_data['ocr_confidence'] ?? 0);
+                } elseif (file_exists($verification_data_path)) {
+                    $verify_data = json_decode(file_get_contents($verification_data_path), true);
+                    $validation_data['ocr_confidence'] = floatval($verify_data['summary']['average_confidence'] ?? 
+                                                        $verify_data['ocr_confidence'] ?? 0);
+                } else {
+                    // No verification data found - set to 0
+                    $validation_data['ocr_confidence'] = 0;
+                }
+                
+                $validation_data['upload_date'] = date('Y-m-d H:i:s', filemtime($file_path));
+            }
+        }
     }
     
-    $document = pg_fetch_assoc($doc_query);
-    $file_path = $document['file_path'];
-    $verification_data_path = $document['verification_data_path'];
-    $validation_data['ocr_confidence'] = $document['ocr_confidence'];
-    $validation_data['upload_date'] = $document['upload_date'];
+    if (!$file_path || !file_exists($file_path)) {
+        echo json_encode(['success' => false, 'message' => 'Document file not found on server']);
+        exit;
+    }
     
     // ID Picture - Get identity verification data
     if ($doc_type === 'id_picture') {
