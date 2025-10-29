@@ -104,6 +104,7 @@ if ($has_qr_code) {
     
     .home-section {
       min-height: 100vh;
+      padding-top: 80px; /* Account for header (56px) + some spacing */
     }
     
     /* Use shared header for nav and menu toggle styling */
@@ -223,10 +224,99 @@ if ($has_qr_code) {
     }
 
     @media (max-width: 768px) {
-      .main-content { padding: 1rem; }
-      .qr-card { padding: 1.5rem; }
-      .qr-image { max-width: 280px; }
-      .home-section { margin-left: 0 !important; }
+      .home-section {
+        padding-top: 80px; /* Ensure content doesn't go under header on mobile */
+      }
+      
+      .main-content { 
+        padding: 1rem 0.75rem; 
+      }
+      
+      .qr-card { 
+        padding: 1rem; 
+        margin: 0 0.5rem;
+      }
+      
+      .student-info {
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      
+      .student-info h2 {
+        font-size: 1.3rem;
+        margin-bottom: 1rem !important;
+      }
+      
+      .info-grid {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+      }
+      
+      .info-item {
+        padding: 0.75rem;
+      }
+      
+      .info-label {
+        font-size: 0.85rem;
+      }
+      
+      .info-value {
+        font-size: 1rem;
+      }
+      
+      .qr-display {
+        padding: 1rem;
+        margin: 1rem 0;
+      }
+      
+      .qr-image { 
+        max-width: 100%;
+        width: 100%;
+        height: auto;
+      }
+      
+      .payroll-badge {
+        font-size: 1rem;
+        padding: 0.6rem 1.2rem;
+      }
+      
+      .no-qr-message {
+        padding: 1.25rem;
+        margin: 1rem 0;
+      }
+      
+      .no-qr-message h3 {
+        font-size: 1.2rem;
+      }
+      
+      .no-qr-message p,
+      .no-qr-message ul {
+        font-size: 0.9rem;
+      }
+      
+      .download-btn {
+        padding: 10px 20px;
+        font-size: 0.95rem;
+      }
+      
+      .home-section { 
+        margin-left: 0 !important; 
+      }
+      
+      /* Card adjustments for mobile */
+      .card-body {
+        padding: 0.75rem;
+      }
+      
+      .alert {
+        padding: 0.75rem;
+        font-size: 0.9rem;
+      }
+      
+      .alert h4 {
+        font-size: 1.1rem;
+      }
+      
       /* Rely on shared header responsiveness */
     }
   </style>
