@@ -794,6 +794,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             right: 14px !important;
         }
         
+        /* CRITICAL FIX: Force footer to stay compact and not inherit height from login containers */
+        #dynamic-footer,
+        #dynamic-footer .container,
+        #dynamic-footer .container-fluid,
+        #dynamic-footer .row,
+        #dynamic-footer [class*="col-"] {
+            height: auto !important;
+            min-height: auto !important;
+            max-height: none !important;
+        }
+        
+        /* Ensure footer is never affected by parent flex containers */
+        body > footer,
+        body > #dynamic-footer {
+            flex: 0 0 auto !important;
+        }
+        
         /* ==== MODERN BRAND SECTION STYLES ==== */
         .brand-section {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1079,7 +1096,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <div class="login-content-container">
         <div class="login-main-wrapper">
             <div class="container-fluid p-0">
-        <div class="row g-0 h-100">
+                <div class="row g-0 h-100">
             <!-- Brand Section - Hidden on mobile, visible on tablet+ -->
             <div class="col-lg-6 d-none d-lg-flex brand-section">
                 <div class="brand-content">
@@ -1362,12 +1379,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-    <!-- Close wrapper divs for isolation -->
-        </div>
-    </div>
+                </div> <!-- Close row -->
+            </div> <!-- Close container-fluid -->
+        </div> <!-- Close login-main-wrapper -->
+    </div> <!-- Close login-content-container -->
 
     <!-- Footer - Dynamic CMS Controlled -->
     <?php include __DIR__ . '/includes/website/footer.php'; ?>
