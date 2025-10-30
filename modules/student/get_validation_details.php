@@ -64,10 +64,10 @@ try {
     if ($doc_query && pg_num_rows($doc_query) > 0) {
         $document = pg_fetch_assoc($doc_query);
         $file_path = $document['file_path'];
-        $verification_data_path = $document['verification_data_path'];
         
-        // If verification_data_path is null/empty but file_path exists, construct it
-        if (empty($verification_data_path) && !empty($file_path)) {
+        // Construct verification_data_path from file_path (verification_data_path column removed from schema)
+        $verification_data_path = null;
+        if (!empty($file_path)) {
             $path_info = pathinfo($file_path);
             $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
             $verification_data_path = $file_base . '.verify.json';

@@ -27,9 +27,15 @@ class FileManagementService {
     /**
      * Move files from temp to permanent student storage
      * Called when admin approves a student application
+     * Also updates documents table to mark as 'approved' with approved_by and approved_date
      */
-    public function moveTemporaryFilesToPermanent($studentId) {
+    public function moveTemporaryFilesToPermanent($studentId, $adminId = null) {
         error_log("FileManagement: Moving temp files to permanent for student: $studentId");
+        
+        // Get admin ID from session if not provided
+        if ($adminId === null && isset($_SESSION['admin_id'])) {
+            $adminId = $_SESSION['admin_id'];
+        }
         
         // Get student info for file naming
         $studentQuery = pg_query_params($this->conn,
@@ -48,6 +54,7 @@ class FileManagementService {
         
         $movedFiles = [];
         $errors = [];
+        $documentIdsToUpdate = [];
         
         foreach ($this->folders as $tempFolder => $permanentFolder) {
             $tempPath = $this->basePath . '/temp/' . $tempFolder;
@@ -100,6 +107,12 @@ class FileManagementService {
                     $movedFiles[] = $newFilename;
                     error_log("FileManagement: Moved $filename → $newFilename");
                     
+                    // Track old and new paths for database update
+                    $documentIdsToUpdate[] = [
+                        'old_path' => $file,
+                        'new_path' => $newPath
+                    ];
+                    
                     // Also move associated files (.verify.json, .ocr.txt, etc)
                     $associatedFiles = glob($file . '.*');
                     foreach ($associatedFiles as $assocFile) {
@@ -109,6 +122,42 @@ class FileManagementService {
                 } else {
                     $errors[] = "Failed to move: $filename";
                     error_log("FileManagement: Failed to move $filename");
+                }
+            }
+        }
+        
+        // Update documents table to mark all moved files as 'approved'
+        if (!empty($documentIdsToUpdate)) {
+            foreach ($documentIdsToUpdate as $pathInfo) {
+                // Find document by old file path
+                $oldPathForDb = str_replace(__DIR__ . '/../', '', $pathInfo['old_path']);
+                $newPathForDb = str_replace(__DIR__ . '/../', '', $pathInfo['new_path']);
+                
+                // Update document status, file path, approved_by, and approved_date
+                $updateQuery = "UPDATE documents 
+                               SET file_path = $1,
+                                   status = 'approved',
+                                   approved_by = $2,
+                                   approved_date = NOW(),
+                                   last_modified = NOW()
+                               WHERE student_id = $3 
+                               AND (file_path = $4 OR file_path LIKE $5)";
+                
+                $result = pg_query_params($this->conn, $updateQuery, [
+                    $newPathForDb,
+                    $adminId,
+                    $studentId,
+                    $oldPathForDb,
+                    '%' . basename($pathInfo['old_path'])
+                ]);
+                
+                if ($result) {
+                    $rowsUpdated = pg_affected_rows($result);
+                    if ($rowsUpdated > 0) {
+                        error_log("FileManagement: Updated documents table for " . basename($pathInfo['new_path']) . " (status=approved, approved_by=$adminId)");
+                    }
+                } else {
+                    error_log("FileManagement: Failed to update documents table for " . basename($pathInfo['new_path']) . ": " . pg_last_error($this->conn));
                 }
             }
         }

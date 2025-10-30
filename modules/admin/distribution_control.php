@@ -480,10 +480,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Get distribution history
+// Get distribution history with accurate student counts
+// Order by finalized_at (most recent first) to show true chronological order
 $history_query = "
-    SELECT * FROM distribution_snapshots 
-    ORDER BY distribution_date DESC 
+    SELECT ds.*, 
+           (SELECT COUNT(DISTINCT student_id) 
+            FROM distribution_student_records 
+            WHERE snapshot_id = ds.snapshot_id) as actual_student_count
+    FROM distribution_snapshots ds
+    WHERE finalized_at IS NOT NULL
+    ORDER BY finalized_at DESC, distribution_date DESC
     LIMIT 5
 ";
 $history_result = pg_query($connection, $history_query);
@@ -944,7 +950,7 @@ $history_result = pg_query($connection, $history_query);
                                                     <tr>
                                                         <td><?= date('M j, Y', strtotime($hist['distribution_date'])) ?></td>
                                                         <td><?= htmlspecialchars($hist['academic_year']) ?> <?= htmlspecialchars($hist['semester']) ?></td>
-                                                        <td><?= $hist['total_students_count'] ?></td>
+                                                        <td><?= $hist['actual_student_count'] ?? 0 ?></td>
                                                         <td><?= htmlspecialchars($hist['location']) ?></td>
                                                     </tr>
                                                 <?php endwhile; ?>

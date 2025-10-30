@@ -25,20 +25,44 @@ if (is_dir($distributionsPath)) {
         // Parse distribution ID from filename (format: #MUNICIPALITY-DISTR-YYYY-MM-DD-HHMMSS.zip)
         $distribution_id = str_replace('.zip', '', $filename);
         
-        // Try to open ZIP and count files
+        // Try to open ZIP and count files AND student folders
         $fileCount = 0;
+        $studentFolderCount = 0;
         $zip = new ZipArchive();
         if ($zip->open($zipFile) === true) {
             $fileCount = $zip->numFiles;
+            
+            // Count unique student folders (top-level directories in ZIP)
+            // Format: "LastName, FirstName M. - STUDENT-ID/"
+            $studentFolders = [];
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $stat = $zip->statIndex($i);
+                $path = $stat['name'];
+                
+                // Extract first folder name (student folder)
+                $parts = explode('/', $path);
+                if (count($parts) > 1 && !empty($parts[0])) {
+                    $studentFolders[$parts[0]] = true;
+                }
+            }
+            $studentFolderCount = count($studentFolders);
+            
             $zip->close();
         }
         
         // Check if there's a matching snapshot in database
         $snapshotQuery = pg_query_params($connection,
-            "SELECT * FROM distribution_snapshots WHERE archive_filename = $1 OR distribution_id = $2 LIMIT 1",
+            "SELECT ds.*, 
+                    (SELECT COUNT(DISTINCT student_id) FROM distribution_student_records WHERE snapshot_id = ds.snapshot_id) as actual_student_count
+             FROM distribution_snapshots ds 
+             WHERE archive_filename = $1 OR distribution_id = $2 
+             LIMIT 1",
             [$filename, $distribution_id]
         );
         $snapshot = $snapshotQuery ? pg_fetch_assoc($snapshotQuery) : null;
+        
+        // Use actual count from database or ZIP folder count
+        $actualStudentCount = $snapshot['actual_student_count'] ?? $studentFolderCount;
         
         // Build distribution entry
         $dist = [
@@ -46,7 +70,7 @@ if (is_dir($distributionsPath)) {
             'created_at' => date('Y-m-d H:i:s', $filetime),
             'year_level' => $snapshot['academic_year'] ?? 'N/A',
             'semester' => $snapshot['semester'] ?? 'N/A',
-            'student_count' => $snapshot['total_students_count'] ?? 0,
+            'student_count' => $actualStudentCount, // Use accurate count from database or ZIP folders
             'file_count' => $fileCount,
             'original_size' => $filesize * 2, // Estimate: assume 50% compression
             'current_size' => $filesize,

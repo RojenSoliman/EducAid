@@ -55,10 +55,10 @@ try {
         $updateResult = pg_query_params($connection, $updateQuery, [$student['student_id']]);
         
         if ($updateResult) {
-            // Move files from temp to permanent storage using FileManagementService
+            // Move files from temp to permanent storage using FileManagementService AND update documents table
             require_once __DIR__ . '/../../services/FileManagementService.php';
             $fileService = new FileManagementService($connection);
-            $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($student['student_id']);
+            $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($student['student_id'], $_SESSION['admin_id']);
             
             if (!$fileMoveResult['success']) {
                 error_log("Auto-approve FileManagement: Error moving files for student " . $student['student_id'] . ": " . implode(', ', $fileMoveResult['errors']));

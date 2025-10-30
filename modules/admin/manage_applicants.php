@@ -1434,10 +1434,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /** @phpstan-ignore-next-line */
         pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$sid]);
         
-        // Move files from temp to permanent storage
+        // Move files from temp to permanent storage AND update documents table
         require_once __DIR__ . '/../../services/FileManagementService.php';
         $fileService = new FileManagementService($connection);
-        $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($sid);
+        $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($sid, $_SESSION['admin_id']);
         
         if (!$fileMoveResult['success']) {
             error_log("FileManagement: Error moving files for student $sid: " . implode(', ', $fileMoveResult['errors']));
@@ -1497,10 +1497,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             /** @phpstan-ignore-next-line */
             pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$sid]);
 
-            // Move files from temp to permanent storage
+            // Move files from temp to permanent storage AND update documents table
             require_once __DIR__ . '/../../services/FileManagementService.php';
             $fileService = new FileManagementService($connection);
-            $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($sid);
+            $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($sid, $_SESSION['admin_id']);
             
             if (!$fileMoveResult['success']) {
                 error_log("FileManagement: Error moving files for student $sid (override): " . implode(', ', $fileMoveResult['errors']));
@@ -2550,6 +2550,45 @@ document.addEventListener('keydown', function(event) {
 // Real-time updates
 let isUpdating = false;
 let lastUpdateData = null;
+let modalRefreshIntervals = new Map(); // Track refresh intervals for each open modal
+
+// Function to refresh a specific modal's content
+function refreshModalContent(modalEl, studentId, silent = false) {
+    const modalBody = modalEl.querySelector('.modal-body');
+    if (!modalBody) return;
+    
+    const originalContent = modalBody.innerHTML;
+    
+    // Only show loading indicator on initial load (not silent refreshes)
+    if (!silent) {
+        modalBody.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading latest documents...</p></div>';
+    }
+    
+    const refreshUrl = window.location.pathname + '?refresh_modal=1&student_id=' + encodeURIComponent(studentId);
+    
+    fetch(refreshUrl)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.html) {
+                // Only update if content actually changed (to avoid flickering)
+                if (modalBody.innerHTML !== data.html) {
+                    modalBody.innerHTML = data.html;
+                    console.log('Modal content updated for student:', studentId);
+                }
+            } else {
+                if (!silent) {
+                    modalBody.innerHTML = originalContent;
+                }
+                console.error('Failed to refresh modal content:', data.error || 'Unknown error');
+            }
+        })
+        .catch(error => {
+            if (!silent) {
+                modalBody.innerHTML = originalContent;
+            }
+            console.error('Error refreshing modal content:', error);
+        });
+}
 
 // Function to attach refresh listeners to student document modals
 function attachModalRefreshListeners() {
@@ -2564,39 +2603,37 @@ function attachModalRefreshListeners() {
             
             console.log('Attaching refresh listener to:', modalEl.id);
             
+            // When modal opens
             modalEl.addEventListener('shown.bs.modal', function() {
-                // Extract student_id from modal ID (e.g., "modal123" -> "123")
                 const studentId = this.id.replace('modal', '');
                 const modalBody = this.querySelector('.modal-body');
                 
                 console.log('Modal opened for student:', studentId);
                 
                 if (modalBody && studentId) {
-                    // Show loading indicator
-                    const originalContent = modalBody.innerHTML;
-                    modalBody.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading latest documents...</p></div>';
+                    // Initial refresh (with loading indicator)
+                    refreshModalContent(this, studentId, false);
                     
-                    // Fetch fresh modal content
-                    const refreshUrl = window.location.pathname + '?refresh_modal=1&student_id=' + encodeURIComponent(studentId);
-                    console.log('Fetching:', refreshUrl);
+                    // Set up auto-refresh every 3 seconds while modal is open
+                    const intervalId = setInterval(() => {
+                        // Only refresh if modal is still visible
+                        if (this.classList.contains('show')) {
+                            refreshModalContent(this, studentId, true); // Silent refresh
+                        }
+                    }, 3000); // Refresh every 3 seconds
                     
-                    fetch(refreshUrl)
-                        .then(response => response.json())
-                        .then(data => {
-                            console.log('Refresh response:', data);
-                            if (data.success && data.html) {
-                                modalBody.innerHTML = data.html;
-                                console.log('Modal content updated successfully');
-                            } else {
-                                modalBody.innerHTML = originalContent;
-                                console.error('Failed to refresh modal content:', data.error || 'Unknown error');
-                            }
-                        })
-                        .catch(error => {
-                            // Restore original content on error
-                            modalBody.innerHTML = originalContent;
-                            console.error('Error refreshing modal content:', error);
-                        });
+                    // Store interval ID
+                    modalRefreshIntervals.set(this.id, intervalId);
+                }
+            });
+            
+            // When modal closes, stop auto-refresh
+            modalEl.addEventListener('hidden.bs.modal', function() {
+                const intervalId = modalRefreshIntervals.get(this.id);
+                if (intervalId) {
+                    clearInterval(intervalId);
+                    modalRefreshIntervals.delete(this.id);
+                    console.log('Stopped auto-refresh for modal:', this.id);
                 }
             });
         }

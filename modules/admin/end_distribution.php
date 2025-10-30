@@ -11,36 +11,117 @@ require_once __DIR__ . '/../../services/FileCompressionService.php';
 
 /**
  * Delete all student uploaded documents from the file system
+ * INCLUDING associated OCR and verification files (.ocr.txt, .verify.json, etc.)
  */
 function deleteAllStudentUploads() {
     $uploadsPath = __DIR__ . '/../../assets/uploads/student';
     $documentTypes = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_mayor']; // Fixed: letter_mayor not letter_to_mayor
     
     $totalDeleted = 0;
+    $associatedDeleted = 0;
     $errors = [];
+    
+    // Associated file extensions to delete alongside main files
+    $associatedExtensions = ['.ocr.txt', '.verify.json', '.confidence.json', '.tsv', '.ocr.json'];
     
     foreach ($documentTypes as $type) {
         $folderPath = $uploadsPath . '/' . $type;
         if (is_dir($folderPath)) {
-            $files = glob($folderPath . '/*.*');
-            foreach ($files as $file) {
+            $items = scandir($folderPath);
+            $hasStudentFolders = false;
+            
+            // Check if we have student subdirectories (new structure)
+            foreach ($items as $item) {
+                if ($item !== '.' && $item !== '..' && is_dir($folderPath . '/' . $item)) {
+                    // If it looks like a student ID folder, we have new structure
+                    $hasStudentFolders = true;
+                    break;
+                }
+            }
+            
+            $filesToProcess = [];
+            
+            if ($hasStudentFolders) {
+                // NEW STRUCTURE: student/{doc_type}/{student_id}/files
+                error_log("  Deleting from new structure: $type/");
+                foreach ($items as $item) {
+                    if ($item !== '.' && $item !== '..') {
+                        $studentFolder = $folderPath . '/' . $item;
+                        if (is_dir($studentFolder)) {
+                            // Get all files in student folder
+                            $studentFiles = glob($studentFolder . '/*.*');
+                            foreach ($studentFiles as $file) {
+                                if (is_file($file)) {
+                                    $filesToProcess[] = $file;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // OLD STRUCTURE: flat files in student/{doc_type}/
+                error_log("  Deleting from legacy structure: $type/");
+                $filesToProcess = glob($folderPath . '/*.*');
+            }
+            
+            foreach ($filesToProcess as $file) {
                 if (is_file($file)) {
-                    if (unlink($file)) {
-                        $totalDeleted++;
-                    } else {
-                        $errors[] = "Failed to delete: " . basename($file);
+                    // Skip if this is already an associated file (will be deleted with main file)
+                    $isAssociated = false;
+                    foreach ($associatedExtensions as $ext) {
+                        if (substr($file, -strlen($ext)) === $ext) {
+                            $isAssociated = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$isAssociated) {
+                        // Delete main file
+                        if (unlink($file)) {
+                            $totalDeleted++;
+                            
+                            // Delete associated files - try both patterns
+                            $pathInfo = pathinfo($file);
+                            $fileDir = $pathInfo['dirname'];
+                            $fileBasename = $pathInfo['basename']; // Includes extension
+                            $fileWithoutExt = $pathInfo['filename']; // Without extension
+                            
+                            foreach ($associatedExtensions as $ext) {
+                                // Try both patterns:
+                                // 1. file.jpg.verify.json (new style)
+                                // 2. file.verify.json (old style)
+                                $associatedFile1 = $fileDir . '/' . $fileBasename . $ext;
+                                $associatedFile2 = $fileDir . '/' . $fileWithoutExt . $ext;
+                                
+                                if (file_exists($associatedFile1)) {
+                                    if (unlink($associatedFile1)) {
+                                        $associatedDeleted++;
+                                    } else {
+                                        $errors[] = "Failed to delete associated: " . basename($associatedFile1);
+                                    }
+                                } elseif (file_exists($associatedFile2)) {
+                                    if (unlink($associatedFile2)) {
+                                        $associatedDeleted++;
+                                    } else {
+                                        $errors[] = "Failed to delete associated: " . basename($associatedFile2);
+                                    }
+                                }
+                            }
+                        } else {
+                            $errors[] = "Failed to delete: " . basename($file);
+                        }
                     }
                 }
             }
         }
     }
     
-    error_log("Deleted $totalDeleted student upload files during distribution end");
+    error_log("Deleted $totalDeleted main files and $associatedDeleted associated files (OCR/JSON) during distribution end");
     if (!empty($errors)) {
         error_log("File deletion errors: " . implode(', ', $errors));
     }
     
-    return $totalDeleted;
+    return $totalDeleted + $associatedDeleted;
 }
 
 /**
@@ -456,7 +537,7 @@ if (in_array($distribution_status, ['preparing', 'active']) && $has_completed_sn
     // Count total files in student folders
     $file_count = 0;
     $total_size = 0;
-    $document_types = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_to_mayor'];
+    $document_types = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_mayor']; // Fixed: letter_mayor not letter_to_mayor
     foreach ($document_types as $type) {
         $folder = __DIR__ . "/../../assets/uploads/student/{$type}";
         if (is_dir($folder)) {

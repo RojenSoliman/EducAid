@@ -48,11 +48,12 @@ if ($test_mode) {
 
 // Only allow uploads if:
 // 1. Student needs upload (needs_document_upload = true) AND
-// 2. Student is NOT active (active students are approved and in read-only mode)
-$can_upload = $needs_upload && $student_status !== 'active' && !$test_mode;
+// 2. Student is NOT active (active students are approved and in read-only mode) AND
+// 3. Student is NOT given (students who received aid are in read-only mode)
+$can_upload = $needs_upload && $student_status !== 'active' && $student_status !== 'given' && !$test_mode;
 
-// Student is in read-only mode if they're a new registrant OR they're already active
-$is_new_registrant = !$needs_upload || $student_status === 'active';
+// Student is in read-only mode if they're a new registrant OR they're already active OR they have received aid
+$is_new_registrant = !$needs_upload || $student_status === 'active' || $student_status === 'given';
 
 // Get list of documents that need re-upload (if any)
 $documents_to_reupload = [];
@@ -76,7 +77,7 @@ if ($needs_upload) {
 $docs_query = pg_query_params($connection,
     "SELECT document_type_code, file_path, upload_date, 
             ocr_confidence, verification_score,
-            verification_data_path, ocr_text_path
+            verification_status, verification_details
      FROM documents 
      WHERE student_id = $1
      ORDER BY upload_date DESC",
@@ -906,13 +907,16 @@ $page_title = 'Upload Documents';
             </div>
             <?php endif; ?>
             
-            <!-- View-Only Banner (New Registrants or Active Students) -->
+            <!-- View-Only Banner (New Registrants or Active Students or Students who received aid) -->
             <?php if ($is_new_registrant): ?>
-            <div class="view-only-banner <?= $student_status === 'active' ? 'approved' : '' ?>">
+            <div class="view-only-banner <?= ($student_status === 'active' || $student_status === 'given') ? 'approved' : '' ?>">
                 <div class="banner-content">
-                    <i class="bi bi-<?= $student_status === 'active' ? 'check-circle' : 'info-circle' ?>"></i>
+                    <i class="bi bi-<?= ($student_status === 'active' || $student_status === 'given') ? 'check-circle' : 'info-circle' ?>"></i>
                     <div>
-                        <?php if ($student_status === 'active'): ?>
+                        <?php if ($student_status === 'given'): ?>
+                        <h5><i class="bi bi-lock-fill"></i> Aid Received - Read-Only Mode</h5>
+                        <p>Your educational assistance has been distributed! Your status is now <strong>GIVEN</strong> and your documents have been locked for record-keeping purposes. You cannot modify or re-upload documents at this time. If you need assistance, please contact the admin.</p>
+                        <?php elseif ($student_status === 'active'): ?>
                         <h5><i class="bi bi-lock-fill"></i> Documents Approved - Read-Only Mode</h5>
                         <p>Congratulations! Your application has been approved and your status is now <strong>ACTIVE</strong>. Your documents have been verified and locked for security. You cannot modify or re-upload documents at this time. If you need to make changes, please contact the admin.</p>
                         <?php else: ?>
@@ -1275,6 +1279,9 @@ $page_title = 'Upload Documents';
                 const data = await response.json();
                 
                 if (data.success) {
+                    // Small delay to ensure response is fully processed before reload
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
                     // Reload the page to show the preview (remove any URL parameters)
                     window.location.href = 'upload_document.php';
                 } else {
@@ -1282,7 +1289,17 @@ $page_title = 'Upload Documents';
                 }
             } catch (error) {
                 console.error('Upload error:', error);
-                alert('Upload failed: ' + (error.message || 'Please try again.'));
+                
+                // If it's a "Failed to fetch" error but the file might have uploaded,
+                // reload the page after a delay to check
+                if (error.message && error.message.includes('Failed to fetch')) {
+                    console.log('Network error detected, reloading page to check upload status...');
+                    setTimeout(() => {
+                        window.location.href = 'upload_document.php';
+                    }, 500);
+                } else {
+                    alert('Upload failed: ' + (error.message || 'Please try again.'));
+                }
             }
         }
         

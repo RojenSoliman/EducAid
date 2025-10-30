@@ -77,8 +77,8 @@ if (!in_array($document_type_code, $valid_codes)) {
 }
 
 // Get document information
-$query = "SELECT file_path, ocr_text_path, verification_data_path, 
-                 ocr_confidence, verification_score, verification_status 
+$query = "SELECT file_path, ocr_confidence, verification_score,
+                 verification_status, verification_details
           FROM documents 
           WHERE student_id = $1 AND document_type_code = $2 
           ORDER BY upload_date DESC LIMIT 1";
@@ -223,9 +223,8 @@ if ($result && pg_num_rows($result) > 0) {
     $include_verification = isset($_GET['include_verification']) && $_GET['include_verification'] == '1';
     $verification_data = null;
     
-    if ($include_verification && !empty($document['verification_data_path']) && file_exists($document['verification_data_path'])) {
-        $verification_json = file_get_contents($document['verification_data_path']);
-        $verification_data = json_decode($verification_json, true);
+    if ($include_verification && !empty($document['verification_details'])) {
+        $verification_data = json_decode($document['verification_details'], true);
     }
 
     header('Content-Type: application/json');

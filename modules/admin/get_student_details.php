@@ -27,8 +27,8 @@ if (!$student) {
 }
 
 // Fetch documents (latest per type) using document_type_code
-$docQuery = "SELECT document_type_code, file_path, ocr_text_path, verification_data_path, 
-                    ocr_confidence, verification_score, verification_status, status
+$docQuery = "SELECT document_type_code, file_path, ocr_confidence, verification_score,
+                    verification_status, verification_details, status
              FROM documents 
              WHERE student_id = $1 
              ORDER BY upload_date DESC";
@@ -38,9 +38,24 @@ if ($docResult) {
     while ($row = pg_fetch_assoc($docResult)) {
         $code = $row['document_type_code'];
         if (!isset($documents[$code])) { // keep first (latest due to DESC)
-            // Calculate overall document confidence as average of OCR and verification
+            // Use ocr_confidence and verification_score directly, or extract from verification_details as fallback
             $ocr_conf = floatval($row['ocr_confidence'] ?? 0);
             $verif_score = floatval($row['verification_score'] ?? 0);
+            
+            // If scores are 0, try to extract from verification_details JSONB
+            if ($ocr_conf == 0 && $verif_score == 0 && !empty($row['verification_details'])) {
+                $verificationData = json_decode($row['verification_details'], true);
+                if (isset($verificationData['ocr_confidence'])) {
+                    $ocr_conf = floatval($verificationData['ocr_confidence']);
+                }
+                if (isset($verificationData['verification_score'])) {
+                    $verif_score = floatval($verificationData['verification_score']);
+                }
+                if (isset($verificationData['summary']['average_confidence'])) {
+                    $verif_score = floatval($verificationData['summary']['average_confidence']);
+                }
+            }
+            
             $row['overall_confidence'] = ($ocr_conf + $verif_score) / 2;
             $documents[$code] = $row;
         }
