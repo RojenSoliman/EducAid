@@ -117,52 +117,57 @@ require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
 // Include our professional email template
 require_once __DIR__ . '/includes/email_templates/otp_email_template.php';
 
-// Function to verify reCAPTCHA v3
+// Function to verify reCAPTCHA (supports v2 and v3)
 function verifyRecaptcha($recaptchaResponse, $action = 'login') {
-    $secretKey = RECAPTCHA_SECRET_KEY;
-    
+    // Support a dedicated v2 secret if provided, otherwise fall back to the main secret
+    $v2Secret = getenv('RECAPTCHA_V2_SECRET_KEY') ?: RECAPTCHA_SECRET_KEY;
+    $secretKey = $v2Secret;
+
     if (empty($recaptchaResponse)) {
         return ['success' => false, 'message' => 'No CAPTCHA response provided'];
     }
-    
+
     $url = RECAPTCHA_VERIFY_URL;
     $data = [
         'secret' => $secretKey,
         'response' => $recaptchaResponse,
-        'remoteip' => $_SERVER['REMOTE_ADDR']
+        'remoteip' => $_SERVER['REMOTE_ADDR'] ?? ''
     ];
-    
+
     $options = [
         'http' => [
             'header' => "Content-type: application/x-www-form-urlencoded\r\n",
             'method' => 'POST',
-            'content' => http_build_query($data)
+            'content' => http_build_query($data),
+            'timeout' => 5
         ]
     ];
-    
+
     $context = stream_context_create($options);
-    $result = file_get_contents($url, false, $context);
-    
+    $result = @file_get_contents($url, false, $context);
+
     if ($result === false) {
-        return ['success' => false, 'message' => 'CAPTCHA verification failed'];
+        return ['success' => false, 'message' => 'CAPTCHA verification request failed'];
     }
-    
+
     $resultJson = json_decode($result, true);
-    
-    // For v3, check success, score, and action
-    if (isset($resultJson['success']) && $resultJson['success'] === true) {
+
+    if (!isset($resultJson['success']) || $resultJson['success'] !== true) {
+        return ['success' => false, 'message' => 'CAPTCHA verification failed', 'raw' => $resultJson];
+    }
+
+    // If response contains a score → it's v3; apply score/action checks
+    if (isset($resultJson['score'])) {
         $score = $resultJson['score'] ?? 0;
         $actionReceived = $resultJson['action'] ?? '';
-        
-        // Score threshold (0.5 is recommended, lower = more likely bot)
         if ($score >= 0.5 && $actionReceived === $action) {
-            return ['success' => true, 'score' => $score];
-        } else {
-            return ['success' => false, 'message' => 'CAPTCHA score too low or action mismatch', 'score' => $score];
+            return ['success' => true, 'score' => $score, 'v' => 3];
         }
+        return ['success' => false, 'message' => 'CAPTCHA score too low or action mismatch', 'score' => $score, 'v' => 3];
     }
-    
-    return ['success' => false, 'message' => 'CAPTCHA verification failed'];
+
+    // Otherwise it's v2 and success=true is sufficient
+    return ['success' => true, 'v' => 2];
 }
 
 // Always return JSON for AJAX requests
@@ -178,9 +183,9 @@ if (
     && !isset($_POST['login_action'])
     && !isset($_POST['forgot_action'])
 ) {
-    // Verify reCAPTCHA v3 first
-    $recaptchaResponse = $_POST['g-recaptcha-response'] ?? '';
-    
+    // Verify reCAPTCHA token (v2 or v3) server-side before sending OTP
+    $recaptchaResponse = trim($_POST['g-recaptcha-response'] ?? '');
+
     // Development bypass: completely disable reCAPTCHA on localhost for testing
     $isDevelopment = (
         strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false ||
@@ -188,16 +193,19 @@ if (
         (getenv('APP_ENV') === 'local') ||
         (getenv('APP_DEBUG') === 'true')
     );
-    
+
     if ($isDevelopment) {
-        // In development, always allow bypass
-        $captchaResult = ['success' => true, 'score' => 0.9];
+        $captchaResult = ['success' => true, 'note' => 'development bypass'];
     } else {
+        if (empty($recaptchaResponse)) {
+            echo json_encode(['status' => 'error', 'message' => 'Security verification required.']);
+            exit;
+        }
         $captchaResult = verifyRecaptcha($recaptchaResponse, 'login');
     }
-    
-    if (!$captchaResult['success']) {
-        echo json_encode(['status'=>'error','message'=>'Security verification failed. Please try again.']);
+
+    if (empty($captchaResult) || !$captchaResult['success']) {
+        echo json_encode(['status'=>'error','message'=>'Security verification failed.']);
         exit;
     }
     
@@ -486,6 +494,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     // SEND OTP for Forgot-Password
     if ($_POST['forgot_action'] === 'send_otp' && !empty($_POST['forgot_email'])) {
         $email = trim($_POST['forgot_email']);
+
+        // Require reCAPTCHA token for forgot-password OTP send as well
+        $recaptchaResponse = trim($_POST['g-recaptcha-response'] ?? '');
+        $isDevelopment = (
+            strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false ||
+            strpos($_SERVER['HTTP_HOST'] ?? '', '127.0.0.1') !== false ||
+            (getenv('APP_ENV') === 'local') ||
+            (getenv('APP_DEBUG') === 'true')
+        );
+        if (!$isDevelopment) {
+            if (empty($recaptchaResponse)) {
+                error_log('Forgot OTP - missing recaptcha token for email: ' . $email);
+                echo json_encode(['status' => 'error', 'message' => 'Security verification required.']);
+                exit;
+            }
+            $captchaResult = verifyRecaptcha($recaptchaResponse, 'forgot_password');
+            // Log verification result for debugging (no PII beyond email)
+            error_log('Forgot OTP - recaptcha verify for ' . $email . ': ' . json_encode($captchaResult));
+            if (empty($captchaResult) || !$captchaResult['success']) {
+                error_log('Forgot OTP - recaptcha failed for ' . $email);
+                echo json_encode(['status' => 'error', 'message' => 'Security verification failed.']);
+                exit;
+            }
+        }
         
         // Check both tables (exclude students under registration and blacklisted)
         $studentRes = pg_query_params($connection, "SELECT student_id, 'student' as role FROM students WHERE email = $1 AND status NOT IN ('under_registration', 'blacklisted', 'archived')", [$email]);
@@ -538,11 +570,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             exit;
         }
         
-        $otp = rand(100000,999999);
+    $otp = rand(100000,999999);
         $_SESSION['forgot_otp'] = $otp;
         $_SESSION['forgot_otp_email'] = $email;
         $_SESSION['forgot_otp_role'] = $user['role'];
         $_SESSION['forgot_otp_time'] = time();
+
+    // Log OTP generation (do not log OTP value in production)
+    error_log('Forgot OTP - generated for ' . $email . ' role=' . $user['role'] . ' at ' . date('c'));
 
         $mail = new PHPMailer(true);
         try {
@@ -581,8 +616,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             $mail->Body = generateOTPEmailTemplate($otp, $recipient_name, 'password_reset');
 
             $mail->send();
+            error_log('Forgot OTP - email sent to ' . $email);
             echo json_encode(['status'=>'success','message'=>'OTP sent to your email.']);
         } catch (Exception $e) {
+            // Log exception for debugging
+            error_log('Forgot OTP - mail send failed for ' . $email . '. Exception: ' . $e->getMessage());
             echo json_encode(['status'=>'error','message'=>'Failed to send OTP.']);
         }
         exit;
@@ -642,6 +680,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
 }
 
 // If no AJAX route matched and it's a regular page load, show the login form
+// Provide a v2 site key variable for the client to render the widget (falls back to configured site key)
+// NOTE: Set RECAPTCHA_V2_SITE_KEY and RECAPTCHA_V2_SECRET_KEY in your environment or .env for production.
+// If only RECAPTCHA_SITE_KEY/SECRET are set (v3), the v2 site key will fall back to RECAPTCHA_SITE_KEY.
+$recaptcha_v2_site_key = getenv('RECAPTCHA_V2_SITE_KEY') ?: (defined('RECAPTCHA_SITE_KEY') ? RECAPTCHA_SITE_KEY : '');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1243,9 +1285,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                                             </div>
                                         </div>
                                         
-                                        <!-- reCAPTCHA v2 (visible checkbox) -->
+                                        <!-- reCAPTCHA will be shown in a modal when the user clicks 'Send Verification Code' -->
                                         <div class="form-group mb-4 text-center">
-                                            <div class="g-recaptcha" data-sitekey="<?php echo getenv('RECAPTCHA_V2_SITE_KEY') ?: '6LcQ9NArAAAAALTbYBJn1b2iG9MJcJ6SnA3b6x53'; ?>"></div>
+                                            <small class="text-muted">A security check (reCAPTCHA) will be shown after you click <strong>Send Verification Code</strong>.</small>
                                         </div>
                                         
                                         <div class="d-grid">
@@ -1390,7 +1432,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
     <script src="assets/js/bootstrap.bundle.min.js"></script>
     <script src="assets/js/login.js"></script>
     
-    <!-- reCAPTCHA v3 Integration -->
+    <!-- reCAPTCHA v2 modal + integration -->
     <script>
         // Email validation function
         function isValidEmail(email) {
@@ -1431,7 +1473,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
             }
         }
         
-        // Override the login form submission to include reCAPTCHA v2
+        // Override the login form submission to require reCAPTCHA v2 token from a modal
         document.addEventListener('DOMContentLoaded', function() {
             const loginForm = document.getElementById('loginForm');
             if (loginForm) {
@@ -1455,49 +1497,198 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot_action'])) {
                         showMessage('Please enter a valid email address.', 'danger');
                         return;
                     }
-                    
-                    // reCAPTCHA validation disabled for development/testing
-                    const recaptchaResponse = (typeof grecaptcha !== 'undefined' && grecaptcha.getResponse) ? 
-                        grecaptcha.getResponse() : 'development-bypass';
-                    
-                    const submitBtn = this.querySelector('button[type="submit"]');
-                    const originalText = submitBtn.innerHTML;
-                    
-                    setButtonLoading(submitBtn, true);
+                    // Open reCAPTCHA modal and render widget (or reuse existing)
+                    openRecaptchaModal({
+                        onSuccess: function(token) {
+                            const submitBtn = newForm.querySelector('button[type="submit"]');
+                            const originalText = submitBtn.innerHTML;
+                            setButtonLoading(submitBtn, true);
 
-                    const formData = new FormData();
-                    formData.append('email', email);
-                    formData.append('password', password);
-                    formData.append('g-recaptcha-response', recaptchaResponse);
+                            const formData = new FormData();
+                            formData.append('email', email);
+                            formData.append('password', password);
+                            formData.append('g-recaptcha-response', token);
 
-                    fetch('unified_login.php', {
-                        method: 'POST',
-                        body: formData,
-                        credentials: 'same-origin', // Include cookies for session persistence
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest'
+                            fetch('unified_login.php', {
+                                method: 'POST',
+                                body: formData,
+                                credentials: 'same-origin', // Include cookies for session persistence
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                setButtonLoading(submitBtn, false, originalText);
+                                if (data.status === 'otp_sent') {
+                                    showStep2();
+                                    showMessage('Verification code sent to your email!', 'success');
+                                } else {
+                                    showMessage(data.message || 'Security verification failed.', 'danger');
+                                }
+                            })
+                            .catch(error => {
+                                setButtonLoading(submitBtn, false, originalText);
+                                showMessage('Connection error. Please try again.', 'danger');
+                            });
+                        },
+                        onFail: function(errMsg) {
+                            showMessage(errMsg || 'CAPTCHA verification failed or was cancelled.', 'danger');
                         }
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        setButtonLoading(submitBtn, false, originalText);
-                        
-                        if (data.status === 'otp_sent') {
-                            showStep2();
-                            showMessage('Verification code sent to your email!', 'success');
-                            // Reset reCAPTCHA for next attempt
-                            grecaptcha.reset();
-                        } else {
-                            showMessage(data.message, 'danger');
-                            // Reset reCAPTCHA on error
-                            grecaptcha.reset();
+                    });
+                });
+            }
+        });
+
+        // reCAPTCHA modal handling
+        let recaptchaWidgetId = null;
+        let recaptchaRendered = false;
+        // Global references used to ensure widget callbacks can hide the currently shown modal
+        window.__recaptchaPendingCallbacks = null;
+        window.__recaptchaCurrentBsModal = null;
+
+        function openRecaptchaModal(callbacks) {
+            // Create modal if not exists
+            let modalEl = document.getElementById('recaptchaModal');
+            if (!modalEl) {
+                modalEl = document.createElement('div');
+                modalEl.className = 'modal fade';
+                modalEl.id = 'recaptchaModal';
+                modalEl.tabIndex = -1;
+                modalEl.innerHTML = `
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Security Check</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body text-center">
+                                <p>Please complete the reCAPTCHA to continue.</p>
+                                <div id="recaptchaWidget"></div>
+                                <div id="recaptchaError" class="text-danger mt-2" style="display:none;"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modalEl);
+            }
+
+            // Show modal
+            const bsModal = new bootstrap.Modal(modalEl);
+            bsModal.show();
+
+            // store current modal and callbacks globally so widget callback can always reference them
+            window.__recaptchaPendingCallbacks = callbacks || null;
+            window.__recaptchaCurrentBsModal = bsModal;
+
+            // Render widget once
+            setTimeout(() => {
+                if (!recaptchaRendered) {
+                    if (typeof grecaptcha === 'undefined' || !grecaptcha.render) {
+                        document.getElementById('recaptchaError').textContent = 'reCAPTCHA failed to load.';
+                        document.getElementById('recaptchaError').style.display = 'block';
+                        if (callbacks && callbacks.onFail) callbacks.onFail('reCAPTCHA failed to load.');
+                        return;
+                    }
+
+                    // render with a global callback so it always calls the current modal instance
+                    recaptchaWidgetId = grecaptcha.render('recaptchaWidget', {
+                        'sitekey': '<?php echo $recaptcha_v2_site_key; ?>',
+                        'theme': 'light',
+                        'callback': function(token) {
+                            try {
+                                if (window.__recaptchaCurrentBsModal) {
+                                    window.__recaptchaCurrentBsModal.hide();
+                                }
+                            } catch (e) { /* ignore */ }
+
+                            // call the most recent pending callback
+                            if (window.__recaptchaPendingCallbacks && window.__recaptchaPendingCallbacks.onSuccess) {
+                                // copy callback ref and clear global to avoid double-calls
+                                const cb = window.__recaptchaPendingCallbacks.onSuccess;
+                                window.__recaptchaPendingCallbacks = null;
+                                try { cb(token); } catch (err) { console.error(err); }
+                            }
+
+                            // Reset widget for next time
+                            try { grecaptcha.reset(recaptchaWidgetId); } catch (e) {}
+                        },
+                        'expired-callback': function() {
+                            if (window.__recaptchaPendingCallbacks && window.__recaptchaPendingCallbacks.onFail) {
+                                const cbf = window.__recaptchaPendingCallbacks.onFail;
+                                window.__recaptchaPendingCallbacks = null;
+                                try { cbf('reCAPTCHA token expired. Please try again.'); } catch (err) {}
+                            }
                         }
-                    })
-                    .catch(error => {
-                        setButtonLoading(submitBtn, false, originalText);
-                        showMessage('Connection error. Please try again.', 'danger');
-                        // Reset reCAPTCHA on error
-                        grecaptcha.reset();
+                    });
+                    recaptchaRendered = true;
+                } else {
+                    // If already rendered, just reset and make sure pending callbacks reference the current modal
+                    try { grecaptcha.reset(recaptchaWidgetId); } catch (e) {}
+                }
+            }, 200);
+        }
+
+        // Hook forgot-password form to require reCAPTCHA before sending reset OTP
+        document.addEventListener('DOMContentLoaded', function() {
+            const forgotForm = document.getElementById('forgotForm');
+            if (forgotForm) {
+                const newForgot = forgotForm.cloneNode(true);
+                forgotForm.parentNode.replaceChild(newForgot, forgotForm);
+
+                newForgot.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const email = document.getElementById('forgot_email').value.trim();
+                    if (!isValidEmail(email)) {
+                        showMessage('Please enter a valid email address.', 'danger');
+                        return;
+                    }
+
+                    openRecaptchaModal({
+                        onSuccess: function(token) {
+                            const submitBtn = newForgot.querySelector('button[type="submit"]');
+                            const originalText = submitBtn.innerHTML;
+                            setButtonLoading(submitBtn, true);
+
+                            const formData = new FormData();
+                            formData.append('forgot_action', 'send_otp');
+                            formData.append('forgot_email', email);
+                            formData.append('g-recaptcha-response', token);
+
+                            fetch('unified_login.php', {
+                                method: 'POST',
+                                body: formData,
+                                credentials: 'same-origin',
+                                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                            })
+                            .then(r => r.text())
+                            .then(txt => {
+                                // log raw server response for debugging
+                                console.log('Forgot OTP response text:', txt);
+                                let data = {};
+                                try { data = JSON.parse(txt); } catch (e) { data = { status: 'error', message: 'Invalid JSON response' }; }
+                                setButtonLoading(submitBtn, false, originalText);
+                                if (data.status === 'success') {
+                                    showMessage('Reset code sent to your email!', 'success');
+                                    // Move to OTP verification step for forgot-password
+                                    if (typeof showForgotStep2 === 'function') {
+                                        showForgotStep2();
+                                    } else {
+                                        // fallback to generic forgot view
+                                        showForgotPassword();
+                                    }
+                                } else {
+                                    showMessage(data.message || 'Security verification failed.', 'danger');
+                                }
+                            })
+                            .catch(err => {
+                                setButtonLoading(submitBtn, false, originalText);
+                                showMessage('Connection error. Please try again.', 'danger');
+                            });
+                        },
+                        onFail: function(msg) {
+                            showMessage(msg || 'CAPTCHA verification failed or cancelled.', 'danger');
+                        }
                     });
                 });
             }
