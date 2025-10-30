@@ -11,10 +11,47 @@ $student_id = $_SESSION['student_id'];
 // Track session activity
 include __DIR__ . '/../../includes/student_session_tracker.php';
 
+// Include SessionManager for session management
+require_once __DIR__ . '/../../includes/SessionManager.php';
+$sessionManager = new SessionManager($connection);
+
 // PHPMailer setup
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
+
+// --------- Handle Session Management Actions -----------
+// Revoke a specific session
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['revoke_session'])) {
+    $sessionToRevoke = $_POST['session_id'] ?? '';
+    
+    if ($sessionManager->revokeSession($student_id, $sessionToRevoke)) {
+        $_SESSION['profile_flash'] = 'Session signed out successfully.';
+        $_SESSION['profile_flash_type'] = 'success';
+    } else {
+        $_SESSION['profile_flash'] = 'Failed to sign out session.';
+        $_SESSION['profile_flash_type'] = 'error';
+    }
+    
+    header("Location: student_settings.php#sessions");
+    exit;
+}
+
+// Revoke all other sessions
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['revoke_all_sessions'])) {
+    $count = $sessionManager->revokeAllOtherSessions($student_id, session_id());
+    
+    if ($count > 0) {
+        $_SESSION['profile_flash'] = "Signed out from $count other device(s) successfully.";
+        $_SESSION['profile_flash_type'] = 'success';
+    } else {
+        $_SESSION['profile_flash'] = 'No other active sessions found.';
+        $_SESSION['profile_flash_type'] = 'info';
+    }
+    
+    header("Location: student_settings.php#sessions");
+    exit;
+}
 
 // --------- Handle AJAX OTP Requests -----------
 // Email Change OTP
@@ -280,6 +317,16 @@ $student = pg_fetch_assoc($stuRes);
 $student_info_query = "SELECT first_name, last_name FROM students WHERE student_id = $1";
 $student_info_result = pg_query_params($connection, $student_info_query, [$student_id]);
 $student_info = pg_fetch_assoc($student_info_result);
+
+// Fetch active sessions
+$activeSessions = $sessionManager->getActiveSessions($student_id);
+$currentSessionId = session_id();
+$otherSessionsCount = 0;
+foreach ($activeSessions as $session) {
+    if ($session['session_id'] !== $currentSessionId) {
+        $otherSessionsCount++;
+    }
+}
 
 // Flash message
 $flash = $_SESSION['profile_flash'] ?? '';
@@ -566,6 +613,135 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
       
       .settings-section-body {
         padding: 1.5rem;
+      }
+    }
+
+    /* Active Sessions Styling */
+    .section-header {
+      background: #f7fafc;
+      padding: 1.5rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .section-header h2 {
+      color: #2d3748;
+      font-weight: 600;
+      font-size: 1.25rem;
+      margin: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .section-header p {
+      color: #718096;
+      margin: 0.5rem 0 0 0;
+      font-size: 0.95rem;
+    }
+
+    .section-content {
+      padding: 1.5rem;
+    }
+
+    .active-sessions-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #ffffff;
+      transition: all 0.2s ease;
+    }
+
+    .session-item:hover {
+      border-color: #cbd5e0;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .session-item.current-session {
+      background: #f0fdf4;
+      border-color: #86efac;
+    }
+
+    .session-icon {
+      flex-shrink: 0;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f7fafc;
+      border-radius: 10px;
+      color: #4a5568;
+      font-size: 1.5rem;
+    }
+
+    .current-session .session-icon {
+      background: #dcfce7;
+      color: #16a34a;
+    }
+
+    .session-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .session-device {
+      color: #2d3748;
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .session-meta {
+      font-size: 0.85rem;
+      color: #718096;
+    }
+
+    .session-action {
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 576px) {
+      .section-content {
+        padding: 1rem;
+      }
+
+      .session-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+      }
+
+      .session-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 1.25rem;
+      }
+
+      .session-device {
+        font-size: 0.9rem;
+      }
+
+      .session-meta {
+        font-size: 0.8rem;
+      }
+
+      .session-action {
+        width: 100%;
+      }
+
+      .session-action .btn {
+        width: 100%;
       }
     }
   </style>
@@ -869,6 +1045,99 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
             </form>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- Active Sessions Section -->
+    <section class="settings-section" id="sessions">
+      <div class="section-header">
+        <h2>
+          <i class="bi bi-shield-lock me-2"></i>
+          Active Sessions
+        </h2>
+        <p>Manage devices where you're currently logged in</p>
+      </div>
+
+      <div class="section-content">
+        <?php if (empty($activeSessions)): ?>
+          <div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>
+            No active sessions found.
+          </div>
+        <?php else: ?>
+          <div class="active-sessions-list">
+            <?php foreach ($activeSessions as $session): ?>
+              <?php 
+                $isCurrent = $session['session_id'] === $currentSessionId;
+                $deviceIcon = '';
+                switch ($session['device_type']) {
+                  case 'mobile':
+                    $deviceIcon = 'bi-phone';
+                    break;
+                  case 'tablet':
+                    $deviceIcon = 'bi-tablet';
+                    break;
+                  default:
+                    $deviceIcon = 'bi-laptop';
+                }
+                
+                $browserInfo = $session['browser'] ?: 'Unknown Browser';
+                $osInfo = $session['os'] ?: 'Unknown OS';
+                $lastActivity = $session['last_activity'] ? date('M d, Y h:i A', strtotime($session['last_activity'])) : 'Unknown';
+              ?>
+              <div class="session-item <?php echo $isCurrent ? 'current-session' : ''; ?>">
+                <div class="session-icon">
+                  <i class="bi <?php echo $deviceIcon; ?>"></i>
+                </div>
+                <div class="session-details">
+                  <div class="session-device">
+                    <strong><?php echo htmlspecialchars($browserInfo); ?></strong> on <?php echo htmlspecialchars($osInfo); ?>
+                    <?php if ($isCurrent): ?>
+                      <span class="badge bg-success ms-2">
+                        <i class="bi bi-check-circle me-1"></i>Current Device
+                      </span>
+                    <?php endif; ?>
+                  </div>
+                  <div class="session-meta text-muted">
+                    <small>
+                      <i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars($session['ip_address']); ?>
+                      <span class="mx-2">•</span>
+                      <i class="bi bi-clock me-1"></i>Last active: <?php echo $lastActivity; ?>
+                    </small>
+                  </div>
+                </div>
+                <div class="session-action">
+                  <?php if (!$isCurrent): ?>
+                    <form method="POST" action="student_settings.php#sessions" style="display:inline;">
+                      <input type="hidden" name="session_id" value="<?php echo htmlspecialchars($session['session_id']); ?>">
+                      <button type="submit" name="revoke_session" class="btn btn-sm btn-outline-danger">
+                        <i class="bi bi-box-arrow-right me-1"></i>Sign Out
+                      </button>
+                    </form>
+                  <?php endif; ?>
+                </div>
+              </div>
+            <?php endforeach; ?>
+          </div>
+
+          <?php if ($otherSessionsCount > 0): ?>
+            <div class="mt-4 pt-3 border-top">
+              <div class="d-flex align-items-center justify-content-between">
+                <div>
+                  <h6 class="mb-1">Sign Out All Other Devices</h6>
+                  <small class="text-muted">
+                    You have <?php echo $otherSessionsCount; ?> other active session<?php echo $otherSessionsCount > 1 ? 's' : ''; ?>
+                  </small>
+                </div>
+                <form method="POST" action="student_settings.php#sessions" style="display:inline;">
+                  <button type="submit" name="revoke_all_sessions" class="btn btn-danger" onclick="return confirm('Are you sure you want to sign out from all other devices?');">
+                    <i class="bi bi-power me-2"></i>Sign Out All
+                  </button>
+                </form>
+              </div>
+            </div>
+          <?php endif; ?>
+        <?php endif; ?>
       </div>
     </section>
   </div>

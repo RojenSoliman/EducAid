@@ -175,6 +175,11 @@ class SessionManager {
             [$studentId]
         );
         
+        if ($result === false) {
+            error_log("SessionManager::getActiveSessions - Query failed: " . pg_last_error($this->connection));
+            return [];
+        }
+        
         return pg_fetch_all($result) ?: [];
     }
     
