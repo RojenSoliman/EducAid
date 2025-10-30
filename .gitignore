@@ -313,3 +313,7 @@ data/security_verifications.log
 modules/student/ocr_68fa9f94b863a.tsv
 modules/student/ocr_68fa98d78daef.tsv
 modules/student/ocr_68faa39445898.tsv
+temporary_result_id/unknown_2025-10-24_04-39-22_image.jpg
+temporary_result_id/unknown_2025-10-24_04-39-22_verification.json
+temporary_result_id/unknown_2025-10-24_04-39-22_report.txt
+temporary_result_id/unknown_2025-10-24_04-39-22_ocr_text.txt
