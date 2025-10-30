@@ -8,6 +8,9 @@ if (!isset($_SESSION['student_username'])) {
 include __DIR__ . '/../../config/database.php';
 include __DIR__ . '/../../includes/workflow_control.php';
 
+// Track session activity
+include __DIR__ . '/../../includes/student_session_tracker.php';
+
 // Fetch student info including last login
 $studentId = $_SESSION['student_id'];
 $student_info_query = "SELECT last_login, first_name, last_name FROM students WHERE student_id = $1";

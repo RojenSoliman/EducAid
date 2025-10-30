@@ -8,6 +8,9 @@ if (!isset($_SESSION['student_username'])) {
 }
 $student_id = $_SESSION['student_id'];
 
+// Track session activity
+include __DIR__ . '/../../includes/student_session_tracker.php';
+
 // PHPMailer setup
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
