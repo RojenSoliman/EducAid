@@ -111,28 +111,40 @@ if ($result && pg_num_rows($result) > 0) {
         error_log("File does not exist at stored path: " . $file_path);
         
         // Try to find the file in temp or student directories
+        // UPDATED: Now checks both flat and student-organized structures
         $search_dirs = [];
         if ($folder_name) {
             $search_dirs = [
                 __DIR__ . '/../../assets/uploads/temp/' . $folder_name . '/',
-                __DIR__ . '/../../assets/uploads/student/' . $folder_name . '/'
+                __DIR__ . '/../../assets/uploads/student/' . $folder_name . '/',
+                __DIR__ . '/../../assets/uploads/student/' . $folder_name . '/' . $student_id . '/' // NEW: student folder
             ];
         }
         
         $found_file = null;
         foreach ($search_dirs as $dir) {
             if (is_dir($dir)) {
-                // Look for files with student_id prefix
+                // Look for files with student_id prefix (for flat structure)
                 $pattern = $dir . $student_id . '_*';
                 $files = glob($pattern);
                 
+                // Also look for any files in student folder (for new structure)
+                if (empty($files)) {
+                    $pattern = $dir . '*';
+                    $files = glob($pattern);
+                }
+                
                 // Filter out associated files (.ocr.txt, .tsv, .verify.json, .confidence.json)
                 $files = array_filter($files, function($f) {
-                    return !preg_match('/\.(ocr\.txt|tsv|verify\.json|confidence\.json)$/', $f);
+                    return is_file($f) && !preg_match('/\.(ocr\.txt|tsv|verify\.json|confidence\.json)$/', $f);
                 });
                 
                 if (!empty($files)) {
-                    $found_file = $files[0]; // Take the first match
+                    // Sort by modification time, newest first
+                    usort($files, function($a, $b) {
+                        return filemtime($b) - filemtime($a);
+                    });
+                    $found_file = $files[0]; // Take the newest match
                     error_log("Found file using pattern search: " . $found_file);
                     break;
                 }
@@ -252,18 +264,26 @@ if ($result && pg_num_rows($result) > 0) {
     if ($folder_name) {
         $searchDirs = [
             __DIR__ . '/../../assets/uploads/temp/' . $folder_name,
-            __DIR__ . '/../../assets/uploads/student/' . $folder_name
+            __DIR__ . '/../../assets/uploads/student/' . $folder_name,
+            __DIR__ . '/../../assets/uploads/student/' . $folder_name . '/' . $student_id // NEW: student folder
         ];
     }
     
     $foundFS = null;
     foreach ($searchDirs as $d) {
         if (!is_dir($d)) continue;
+        
+        // For flat structure, search with student_id prefix
         $glob = glob($d . '/' . $student_id . '_*');
+        
+        // For student folder structure, search for any file
+        if (empty($glob) && basename($d) === $student_id) {
+            $glob = glob($d . '/*');
+        }
         
         // Filter out associated files (.ocr.txt, .tsv, .verify.json, .confidence.json)
         foreach ($glob as $g) {
-            if (!preg_match('/\.(ocr\.txt|tsv|verify\.json|confidence\.json)$/', $g)) {
+            if (is_file($g) && !preg_match('/\.(ocr\.txt|tsv|verify\.json|confidence\.json)$/', $g)) {
                 $foundFS = $g;
                 break 2;
             }

@@ -94,6 +94,9 @@ class DocumentService {
             $verificationScore = $ocrData['verification_score'] ?? 0;
             $verificationStatus = $ocrData['verification_status'] ?? 'pending';
             
+            // Debug logging
+            error_log("DocumentService::saveDocument - DocType: {$docTypeName}, OCR Confidence: {$ocrConfidence}, Verification Score: {$verificationScore}");
+            
             // Prepare verification details JSONB
             $verificationDetails = null;
             if (isset($ocrData['verification_details'])) {
@@ -248,13 +251,36 @@ class DocumentService {
                     continue;
                 }
                 
-                // Determine new path (move from temp/ to student/)
-                $newPath = str_replace('/temp/', '/student/', $oldPath);
+                // NEW: Build student-organized path
+                // Extract document type folder from old path (e.g., 'eaf', 'academic_grades')
+                // Pattern: temp/{doc_type}/filename → student/{doc_type}/{student_id}/filename
+                
+                if (preg_match('#/temp/([^/]+)/([^/]+)$#', $oldPath, $matches)) {
+                    $docTypeFolder = $matches[1];
+                    $originalFilename = $matches[2];
+                    
+                    // Generate timestamped filename to prevent overwrites
+                    $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+                    $baseName = pathinfo($originalFilename, PATHINFO_FILENAME);
+                    $timestamp = date('YmdHis');
+                    $newFilename = $baseName . '_' . $timestamp . '.' . $extension;
+                    
+                    // Create student-specific folder
+                    $targetDir = dirname(dirname(dirname($oldPath))) . '/student/' . $docTypeFolder . '/' . $studentId . '/';
+                    $newPath = $targetDir . $newFilename;
+                    
+                    error_log("DocumentService::moveToPermStorage - Moving to student folder: {$newPath}");
+                } else {
+                    // Fallback to old behavior if path doesn't match expected pattern
+                    $newPath = str_replace('/temp/', '/student/', $oldPath);
+                    $targetDir = dirname($newPath);
+                    error_log("DocumentService::moveToPermStorage - Using fallback path: {$newPath}");
+                }
                 
                 // Ensure target directory exists
-                $targetDir = dirname($newPath);
                 if (!is_dir($targetDir)) {
                     mkdir($targetDir, 0755, true);
+                    error_log("DocumentService::moveToPermStorage - Created directory: {$targetDir}");
                 }
                 
                 // Move main file
@@ -263,8 +289,12 @@ class DocumentService {
                     continue;
                 }
                 
-                // Move associated OCR files
-                $this->moveAssociatedFiles($oldPath, $newPath);
+                // Move associated OCR files with timestamped naming
+                if (isset($baseName) && isset($timestamp) && isset($targetDir)) {
+                    $this->moveAssociatedFilesWithTimestamp($oldPath, $targetDir, $baseName, $timestamp);
+                } else {
+                    $this->moveAssociatedFiles($oldPath, $newPath);
+                }
                 
                 // Update database
                 $updateQuery = "UPDATE documents 
@@ -276,8 +306,18 @@ class DocumentService {
                                    last_modified = NOW()
                                WHERE document_id = $4";
                 
-                $ocrPath = file_exists($newPath . '.ocr.txt') ? $newPath . '.ocr.txt' : null;
-                $verifyPath = file_exists($newPath . '.verify.json') ? $newPath . '.verify.json' : null;
+                // Build new paths for associated files
+                if (isset($baseName) && isset($timestamp) && isset($targetDir)) {
+                    $ocrPath = file_exists($targetDir . $baseName . '_' . $timestamp . '.ocr.txt') 
+                               ? $targetDir . $baseName . '_' . $timestamp . '.ocr.txt' 
+                               : null;
+                    $verifyPath = file_exists($targetDir . $baseName . '_' . $timestamp . '.verify.json') 
+                                  ? $targetDir . $baseName . '_' . $timestamp . '.verify.json' 
+                                  : null;
+                } else {
+                    $ocrPath = file_exists($newPath . '.ocr.txt') ? $newPath . '.ocr.txt' : null;
+                    $verifyPath = file_exists($newPath . '.verify.json') ? $newPath . '.verify.json' : null;
+                }
                 
                 $updateResult = pg_query_params($this->db, $updateQuery, [
                     $newPath,
@@ -331,7 +371,29 @@ class DocumentService {
     }
     
     /**
+     * Move associated OCR files with timestamped naming
+     * Used when moving to student-specific folders
+     */
+    private function moveAssociatedFilesWithTimestamp($oldPath, $targetDir, $baseName, $timestamp) {
+        $extensions = ['.ocr.txt', '.verify.json', '.tsv', '.confidence.json'];
+        
+        foreach ($extensions as $ext) {
+            $oldFile = $oldPath . $ext;
+            $newFile = $targetDir . $baseName . '_' . $timestamp . $ext;
+            
+            if (file_exists($oldFile)) {
+                if (@rename($oldFile, $newFile)) {
+                    error_log("DocumentService: Moved associated file: {$ext}");
+                } else {
+                    error_log("DocumentService: Failed to move associated file: {$ext}");
+                }
+            }
+        }
+    }
+    
+    /**
      * Move associated OCR files (.ocr.txt, .verify.json, .tsv, .confidence.json)
+     * Legacy method for backward compatibility
      */
     private function moveAssociatedFiles($oldPath, $newPath) {
         $extensions = ['.ocr.txt', '.verify.json', '.tsv', '.confidence.json'];

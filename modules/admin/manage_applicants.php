@@ -497,7 +497,7 @@ function _normalize_token($s) {
 }
 
 // Find newest file in a folder that matches both first and last name (case-insensitive)
-function find_student_documents($first_name, $last_name) {
+function find_student_documents($first_name, $last_name, $student_id = null) {
     $server_base = dirname(__DIR__, 2) . '/assets/uploads/student/'; // absolute server path
     $web_base    = '../../assets/uploads/student/';                   // web path from this PHP file
 
@@ -513,23 +513,47 @@ function find_student_documents($first_name, $last_name) {
 
     $found = [];
     foreach ($document_types as $type => $folder) {
-        $dir = $server_base . $folder . '/';
-        if (!is_dir($dir)) continue;
-
-        // Scan all files and pick the newest that contains both name tokens
         $matches = [];
-        foreach (glob($dir . '*.*') as $file) {
-            $base = pathinfo($file, PATHINFO_FILENAME);
-            $baseNorm = _normalize_token($base);
-            if ($first && $last && strpos($baseNorm, $first) !== false && strpos($baseNorm, $last) !== false) {
-                $matches[filemtime($file)] = $file;
+        
+        // NEW STRUCTURE: Search student/{doc_type}/{student_id}/ folders first if student_id is provided
+        if ($student_id) {
+            $studentDir = $server_base . $folder . '/' . $student_id . '/';
+            if (is_dir($studentDir)) {
+                foreach (glob($studentDir . '*.*') as $file) {
+                    // Skip associated files
+                    if (preg_match('/\.(ocr\.txt|verify\.json|confidence\.json|tsv)$/i', $file)) continue;
+                    $matches[filemtime($file)] = [
+                        'path' => $file,
+                        'web' => $web_base . $folder . '/' . $student_id . '/' . basename($file)
+                    ];
+                }
+            }
+        }
+        
+        // OLD STRUCTURE: Search flat student/{doc_type}/ folder
+        $dir = $server_base . $folder . '/';
+        if (is_dir($dir)) {
+            // Scan all files and pick the newest that contains both name tokens
+            foreach (glob($dir . '*.*') as $file) {
+                // Skip if it's a subdirectory or associated file
+                if (is_dir($file)) continue;
+                if (preg_match('/\.(ocr\.txt|verify\.json|confidence\.json|tsv)$/i', $file)) continue;
+                
+                $base = pathinfo($file, PATHINFO_FILENAME);
+                $baseNorm = _normalize_token($base);
+                if ($first && $last && strpos($baseNorm, $first) !== false && strpos($baseNorm, $last) !== false) {
+                    $matches[filemtime($file)] = [
+                        'path' => $file,
+                        'web' => $web_base . $folder . '/' . basename($file)
+                    ];
+                }
             }
         }
 
         if (!empty($matches)) {
             krsort($matches); // newest first
             $picked = reset($matches);
-            $found[$type] = $web_base . $folder . '/' . basename($picked);
+            $found[$type] = $picked['web'];
         }
     }
 
@@ -541,7 +565,7 @@ function find_student_documents_by_id($connection, $student_id) {
     $res = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$student_id]);
     if ($res && pg_num_rows($res)) {
         $row = pg_fetch_assoc($res);
-        return find_student_documents($row['first_name'] ?? '', $row['last_name'] ?? '');
+        return find_student_documents($row['first_name'] ?? '', $row['last_name'] ?? '', $student_id);
     }
     return [];
 }
@@ -688,8 +712,9 @@ function check_documents($connection, $student_id) {
         // Remove duplicates
         $uploaded_codes = array_unique($uploaded_codes);
         
-        // For new registrants, check if they have grades
+        // For new registrants, check if they have grades in either old or new structure
         $has_grades = in_array('01', $uploaded_codes) || 
+                     file_exists("../../assets/uploads/student/grades/" . $student_id . "/") ||
                      file_exists("../../assets/uploads/student/" . $student_id . "/grades/");
     }
     
@@ -892,16 +917,38 @@ function render_table($applicants, $connection) {
                                 ];
                                 
                                 foreach ($document_folders as $folder => $type) {
+                                    $matches = [];
+                                    
+                                    // NEW STRUCTURE: Check student/{doc_type}/{student_id}/ folder first
+                                    $student_subdir = $server_base . $folder . '/' . $student_id . '/';
+                                    if (is_dir($student_subdir)) {
+                                        foreach (glob($student_subdir . '*') as $file) {
+                                            // Skip associated files
+                                            if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $file)) continue;
+                                            if (is_dir($file)) continue;
+                                            
+                                            $matches[filemtime($file)] = [
+                                                'server' => $file,
+                                                'web' => $web_base . $folder . '/' . $student_id . '/' . basename($file)
+                                            ];
+                                        }
+                                    }
+                                    
+                                    // OLD STRUCTURE: Check flat student/{doc_type}/ folder
                                     $dir = $server_base . $folder . '/';
                                     if (is_dir($dir)) {
                                         // Look for files starting with student_id OR containing student's name
                                         $pattern = $dir . $student_id . '_*';
-                                        $matches = glob($pattern);
+                                        $id_matches = glob($pattern);
                                         
                                         // If no matches by student_id, try searching by name
-                                        if (empty($matches)) {
+                                        if (empty($id_matches)) {
                                             $all_files = glob($dir . '*');
                                             foreach ($all_files as $file) {
+                                                // Skip subdirectories and associated files
+                                                if (is_dir($file)) continue;
+                                                if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $file)) continue;
+                                                
                                                 $basename = strtolower(basename($file));
                                                 $first_norm = strtolower($first_name);
                                                 $last_norm = strtolower($last_name);
@@ -909,26 +956,31 @@ function render_table($applicants, $connection) {
                                                 // Check if file contains both first and last name
                                                 if (strpos($basename, $first_norm) !== false && 
                                                     strpos($basename, $last_norm) !== false) {
-                                                    $matches[] = $file;
+                                                    $id_matches[] = $file;
                                                 }
                                             }
+                                        } else {
+                                            // Filter out subdirectories and associated files from pattern matches
+                                            $id_matches = array_filter($id_matches, function($file) {
+                                                if (is_dir($file)) return false;
+                                                return !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $file);
+                                            });
                                         }
                                         
-                                        if (!empty($matches)) {
-                                            // Filter out associated files (.verify.json, .ocr.txt, etc)
-                                            $matches = array_filter($matches, function($file) {
-                                                return !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/', $file);
-                                            });
-                                            
-                                            if (!empty($matches)) {
-                                                // Get the newest file
-                                                usort($matches, function($a, $b) {
-                                                    return filemtime($b) - filemtime($a);
-                                                });
-                                                $newest = $matches[0];
-                                                $found_documents[$type] = $web_base . $folder . '/' . basename($newest);
-                                            }
+                                        // Add flat folder matches to the matches array
+                                        foreach ($id_matches as $file) {
+                                            $matches[filemtime($file)] = [
+                                                'server' => $file,
+                                                'web' => $web_base . $folder . '/' . basename($file)
+                                            ];
                                         }
+                                    }
+                                    
+                                    if (!empty($matches)) {
+                                        // Get the newest file
+                                        krsort($matches); // Sort by timestamp, newest first
+                                        $newest = reset($matches);
+                                        $found_documents[$type] = $newest['web'];
                                     }
                                 }
                                 
@@ -1564,12 +1616,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($documentTypes as $type) {
                 $folderPath = $uploadsPath . '/' . $type;
                 if (is_dir($folderPath)) {
+                    // OLD STRUCTURE: Delete files in flat folder
                     $files = glob($folderPath . '/' . $student_id . '_*');
                     foreach ($files as $file) {
                         if (is_file($file)) {
                             @unlink($file);
                             $deletedCount++;
                         }
+                    }
+                    
+                    // NEW STRUCTURE: Delete entire student folder
+                    $studentFolderPath = $folderPath . '/' . $student_id;
+                    if (is_dir($studentFolderPath)) {
+                        $studentFiles = glob($studentFolderPath . '/*');
+                        foreach ($studentFiles as $file) {
+                            if (is_file($file)) {
+                                @unlink($file);
+                                $deletedCount++;
+                            }
+                        }
+                        // Remove the student folder itself
+                        @rmdir($studentFolderPath);
                     }
                 }
             }

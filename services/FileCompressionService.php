@@ -106,6 +106,7 @@ class FileCompressionService {
             
             // Scan shared folders for files belonging to our students
             // Include ALL document types: enrollment, grades, ID, indigency, letter
+            // UPDATED: Now scans student-organized folders (student/{doc_type}/{student_id}/)
             $folders = [
                 'student/enrollment_forms' => 'enrollment_forms',
                 'student/grades' => 'grades',
@@ -122,14 +123,53 @@ class FileCompressionService {
                 error_log("Scanning folder: $fullPath");
                 
                 if (is_dir($fullPath)) {
-                    // Use scandir instead of glob to catch ALL files including those with multiple extensions
-                    $allFiles = scandir($fullPath);
-                    $files = [];
-                    foreach ($allFiles as $file) {
-                        if ($file !== '.' && $file !== '..' && is_file($fullPath . '/' . $file)) {
-                            $files[] = $fullPath . '/' . $file;
+                    // NEW: Check if this folder has student subfolders (new structure) or flat files (old structure)
+                    $items = scandir($fullPath);
+                    $hasStudentFolders = false;
+                    
+                    // Detect if we have student folders
+                    foreach ($items as $item) {
+                        if ($item !== '.' && $item !== '..' && is_dir($fullPath . '/' . $item)) {
+                            $hasStudentFolders = true;
+                            break;
                         }
                     }
+                    
+                    $files = [];
+                    
+                    if ($hasStudentFolders) {
+                        // NEW STRUCTURE: student/{doc_type}/{student_id}/files
+                        error_log("  Using new student-organized structure");
+                        foreach ($items as $item) {
+                            if ($item !== '.' && $item !== '..') {
+                                $studentFolder = $fullPath . '/' . $item;
+                                if (is_dir($studentFolder)) {
+                                    // Scan files in student's folder
+                                    $studentFiles_scan = scandir($studentFolder);
+                                    foreach ($studentFiles_scan as $file) {
+                                        if ($file !== '.' && $file !== '..' && is_file($studentFolder . '/' . $file)) {
+                                            // Skip associated files (.ocr.txt, .verify.json, etc.)
+                                            if (!preg_match('/\.(ocr\.txt|verify\.json|confidence\.json|tsv)$/', $file)) {
+                                                $files[] = $studentFolder . '/' . $file;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // OLD STRUCTURE: flat files in student/{doc_type}/
+                        error_log("  Using legacy flat structure");
+                        foreach ($items as $file) {
+                            if ($file !== '.' && $file !== '..' && is_file($fullPath . '/' . $file)) {
+                                // Skip associated files
+                                if (!preg_match('/\.(ocr\.txt|verify\.json|confidence\.json|tsv)$/', $file)) {
+                                    $files[] = $fullPath . '/' . $file;
+                                }
+                            }
+                        }
+                    }
+                    
                     error_log("  Found " . count($files) . " files in $folderType");
                     $totalFilesFound += count($files);
                     
@@ -143,9 +183,12 @@ class FileCompressionService {
                             foreach ($students as $student) {
                                 $studentId = $student['student_id'];
                                 $studentIdLower = strtolower($studentId);
-                                // Files are named like: GENERALTRIAS-2025-3-9YW3ST_Soliman_Rojen_...
-                                // Use case-insensitive matching
-                                if (strpos($filenameLower, $studentIdLower) !== false) {
+                                
+                                // Match by student ID in filename OR by parent folder name
+                                $parentFolder = basename(dirname($file));
+                                
+                                if (strpos($filenameLower, $studentIdLower) !== false || 
+                                    strtolower($parentFolder) === $studentIdLower) {
                                     $studentFiles[$studentId]['files'][] = [
                                         'path' => $file,
                                         'type' => $folderType,
