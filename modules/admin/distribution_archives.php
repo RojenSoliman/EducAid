@@ -110,8 +110,7 @@ $compressionStats = [
 // Filter distributions based on tab
 $filteredDistributions = array_filter($allDistributions, function($dist) use ($filter) {
     if ($filter === 'all') return true;
-    if ($filter === 'active') return $dist['status'] === 'active';
-    if ($filter === 'compressed') return $dist['files_compressed'] == true;
+    // All ZIP files are already archived, so 'archived' filter shows same as 'all'
     if ($filter === 'archived') return $dist['archived_files_count'] > 0;
     return true;
 });
@@ -233,25 +232,13 @@ $pageTitle = "Distribution Archives";
                         <li class="nav-item">
                             <a class="nav-link <?php echo $filter === 'all' ? 'active' : ''; ?>" 
                                href="?filter=all">
-                                <i class="bi bi-list"></i> All (<?php echo count($allDistributions); ?>)
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link <?php echo $filter === 'active' ? 'active' : ''; ?>" 
-                               href="?filter=active">
-                                <i class="bi bi-play-circle"></i> Active
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link <?php echo $filter === 'compressed' ? 'active' : ''; ?>" 
-                               href="?filter=compressed">
-                                <i class="bi bi-file-zip"></i> Compressed
+                                <i class="bi bi-archive-fill"></i> All Archives (<?php echo count($allDistributions); ?>)
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link <?php echo $filter === 'archived' ? 'active' : ''; ?>" 
                                href="?filter=archived">
-                                <i class="bi bi-archive"></i> Archived
+                                <i class="bi bi-file-zip-fill"></i> With Files (<?php echo count(array_filter($allDistributions, fn($d) => $d['archived_files_count'] > 0)); ?>)
                             </a>
                         </li>
                     </ul>
