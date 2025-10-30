@@ -421,6 +421,18 @@ class DistributionManager {
         $distFiles = 0;
         $distSize = 0;
         $distCount = 0;
+        $uniqueStudentsInDistributions = 0;
+        
+        // Count unique students across all distributions from distribution_student_snapshot
+        $uniqueStudentsQuery = pg_query($this->conn, "
+            SELECT COUNT(DISTINCT student_id) as unique_count
+            FROM distribution_student_snapshot
+        ");
+        
+        if ($uniqueStudentsQuery && pg_num_rows($uniqueStudentsQuery) > 0) {
+            $uniqueData = pg_fetch_assoc($uniqueStudentsQuery);
+            $uniqueStudentsInDistributions = (int)($uniqueData['unique_count'] ?? 0);
+        }
         
         if (is_dir($distributionsPath)) {
             $zipFiles = glob($distributionsPath . '/*.zip');
@@ -435,7 +447,7 @@ class DistributionManager {
         
         $stats[] = [
             'category' => 'distributions',
-            'student_count' => $distCount, // Number of distribution archives
+            'student_count' => $uniqueStudentsInDistributions, // Unique students across all distributions
             'file_count' => $distFiles,
             'total_size' => $distSize
         ];

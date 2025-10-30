@@ -38,6 +38,7 @@ $student = pg_fetch_assoc($student_query);
 
 // PostgreSQL returns 'f'/'t' strings for booleans
 $needs_upload = ($student['needs_upload'] === 't' || $student['needs_upload'] === true);
+$student_status = $student['status'] ?? 'applicant';
 
 // TESTING MODE: Allow re-upload if ?test_reupload=1 is in URL (REMOVE IN PRODUCTION)
 $test_mode = isset($_GET['test_reupload']) && $_GET['test_reupload'] == '1';
@@ -45,8 +46,14 @@ if ($test_mode) {
     $needs_upload = true;
 }
 
-$can_upload = $needs_upload; // Only students who need re-upload can upload
-$is_new_registrant = !$needs_upload;
+// Only allow uploads if:
+// 1. Student needs upload (needs_document_upload = true) AND
+// 2. Student is NOT active (active students are approved and in read-only mode) AND
+// 3. Student is NOT given (students who received aid are in read-only mode)
+$can_upload = $needs_upload && $student_status !== 'active' && $student_status !== 'given' && !$test_mode;
+
+// Student is in read-only mode if they're a new registrant OR they're already active OR they have received aid
+$is_new_registrant = !$needs_upload || $student_status === 'active' || $student_status === 'given';
 
 // Get list of documents that need re-upload (if any)
 $documents_to_reupload = [];
@@ -70,7 +77,7 @@ if ($needs_upload) {
 $docs_query = pg_query_params($connection,
     "SELECT document_type_code, file_path, upload_date, 
             ocr_confidence, verification_score,
-            verification_data_path, ocr_text_path
+            verification_status, verification_details
      FROM documents 
      WHERE student_id = $1
      ORDER BY upload_date DESC",
@@ -227,6 +234,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_document'])) 
 
 // Handle AJAX file upload to session (preview stage)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_upload']) && $can_upload) {
+    // Suppress error display for AJAX requests
+    ini_set('display_errors', '0');
+    error_reporting(E_ALL);
+    
     // Clean output buffer and set JSON header immediately
     while (ob_get_level()) {
         ob_end_clean();
@@ -237,11 +248,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_upload']) && $ca
         $doc_type_code = $_POST['document_type'] ?? '';
         
         if (!isset($document_types[$doc_type_code])) {
+            error_log("AJAX Upload: Invalid document type: $doc_type_code");
             echo json_encode(['success' => false, 'message' => 'Invalid document type']);
             exit;
         }
         
         if (!isset($_FILES['document_file']) || $_FILES['document_file']['error'] !== UPLOAD_ERR_OK) {
+            $error_code = $_FILES['document_file']['error'] ?? 'none';
+            error_log("AJAX Upload: File upload error code: $error_code");
             echo json_encode(['success' => false, 'message' => 'File upload error']);
             exit;
         }
@@ -358,29 +372,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $can_upload) {
         error_log("Confirm upload - Student: $student_id, DocType: $doc_type_code");
         
         if (!isset($_SESSION['temp_uploads'][$doc_type_code])) {
+            error_log("ERROR: No temp upload found in session for document type: $doc_type_code");
+            error_log("Session temp_uploads: " . print_r($_SESSION['temp_uploads'], true));
             $upload_result = ['success' => false, 'message' => 'No file to confirm. Please upload first.'];
         } else {
             $temp_data = $_SESSION['temp_uploads'][$doc_type_code];
             
-            // Use DocumentReuploadService to move from TEMP to PERMANENT
-            $result = $reuploadService->confirmUpload(
-                $student_id,
-                $doc_type_code,
-                $temp_data['path']
-            );
+            error_log("Temp data found: " . print_r($temp_data, true));
             
-            if ($result['success']) {
-                // Clear session temp data
-                unset($_SESSION['temp_uploads'][$doc_type_code]);
-                
-                $upload_result = ['success' => true, 'message' => 'Document submitted successfully and is now under review!'];
-                
-                // Refresh page to show new upload
-                header("Location: upload_document.php?success=1");
-                exit;
+            // Check if temp file still exists
+            if (!file_exists($temp_data['path'])) {
+                error_log("ERROR: Temp file does not exist: " . $temp_data['path']);
+                $upload_result = ['success' => false, 'message' => 'Temporary file has expired. Please upload again.'];
             } else {
-                $upload_result = ['success' => false, 'message' => $result['message'] ?? 'Upload failed'];
-                error_log("Permanent upload failed: " . $upload_result['message']);
+                // Use DocumentReuploadService to move from TEMP to PERMANENT
+                $result = $reuploadService->confirmUpload(
+                    $student_id,
+                    $doc_type_code,
+                    $temp_data['path']
+                );
+                
+                error_log("ConfirmUpload result: " . print_r($result, true));
+                
+                if ($result['success']) {
+                    // Clear session temp data
+                    unset($_SESSION['temp_uploads'][$doc_type_code]);
+                    
+                    $upload_result = ['success' => true, 'message' => 'Document submitted successfully and is now under review!'];
+                    
+                    // Refresh page to show new upload
+                    header("Location: upload_document.php?success=1");
+                    exit;
+                } else {
+                    $upload_result = ['success' => false, 'message' => $result['message'] ?? 'Upload failed'];
+                    error_log("Permanent upload failed: " . $upload_result['message']);
+                }
             }
         }
     }
@@ -397,6 +423,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $can_upload) {
             unset($_SESSION['temp_uploads'][$doc_type_code]);
             
             $upload_result = ['success' => true, 'message' => 'Preview cancelled.'];
+        }
+    }
+    
+    // Handle re-upload of existing document (delete existing and start fresh)
+    elseif (isset($_POST['start_reupload']) && isset($_POST['document_type'])) {
+        $doc_type_code = $_POST['document_type'];
+        
+        // First, get the file path before deleting from database
+        $file_query = pg_query_params($connection,
+            "SELECT file_path FROM documents WHERE student_id = $1 AND document_type_code = $2",
+            [$student_id, $doc_type_code]
+        );
+        
+        $file_to_delete = null;
+        if ($file_query && pg_num_rows($file_query) > 0) {
+            $file_row = pg_fetch_assoc($file_query);
+            $file_to_delete = $file_row['file_path'];
+        }
+        
+        // Delete existing document from database
+        $delete_query = pg_query_params($connection,
+            "DELETE FROM documents WHERE student_id = $1 AND document_type_code = $2",
+            [$student_id, $doc_type_code]
+        );
+        
+        if ($delete_query) {
+            // Delete the actual file and associated OCR files if they exist
+            if ($file_to_delete) {
+                $server_root = dirname(__DIR__, 2);
+                
+                // Convert web path to server path
+                $file_path = $file_to_delete;
+                if (strpos($file_path, '../../') === 0) {
+                    $file_path = $server_root . '/' . substr($file_path, 6);
+                }
+                
+                // Get the directory containing the file
+                $file_dir = dirname($file_path);
+                $file_basename = basename($file_path);
+                
+                error_log("Re-upload: Deleting files from directory - $file_dir");
+                
+                // Delete main file
+                if (file_exists($file_path)) {
+                    @unlink($file_path);
+                    error_log("Re-upload: Deleted main file - $file_path");
+                }
+                
+                // Delete associated OCR files (same directory, same basename + extensions)
+                $ocr_extensions = ['.ocr.txt', '.tsv', '.verify.json', '.ocr.json'];
+                foreach ($ocr_extensions as $ext) {
+                    $ocr_file = $file_path . $ext;
+                    if (file_exists($ocr_file)) {
+                        @unlink($ocr_file);
+                        error_log("Re-upload: Deleted OCR file - $ocr_file");
+                    }
+                }
+                
+                // Check if files are in a student-specific subdirectory (e.g., /student/{doc_type}/{student_id}/)
+                // If the directory only contains this student's files, delete the entire directory
+                if (is_dir($file_dir) && basename($file_dir) == $student_id) {
+                    // This is a student-specific directory, delete all files in it
+                    $files_in_dir = glob($file_dir . '/*');
+                    foreach ($files_in_dir as $file) {
+                        if (is_file($file)) {
+                            @unlink($file);
+                            error_log("Re-upload: Deleted file from student directory - $file");
+                        }
+                    }
+                    
+                    // Try to remove the now-empty directory
+                    if (count(glob($file_dir . '/*')) === 0) {
+                        @rmdir($file_dir);
+                        error_log("Re-upload: Removed empty student directory - $file_dir");
+                    }
+                }
+            }
+            
+            // Clear any temp uploads for this document type
+            if (isset($_SESSION['temp_uploads'][$doc_type_code])) {
+                $temp_data = $_SESSION['temp_uploads'][$doc_type_code];
+                $reuploadService->cancelPreview($temp_data['path']);
+                unset($_SESSION['temp_uploads'][$doc_type_code]);
+            }
+            
+            // Redirect to refresh the page and show upload form
+            header("Location: upload_document.php?reupload_started=" . $doc_type_code);
+            exit;
+        } else {
+            $upload_result = ['success' => false, 'message' => 'Failed to delete existing document. Please try again.'];
         }
     }
 }
@@ -579,6 +695,11 @@ $page_title = 'Upload Documents';
             color: white;
         }
         
+        .view-only-banner.approved {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+        
         .reupload-banner {
             background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
             color: white;
@@ -686,15 +807,39 @@ $page_title = 'Upload Documents';
             <!-- Page Header -->
             <div class="page-header">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
+                    <div class="flex-grow-1">
                         <h1><i class="bi bi-cloud-upload"></i> Upload Documents</h1>
                         <p>Manage your application documents</p>
+                    </div>
+                    <div class="text-center me-3" id="realtime-indicator" style="display: none;">
+                        <small class="text-success d-block">
+                            <i class="bi bi-arrow-repeat" style="animation: spin 2s linear infinite;"></i>
+                            <span>Auto-updating</span>
+                        </small>
+                        <small class="text-muted" style="font-size: 0.7rem;">Checks every 1s</small>
                     </div>
                     <a href="student_homepage.php" class="btn btn-outline-secondary">
                         <i class="bi bi-arrow-left"></i> Back
                     </a>
                 </div>
             </div>
+            
+            <style>
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                
+                @keyframes flashGreen {
+                    0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+                    50% { box-shadow: 0 0 20px 10px rgba(16, 185, 129, 0.4); }
+                    100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+                }
+                
+                .document-card.updated {
+                    animation: flashGreen 1s ease-out;
+                }
+            </style>
             
             <!-- Testing Mode Banner -->
             <?php if ($test_mode): ?>
@@ -709,6 +854,7 @@ $page_title = 'Upload Documents';
             <?php if (isset($_GET['debug'])): ?>
             <div class="alert alert-info alert-dismissible fade show" role="alert">
                 <strong>Debug Info:</strong><br>
+                - student_status: <?= htmlspecialchars($student_status) ?><br>
                 - needs_upload: <?= $needs_upload ? 'TRUE' : 'FALSE' ?><br>
                 - can_upload: <?= $can_upload ? 'TRUE' : 'FALSE' ?><br>
                 - documents_to_reupload: <?= !empty($documents_to_reupload) ? implode(', ', $documents_to_reupload) : 'NONE' ?><br>
@@ -722,6 +868,20 @@ $page_title = 'Upload Documents';
             <?php if (isset($_GET['success'])): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <i class="bi bi-check-circle"></i> <strong>Success!</strong> Document submitted successfully and awaiting admin approval.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            <?php endif; ?>
+            
+            <!-- Re-upload Started Message -->
+            <?php if (isset($_GET['reupload_started'])): ?>
+            <?php 
+                $reupload_doc_code = $_GET['reupload_started'];
+                $reupload_doc_name = $document_types[$reupload_doc_code]['name'] ?? 'Document';
+            ?>
+            <div class="alert alert-info alert-dismissible fade show" role="alert">
+                <i class="bi bi-arrow-repeat"></i> <strong>Re-upload Started!</strong> 
+                The existing <?= htmlspecialchars($reupload_doc_name) ?> has been removed. 
+                You can now upload a new file below.
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
             <?php endif; ?>
@@ -747,14 +907,22 @@ $page_title = 'Upload Documents';
             </div>
             <?php endif; ?>
             
-            <!-- View-Only Banner (New Registrants) -->
+            <!-- View-Only Banner (New Registrants or Active Students or Students who received aid) -->
             <?php if ($is_new_registrant): ?>
-            <div class="view-only-banner">
+            <div class="view-only-banner <?= ($student_status === 'active' || $student_status === 'given') ? 'approved' : '' ?>">
                 <div class="banner-content">
-                    <i class="bi bi-info-circle"></i>
+                    <i class="bi bi-<?= ($student_status === 'active' || $student_status === 'given') ? 'check-circle' : 'info-circle' ?>"></i>
                     <div>
+                        <?php if ($student_status === 'given'): ?>
+                        <h5><i class="bi bi-lock-fill"></i> Aid Received - Read-Only Mode</h5>
+                        <p>Your educational assistance has been distributed! Your status is now <strong>GIVEN</strong> and your documents have been locked for record-keeping purposes. You cannot modify or re-upload documents at this time. If you need assistance, please contact the admin.</p>
+                        <?php elseif ($student_status === 'active'): ?>
+                        <h5><i class="bi bi-lock-fill"></i> Documents Approved - Read-Only Mode</h5>
+                        <p>Congratulations! Your application has been approved and your status is now <strong>ACTIVE</strong>. Your documents have been verified and locked for security. You cannot modify or re-upload documents at this time. If you need to make changes, please contact the admin.</p>
+                        <?php else: ?>
                         <h5>View-Only Mode</h5>
                         <p>You registered through our online system and submitted all required documents during registration. Your documents are currently under review by our admin team. You cannot re-upload documents at this time.</p>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -906,10 +1074,13 @@ $page_title = 'Upload Documents';
                                 </div>
                                 <?php endif; ?>
                                 <?php if ($needs_reupload): ?>
-                                <button class="btn btn-warning btn-sm" 
-                                        onclick="showUploadForm('<?= $type_code ?>')">
-                                    <i class="bi bi-arrow-repeat"></i> Re-upload
-                                </button>
+                                <form method="POST" style="display: inline;">
+                                    <input type="hidden" name="document_type" value="<?= $type_code ?>">
+                                    <input type="hidden" name="start_reupload" value="1">
+                                    <button type="submit" class="btn btn-warning btn-sm">
+                                        <i class="bi bi-arrow-repeat"></i> Re-upload
+                                    </button>
+                                </form>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -1000,14 +1171,6 @@ $page_title = 'Upload Documents';
                                             onclick="processDocument('<?= $type_code ?>')">
                                         <i class="bi bi-cpu"></i> <?= htmlspecialchars($processLabel) ?>
                                     </button>
-
-                                    <?php if ($has_ocr): ?>
-                                    <button type="button"
-                                            class="btn btn-info btn-sm"
-                                            onclick="loadStudentValidationData('<?= $type_code ?>', <?= $student_id ?>)">
-                                        <i class="bi bi-clipboard-check"></i> View Validation Details
-                                    </button>
-                                    <?php endif; ?>
 
                                     <form method="POST" style="display: inline;">
                                         <input type="hidden" name="document_type" value="<?= $type_code ?>">
@@ -1105,17 +1268,38 @@ $page_title = 'Upload Documents';
                     body: formData
                 });
                 
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    console.error('Server returned non-JSON response:', text.substring(0, 500));
+                    throw new Error('Server error: Expected JSON response but got ' + contentType);
+                }
+                
                 const data = await response.json();
                 
                 if (data.success) {
-                    // Reload the page to show the preview
-                    window.location.reload();
+                    // Small delay to ensure response is fully processed before reload
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // Reload the page to show the preview (remove any URL parameters)
+                    window.location.href = 'upload_document.php';
                 } else {
                     alert('Upload failed: ' + data.message);
                 }
             } catch (error) {
                 console.error('Upload error:', error);
-                alert('Upload failed. Please try again.');
+                
+                // If it's a "Failed to fetch" error but the file might have uploaded,
+                // reload the page after a delay to check
+                if (error.message && error.message.includes('Failed to fetch')) {
+                    console.log('Network error detected, reloading page to check upload status...');
+                    setTimeout(() => {
+                        window.location.href = 'upload_document.php';
+                    }, 500);
+                } else {
+                    alert('Upload failed: ' + (error.message || 'Please try again.'));
+                }
             }
         }
         
@@ -1324,286 +1508,139 @@ $page_title = 'Upload Documents';
                 }
             });
         });
-
-        // Load validation data for student view
-        async function loadStudentValidationData(docTypeCode, studentId) {
-            try {
-                // Map document type codes to document types
-                const docTypeMap = {
-                    '00': 'eaf',
-                    '01': 'grades',
-                    '02': 'letter_to_mayor',
-                    '03': 'certificate_of_indigency',
-                    '04': 'id_picture'
-                };
-
-                const docType = docTypeMap[docTypeCode];
-                if (!docType) {
-                    console.error('Unknown document type code:', docTypeCode);
-                    return;
-                }
-
-                const response = await fetch('get_validation_details.php?doc_type=' + encodeURIComponent(docType) + '&student_id=' + studentId);
-                if (!response.ok) {
-                    throw new Error('Failed to fetch validation data');
-                }
-
-                const validation = await response.json();
-                
-                // Generate HTML and show modal
-                const modalBody = document.getElementById('studentValidationModalBody');
-                modalBody.innerHTML = generateStudentValidationHTML(validation, docType);
-                
-                const modal = new bootstrap.Modal(document.getElementById('studentValidationModal'));
-                modal.show();
-            } catch (error) {
-                console.error('Error loading validation data:', error);
-                alert('Failed to load validation details. Please try again.');
-            }
-        }
-
-        // Generate validation HTML for student view
-        function generateStudentValidationHTML(validation, docType) {
-            if (!validation || !validation.identity_verification) {
-                return '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No validation data available.</div>';
-            }
-
-            const identity = validation.identity_verification;
-            const isIdOrEaf = (docType === 'id_picture' || docType === 'eaf');
-            const isLetter = (docType === 'letter_to_mayor');
-            const isCert = (docType === 'certificate_of_indigency');
-
-            let html = '<div class="verification-checklist">';
-
-            // Name checks (all documents)
-            ['first_name', 'middle_name', 'last_name'].forEach(field => {
-                const fieldLabel = field.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-                const check = identity[field + '_match'];
-                
-                if (check && check.found !== undefined) {
-                    const passed = check.found;
-                    const confidence = Math.round(parseFloat(check.confidence) || 0);
-                    const checkClass = passed ? 'check-passed' : 'check-failed';
-                    const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
-                    
-                    html += `
-                        <div class="form-check ${checkClass}">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <label class="form-check-label">
-                                    <i class="bi ${icon}"></i> ${fieldLabel}
-                                </label>
-                                <span class="badge bg-${confidence >= 80 ? 'success' : confidence >= 60 ? 'warning' : 'danger'} confidence-score">
-                                    ${confidence}%
-                                </span>
-                            </div>
-                        </div>`;
-                }
-            });
-
-            // Year level check (for ID and EAF only)
-            if (isIdOrEaf && identity.year_level_match) {
-                const check = identity.year_level_match;
-                const passed = check.found;
-                const checkClass = passed ? 'check-passed' : 'check-failed';
-                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
-                
-                html += `
-                    <div class="form-check ${checkClass}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-check-label">
-                                <i class="bi ${icon}"></i> Year Level
-                            </label>
-                            <span class="badge bg-${passed ? 'success' : 'danger'} confidence-score">
-                                ${passed ? '✓' : 'Not Found'}
-                            </span>
+        
+        // Real-time status update checker
+        let lastStatusCheck = '';
+        let isCheckingStatus = false;
+        
+        // Show approval notification
+        function showApprovalNotification() {
+            // Create toast notification
+            const toast = document.createElement('div');
+            toast.className = 'position-fixed top-0 end-0 p-3';
+            toast.style.zIndex = '9999';
+            toast.innerHTML = `
+                <div class="toast show align-items-center text-white bg-success border-0" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="bi bi-check-circle-fill me-2"></i>
+                            <strong>Congratulations!</strong> Your application has been approved! 🎉
                         </div>
-                    </div>`;
-            }
-
-            // Barangay check (for Letter and Certificate)
-            if ((isLetter || isCert) && identity.barangay_match) {
-                const check = identity.barangay_match;
-                const passed = check.found;
-                const confidence = Math.round(parseFloat(check.confidence) || 0);
-                const checkClass = passed ? 'check-passed' : 'check-failed';
-                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
-                
-                html += `
-                    <div class="form-check ${checkClass}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-check-label">
-                                <i class="bi ${icon}"></i> Barangay
-                            </label>
-                            <span class="badge bg-${confidence >= 80 ? 'success' : confidence >= 60 ? 'warning' : 'danger'} confidence-score">
-                                ${confidence}%
-                            </span>
-                        </div>
-                    </div>`;
-            }
-
-            // University check (for ID and EAF only)
-            if (isIdOrEaf && identity.school_match) {
-                const check = identity.school_match;
-                const passed = check.found;
-                const confidence = Math.round(parseFloat(check.confidence) || 0);
-                const checkClass = passed ? 'check-passed' : 'check-failed';
-                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
-                
-                html += `
-                    <div class="form-check ${checkClass}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-check-label">
-                                <i class="bi ${icon}"></i> University/College
-                            </label>
-                            <span class="badge bg-${confidence >= 80 ? 'success' : confidence >= 60 ? 'warning' : 'danger'} confidence-score">
-                                ${confidence}%
-                            </span>
-                        </div>
-                    </div>`;
-            }
-
-            // Mayor header check (for Letter only)
-            if (isLetter && identity.office_header_found) {
-                const check = identity.office_header_found;
-                const passed = check.found;
-                const checkClass = passed ? 'check-passed' : 'check-failed';
-                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
-                
-                html += `
-                    <div class="form-check ${checkClass}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-check-label">
-                                <i class="bi ${icon}"></i> Mayor/Office Header
-                            </label>
-                            <span class="badge bg-${passed ? 'success' : 'danger'} confidence-score">
-                                ${passed ? '✓' : 'Not Found'}
-                            </span>
-                        </div>
-                    </div>`;
-            }
-
-            // Certificate title check (for Certificate only)
-            if (isCert && identity.certificate_title_found) {
-                const check = identity.certificate_title_found;
-                const passed = check.found;
-                const checkClass = passed ? 'check-passed' : 'check-failed';
-                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
-                
-                html += `
-                    <div class="form-check ${checkClass}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-check-label">
-                                <i class="bi ${icon}"></i> Certificate Title
-                            </label>
-                            <span class="badge bg-${passed ? 'success' : 'danger'} confidence-score">
-                                ${passed ? '✓' : 'Not Found'}
-                            </span>
-                        </div>
-                    </div>`;
-            }
-
-            // General Trias check (for Certificate only)
-            if (isCert && identity.general_trias_found) {
-                const check = identity.general_trias_found;
-                const passed = check.found;
-                const checkClass = passed ? 'check-passed' : 'check-failed';
-                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
-                
-                html += `
-                    <div class="form-check ${checkClass}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-check-label">
-                                <i class="bi ${icon}"></i> General Trias Location
-                            </label>
-                            <span class="badge bg-${passed ? 'success' : 'danger'} confidence-score">
-                                ${passed ? '✓' : 'Not Found'}
-                            </span>
-                        </div>
-                    </div>`;
-            }
-
-            // Official keywords check (for EAF only)
-            if (docType === 'eaf' && identity.official_keywords) {
-                const check = identity.official_keywords;
-                const passed = check.found;
-                const confidence = Math.round(parseFloat(check.confidence) || 0);
-                const checkClass = passed ? 'check-passed' : 'check-failed';
-                const icon = passed ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
-                
-                html += `
-                    <div class="form-check ${checkClass}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-check-label">
-                                <i class="bi ${icon}"></i> Official Document Keywords
-                            </label>
-                            <span class="badge bg-${confidence >= 80 ? 'success' : confidence >= 60 ? 'warning' : 'danger'} confidence-score">
-                                ${confidence}%
-                            </span>
-                        </div>
-                    </div>`;
-            }
-
-            html += '</div>';
-            return html;
-        }
-    </script>
-
-    <!-- Student Validation Modal -->
-    <div class="modal fade" id="studentValidationModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-clipboard-check"></i> Document Validation Details
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="studentValidationModalBody">
-                    <div class="text-center">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <style>
-        /* Verification checklist styling */
-        .verification-checklist {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
+            `;
+            document.body.appendChild(toast);
+            
+            // Play a subtle success sound if available
+            try {
+                const audio = new Audio('data:audio/wav;base64,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TKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8=');
+                audio.volume = 0.3;
+                audio.play().catch(() => {}); // Ignore if audio fails
+            } catch (e) {}
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                toast.remove();
+            }, 5000);
         }
-
-        .verification-checklist .form-check {
-            padding: 0.75rem 1rem;
-            background: #f8f9fa;
-            border-radius: 6px;
-            border: 1px solid #dee2e6;
-            margin: 0;
+        
+        async function checkDocumentStatus() {
+            // Skip if already checking
+            if (isCheckingStatus) return;
+            
+            isCheckingStatus = true;
+            
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                const html = await response.text();
+                
+                // Only update if content has changed
+                if (html !== lastStatusCheck) {
+                    // Parse response to extract document cards
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newDocumentCards = doc.querySelectorAll('.document-card');
+                    const currentDocumentCards = document.querySelectorAll('.document-card');
+                    
+                    // Update each document card if content changed
+                    newDocumentCards.forEach((newCard, index) => {
+                        if (currentDocumentCards[index]) {
+                            const currentCardHTML = currentDocumentCards[index].innerHTML;
+                            const newCardHTML = newCard.innerHTML;
+                            
+                            if (currentCardHTML !== newCardHTML) {
+                                // Smooth update with fade effect
+                                currentDocumentCards[index].style.opacity = '0.5';
+                                setTimeout(() => {
+                                    currentDocumentCards[index].innerHTML = newCardHTML;
+                                    currentDocumentCards[index].style.opacity = '1';
+                                    
+                                    // Add flash animation
+                                    currentDocumentCards[index].classList.add('updated');
+                                    setTimeout(() => {
+                                        currentDocumentCards[index].classList.remove('updated');
+                                    }, 1000);
+                                }, 200);
+                                
+                                console.log('✅ Document card updated:', index);
+                            }
+                        }
+                    });
+                    
+                    // Also check if banner status changed (applicant -> active)
+                    const newBanner = doc.querySelector('.view-only-banner, .reupload-banner');
+                    const currentBanner = document.querySelector('.view-only-banner, .reupload-banner');
+                    
+                    if (newBanner && currentBanner) {
+                        const newBannerHTML = newBanner.outerHTML;
+                        const currentBannerHTML = currentBanner.outerHTML;
+                        
+                        if (newBannerHTML !== currentBannerHTML) {
+                            // Check if status changed to active (approved)
+                            const wasApproved = newBanner.classList.contains('approved') && !currentBanner.classList.contains('approved');
+                            
+                            currentBanner.outerHTML = newBannerHTML;
+                            console.log('🎉 Banner status updated');
+                            
+                            // Show celebration notification if approved
+                            if (wasApproved) {
+                                showApprovalNotification();
+                            }
+                        }
+                    }
+                    
+                    lastStatusCheck = html;
+                }
+            } catch (error) {
+                console.error('Status check failed:', error);
+            } finally {
+                isCheckingStatus = false;
+            }
         }
-
-        .verification-checklist .form-check.check-passed {
-            background: #d1e7dd;
-            border-color: #badbcc;
-        }
-
-        .verification-checklist .form-check.check-failed {
-            background: #f8d7da;
-            border-color: #f5c2c7;
-        }
-
-        .confidence-score {
-            font-size: 0.875rem;
-            padding: 0.25rem 0.5rem;
-            min-width: 50px;
-            text-align: center;
-        }
-    </style>
+        
+        // Start real-time status checking for all students
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Real-time status updates enabled for all students');
+            
+            const indicator = document.getElementById('realtime-indicator');
+            
+            // Show the auto-update indicator
+            if (indicator) {
+                indicator.style.display = 'block';
+            }
+            
+            // Check immediately on load
+            setTimeout(checkDocumentStatus, 1000);
+            // Then check every 1 second
+            setInterval(checkDocumentStatus, 1000);
+        });
+    </script>
 </body>
 </html>

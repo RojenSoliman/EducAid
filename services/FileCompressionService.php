@@ -106,6 +106,7 @@ class FileCompressionService {
             
             // Scan shared folders for files belonging to our students
             // Include ALL document types: enrollment, grades, ID, indigency, letter
+            // UPDATED: Now scans student-organized folders (student/{doc_type}/{student_id}/)
             $folders = [
                 'student/enrollment_forms' => 'enrollment_forms',
                 'student/grades' => 'grades',
@@ -122,14 +123,53 @@ class FileCompressionService {
                 error_log("Scanning folder: $fullPath");
                 
                 if (is_dir($fullPath)) {
-                    // Use scandir instead of glob to catch ALL files including those with multiple extensions
-                    $allFiles = scandir($fullPath);
-                    $files = [];
-                    foreach ($allFiles as $file) {
-                        if ($file !== '.' && $file !== '..' && is_file($fullPath . '/' . $file)) {
-                            $files[] = $fullPath . '/' . $file;
+                    // NEW: Check if this folder has student subfolders (new structure) or flat files (old structure)
+                    $items = scandir($fullPath);
+                    $hasStudentFolders = false;
+                    
+                    // Detect if we have student folders
+                    foreach ($items as $item) {
+                        if ($item !== '.' && $item !== '..' && is_dir($fullPath . '/' . $item)) {
+                            $hasStudentFolders = true;
+                            break;
                         }
                     }
+                    
+                    $files = [];
+                    
+                    if ($hasStudentFolders) {
+                        // NEW STRUCTURE: student/{doc_type}/{student_id}/files
+                        error_log("  Using new student-organized structure");
+                        foreach ($items as $item) {
+                            if ($item !== '.' && $item !== '..') {
+                                $studentFolder = $fullPath . '/' . $item;
+                                if (is_dir($studentFolder)) {
+                                    // Scan files in student's folder
+                                    $studentFiles_scan = scandir($studentFolder);
+                                    foreach ($studentFiles_scan as $file) {
+                                        if ($file !== '.' && $file !== '..' && is_file($studentFolder . '/' . $file)) {
+                                            // Skip associated files (.ocr.txt, .verify.json, etc.)
+                                            if (!preg_match('/\.(ocr\.txt|verify\.json|confidence\.json|tsv)$/', $file)) {
+                                                $files[] = $studentFolder . '/' . $file;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // OLD STRUCTURE: flat files in student/{doc_type}/
+                        error_log("  Using legacy flat structure");
+                        foreach ($items as $file) {
+                            if ($file !== '.' && $file !== '..' && is_file($fullPath . '/' . $file)) {
+                                // Skip associated files
+                                if (!preg_match('/\.(ocr\.txt|verify\.json|confidence\.json|tsv)$/', $file)) {
+                                    $files[] = $fullPath . '/' . $file;
+                                }
+                            }
+                        }
+                    }
+                    
                     error_log("  Found " . count($files) . " files in $folderType");
                     $totalFilesFound += count($files);
                     
@@ -143,9 +183,12 @@ class FileCompressionService {
                             foreach ($students as $student) {
                                 $studentId = $student['student_id'];
                                 $studentIdLower = strtolower($studentId);
-                                // Files are named like: GENERALTRIAS-2025-3-9YW3ST_Soliman_Rojen_...
-                                // Use case-insensitive matching
-                                if (strpos($filenameLower, $studentIdLower) !== false) {
+                                
+                                // Match by student ID in filename OR by parent folder name
+                                $parentFolder = basename(dirname($file));
+                                
+                                if (strpos($filenameLower, $studentIdLower) !== false || 
+                                    strtolower($parentFolder) === $studentIdLower) {
                                     $studentFiles[$studentId]['files'][] = [
                                         'path' => $file,
                                         'type' => $folderType,
@@ -214,15 +257,36 @@ class FileCompressionService {
                     continue; // Skip students with no files
                 }
                 
-                // Use just the student ID as the folder name
-                $studentFolderName = $studentId;
+                // Create folder name: "LastName, FirstName MiddleInitial - STUDENT-ID"
+                // Example: "Dela Cruz, Juan C. - GENERALTRIAS-2025-3-000000"
+                $lastName = trim($studentInfo['last_name'] ?? '');
+                $firstName = trim($studentInfo['first_name'] ?? '');
+                $middleName = trim($studentInfo['middle_name'] ?? '');
+                
+                // Get middle initial (first character if exists)
+                $middleInitial = !empty($middleName) ? strtoupper(substr($middleName, 0, 1)) . '.' : '';
+                
+                // Construct full name: "LastName, FirstName MiddleInitial"
+                $fullName = $lastName;
+                if (!empty($firstName)) {
+                    $fullName .= ', ' . $firstName;
+                    if (!empty($middleInitial)) {
+                        $fullName .= ' ' . $middleInitial;
+                    }
+                }
+                
+                // Sanitize folder name (remove invalid characters for file systems)
+                $fullName = preg_replace('/[<>:"\/\\|?*]/', '', $fullName);
+                
+                // Final folder name format: "LastName, FirstName M. - STUDENT-ID"
+                $studentFolderName = $fullName . ' - ' . $studentId;
                 
                 $studentOriginalSize = 0;
                 
-                // Add each file to ZIP under student's folder (no subfolders by type)
+                // Add each file to ZIP under student's named folder
                 foreach ($studentFilesList as $file) {
                     if (file_exists($file['path'])) {
-                        // Create path inside ZIP: StudentID/filename
+                        // Create path inside ZIP: "LastName, FirstName M. - STUDENT-ID/filename"
                         // All files go directly in the student's folder regardless of type
                         $zipEntryName = $studentFolderName . '/' . $file['name'];
                         $zip->addFile($file['path'], $zipEntryName);
@@ -244,12 +308,14 @@ class FileCompressionService {
                 
                 $studentsProcessed++;
                 $compressionLog[] = sprintf(
-                    "Student %s (%s %s): %d files, %.2f KB",
+                    "Student %s (%s %s %s): %d files, %.2f KB → Folder: %s",
                     $studentId,
                     $studentInfo['first_name'],
+                    $middleName ? substr($middleName, 0, 1) . '.' : '',
                     $studentInfo['last_name'],
                     count($studentFilesList),
-                    $studentOriginalSize / 1024
+                    $studentOriginalSize / 1024,
+                    $studentFolderName
                 );
             }
             
@@ -310,10 +376,13 @@ class FileCompressionService {
             error_log("Inserted $manifestInserted file manifest record(s)");
             $compressionLog[] = "Recorded $manifestInserted files in distribution_file_manifest";
             
-            // Only NOW is it safe to delete original files
+            // Only NOW is it safe to delete original files AND their associated files
             $filesDeleted = 0;
+            $associatedFilesDeleted = 0;
             foreach ($filesToDelete as $fileData) {
                 $filePath = $fileData['path'];
+                
+                // Delete the main file
                 if (file_exists($filePath) && unlink($filePath)) {
                     $filesDeleted++;
                     
@@ -326,9 +395,57 @@ class FileCompressionService {
                          AND original_file_path = $3",
                         [$snapshotId, $fileData['student_id'], $fileData['path']]
                     );
+                    
+                    // Delete associated files (.ocr.txt, .verify.json, .confidence.json, .tsv, .ocr.json)
+                    // For files like: file.jpg -> file.jpg.verify.json (NOT file.verify.json)
+                    $pathInfo = pathinfo($filePath);
+                    $fileDir = $pathInfo['dirname'];
+                    $fileBasename = $pathInfo['basename']; // Includes extension
+                    $fileWithoutExt = $pathInfo['filename']; // Without extension
+                    
+                    $associatedExtensions = ['.ocr.txt', '.verify.json', '.confidence.json', '.tsv', '.ocr.json'];
+                    
+                    foreach ($associatedExtensions as $ext) {
+                        // Try both patterns:
+                        // 1. file.jpg.verify.json (new style - preferred)
+                        // 2. file.verify.json (old style - fallback)
+                        $associatedFile1 = $fileDir . '/' . $fileBasename . $ext; // With extension
+                        $associatedFile2 = $fileDir . '/' . $fileWithoutExt . $ext; // Without extension
+                        
+                        $deleted = false;
+                        
+                        // Try new style first (file.jpg.verify.json)
+                        if (file_exists($associatedFile1)) {
+                            if (unlink($associatedFile1)) {
+                                $associatedFilesDeleted++;
+                                $deleted = true;
+                                error_log("  Deleted associated file: " . basename($associatedFile1));
+                            } else {
+                                error_log("  WARNING: Failed to delete associated file: " . basename($associatedFile1));
+                            }
+                        }
+                        // Try old style if new style wasn't found (file.verify.json)
+                        elseif (file_exists($associatedFile2)) {
+                            if (unlink($associatedFile2)) {
+                                $associatedFilesDeleted++;
+                                $deleted = true;
+                                error_log("  Deleted associated file: " . basename($associatedFile2));
+                            } else {
+                                error_log("  WARNING: Failed to delete associated file: " . basename($associatedFile2));
+                            }
+                        }
+                        
+                        if (!$deleted) {
+                            error_log("  Associated file not found (tried both patterns): " . $fileBasename . $ext);
+                        }
+                    }
+                } else {
+                    error_log("  WARNING: Failed to delete main file: " . basename($filePath));
                 }
             }
             $compressionLog[] = "Deleted $filesDeleted original files from uploads";
+            $compressionLog[] = "Deleted $associatedFilesDeleted associated files (OCR/JSON data)";
+            error_log("Deleted $filesDeleted main files and $associatedFilesDeleted associated files");
 
             
             // Update distributions table

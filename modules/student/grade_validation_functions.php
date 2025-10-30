@@ -100,8 +100,231 @@ if (!function_exists('normalize_and_extract_grade_student')) {
     }
 }
 
+if (!function_exists('extractGradesFromTSV')) {
+    /**
+     * Extract grades from TSV file with structured data
+     * TSV files have columns: level, page_num, block_num, par_num, line_num, word_num, left, top, width, height, conf, text
+     * This is MUCH more accurate than regex parsing of OCR text
+     * 
+     * SECURITY: Validates university name and student name BEFORE extracting grades
+     * to prevent students from uploading transcripts from other schools
+     */
+    function extractGradesFromTSV($tsvFilePath, $yearSection = '', $declaredYearName = '', $declaredTerm = '', $studentData = null) {
+        if (!file_exists($tsvFilePath)) {
+            return [
+                'all_passing' => false,
+                'grades' => [],
+                'failing_grades' => [],
+                'error' => 'TSV file not found - falling back to text parsing'
+            ];
+        }
+
+        // Load TSV helper
+        require_once __DIR__ . '/../../utils/TSVOCRHelper.php';
+        
+        $result = TSVOCRHelper::loadTSV($tsvFilePath);
+        if (!$result['success']) {
+            return [
+                'all_passing' => false,
+                'grades' => [],
+                'failing_grades' => [],
+                'error' => 'Failed to load TSV: ' . ($result['error'] ?? 'Unknown error')
+            ];
+        }
+
+        $tsvData = $result['data'];
+        $words = TSVOCRHelper::getWords($tsvData);
+        
+        // Reconstruct full OCR text from TSV for validation
+        $fullOcrText = implode(' ', array_map(function($w) { return $w['text']; }, $words));
+        
+        // SECURITY CHECK 1: Validate University Name
+        if (!empty($studentData['university_name'])) {
+            $universityValidation = validateUniversity($fullOcrText, $studentData['university_name']);
+            
+            if (!$universityValidation['match']) {
+                return [
+                    'all_passing' => false,
+                    'grades' => [],
+                    'failing_grades' => [],
+                    'error' => 'SECURITY: University name "' . $studentData['university_name'] . '" not found in document. This may be a fraudulent transcript.',
+                    'security_failure' => 'university_mismatch',
+                    'expected_university' => $studentData['university_name'],
+                    'found_text' => $universityValidation['found_text']
+                ];
+            }
+        }
+        
+        // SECURITY CHECK 2: Validate Student Name (First Name + Last Name)
+        if (!empty($studentData['first_name']) && !empty($studentData['last_name'])) {
+            $nameValidation = validateStudentName($fullOcrText, $studentData['first_name'], $studentData['last_name']);
+            
+            if (!$nameValidation) {
+                return [
+                    'all_passing' => false,
+                    'grades' => [],
+                    'failing_grades' => [],
+                    'error' => 'SECURITY: Student name "' . $studentData['first_name'] . ' ' . $studentData['last_name'] . '" not found in document. This may be a fraudulent transcript.',
+                    'security_failure' => 'name_mismatch',
+                    'expected_name' => $studentData['first_name'] . ' ' . $studentData['last_name']
+                ];
+            }
+        }
+        
+        // Group words by line number to reconstruct lines
+        $lines = [];
+        foreach ($words as $word) {
+            $lineKey = $word['page_num'] . '_' . $word['block_num'] . '_' . $word['par_num'] . '_' . $word['line_num'];
+            if (!isset($lines[$lineKey])) {
+                $lines[$lineKey] = [];
+            }
+            $lines[$lineKey][] = $word;
+        }
+
+        // Process each line to extract subject + grade pairs
+        $validGrades = [];
+        $failingGrades = [];
+        
+        // Two-column format detection:
+        // Many transcripts have First Semester | Second Semester side-by-side
+        // Grades appear at specific X positions (left column around x=50-150, right column around x=1090-1200)
+        
+        foreach ($lines as $lineKey => $lineWords) {
+            // Sort words by position (left to right)
+            usort($lineWords, function($a, $b) {
+                return $a['left'] <=> $b['left'];
+            });
+            
+            // Separate into left column (x < 900) and right column (x >= 900)
+            $leftColumn = [];
+            $rightColumn = [];
+            
+            foreach ($lineWords as $word) {
+                if ($word['left'] < 900) {
+                    $leftColumn[] = $word;
+                } else {
+                    $rightColumn[] = $word;
+                }
+            }
+            
+            // Process LEFT COLUMN (First Semester)
+            if (!empty($leftColumn)) {
+                $gradeData = extractGradeFromColumn($leftColumn);
+                if ($gradeData) {
+                    $validGrades[] = $gradeData;
+                    if (!$gradeData['passing']) {
+                        $failingGrades[] = $gradeData;
+                    }
+                }
+            }
+            
+            // Process RIGHT COLUMN (Second Semester)
+            if (!empty($rightColumn)) {
+                $gradeData = extractGradeFromColumn($rightColumn);
+                if ($gradeData) {
+                    $validGrades[] = $gradeData;
+                    if (!$gradeData['passing']) {
+                        $failingGrades[] = $gradeData;
+                    }
+                }
+            }
+        }
+        
+        $allPassing = (count($validGrades) > 0 && count($failingGrades) === 0);
+        
+        return [
+            'all_passing' => $allPassing,
+            'grades' => $validGrades,
+            'failing_grades' => $failingGrades
+        ];
+    }
+}
+
+if (!function_exists('extractGradeFromColumn')) {
+    /**
+     * Extract grade and subject from a single column's words
+     */
+    function extractGradeFromColumn($columnWords) {
+        $lineText = implode(' ', array_map(function($w) { return $w['text']; }, $columnWords));
+        $lineTextLower = strtolower($lineText);
+        
+        // Skip header lines, empty lines, year/semester markers
+        if (empty(trim($lineText)) || 
+            strlen($lineText) < 5 ||
+            preg_match('/^\s*(first|second|third|fourth|fifth|year|semester|page|student|total|earned|academic|non-academic|nothing|follows|credited|units)/i', $lineText)) {
+            return null;
+        }
+        
+        // Look for grade pattern: decimal (1.00-5.00)
+        if (!preg_match('/\b([1-5]\.\d{1,2})\b/', $lineText, $gradeMatch)) {
+            return null; // No valid grade found
+        }
+        
+        $grade = $gradeMatch[1];
+        $gradeFloat = floatval($grade);
+        
+        // Validate grade range (1.00-5.00 for GWA)
+        if ($gradeFloat < 1.0 || $gradeFloat > 5.0) {
+            return null;
+        }
+        
+        // Extract subject name: look for substantial text AFTER the grade
+        // Pattern: [grade] [year-code] [course-code] [subject name] [units]
+        // Example: "1.25 A24-25 DCSNO6C Applications Development and 3"
+        
+        $gradePosInLine = strpos($lineText, $grade);
+        $afterGrade = trim(substr($lineText, $gradePosInLine + strlen($grade)));
+        
+        // Remove year codes (A24-25, B23-24, a22-23, 822-23, etc.)
+        $afterGrade = preg_replace('/\b[ABab]?\d{2,3}-\d{2}\b/', '', $afterGrade);
+        
+        // Remove course codes (DCSNO6C, ELECL4C, ITENO4C, etc.) - alphanumeric codes 4-12 chars
+        $afterGrade = preg_replace('/\b[A-Z]{3,}[A-Z0-9]{1,}[A-Z*]?\b/', '', $afterGrade);
+        
+        // Remove standalone numbers (units, page numbers)
+        $afterGrade = preg_replace('/\b\d+\b/', '', $afterGrade);
+        
+        // Remove special characters and extra whitespace
+        $afterGrade = preg_replace('/[:\|]{1,}/', '', $afterGrade);
+        $afterGrade = preg_replace('/\s+/', ' ', $afterGrade);
+        $afterGrade = trim($afterGrade);
+        
+        // Need at least 3 characters for a valid subject name
+        if (strlen($afterGrade) < 3) {
+            return null;
+        }
+        
+        // Determine if passing (1.00-3.00 is passing in GWA system)
+        $isPassing = ($gradeFloat <= 3.0);
+        
+        return [
+            'subject' => $afterGrade,
+            'grade' => $grade,
+            'passing' => $isPassing
+        ];
+    }
+}
+
 if (!function_exists('validateGradeThreshold')) {
-    function validateGradeThreshold($yearSection, $declaredYearName, $debug = false, $declaredTerm = '') {
+    function validateGradeThreshold($yearSection, $declaredYearName, $debug = false, $declaredTerm = '', $tsvFilePath = null, $studentData = null) {
+        // Try TSV parsing first if file is available
+        if (!empty($tsvFilePath) && file_exists($tsvFilePath)) {
+            $tsvResult = extractGradesFromTSV($tsvFilePath, $yearSection, $declaredYearName, $declaredTerm, $studentData);
+            
+            // Check for security failures
+            if (isset($tsvResult['security_failure'])) {
+                // Return the security error immediately - don't fall back to legacy parsing
+                return $tsvResult;
+            }
+            
+            // If TSV parsing succeeded, use those results
+            if (count($tsvResult['grades']) > 0) {
+                return $tsvResult;
+            }
+            // Otherwise fall through to legacy text parsing
+        }
+        
+        // LEGACY: Fallback to text-based parsing
         $allPassing = false;
         $validGrades = [];
         $failingGrades = [];
@@ -276,15 +499,67 @@ if (!function_exists('validateUniversity')) {
 }
 
 if (!function_exists('validateStudentName')) {
-    function validateStudentName($ocrText, $firstName, $lastName) {
+    /**
+     * Validate student name in OCR text
+     * Returns detailed match information for both first name and last name
+     * 
+     * @param string $ocrText Full OCR text to search in
+     * @param string $firstName Expected first name
+     * @param string $lastName Expected last name
+     * @param bool $returnDetails If true, returns array with detailed info. If false, returns simple boolean
+     * @return bool|array Boolean match result OR array with detailed confidence scores
+     */
+    function validateStudentName($ocrText, $firstName, $lastName, $returnDetails = false) {
         $ocrTextLower = strtolower($ocrText);
         $firstNameLower = strtolower($firstName);
         $lastNameLower = strtolower($lastName);
 
+        // Check for exact matches
         $firstNameMatch = stripos($ocrTextLower, $firstNameLower) !== false;
         $lastNameMatch = stripos($ocrTextLower, $lastNameLower) !== false;
-
-        return ($firstNameMatch && $lastNameMatch);
+        
+        // Calculate confidence scores (95% for match, 0% for no match)
+        $firstNameConfidence = $firstNameMatch ? 95 : 0;
+        $lastNameConfidence = $lastNameMatch ? 95 : 0;
+        
+        // Find matched text snippets
+        $firstNameSnippet = '';
+        $lastNameSnippet = '';
+        
+        if ($firstNameMatch) {
+            $pattern = '/\b\w*' . preg_quote(substr($firstName, 0, min(3, strlen($firstName))), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $firstNameSnippet = $matches[0];
+            }
+        }
+        
+        if ($lastNameMatch) {
+            $pattern = '/\b\w*' . preg_quote(substr($lastName, 0, min(3, strlen($lastName))), '/') . '\w*\b/i';
+            if (preg_match($pattern, $ocrText, $matches)) {
+                $lastNameSnippet = $matches[0];
+            }
+        }
+        
+        $overallMatch = ($firstNameMatch && $lastNameMatch);
+        
+        if ($returnDetails) {
+            return [
+                'match' => $overallMatch,
+                'first_name_match' => $firstNameMatch,
+                'last_name_match' => $lastNameMatch,
+                'confidence_scores' => [
+                    'first_name' => $firstNameConfidence,
+                    'last_name' => $lastNameConfidence,
+                    'name' => $overallMatch ? 95 : 0
+                ],
+                'found_text_snippets' => [
+                    'first_name' => $firstNameSnippet,
+                    'last_name' => $lastNameSnippet
+                ]
+            ];
+        }
+        
+        return $overallMatch;
     }
 }
 

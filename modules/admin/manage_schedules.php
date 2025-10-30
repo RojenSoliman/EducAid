@@ -283,6 +283,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unpublish_schedule'])
         exit;
     }
     
+    // CONSTRAINT 1: Check if any student has been scanned (status = 'given')
+    $scanned_check = pg_query($connection, "SELECT COUNT(*) as count FROM students WHERE status = 'given'");
+    $scanned_count = 0;
+    if ($scanned_check) {
+        $scanned_data = pg_fetch_assoc($scanned_check);
+        $scanned_count = intval($scanned_data['count']);
+    }
+    
+    if ($scanned_count > 0) {
+        echo "<script>alert('Cannot unpublish schedule: " . $scanned_count . " student(s) have already received their aid. Schedule must remain published for record-keeping.'); window.location.href='manage_schedules.php';</script>";
+        exit;
+    }
+    
+    // CONSTRAINT 2: Check if we're within 1 day of distribution start date
+    $earliest_date_query = pg_query($connection, "SELECT MIN(distribution_date) as earliest_date FROM schedules");
+    if ($earliest_date_query) {
+        $date_row = pg_fetch_assoc($earliest_date_query);
+        $earliest_date = $date_row['earliest_date'];
+        
+        if ($earliest_date) {
+            $start_timestamp = strtotime($earliest_date);
+            $current_timestamp = time();
+            $time_diff = $start_timestamp - $current_timestamp;
+            $hours_until_start = $time_diff / 3600;
+            
+            // If less than 24 hours until distribution starts
+            if ($hours_until_start < 24 && $hours_until_start >= 0) {
+                $formatted_date = date('F j, Y', $start_timestamp);
+                $hours_remaining = round($hours_until_start, 1);
+                echo "<script>alert('Cannot unpublish schedule: Distribution starts on " . $formatted_date . " (in " . $hours_remaining . " hours). Schedule cannot be unpublished within 24 hours of distribution start.'); window.location.href='manage_schedules.php';</script>";
+                exit;
+            }
+        }
+    }
+    
+    // If all constraints pass, allow unpublishing
     $settings['schedule_published'] = false;
     file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
     
@@ -445,6 +481,56 @@ if ($usedDatesResult) {
                 </div>
             <?php endif; ?>
 
+            <?php 
+            // Check if unpublishing is allowed
+            $can_unpublish = true;
+            $unpublish_reason = '';
+            
+            if ($schedulePublished) {
+                // Check if any student has been scanned
+                $scanned_check = pg_query($connection, "SELECT COUNT(*) as count FROM students WHERE status = 'given'");
+                $scanned_count = 0;
+                if ($scanned_check) {
+                    $scanned_data = pg_fetch_assoc($scanned_check);
+                    $scanned_count = intval($scanned_data['count']);
+                }
+                
+                if ($scanned_count > 0) {
+                    $can_unpublish = false;
+                    $unpublish_reason = $scanned_count . ' student(s) have already received their aid. Schedule must remain published for record-keeping.';
+                } else {
+                    // Check if we're within 24 hours of distribution start
+                    $earliest_date_query = pg_query($connection, "SELECT MIN(distribution_date) as earliest_date FROM schedules");
+                    if ($earliest_date_query) {
+                        $date_row = pg_fetch_assoc($earliest_date_query);
+                        $earliest_date = $date_row['earliest_date'];
+                        
+                        if ($earliest_date) {
+                            $start_timestamp = strtotime($earliest_date);
+                            $current_timestamp = time();
+                            $time_diff = $start_timestamp - $current_timestamp;
+                            $hours_until_start = $time_diff / 3600;
+                            
+                            if ($hours_until_start < 24 && $hours_until_start >= 0) {
+                                $can_unpublish = false;
+                                $formatted_date = date('F j, Y', $start_timestamp);
+                                $hours_remaining = round($hours_until_start, 1);
+                                $unpublish_reason = 'Distribution starts on ' . $formatted_date . ' (in ' . $hours_remaining . ' hours). Cannot unpublish within 24 hours of start.';
+                            }
+                        }
+                    }
+                }
+                
+                // Show warning if unpublishing is blocked
+                if (!$can_unpublish) {
+                    echo '<div class="alert alert-warning alert-dismissible fade show" role="alert">';
+                    echo '<i class="bi bi-lock-fill"></i> <strong>Schedule Locked:</strong> ' . htmlspecialchars($unpublish_reason);
+                    echo '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+                    echo '</div>';
+                }
+            }
+            ?>
+
             <!-- Stats Card -->
             <div class="row mb-4 g-4">
                 <div class="col-md-4">
@@ -515,11 +601,11 @@ if ($usedDatesResult) {
                                     <form method="POST" class="mb-0">
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
                                         <button type="submit" name="unpublish_schedule" class="btn btn-light fw-bold" 
-                                                style="padding: 0.6rem 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: all 0.3s ease; color: #059669;"
-                                                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.25)';"
-                                                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
-                                                onclick="return confirm('This will hide the schedule from students but preserve all data. Continue?')">
-                                            <i class="bi bi-eye-slash me-2"></i> Hide
+                                                <?= !$can_unpublish ? 'disabled title="' . htmlspecialchars($unpublish_reason) . '"' : '' ?>
+                                                style="padding: 0.6rem 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: all 0.3s ease; color: <?= $can_unpublish ? '#059669' : '#9ca3af' ?>; <?= !$can_unpublish ? 'opacity: 0.5; cursor: not-allowed;' : '' ?>"
+                                                <?= $can_unpublish ? 'onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.25)\';" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.15)\';"' : '' ?>
+                                                <?= $can_unpublish ? 'onclick="return confirm(\'This will hide the schedule from students but preserve all data. Continue?\')"' : '' ?>>
+                                            <i class="bi bi-<?= $can_unpublish ? 'eye-slash' : 'lock' ?> me-2"></i> <?= $can_unpublish ? 'Hide' : 'Locked' ?>
                                         </button>
                                     </form>
                                 <?php endif; ?>

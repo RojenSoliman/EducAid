@@ -2767,7 +2767,54 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
     // === 4. GRADE THRESHOLD CHECK ===
     // Legacy grade validation (kept for backward compatibility)
     $debugGrades = isset($_POST['debug']) && $_POST['debug'] === '1';
-    $gradeValidationResult = validateGradeThreshold($yearLevelSection, $declaredYearName, $debugGrades, $adminSemester);
+    
+    // Construct TSV file path for accurate grade parsing
+    $tsvFilePath = $targetPath . '.tsv';
+    if (!file_exists($tsvFilePath)) {
+        // Try without extension prefix
+        $pathInfo = pathinfo($targetPath);
+        $tsvFilePath = $pathInfo['dirname'] . '/' . $pathInfo['filename'] . '.tsv';
+    }
+    
+    // Prepare student data for security validation
+    $studentValidationData = [
+        'first_name' => $firstName,
+        'last_name' => $lastName,
+        'university_name' => $declaredUniversityName
+    ];
+    
+    // Pass TSV file path for structured grade extraction (much more accurate than regex)
+    // ALSO pass student data for security validation (prevent fake transcripts)
+    require_once __DIR__ . '/grade_validation_functions.php';
+    $gradeValidationResult = validateGradeThreshold(
+        $yearLevelSection, 
+        $declaredYearName, 
+        $debugGrades, 
+        $adminSemester,
+        file_exists($tsvFilePath) ? $tsvFilePath : null,  // Pass TSV path if exists
+        $studentValidationData  // Pass student data for security validation
+    );
+    
+    // SECURITY CHECK: Reject fraudulent transcripts
+    if (isset($gradeValidationResult['security_failure'])) {
+        error_log("SECURITY ALERT: Grades upload rejected - " . ($gradeValidationResult['error'] ?? 'Unknown security issue'));
+        error_log("Student: $firstName $lastName");
+        error_log("Expected University: $declaredUniversityName");
+        error_log("Security failure type: " . $gradeValidationResult['security_failure']);
+        
+        json_response([
+            'status' => 'error',
+            'message' => $gradeValidationResult['error'],
+            'security_alert' => true,
+            'suggestions' => [
+                'Ensure you are uploading YOUR OWN transcript',
+                'Verify the university name matches your registered school',
+                'Check that your name appears clearly in the document',
+                'Contact support if you believe this is an error'
+            ]
+        ]);
+    }
+    
         $legacyAllGradesPassing = $gradeValidationResult['all_passing'];
         $legacyValidGrades = $gradeValidationResult['grades'];
         $legacyFailingGrades = $gradeValidationResult['failing_grades'];
@@ -2829,7 +2876,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
         $foundUniversityText = $universityValidationResult['found_text'];
 
         // === 6. NAME VERIFICATION ===
-        $nameMatch = validateStudentName($ocrText, $firstName, $lastName);
+        $nameValidationResult = validateStudentName($ocrText, $firstName, $lastName, true); // Get detailed results
+        $nameMatch = $nameValidationResult['match'];
+        $firstNameMatch = $nameValidationResult['first_name_match'];
+        $lastNameMatch = $nameValidationResult['last_name_match'];
+        $firstNameConfidence = $nameValidationResult['confidence_scores']['first_name'];
+        $lastNameConfidence = $nameValidationResult['confidence_scores']['last_name'];
+        $firstNameSnippet = $nameValidationResult['found_text_snippets']['first_name'];
+        $lastNameSnippet = $nameValidationResult['found_text_snippets']['last_name'];
 
         // === 7. SCHOOL STUDENT ID VERIFICATION ===
         $schoolStudentId = trim($_POST['school_student_id'] ?? '');
@@ -2848,6 +2902,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
             'school_year_match' => $schoolYearMatch,
             'university_match' => $universityMatch,
             'name_match' => $nameMatch,
+            'first_name_match' => $firstNameMatch,
+            'last_name_match' => $lastNameMatch,
             'school_student_id_match' => $schoolIdMatch,
             'all_grades_passing' => $allGradesPassing,
             'is_eligible' => $isEligible,
@@ -2861,6 +2917,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                 'semester' => $semesterConfidence,
                 'school_year' => $schoolYearConfidence,
                 'university' => $universityConfidence,
+                'first_name' => $firstNameConfidence,
+                'last_name' => $lastNameConfidence,
                 'name' => $nameMatch ? 95 : 0,
                 'school_student_id' => $schoolIdConfidence,
                 'grades' => !empty($validGrades) ? 90 : 0
@@ -2870,6 +2928,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['processGradesOcr'])) 
                 'semester' => $foundSemesterText,
                 'school_year' => $foundSchoolYearText,
                 'university' => $foundUniversityText,
+                'first_name' => $firstNameSnippet,
+                'last_name' => $lastNameSnippet,
                 'school_student_id' => $foundSchoolIdText
             ],
             'admin_requirements' => [

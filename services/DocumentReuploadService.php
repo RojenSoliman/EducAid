@@ -120,6 +120,7 @@ class DocumentReuploadService {
     /**
      * STAGE 2: Confirm upload - Move from TEMP to PERMANENT storage (like registration)
      * Called when user clicks "Confirm Upload" button
+     * NEW: Organized by student ID - assets/uploads/student/{doc_type}/{student_id}/
      */
     public function confirmUpload($studentId, $docTypeCode, $tempPath) {
         try {
@@ -134,15 +135,22 @@ class DocumentReuploadService {
             }
             
             $docInfo = self::DOCUMENT_TYPES[$docTypeCode];
-            $filename = basename($tempPath);
             
-            // Create permanent path
-            $permanentFolder = $this->baseDir . 'student/' . $docInfo['folder'] . '/';
+            // Create organized permanent directory structure: {doc_type}/{student_id}/
+            $permanentFolder = $this->baseDir . 'student/' . $docInfo['folder'] . '/' . $studentId . '/';
             if (!is_dir($permanentFolder)) {
                 mkdir($permanentFolder, 0755, true);
+                error_log("DocumentReuploadService: Created student folder: $permanentFolder");
             }
             
-            $permanentPath = $permanentFolder . $filename;
+            // Generate unique filename with timestamp to prevent overwrites
+            $originalFilename = basename($tempPath);
+            $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+            $baseName = pathinfo($originalFilename, PATHINFO_FILENAME);
+            $timestamp = date('YmdHis');
+            $uniqueFilename = $baseName . '_' . $timestamp . '.' . $extension;
+            
+            $permanentPath = $permanentFolder . $uniqueFilename;
             
             // Collect ALL associated OCR files BEFORE moving main file
             // Include .tsv (Tesseract TSV output), .txt (temp OCR outputs), and any other artifacts
@@ -152,6 +160,7 @@ class DocumentReuploadService {
                 $tempAssocPath = $tempPath . $ext;
                 if (file_exists($tempAssocPath)) {
                     $tempAssociatedFiles[$ext] = $tempAssocPath;
+                    error_log("DocumentReuploadService: Found associated file to move: " . basename($tempAssocPath));
                 }
             }
             
@@ -174,11 +183,12 @@ class DocumentReuploadService {
                     return ['success' => false, 'message' => 'Failed to move file to permanent storage'];
                 }
                 @unlink($tempPath); // Delete temp file after successful copy
+                error_log("DocumentReuploadService: Copied (not renamed) from TEMP to PERMANENT: $permanentPath");
+            } else {
+                error_log("DocumentReuploadService: Renamed from TEMP to PERMANENT: $permanentPath");
             }
             
-            error_log("DocumentReuploadService: Moved from TEMP to PERMANENT: $permanentPath");
-            
-            // Move associated OCR files (.ocr.txt, .verify.json, .confidence.json, .tsv, etc.)
+            // Move associated OCR files to permanent location with timestamp naming
             foreach ($tempAssociatedFiles as $ext => $tempAssocPath) {
                 // For temp output files, just delete them instead of moving
                 if (strpos($ext, '_temp_') === 0) {
@@ -187,7 +197,8 @@ class DocumentReuploadService {
                     continue;
                 }
                 
-                $permAssocPath = $permanentPath . $ext;
+                // Use same timestamp for associated files
+                $permAssocPath = $permanentFolder . $baseName . '_' . $timestamp . $ext;
                 $assocMoveSuccess = @rename($tempAssocPath, $permAssocPath);
                 if (!$assocMoveSuccess) {
                     // Fallback to copy+delete
@@ -210,12 +221,31 @@ class DocumentReuploadService {
                 'verification_details' => null
             ];
             
-            if (file_exists($permanentPath . '.verify.json')) {
-                $verifyJson = json_decode(file_get_contents($permanentPath . '.verify.json'), true);
-                $ocrData['ocr_confidence'] = $verifyJson['ocr_confidence'] ?? 0;
-                $ocrData['verification_score'] = $verifyJson['verification_score'] ?? 0;
-                $ocrData['verification_status'] = $verifyJson['verification_status'] ?? 'pending';
+            $verifyJsonPath = $permanentFolder . $baseName . '_' . $timestamp . '.verify.json';
+            if (file_exists($verifyJsonPath)) {
+                $verifyJson = json_decode(file_get_contents($verifyJsonPath), true);
+                
+                // Handle different verification JSON structures:
+                // Grades have ocr_confidence at root, EAF/Letter/Certificate have it in summary
+                if (isset($verifyJson['ocr_confidence'])) {
+                    // Grades format (has ocr_confidence at root)
+                    $ocrData['ocr_confidence'] = $verifyJson['ocr_confidence'];
+                    $ocrData['verification_score'] = $verifyJson['verification_score'] ?? $verifyJson['ocr_confidence'];
+                } elseif (isset($verifyJson['summary']['average_confidence'])) {
+                    // EAF/Letter/Certificate format (has average_confidence in summary)
+                    $ocrData['ocr_confidence'] = $verifyJson['summary']['average_confidence'];
+                    $ocrData['verification_score'] = $verifyJson['summary']['average_confidence'];
+                } else {
+                    // Fallback: use 0
+                    $ocrData['ocr_confidence'] = 0;
+                    $ocrData['verification_score'] = 0;
+                }
+                
+                $ocrData['verification_status'] = $verifyJson['verification_status'] ?? 
+                    ($verifyJson['overall_success'] ?? false ? 'passed' : 'manual_review');
                 $ocrData['verification_details'] = $verifyJson;
+                
+                error_log("confirmUpload: Read verification data - Confidence: {$ocrData['ocr_confidence']}%, Status: {$ocrData['verification_status']}");
             }
             
             // Use DocumentService to save to database
@@ -311,6 +341,11 @@ class DocumentReuploadService {
             // Certificate of Indigency comprehensive verification
             if ($docTypeCode === '03') {
                 return $this->processCertificateOCR($tempPath, $studentData);
+            }
+
+            // ID Picture comprehensive verification
+            if ($docTypeCode === '04') {
+                return $this->processIdPictureOCR($tempPath, $studentData);
             }
 
             // Use DIRECT Tesseract approach (same as registration) for better quality
@@ -675,8 +710,48 @@ class DocumentReuploadService {
             $schoolYearConfidence = 100;
             $foundSchoolYearText = 'Temporarily disabled for testing';
             
-            // Grade threshold validation
-            $gradeValidationResult = validateGradeThreshold($yearLevelSection, $declaredYearName, false, $adminSemester);
+            // Construct TSV file path
+            $tsvFilePath = $filePath . '.tsv';
+            if (!file_exists($tsvFilePath)) {
+                // Try without extension prefix
+                $pathInfo = pathinfo($filePath);
+                $tsvFilePath = $pathInfo['dirname'] . '/' . $pathInfo['filename'] . '.tsv';
+            }
+            
+            // Prepare student data for security validation
+            $studentValidationData = [
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'university_name' => $declaredUniversityName
+            ];
+            
+            // Grade threshold validation - PASS TSV FILE PATH and STUDENT DATA for accurate parsing and security checks
+            $gradeValidationResult = validateGradeThreshold(
+                $yearLevelSection, 
+                $declaredYearName, 
+                false, 
+                $adminSemester,
+                file_exists($tsvFilePath) ? $tsvFilePath : null,  // Pass TSV path if exists
+                $studentValidationData  // Pass student data for security validation
+            );
+            
+            // Check for security failures (fraudulent transcripts)
+            if (isset($gradeValidationResult['security_failure'])) {
+                error_log("SECURITY ALERT: Grades validation failed - " . ($gradeValidationResult['error'] ?? 'Unknown security issue'));
+                error_log("Student ID: $studentId");
+                error_log("Security failure type: " . $gradeValidationResult['security_failure']);
+                
+                // Return error - do not accept the document
+                return [
+                    'ocr_confidence' => 0,
+                    'verification_score' => 0,
+                    'verification_status' => 'failed',
+                    'verification_details' => null,
+                    'error' => $gradeValidationResult['error'],
+                    'security_alert' => true
+                ];
+            }
+            
             $legacyAllGradesPassing = $gradeValidationResult['all_passing'];
             $legacyValidGrades = $gradeValidationResult['grades'];
             $legacyFailingGrades = $gradeValidationResult['failing_grades'];
@@ -793,6 +868,11 @@ class DocumentReuploadService {
             
             // Save OCR text
             @file_put_contents($filePath . '.ocr.txt', $ocrText);
+            
+            // Add root-level confidence values for easier parsing in confirmUpload
+            $verification['ocr_confidence'] = $averageConfidence;
+            $verification['verification_score'] = $averageConfidence;
+            $verification['verification_status'] = $isEligible ? 'passed' : ($averageConfidence >= 50 ? 'manual_review' : 'failed');
             
             // Save verification JSON
             @file_put_contents($filePath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
@@ -1074,6 +1154,11 @@ class DocumentReuploadService {
             $ocrData['verification_score'] = round($averageConfidence, 1);
             $ocrData['verification_status'] = $verification['overall_success'] ? 'passed' : 'manual_review';
             
+            // Add root-level confidence values for easier parsing in confirmUpload
+            $verification['ocr_confidence'] = $ocrData['ocr_confidence'];
+            $verification['verification_score'] = $ocrData['verification_score'];
+            $verification['verification_status'] = $ocrData['verification_status'];
+            
             // Save verification data
             @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
             
@@ -1251,6 +1336,11 @@ class DocumentReuploadService {
             $ocrData['ocr_confidence'] = round($averageConfidence, 1);
             $ocrData['verification_score'] = round($averageConfidence, 1);
             $ocrData['verification_status'] = $verification['overall_success'] ? 'passed' : 'manual_review';
+            
+            // Add root-level confidence values for easier parsing in confirmUpload
+            $verification['ocr_confidence'] = $ocrData['ocr_confidence'];
+            $verification['verification_score'] = $ocrData['verification_score'];
+            $verification['verification_status'] = $ocrData['verification_status'];
             
             // Save verification data
             @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
@@ -1453,6 +1543,11 @@ class DocumentReuploadService {
             $ocrData['verification_score'] = round($averageConfidence, 1);
             $ocrData['verification_status'] = $verification['overall_success'] ? 'passed' : 'manual_review';
             
+            // Add root-level confidence values for easier parsing in confirmUpload
+            $verification['ocr_confidence'] = $ocrData['ocr_confidence'];
+            $verification['verification_score'] = $ocrData['verification_score'];
+            $verification['verification_status'] = $ocrData['verification_status'];
+            
             // Save verification data
             @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
             
@@ -1468,6 +1563,254 @@ class DocumentReuploadService {
         } catch (Exception $e) {
             error_log("DocumentReuploadService::processCertificateOCR error: " . $e->getMessage());
             return ['success' => false, 'message' => 'Certificate OCR failed: ' . $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Process ID Picture OCR with comprehensive verification (matching registration)
+     */
+    private function processIdPictureOCR($tempPath, $studentData) {
+        $ocrData = [
+            'ocr_confidence' => 0,
+            'verification_score' => 0,
+            'verification_status' => 'failed',
+            'extracted_text' => ''
+        ];
+
+        try {
+            // Run Tesseract OCR with multiple PSM modes for ID pictures
+            $ocrResult = $this->runDirectTesseractOCR($tempPath, '04');
+            $ocrText = $ocrResult['text'] ?? '';
+            
+            if (empty(trim($ocrText))) {
+                return ['success' => false, 'message' => 'No text extracted from ID Picture'];
+            }
+
+            $ocrData['extracted_text'] = $ocrText;
+            $ocrData['ocr_confidence'] = $ocrResult['confidence'] ?? 0;
+            
+            // Save OCR text
+            @file_put_contents($tempPath . '.ocr.txt', $ocrText);
+            
+            // Initialize verification structure
+            $verification = [
+                'first_name_match' => false,
+                'middle_name_match' => false,
+                'last_name_match' => false,
+                'year_level_match' => false,
+                'university_match' => false,
+                'document_keywords_found' => false,
+                'confidence_scores' => [],
+                'found_text_snippets' => []
+            ];
+            
+            $ocrTextLower = strtolower($ocrText);
+            
+            // Helper function for similarity calculation
+            $calculateSimilarity = function($needle, $haystack) {
+                $needle = strtolower(trim($needle));
+                $haystack = strtolower(trim($haystack));
+                
+                if (stripos($haystack, $needle) !== false) {
+                    return 100;
+                }
+                
+                $words = explode(' ', $haystack);
+                $maxSimilarity = 0;
+                
+                foreach ($words as $word) {
+                    if (strlen($word) >= 3 && strlen($needle) >= 3) {
+                        $similarity = 0;
+                        similar_text($needle, $word, $similarity);
+                        $maxSimilarity = max($maxSimilarity, $similarity);
+                    }
+                }
+                
+                return $maxSimilarity;
+            };
+            
+            // Verify first name
+            if (!empty($studentData['first_name'])) {
+                $similarity = $calculateSimilarity($studentData['first_name'], $ocrTextLower);
+                $verification['confidence_scores']['first_name'] = $similarity;
+                
+                if ($similarity >= 70) {
+                    $verification['first_name_match'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['first_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['first_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify middle name (optional)
+            if (empty($studentData['middle_name'])) {
+                $verification['middle_name_match'] = true;
+                $verification['confidence_scores']['middle_name'] = 100;
+            } else {
+                $similarity = $calculateSimilarity($studentData['middle_name'], $ocrTextLower);
+                $verification['confidence_scores']['middle_name'] = $similarity;
+                
+                if ($similarity >= 60) {
+                    $verification['middle_name_match'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['middle_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['middle_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify last name
+            if (!empty($studentData['last_name'])) {
+                $similarity = $calculateSimilarity($studentData['last_name'], $ocrTextLower);
+                $verification['confidence_scores']['last_name'] = $similarity;
+                
+                if ($similarity >= 70) {
+                    $verification['last_name_match'] = true;
+                    $pattern = '/\b\w*' . preg_quote(substr($studentData['last_name'], 0, 3), '/') . '\w*\b/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $verification['found_text_snippets']['last_name'] = $matches[0];
+                    }
+                }
+            }
+            
+            // Verify year level
+            if (!empty($studentData['year_level_name'])) {
+                $yearLevelName = $studentData['year_level_name'];
+                $selectedYearVariations = [];
+                
+                if (stripos($yearLevelName, '1st') !== false || stripos($yearLevelName, 'first') !== false) {
+                    $selectedYearVariations = ['1st year', 'first year', '1st yr', 'year 1', 'yr 1', 'freshman'];
+                } elseif (stripos($yearLevelName, '2nd') !== false || stripos($yearLevelName, 'second') !== false) {
+                    $selectedYearVariations = ['2nd year', 'second year', '2nd yr', 'year 2', 'yr 2', 'sophomore'];
+                } elseif (stripos($yearLevelName, '3rd') !== false || stripos($yearLevelName, 'third') !== false) {
+                    $selectedYearVariations = ['3rd year', 'third year', '3rd yr', 'year 3', 'yr 3', 'junior'];
+                } elseif (stripos($yearLevelName, '4th') !== false || stripos($yearLevelName, 'fourth') !== false) {
+                    $selectedYearVariations = ['4th year', 'fourth year', '4th yr', 'year 4', 'yr 4', 'senior'];
+                } elseif (stripos($yearLevelName, '5th') !== false || stripos($yearLevelName, 'fifth') !== false) {
+                    $selectedYearVariations = ['5th year', 'fifth year', '5th yr', 'year 5', 'yr 5'];
+                }
+                
+                foreach ($selectedYearVariations as $variation) {
+                    if (stripos($ocrText, $variation) !== false) {
+                        $verification['year_level_match'] = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Verify university
+            if (!empty($studentData['university_name'])) {
+                $universityName = $studentData['university_name'];
+                $universityWords = array_filter(explode(' ', strtolower($universityName)));
+                $foundWords = 0;
+                $totalWords = count($universityWords);
+                $foundSnippets = [];
+                
+                foreach ($universityWords as $word) {
+                    if (strlen($word) > 2) {
+                        $similarity = $calculateSimilarity($word, $ocrTextLower);
+                        if ($similarity >= 70) {
+                            $foundWords++;
+                            $pattern = '/\b\w*' . preg_quote(substr($word, 0, 3), '/') . '\w*\b/i';
+                            if (preg_match($pattern, $ocrText, $matches)) {
+                                $foundSnippets[] = $matches[0];
+                            }
+                        }
+                    }
+                }
+                
+                $universityScore = ($foundWords / max($totalWords, 1)) * 100;
+                $verification['confidence_scores']['university'] = round($universityScore, 1);
+                
+                if ($universityScore >= 60 || ($totalWords <= 2 && $foundWords >= 1)) {
+                    $verification['university_match'] = true;
+                    if (!empty($foundSnippets)) {
+                        $verification['found_text_snippets']['university'] = implode(', ', array_unique($foundSnippets));
+                    }
+                }
+            }
+            
+            // Verify document keywords (ID-specific)
+            $documentKeywords = [
+                'student', 'id', 'identification', 'university', 'college', 'school',
+                'name', 'course', 'year', 'level', 'photo', 'picture'
+            ];
+            
+            $keywordMatches = 0;
+            $foundKeywords = [];
+            $keywordScore = 0;
+            
+            foreach ($documentKeywords as $keyword) {
+                $similarity = $calculateSimilarity($keyword, $ocrTextLower);
+                if ($similarity >= 80) {
+                    $keywordMatches++;
+                    $foundKeywords[] = $keyword;
+                    $keywordScore += $similarity;
+                }
+            }
+            
+            $averageKeywordScore = $keywordMatches > 0 ? ($keywordScore / $keywordMatches) : 0;
+            $verification['confidence_scores']['document_keywords'] = round($averageKeywordScore, 1);
+            
+            if ($keywordMatches >= 2) {
+                $verification['document_keywords_found'] = true;
+                $verification['found_text_snippets']['document_keywords'] = implode(', ', $foundKeywords);
+            }
+            
+            // Calculate overall success
+            $requiredChecks = ['first_name_match', 'middle_name_match', 'last_name_match', 'year_level_match', 'university_match', 'document_keywords_found'];
+            $passedChecks = 0;
+            $totalConfidence = 0;
+            $confidenceCount = 0;
+            
+            foreach ($requiredChecks as $check) {
+                if ($verification[$check]) {
+                    $passedChecks++;
+                }
+            }
+            
+            foreach ($verification['confidence_scores'] as $score) {
+                $totalConfidence += $score;
+                $confidenceCount++;
+            }
+            $averageConfidence = $confidenceCount > 0 ? ($totalConfidence / $confidenceCount) : 0;
+            
+            $verification['overall_success'] = ($passedChecks >= 4) || ($passedChecks >= 3 && $averageConfidence >= 80);
+            
+            $verification['summary'] = [
+                'passed_checks' => $passedChecks,
+                'total_checks' => 6,
+                'average_confidence' => round($averageConfidence, 1),
+                'recommendation' => $verification['overall_success'] ? 
+                    'ID Picture validation successful' : 
+                    'Please ensure the ID clearly shows your name, university, and year level'
+            ];
+            
+            $ocrData['ocr_confidence'] = round($averageConfidence, 1);
+            $ocrData['verification_score'] = round($averageConfidence, 1);
+            $ocrData['verification_status'] = $verification['overall_success'] ? 'passed' : 'manual_review';
+            
+            // Add root-level confidence values for easier parsing in confirmUpload
+            $verification['ocr_confidence'] = $ocrData['ocr_confidence'];
+            $verification['verification_score'] = $ocrData['verification_score'];
+            $verification['verification_status'] = $ocrData['verification_status'];
+            
+            // Save verification data
+            @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
+            
+            error_log("ID Picture OCR: Confidence={$ocrData['ocr_confidence']}%, Passed={$passedChecks}/6 checks");
+            
+            return [
+                'success' => true,
+                'ocr_confidence' => $ocrData['ocr_confidence'],
+                'verification_score' => $ocrData['verification_score'],
+                'verification_status' => $ocrData['verification_status']
+            ];
+            
+        } catch (Exception $e) {
+            error_log("DocumentReuploadService::processIdPictureOCR error: " . $e->getMessage());
+            return ['success' => false, 'message' => 'ID Picture OCR failed: ' . $e->getMessage()];
         }
     }
     

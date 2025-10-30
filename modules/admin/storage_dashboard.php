@@ -249,7 +249,7 @@ $pageTitle = "Storage Dashboard";
                                         <td class="text-end">
                                             <?php 
                                                 if ($stat['category'] === 'distributions') {
-                                                    echo number_format($stat['student_count']) . ' archives';
+                                                    echo number_format($stat['student_count']) . ' unique';
                                                 } else {
                                                     echo number_format($stat['student_count']);
                                                 }
