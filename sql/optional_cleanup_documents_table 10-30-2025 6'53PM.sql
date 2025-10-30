@@ -45,25 +45,23 @@ SELECT
     COUNT(*) as total_documents
 FROM documents;
 
--- Step 3: Remove unused fields
--- UNCOMMENT THE FOLLOWING LINES TO ACTUALLY PERFORM THE CLEANUP:
+--Step 3: Remove unused fields
+BEGIN;
 
--- BEGIN;
+ALTER TABLE documents 
+  DROP COLUMN IF EXISTS ocr_text_path,
+  DROP COLUMN IF EXISTS verification_data_path,
+  DROP COLUMN IF EXISTS extracted_grades,
+  DROP COLUMN IF EXISTS average_grade,
+  DROP COLUMN IF EXISTS passing_status,
+  DROP COLUMN IF EXISTS notes;
 
--- ALTER TABLE documents 
---   DROP COLUMN IF EXISTS ocr_text_path,
---   DROP COLUMN IF EXISTS verification_data_path,
---   DROP COLUMN IF EXISTS extracted_grades,
---   DROP COLUMN IF EXISTS average_grade,
---   DROP COLUMN IF EXISTS passing_status,
---   DROP COLUMN IF EXISTS notes;
+--NOTE: We are KEEPING ocr_confidence, verification_score, status, approved_by, and approved_date
 
--- NOTE: We are KEEPING ocr_confidence, verification_score, status, approved_by, and approved_date
+--Update comments
+COMMENT ON TABLE documents IS 'Unified document management with verification data in JSONB (cleaned schema as of 2025-10-30)';
 
--- Update comments
--- COMMENT ON TABLE documents IS 'Unified document management with verification data in JSONB (cleaned schema as of 2025-10-30)';
-
--- COMMIT;
+COMMIT;
 
 -- Step 4: Verify final schema
 SELECT 
