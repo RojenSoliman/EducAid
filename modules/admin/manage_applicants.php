@@ -659,7 +659,12 @@ function check_documents($connection, $student_id) {
     
     if ($needs_upload_tab) {
         // Existing student: check documents table for document_type_codes
-        $query = pg_query_params($connection, "SELECT document_type_code FROM documents WHERE student_id = $1", [$student_id]);
+        // IMPORTANT: Only count documents that are NOT rejected (status='temp' or 'approved')
+        $query = pg_query_params($connection, 
+            "SELECT document_type_code FROM documents 
+             WHERE student_id = $1 
+             AND (status IS NULL OR status != 'rejected')", 
+            [$student_id]);
         while ($row = pg_fetch_assoc($query)) {
             $uploaded_codes[] = $row['document_type_code'];
         }
@@ -686,8 +691,12 @@ function check_documents($connection, $student_id) {
         // New student: check BOTH documents table AND file system
         // After approval, documents are moved to permanent storage and recorded in documents table
         
-        // 1. Check documents table first
-        $query = pg_query_params($connection, "SELECT document_type_code FROM documents WHERE student_id = $1", [$student_id]);
+        // 1. Check documents table first - exclude rejected documents
+        $query = pg_query_params($connection, 
+            "SELECT document_type_code FROM documents 
+             WHERE student_id = $1 
+             AND (status IS NULL OR status != 'rejected')", 
+            [$student_id]);
         while ($row = pg_fetch_assoc($query)) {
             $uploaded_codes[] = $row['document_type_code'];
         }
@@ -1676,6 +1685,482 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// --------- AJAX handler for modal content refresh ---------
+if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
+    $student_id = trim($_GET['student_id']); // Keep as TEXT for proper student_id lookup
+    
+    // Fetch student data
+    $student_query = pg_query_params($connection, 
+        "SELECT * FROM students WHERE student_id = $1", 
+        [$student_id]);
+    
+    if (!$student_query || pg_num_rows($student_query) === 0) {
+        error_log("Modal refresh: Student not found for ID: " . $student_id);
+        echo json_encode(['error' => 'Student not found', 'student_id' => $student_id]);
+        exit;
+    }
+    
+    $applicant = pg_fetch_assoc($student_query);
+    $first_name = $applicant['first_name'] ?? '';
+    $last_name = $applicant['last_name'] ?? '';
+    
+    // Determine student type (needs upload vs registered)
+    $needs_upload = ($applicant['student_type'] ?? null) === 'existing_student';
+    
+    // Start output buffering
+    ob_start();
+    
+    // Display type badge info
+    if ($needs_upload): ?>
+    <div class="alert alert-warning mb-3">
+        <i class="bi bi-info-circle"></i> 
+        <strong>Re-upload Required:</strong> This student is an existing applicant who needs to upload/re-upload their documents via the Upload Documents tab.
+    </div>
+    <?php else: ?>
+    <div class="alert alert-info mb-3">
+        <i class="bi bi-check-circle"></i> 
+        <strong>New Registration:</strong> This student registered through the online registration system and submitted documents during registration.
+    </div>
+    <?php endif;
+    
+    // Map document type codes to readable names
+    $doc_type_map = [
+        '04' => 'id_picture',
+        '00' => 'eaf',
+        '02' => 'letter_to_mayor',
+        '03' => 'certificate_of_indigency',
+        '01' => 'grades'
+    ];
+    
+    // First, get documents from database (only those with valid file paths that exist)
+    $docs = pg_query_params($connection, "SELECT document_type_code, file_path FROM documents WHERE student_id = $1", [$student_id]);
+    $db_documents = [];
+    while ($doc = pg_fetch_assoc($docs)) {
+        // Only include documents where the file actually exists
+        $filePath = $doc['file_path'];
+        $docTypeCode = $doc['document_type_code'];
+        $docTypeName = $doc_type_map[$docTypeCode] ?? 'unknown';
+        
+        $server_root = dirname(__DIR__, 2);
+        
+        // Check if path contains 'temp' - replace with 'student' for approved students
+        if (strpos($filePath, '/temp/') !== false) {
+            $permanentPath = str_replace('/temp/', '/student/', $filePath);
+            // Check if permanent file exists
+            $relative_from_root = ltrim(str_replace('../../', '', $permanentPath), '/');
+            $server_path = $server_root . '/' . $relative_from_root;
+            
+            if (file_exists($server_path)) {
+                $db_documents[$docTypeName] = $permanentPath;
+            } else {
+                // Fallback to temp path
+                $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+                $server_path = $server_root . '/' . $relative_from_root;
+                if (file_exists($server_path)) {
+                    $db_documents[$docTypeName] = $filePath;
+                }
+            }
+        } else {
+            // Already permanent path
+            $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+            $server_path = $server_root . '/' . $relative_from_root;
+            if (file_exists($server_path)) {
+                $db_documents[$docTypeName] = $filePath;
+            }
+        }
+    }
+    
+    // Map academic_grades to grades for consistency
+    if (isset($db_documents['academic_grades'])) {
+        $db_documents['grades'] = $db_documents['academic_grades'];
+    }
+    
+    // Then, search for documents in student directory using student_id pattern
+    $found_documents = [];
+    $server_base = dirname(__DIR__, 2) . '/assets/uploads/student/';
+    $web_base = '../../assets/uploads/student/';
+    
+    $document_folders = [
+        'id_pictures' => 'id_picture',
+        'enrollment_forms' => 'eaf',
+        'letter_mayor' => 'letter_to_mayor',
+        'indigency' => 'certificate_of_indigency',
+        'grades' => 'grades'
+    ];
+    
+    foreach ($document_folders as $folder => $type) {
+        $matches = [];
+        
+        // NEW STRUCTURE: Check student/{doc_type}/{student_id}/ folder first
+        $student_subdir = $server_base . $folder . '/' . $student_id . '/';
+        if (is_dir($student_subdir)) {
+            foreach (glob($student_subdir . '*') as $file) {
+                // Skip associated files
+                if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $file)) continue;
+                if (is_dir($file)) continue;
+                
+                $matches[filemtime($file)] = [
+                    'server' => $file,
+                    'web' => $web_base . $folder . '/' . $student_id . '/' . basename($file)
+                ];
+            }
+        }
+        
+        // OLD STRUCTURE: Check flat student/{doc_type}/ folder
+        $dir = $server_base . $folder . '/';
+        if (is_dir($dir)) {
+            // Look for files starting with student_id OR containing student's name
+            $pattern = $dir . $student_id . '_*';
+            $id_matches = glob($pattern);
+            
+            // If no matches by student_id, try searching by name
+            if (empty($id_matches)) {
+                $all_files = glob($dir . '*');
+                foreach ($all_files as $file) {
+                    // Skip subdirectories and associated files
+                    if (is_dir($file)) continue;
+                    if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $file)) continue;
+                    
+                    $basename = strtolower(basename($file));
+                    $first_norm = strtolower($first_name);
+                    $last_norm = strtolower($last_name);
+                    
+                    // Check if file contains both first and last name
+                    if (strpos($basename, $first_norm) !== false && 
+                        strpos($basename, $last_norm) !== false) {
+                        $id_matches[] = $file;
+                    }
+                }
+            } else {
+                // Filter out subdirectories and associated files from pattern matches
+                $id_matches = array_filter($id_matches, function($file) {
+                    if (is_dir($file)) return false;
+                    return !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $file);
+                });
+            }
+            
+            // Add flat folder matches to the matches array
+            foreach ($id_matches as $file) {
+                $matches[filemtime($file)] = [
+                    'server' => $file,
+                    'web' => $web_base . $folder . '/' . basename($file)
+                ];
+            }
+        }
+        
+        if (!empty($matches)) {
+            // Get the newest file
+            krsort($matches); // Sort by timestamp, newest first
+            $newest = reset($matches);
+            $found_documents[$type] = $newest['web'];
+        }
+    }
+    
+    // Also search temp folders for documents not yet moved to permanent storage
+    $temp_base = dirname(__DIR__, 2) . '/assets/uploads/temp/';
+    $temp_web_base = '../../assets/uploads/temp/';
+    
+    foreach ($document_folders as $folder => $type) {
+        // Skip if already found in student directory
+        if (isset($found_documents[$type])) {
+            continue;
+        }
+        
+        $temp_dir = $temp_base . $folder . '/';
+        if (is_dir($temp_dir)) {
+            // Search by student_id or name
+            $all_files = glob($temp_dir . '*');
+            $matches = [];
+            
+            foreach ($all_files as $file) {
+                $basename = strtolower(basename($file));
+                
+                // Skip associated files
+                if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/', $basename)) {
+                    continue;
+                }
+                
+                // Match by student_id or name
+                if (strpos($basename, strtolower($student_id)) !== false ||
+                    (strpos($basename, strtolower($first_name)) !== false && 
+                     strpos($basename, strtolower($last_name)) !== false)) {
+                    $matches[filemtime($file)] = $file;
+                }
+            }
+            
+            if (!empty($matches)) {
+                krsort($matches); // newest first
+                $newest = reset($matches);
+                $found_documents[$type] = $temp_web_base . $folder . '/' . basename($newest);
+            }
+        }
+    }
+
+    // Merge all sources, prioritizing file system results over DB
+    $all_documents = array_merge($db_documents, $found_documents);
+
+    $document_labels = [
+        'id_picture' => 'ID Picture',
+        'eaf' => 'EAF',
+        'letter_to_mayor' => 'Letter to Mayor',
+        'certificate_of_indigency' => 'Certificate of Indigency'
+    ];
+
+    // Build cards grid
+    echo "<div class='doc-grid'>";
+    $has_documents = false;
+    foreach ($document_labels as $type => $label) {
+        $cardTitle = htmlspecialchars($label);
+        if (isset($all_documents[$type])) {
+            $has_documents = true;
+            $filePath = trim($all_documents[$type]);
+
+            // Resolve server path for metadata
+            $server_root = dirname(__DIR__, 2);
+            $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+            $server_path = $server_root . '/' . $relative_from_root;
+            
+            // Convert to web-root relative path for browser
+            $webPath = '../../' . $relative_from_root;
+
+            // Check extension for image vs PDF
+            $cleanPath = basename($filePath);
+            $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $cleanPath);
+            $is_pdf   = preg_match('/\.pdf$/i', $cleanPath);
+
+            $size_str = '';
+            $date_str = '';
+            if (file_exists($server_path)) {
+                $size = filesize($server_path);
+                $units = ['B','KB','MB','GB'];
+                $pow = $size > 0 ? floor(log($size, 1024)) : 0;
+                $size_str = number_format($size / pow(1024, $pow), $pow ? 2 : 0) . ' ' . $units[$pow];
+                $date_str = date('M d, Y h:i A', filemtime($server_path));
+            }
+
+            // Fetch OCR confidence for this document
+            $type_to_code = [
+                'id_picture' => '04',
+                'eaf' => '00',
+                'letter_to_mayor' => '02',
+                'certificate_of_indigency' => '03',
+                'grades' => '01'
+            ];
+            $doc_code = $type_to_code[$type] ?? null;
+            
+            $ocr_confidence_badge = '';
+            if ($doc_code) {
+                $ocr_query = pg_query_params($connection, 
+                    "SELECT ocr_confidence FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
+                    [$student_id, $doc_code]);
+                if ($ocr_query && pg_num_rows($ocr_query) > 0) {
+                    $ocr_data = pg_fetch_assoc($ocr_query);
+                    if ($ocr_data['ocr_confidence'] !== null && $ocr_data['ocr_confidence'] > 0) {
+                        $conf_val = round($ocr_data['ocr_confidence'], 1);
+                        $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
+                        $ocr_confidence_badge = "<span class='badge bg-{$conf_color} ms-2'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+                    }
+                }
+            }
+
+            $thumbHtml = $is_image
+                ? "<img src='" . htmlspecialchars($webPath) . "' class='doc-thumb' alt='$cardTitle' onerror=\"console.error('Failed to load:', this.src); this.parentElement.innerHTML='<div class=\\'doc-thumb doc-thumb-pdf\\'><i class=\\'bi bi-exclamation-triangle\\'></i></div>';\">"
+                : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
+
+            $safeSrc = htmlspecialchars($webPath);
+            
+            // Get verification status and score from documents table
+            $verification_badge = '';
+            $verification_btn = '';
+            if ($doc_code) {
+                $verify_query = pg_query_params($connection, 
+                    "SELECT verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
+                    [$student_id, $doc_code]);
+                if ($verify_query && pg_num_rows($verify_query) > 0) {
+                    $verify_data = pg_fetch_assoc($verify_query);
+                    $verify_score = $verify_data['verification_score'];
+                    $verify_status = $verify_data['verification_status'];
+                    
+                    if ($verify_score !== null && $verify_score > 0) {
+                        $verify_val = round($verify_score, 1);
+                        $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
+                        $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
+                        $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
+                        
+                        // Add view validation button
+                        $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
+                            onclick=\"event.stopPropagation(); loadValidationData('$type', '$student_id'); showValidationModal();\">
+                            <i class='bi bi-clipboard-check me-1'></i>View Validation Details
+                        </button>";
+                    }
+                }
+            }
+            
+            echo "<div class='doc-card'>
+                    <div class='doc-card-header'>
+                        <div class='d-flex justify-content-between align-items-center'>
+                            <span>$cardTitle</span>
+                            <div class='d-flex gap-1'>
+                                $ocr_confidence_badge
+                                $verification_badge
+                            </div>
+                        </div>
+                    </div>
+                    <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
+                    <div class='doc-meta'>" .
+                        ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
+                        ($size_str ? "<span><i class='bi bi-hdd me-1'></i>$size_str</span>" : "") .
+                    "</div>
+                    <div class='doc-actions'>
+                        <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\" title='View Document'><i class='bi bi-eye'></i></button>
+                        <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank' title='Open in New Tab'><i class='bi bi-box-arrow-up-right'></i></a>
+                        <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>
+                    </div>";
+            
+            // Add validation button if verification data exists
+            if ($verification_btn) {
+                echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
+                      $verification_btn
+                      </div>";
+            }
+            
+            echo "</div>";
+        } else {
+            echo "<div class='doc-card doc-card-missing'>
+                    <div class='doc-card-header'>$cardTitle</div>
+                    <div class='doc-card-body missing'>
+                        <div class='missing-icon'><i class='bi bi-exclamation-triangle'></i></div>
+                        <div class='missing-text'>Not uploaded</div>
+                    </div>
+                    <div class='doc-actions'>
+                        <span class='text-muted small'>Awaiting submission</span>
+                    </div>
+                  </div>";
+        }
+    }
+    echo "</div>"; // end doc-grid
+
+    if (!$has_documents) {
+        echo "<p class='text-muted'>No documents uploaded.</p>";
+    }
+
+    // Add Academic Grades card
+    $cardTitle = 'Academic Grades';
+    
+    if (isset($all_documents['grades'])) {
+        $filePath = trim($all_documents['grades']);
+        
+        // Resolve server path for metadata
+        $server_root = dirname(__DIR__, 2);
+        $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
+        $server_path = $server_root . '/' . $relative_from_root;
+        
+        // Convert to web-root relative path
+        $webPath = '../../' . $relative_from_root;
+
+        // Check extension
+        $cleanPath = basename($filePath);
+        $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $cleanPath);
+        $is_pdf   = preg_match('/\.pdf$/i', $cleanPath);
+
+        $size_str = '';
+        $date_str = '';
+        if (file_exists($server_path)) {
+            $size = filesize($server_path);
+            $units = ['B','KB','MB','GB'];
+            $pow = $size > 0 ? floor(log($size, 1024)) : 0;
+            $size_str = number_format($size / pow(1024, $pow), $pow ? 2 : 0) . ' ' . $units[$pow];
+            $date_str = date('M d, Y h:i A', filemtime($server_path));
+        }
+
+        $thumbHtml = $is_image
+            ? "<img src='" . htmlspecialchars($webPath) . "' class='doc-thumb' alt='$cardTitle' onerror=\"console.error('Failed to load:', this.src); this.parentElement.innerHTML='<div class=\\'doc-thumb doc-thumb-pdf\\'><i class=\\'bi bi-exclamation-triangle\\'></i></div>';\">"
+            : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
+
+        $safeSrc = htmlspecialchars($webPath);
+        
+        // Check for OCR confidence and verification
+        $ocr_confidence = '';
+        $verification_badge = '';
+        $verification_btn = '';
+        
+        $docs_query = pg_query_params($connection, 
+            "SELECT ocr_confidence, verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = '01' ORDER BY upload_date DESC LIMIT 1", 
+            [$student_id]);
+        
+        if ($docs_query && pg_num_rows($docs_query) > 0) {
+            $doc_data = pg_fetch_assoc($docs_query);
+            
+            // OCR Confidence
+            if ($doc_data['ocr_confidence'] !== null && $doc_data['ocr_confidence'] > 0) {
+                $conf_val = round($doc_data['ocr_confidence'], 1);
+                $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
+                $ocr_confidence = "<span class='badge bg-{$conf_color}'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
+            }
+            
+            // Verification Score
+            $verify_score = $doc_data['verification_score'];
+            if ($verify_score !== null && $verify_score > 0) {
+                $verify_val = round($verify_score, 1);
+                $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
+                $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
+                $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
+                
+                // Add view validation button
+                $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
+                    onclick=\"event.stopPropagation(); loadValidationData('grades', '$student_id'); showValidationModal();\">
+                    <i class='bi bi-clipboard-check me-1'></i>View Validation Details
+                </button>";
+            }
+        }
+        
+        echo "<div class='doc-card'>
+                <div class='doc-card-header'>
+                    <div class='d-flex justify-content-between align-items-center'>
+                        <span>$cardTitle</span>
+                        <div class='d-flex gap-1'>
+                            $ocr_confidence
+                            $verification_badge
+                        </div>
+                    </div>
+                </div>
+                <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
+                <div class='doc-meta'>" .
+                    ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
+                    ($size_str ? "<span><i class='bi bi-hdd me-1'></i>$size_str</span>" : "") .
+                "</div>
+                <div class='doc-actions'>
+                    <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\" title='View Document'><i class='bi bi-eye'></i></button>
+                    <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank' title='Open in New Tab'><i class='bi bi-box-arrow-up-right'></i></a>
+                    <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>
+                </div>";
+        
+        // Add validation button if verification data exists
+        if ($verification_btn) {
+            echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
+                  $verification_btn
+                  </div>";
+        }
+        
+        echo "</div>";
+    } else {
+        echo "<div class='doc-card doc-card-missing'>
+                <div class='doc-card-header'>$cardTitle</div>
+                <div class='doc-card-body missing'>
+                    <div class='missing-icon'><i class='bi bi-exclamation-triangle'></i></div>
+                    <div class='missing-text'>Not uploaded</div>
+                </div>
+                <div class='doc-actions'>
+                    <span class='text-muted small'>Awaiting submission</span>
+                </div>
+              </div>";
+    }
+    
+    $modalContent = ob_get_clean();
+    echo json_encode(['success' => true, 'html' => $modalContent]);
+    exit;
+}
+
 // --------- AJAX handler ---------
 if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET['ajax']) && $_GET['ajax'] === '1')) {
     // Return table content and stats for real-time updates
@@ -2066,6 +2551,58 @@ document.addEventListener('keydown', function(event) {
 let isUpdating = false;
 let lastUpdateData = null;
 
+// Function to attach refresh listeners to student document modals
+function attachModalRefreshListeners() {
+    document.querySelectorAll('.modal').forEach(function(modalEl) {
+        // Only target student document modals (they have IDs like "modal123" or "modal20241030-1-001")
+        // Skip migration modal, validation modal, etc.
+        if (modalEl.id && modalEl.id.startsWith('modal') && 
+            !['migrationModal', 'passwordConfirmModal', 'validationModal', 'archiveModal', 'documentViewerModal', 'imageZoomModal'].includes(modalEl.id)) {
+            // Skip if listener already attached
+            if (modalEl.hasAttribute('data-refresh-listener')) return;
+            modalEl.setAttribute('data-refresh-listener', 'true');
+            
+            console.log('Attaching refresh listener to:', modalEl.id);
+            
+            modalEl.addEventListener('shown.bs.modal', function() {
+                // Extract student_id from modal ID (e.g., "modal123" -> "123")
+                const studentId = this.id.replace('modal', '');
+                const modalBody = this.querySelector('.modal-body');
+                
+                console.log('Modal opened for student:', studentId);
+                
+                if (modalBody && studentId) {
+                    // Show loading indicator
+                    const originalContent = modalBody.innerHTML;
+                    modalBody.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading latest documents...</p></div>';
+                    
+                    // Fetch fresh modal content
+                    const refreshUrl = window.location.pathname + '?refresh_modal=1&student_id=' + encodeURIComponent(studentId);
+                    console.log('Fetching:', refreshUrl);
+                    
+                    fetch(refreshUrl)
+                        .then(response => response.json())
+                        .then(data => {
+                            console.log('Refresh response:', data);
+                            if (data.success && data.html) {
+                                modalBody.innerHTML = data.html;
+                                console.log('Modal content updated successfully');
+                            } else {
+                                modalBody.innerHTML = originalContent;
+                                console.error('Failed to refresh modal content:', data.error || 'Unknown error');
+                            }
+                        })
+                        .catch(error => {
+                            // Restore original content on error
+                            modalBody.innerHTML = originalContent;
+                            console.error('Error refreshing modal content:', error);
+                        });
+                }
+            });
+        }
+    });
+}
+
 function updateTableData() {
     if (isUpdating) return;
     isUpdating = true;
@@ -2108,6 +2645,9 @@ function updateTableData() {
                 }
 
                 lastUpdateData = data;
+                
+                // Attach refresh listeners to any new modals that were added
+                attachModalRefreshListeners();
             }
         })
         .catch(error => {
@@ -2131,6 +2671,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }, 100);
+    
+    // Attach refresh listeners to all initial modals
+    setTimeout(() => {
+        attachModalRefreshListeners();
+    }, 200);
     
     setTimeout(updateTableData, 300);
     // Auto-open migration modal if preview/result exists

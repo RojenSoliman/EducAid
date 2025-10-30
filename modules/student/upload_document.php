@@ -38,6 +38,7 @@ $student = pg_fetch_assoc($student_query);
 
 // PostgreSQL returns 'f'/'t' strings for booleans
 $needs_upload = ($student['needs_upload'] === 't' || $student['needs_upload'] === true);
+$student_status = $student['status'] ?? 'applicant';
 
 // TESTING MODE: Allow re-upload if ?test_reupload=1 is in URL (REMOVE IN PRODUCTION)
 $test_mode = isset($_GET['test_reupload']) && $_GET['test_reupload'] == '1';
@@ -45,8 +46,13 @@ if ($test_mode) {
     $needs_upload = true;
 }
 
-$can_upload = $needs_upload; // Only students who need re-upload can upload
-$is_new_registrant = !$needs_upload;
+// Only allow uploads if:
+// 1. Student needs upload (needs_document_upload = true) AND
+// 2. Student is NOT active (active students are approved and in read-only mode)
+$can_upload = $needs_upload && $student_status !== 'active' && !$test_mode;
+
+// Student is in read-only mode if they're a new registrant OR they're already active
+$is_new_registrant = !$needs_upload || $student_status === 'active';
 
 // Get list of documents that need re-upload (if any)
 $documents_to_reupload = [];
@@ -452,19 +458,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $can_upload) {
                     $file_path = $server_root . '/' . substr($file_path, 6);
                 }
                 
+                // Get the directory containing the file
+                $file_dir = dirname($file_path);
+                $file_basename = basename($file_path);
+                
+                error_log("Re-upload: Deleting files from directory - $file_dir");
+                
                 // Delete main file
                 if (file_exists($file_path)) {
                     @unlink($file_path);
-                    error_log("Re-upload: Deleted file - $file_path");
+                    error_log("Re-upload: Deleted main file - $file_path");
                 }
                 
-                // Delete associated OCR files
+                // Delete associated OCR files (same directory, same basename + extensions)
                 $ocr_extensions = ['.ocr.txt', '.tsv', '.verify.json', '.ocr.json'];
                 foreach ($ocr_extensions as $ext) {
                     $ocr_file = $file_path . $ext;
                     if (file_exists($ocr_file)) {
                         @unlink($ocr_file);
                         error_log("Re-upload: Deleted OCR file - $ocr_file");
+                    }
+                }
+                
+                // Check if files are in a student-specific subdirectory (e.g., /student/{doc_type}/{student_id}/)
+                // If the directory only contains this student's files, delete the entire directory
+                if (is_dir($file_dir) && basename($file_dir) == $student_id) {
+                    // This is a student-specific directory, delete all files in it
+                    $files_in_dir = glob($file_dir . '/*');
+                    foreach ($files_in_dir as $file) {
+                        if (is_file($file)) {
+                            @unlink($file);
+                            error_log("Re-upload: Deleted file from student directory - $file");
+                        }
+                    }
+                    
+                    // Try to remove the now-empty directory
+                    if (count(glob($file_dir . '/*')) === 0) {
+                        @rmdir($file_dir);
+                        error_log("Re-upload: Removed empty student directory - $file_dir");
                     }
                 }
             }
@@ -663,6 +694,11 @@ $page_title = 'Upload Documents';
             color: white;
         }
         
+        .view-only-banner.approved {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+        
         .reupload-banner {
             background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
             color: white;
@@ -770,15 +806,39 @@ $page_title = 'Upload Documents';
             <!-- Page Header -->
             <div class="page-header">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
+                    <div class="flex-grow-1">
                         <h1><i class="bi bi-cloud-upload"></i> Upload Documents</h1>
                         <p>Manage your application documents</p>
+                    </div>
+                    <div class="text-center me-3" id="realtime-indicator" style="display: none;">
+                        <small class="text-success d-block">
+                            <i class="bi bi-arrow-repeat" style="animation: spin 2s linear infinite;"></i>
+                            <span>Auto-updating</span>
+                        </small>
+                        <small class="text-muted" style="font-size: 0.7rem;">Checks every 1s</small>
                     </div>
                     <a href="student_homepage.php" class="btn btn-outline-secondary">
                         <i class="bi bi-arrow-left"></i> Back
                     </a>
                 </div>
             </div>
+            
+            <style>
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                
+                @keyframes flashGreen {
+                    0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+                    50% { box-shadow: 0 0 20px 10px rgba(16, 185, 129, 0.4); }
+                    100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+                }
+                
+                .document-card.updated {
+                    animation: flashGreen 1s ease-out;
+                }
+            </style>
             
             <!-- Testing Mode Banner -->
             <?php if ($test_mode): ?>
@@ -793,6 +853,7 @@ $page_title = 'Upload Documents';
             <?php if (isset($_GET['debug'])): ?>
             <div class="alert alert-info alert-dismissible fade show" role="alert">
                 <strong>Debug Info:</strong><br>
+                - student_status: <?= htmlspecialchars($student_status) ?><br>
                 - needs_upload: <?= $needs_upload ? 'TRUE' : 'FALSE' ?><br>
                 - can_upload: <?= $can_upload ? 'TRUE' : 'FALSE' ?><br>
                 - documents_to_reupload: <?= !empty($documents_to_reupload) ? implode(', ', $documents_to_reupload) : 'NONE' ?><br>
@@ -845,14 +906,19 @@ $page_title = 'Upload Documents';
             </div>
             <?php endif; ?>
             
-            <!-- View-Only Banner (New Registrants) -->
+            <!-- View-Only Banner (New Registrants or Active Students) -->
             <?php if ($is_new_registrant): ?>
-            <div class="view-only-banner">
+            <div class="view-only-banner <?= $student_status === 'active' ? 'approved' : '' ?>">
                 <div class="banner-content">
-                    <i class="bi bi-info-circle"></i>
+                    <i class="bi bi-<?= $student_status === 'active' ? 'check-circle' : 'info-circle' ?>"></i>
                     <div>
+                        <?php if ($student_status === 'active'): ?>
+                        <h5><i class="bi bi-lock-fill"></i> Documents Approved - Read-Only Mode</h5>
+                        <p>Congratulations! Your application has been approved and your status is now <strong>ACTIVE</strong>. Your documents have been verified and locked for security. You cannot modify or re-upload documents at this time. If you need to make changes, please contact the admin.</p>
+                        <?php else: ?>
                         <h5>View-Only Mode</h5>
                         <p>You registered through our online system and submitted all required documents during registration. Your documents are currently under review by our admin team. You cannot re-upload documents at this time.</p>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -1424,6 +1490,139 @@ $page_title = 'Upload Documents';
                     handleFileUpload(zoneId, e.dataTransfer.files[0]);
                 }
             });
+        });
+        
+        // Real-time status update checker
+        let lastStatusCheck = '';
+        let isCheckingStatus = false;
+        
+        // Show approval notification
+        function showApprovalNotification() {
+            // Create toast notification
+            const toast = document.createElement('div');
+            toast.className = 'position-fixed top-0 end-0 p-3';
+            toast.style.zIndex = '9999';
+            toast.innerHTML = `
+                <div class="toast show align-items-center text-white bg-success border-0" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="bi bi-check-circle-fill me-2"></i>
+                            <strong>Congratulations!</strong> Your application has been approved! 🎉
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(toast);
+            
+            // Play a subtle success sound if available
+            try {
+                const audio = new Audio('data:audio/wav;base64,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TKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8KGGa56OqnUhcLTKPh8rpkHAY3jdTy0H8qBSZ9y/PajD8=');
+                audio.volume = 0.3;
+                audio.play().catch(() => {}); // Ignore if audio fails
+            } catch (e) {}
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                toast.remove();
+            }, 5000);
+        }
+        
+        async function checkDocumentStatus() {
+            // Skip if already checking
+            if (isCheckingStatus) return;
+            
+            isCheckingStatus = true;
+            
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                const html = await response.text();
+                
+                // Only update if content has changed
+                if (html !== lastStatusCheck) {
+                    // Parse response to extract document cards
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newDocumentCards = doc.querySelectorAll('.document-card');
+                    const currentDocumentCards = document.querySelectorAll('.document-card');
+                    
+                    // Update each document card if content changed
+                    newDocumentCards.forEach((newCard, index) => {
+                        if (currentDocumentCards[index]) {
+                            const currentCardHTML = currentDocumentCards[index].innerHTML;
+                            const newCardHTML = newCard.innerHTML;
+                            
+                            if (currentCardHTML !== newCardHTML) {
+                                // Smooth update with fade effect
+                                currentDocumentCards[index].style.opacity = '0.5';
+                                setTimeout(() => {
+                                    currentDocumentCards[index].innerHTML = newCardHTML;
+                                    currentDocumentCards[index].style.opacity = '1';
+                                    
+                                    // Add flash animation
+                                    currentDocumentCards[index].classList.add('updated');
+                                    setTimeout(() => {
+                                        currentDocumentCards[index].classList.remove('updated');
+                                    }, 1000);
+                                }, 200);
+                                
+                                console.log('✅ Document card updated:', index);
+                            }
+                        }
+                    });
+                    
+                    // Also check if banner status changed (applicant -> active)
+                    const newBanner = doc.querySelector('.view-only-banner, .reupload-banner');
+                    const currentBanner = document.querySelector('.view-only-banner, .reupload-banner');
+                    
+                    if (newBanner && currentBanner) {
+                        const newBannerHTML = newBanner.outerHTML;
+                        const currentBannerHTML = currentBanner.outerHTML;
+                        
+                        if (newBannerHTML !== currentBannerHTML) {
+                            // Check if status changed to active (approved)
+                            const wasApproved = newBanner.classList.contains('approved') && !currentBanner.classList.contains('approved');
+                            
+                            currentBanner.outerHTML = newBannerHTML;
+                            console.log('🎉 Banner status updated');
+                            
+                            // Show celebration notification if approved
+                            if (wasApproved) {
+                                showApprovalNotification();
+                            }
+                        }
+                    }
+                    
+                    lastStatusCheck = html;
+                }
+            } catch (error) {
+                console.error('Status check failed:', error);
+            } finally {
+                isCheckingStatus = false;
+            }
+        }
+        
+        // Start real-time status checking for all students
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Real-time status updates enabled for all students');
+            
+            const indicator = document.getElementById('realtime-indicator');
+            
+            // Show the auto-update indicator
+            if (indicator) {
+                indicator.style.display = 'block';
+            }
+            
+            // Check immediately on load
+            setTimeout(checkDocumentStatus, 1000);
+            // Then check every 1 second
+            setInterval(checkDocumentStatus, 1000);
         });
     </script>
 </body>
