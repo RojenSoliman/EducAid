@@ -216,8 +216,8 @@ if ($DEMO_MODE) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+  <link rel="stylesheet" href="../../assets/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="../../assets/css/bootstrap-icons.css" />
   <link rel="stylesheet" href="../../assets/css/admin/homepage.css" />
   <link rel="stylesheet" href="../../assets/css/admin/sidebar.css" />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet" />
@@ -577,6 +577,18 @@ if ($DEMO_MODE) {
                     <option value="university">By University</option>
                     <option value="yearLevel">By Year Level</option>
                   </select>
+                  <div class="btn-group">
+                    <button type="button" class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                      <i class="bi bi-three-dots-vertical"></i> Actions
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                      <li><a class="dropdown-item" href="manage_applicants.php"><i class="bi bi-people me-2"></i>View All Students</a></li>
+                      <li><a class="dropdown-item" href="manage_applicants.php?filter=male"><i class="bi bi-gender-male me-2"></i>View Male Students</a></li>
+                      <li><a class="dropdown-item" href="manage_applicants.php?filter=female"><i class="bi bi-gender-female me-2"></i>View Female Students</a></li>
+                      <li><hr class="dropdown-divider"></li>
+                      <li><a class="dropdown-item" href="#" onclick="exportChart(); return false;"><i class="bi bi-download me-2"></i>Export Chart Data</a></li>
+                    </ul>
+                  </div>
                 </div>
               </div>
               <div class="custom-card-body">
@@ -601,7 +613,7 @@ if ($DEMO_MODE) {
                     <p class="text-muted small mb-0">Track and review past distribution events</p>
                   </div>
                 </div>
-                <a href="manage_distributions.php" class="btn-view-all">
+                <a href="distribution_archives.php" class="btn-view-all">
                   <span>View All</span>
                   <i class="bi bi-arrow-right ms-2"></i>
                 </a>

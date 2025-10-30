@@ -68,8 +68,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $query = "INSERT INTO announcements (title, remarks, event_date, event_time, location, image_path, is_active) VALUES ($1,$2,$3,$4,$5,$6,TRUE)";
     $result = pg_query_params($connection, $query, [$title, $remarks, $event_date, $event_time, $location, $image_path]);
     if ($result) {
+      // Create admin notification
       $notification_msg = "New announcement posted: " . $title;
       pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+      
+      // Create student notifications for all active students
+      $student_notif_title = "New Announcement: " . $title;
+      $student_notif_message = $remarks;
+      
+      // Add event details to message if available
+      if ($event_date || $event_time || $location) {
+        $student_notif_message .= "\n\n";
+        if ($event_date) $student_notif_message .= "Date: " . date('F j, Y', strtotime($event_date)) . "\n";
+        if ($event_time) $student_notif_message .= "Time: " . $event_time . "\n";
+        if ($location) $student_notif_message .= "Location: " . $location;
+      }
+      
+      // Send notification to all students
+      $student_notif_query = "INSERT INTO student_notifications (student_id, title, message, type, priority, action_url)
+                              SELECT student_id, $1, $2, 'announcement', 'medium', '../../website/announcements.php'
+                              FROM students";
+      pg_query_params($connection, $student_notif_query, [$student_notif_title, $student_notif_message]);
     }
     header('Location: ' . $_SERVER['PHP_SELF'] . '?posted=1');
     exit;

@@ -1,10 +1,19 @@
 // assets/js/admin/sidebar_toggle.js
 
 document.addEventListener("DOMContentLoaded", function () {
+  // Prevent double-binding
+  if (window.__ADMIN_SIDEBAR_BOUND) return;
+  window.__ADMIN_SIDEBAR_BOUND = 'external';
+  
   const sidebar = document.getElementById("sidebar");
   const toggleBtn = document.getElementById("menu-toggle");
   const backdrop = document.getElementById("sidebar-backdrop");
   const homeSection = document.querySelector(".home-section") || document.getElementById("mainContent");
+  
+  if (!sidebar || !toggleBtn || !backdrop) {
+    console.warn('[AdminSidebar] Missing required elements');
+    return;
+  }
 
   function isMobile() {
     return window.innerWidth <= 768;
@@ -26,6 +35,13 @@ document.addEventListener("DOMContentLoaded", function () {
   function updateSidebarState() {
     // On mobile, sidebar state is always "open" only when toggled, never saved
     if (isMobile()) {
+      // Don't reset if currently open (prevents auto-close on resize/scrollbar changes)
+      if (sidebar.classList.contains('open')) {
+        backdrop.classList.remove('d-none');
+        document.body.style.overflow = 'hidden';
+        adjustLayout();
+        return;
+      }
       sidebar.classList.remove("close", "open");
       backdrop.classList.add("d-none");
       document.body.style.overflow = "";
@@ -181,9 +197,16 @@ document.addEventListener("DOMContentLoaded", function () {
     requestAnimationFrame(step);
   }
 
+  let suppressOutsideClickUntil = 0;
+  
   toggleBtn.addEventListener("click", function (e) {
     e.stopPropagation();
-    const expanding = sidebar.classList.contains("close");
+    e.preventDefault();
+    // On mobile: check 'open' class; on desktop: check 'close' class
+    const expanding = isMobile() 
+      ? !sidebar.classList.contains("open") 
+      : sidebar.classList.contains("close");
+    suppressOutsideClickUntil = performance.now() + 500;
     animateSidebar(expanding);
   });
 
@@ -193,16 +216,28 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Hide sidebar on mobile when clicking outside of it
   document.addEventListener("click", function (e) {
-    if (isMobile() && sidebar.classList.contains("open")) {
-      const isClickInside = sidebar.contains(e.target) || toggleBtn.contains(e.target);
-      if (!isClickInside) {
-        animateSidebar(false); // Use animation for closing
-      }
+    if (!isMobile()) return;
+    if (!sidebar.classList.contains("open")) return;
+    if (sidebarAnimating) return;
+    if (performance.now() < suppressOutsideClickUntil) return;
+    
+    const toggleWrapper = toggleBtn.closest('.sidebar-toggle');
+    const isClickInside = sidebar.contains(e.target) || 
+                          toggleBtn.contains(e.target) || 
+                          (toggleWrapper && toggleWrapper.contains(e.target));
+    if (!isClickInside) {
+      animateSidebar(false);
     }
   });
 
-  // Always update sidebar state on resize to keep in sync
-  window.addEventListener("resize", () => { updateSidebarState(); });
+  // Update sidebar state on resize, but preserve open state on mobile
+  window.addEventListener("resize", () => {
+    if (isMobile() && sidebar.classList.contains('open')) {
+      adjustLayout();
+      return;
+    }
+    updateSidebarState();
+  });
 
   // (Optional) Force apply state when navigating via SPA or AJAX:
   // window.addEventListener("pageshow", updateSidebarState);

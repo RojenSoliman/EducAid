@@ -10,13 +10,20 @@ if (!isset($_SESSION['student_id']) && !isset($_SESSION['admin_id'])) {
 
 include '../../config/database.php';
 
-// Get POST data
-$input = json_decode(file_get_contents('php://input'), true);
-$doc_type = $input['doc_type'] ?? '';
+// Get data from either GET (for AJAX fetch) or POST (for JSON body)
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    $doc_type = $_GET['doc_type'] ?? '';
+    $student_id_param = $_GET['student_id'] ?? '';
+} else {
+    // Get POST data
+    $input = json_decode(file_get_contents('php://input'), true);
+    $doc_type = $input['doc_type'] ?? '';
+    $student_id_param = $input['student_id'] ?? '';
+}
 
 // For admins, they can pass student_id. For students, use their own session student_id
-$student_id = isset($_SESSION['admin_id']) && !empty($input['student_id']) 
-    ? $input['student_id'] 
+$student_id = isset($_SESSION['admin_id']) && !empty($student_id_param) 
+    ? $student_id_param 
     : ($_SESSION['student_id'] ?? null);
 
 if (empty($doc_type) || empty($student_id)) {
@@ -49,16 +56,154 @@ try {
         [$student_id, $document_type_code]
     );
     
-    if (!$doc_query || pg_num_rows($doc_query) === 0) {
-        echo json_encode(['success' => false, 'message' => 'Document not found in database']);
-        exit;
+    $document = null;
+    $file_path = null;
+    $verification_data_path = null;
+    
+    // If document found in database, use that
+    if ($doc_query && pg_num_rows($doc_query) > 0) {
+        $document = pg_fetch_assoc($doc_query);
+        $file_path = $document['file_path'];
+        
+        // Construct verification_data_path from file_path (verification_data_path column removed from schema)
+        $verification_data_path = null;
+        if (!empty($file_path)) {
+            $path_info = pathinfo($file_path);
+            $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
+            $verification_data_path = $file_base . '.verify.json';
+        }
+        
+        $validation_data['ocr_confidence'] = floatval($document['ocr_confidence'] ?? 0);
+        $validation_data['upload_date'] = $document['upload_date'];
+    } else {
+        // Document not in database - search filesystem for registration documents
+        // This handles new applicants whose documents haven't been moved to permanent storage yet
+        
+        // Get student name for file search
+        $student_query = pg_query_params($connection,
+            "SELECT first_name, last_name FROM students WHERE student_id = $1",
+            [$student_id]
+        );
+        
+        if (!$student_query || pg_num_rows($student_query) === 0) {
+            echo json_encode(['success' => false, 'message' => 'Student not found']);
+            exit;
+        }
+        
+        $student_info = pg_fetch_assoc($student_query);
+        $first_name = $student_info['first_name'];
+        $last_name = $student_info['last_name'];
+        
+        // Build search paths based on document type
+        $server_base = dirname(__DIR__, 2) . '/assets/uploads/';
+        
+        // Map document codes to folder names for student directory
+        $student_folder_map = [
+            '04' => 'id_pictures',
+            '00' => 'enrollment_forms',
+            '01' => 'grades',
+            '02' => 'letter_mayor',
+            '03' => 'indigency'
+        ];
+        
+        // Map document codes to temp folder paths
+        $temp_folder_map = [
+            '04' => 'temp/id_pictures/',
+            '00' => 'temp/enrollment_forms/',
+            '01' => 'temp/grades/',
+            '02' => 'temp/letter_mayor/',
+            '03' => 'temp/indigency/'
+        ];
+        
+        $matches = [];
+        
+        // PRIORITY 1: Search NEW structure - student/{doc_type}/{student_id}/
+        $student_folder_name = $student_folder_map[$document_type_code] ?? '';
+        if ($student_folder_name) {
+            $student_dir = $server_base . 'student/' . $student_folder_name . '/' . $student_id . '/';
+            if (is_dir($student_dir)) {
+                foreach (glob($student_dir . '*.*') as $file) {
+                    // Skip associated files
+                    if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', basename($file))) {
+                        continue;
+                    }
+                    if (is_dir($file)) continue;
+                    
+                    $matches[filemtime($file)] = $file;
+                }
+            }
+        }
+        
+        // PRIORITY 2: Search OLD structure - student/{doc_type}/{student_id}_*
+        if ($student_folder_name && empty($matches)) {
+            $student_flat_dir = $server_base . 'student/' . $student_folder_name . '/';
+            if (is_dir($student_flat_dir)) {
+                $pattern = $student_flat_dir . $student_id . '_*';
+                foreach (glob($pattern) as $file) {
+                    // Skip associated files and directories
+                    if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', basename($file))) {
+                        continue;
+                    }
+                    if (is_dir($file)) continue;
+                    
+                    $matches[filemtime($file)] = $file;
+                }
+            }
+        }
+        
+        // PRIORITY 3: Search TEMP folder (for newly uploaded documents)
+        $search_folder = $server_base . ($temp_folder_map[$document_type_code] ?? '');
+        if (is_dir($search_folder) && empty($matches)) {
+            foreach (glob($search_folder . '*.*') as $file) {
+                $basename = basename($file);
+                // Skip associated files
+                if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $basename)) {
+                    continue;
+                }
+                if (is_dir($file)) continue;
+                
+                // Match by student_id or name
+                $normalized_name = strtolower($basename);
+                if (strpos($normalized_name, strtolower($student_id)) !== false ||
+                    (strpos($normalized_name, strtolower($first_name)) !== false && 
+                     strpos($normalized_name, strtolower($last_name)) !== false)) {
+                    $matches[filemtime($file)] = $file;
+                }
+            }
+        }
+        
+        // Process matches if found
+        if (!empty($matches)) {
+            krsort($matches); // newest first
+            $file_path = reset($matches);
+            
+            // Construct verification file path - remove file extension first, then add .verify.json
+            $path_info = pathinfo($file_path);
+            $file_base = $path_info['dirname'] . '/' . $path_info['filename']; // Path without extension
+            $verification_data_path = $file_base . '.verify.json';
+            
+            // Get OCR confidence from .confidence.json or .verify.json
+            $confidence_file = $file_base . '.confidence.json';
+            if (file_exists($confidence_file)) {
+                $conf_data = json_decode(file_get_contents($confidence_file), true);
+                $validation_data['ocr_confidence'] = floatval($conf_data['ocr_confidence'] ?? 0);
+            } elseif (file_exists($verification_data_path)) {
+                $verify_data = json_decode(file_get_contents($verification_data_path), true);
+                $validation_data['ocr_confidence'] = floatval($verify_data['summary']['average_confidence'] ?? 
+                                                    $verify_data['ocr_confidence'] ?? 0);
+            } else {
+                // No verification data found - set to 0
+                $validation_data['ocr_confidence'] = 0;
+            }
+            
+            $validation_data['upload_date'] = date('Y-m-d H:i:s', filemtime($file_path));
+        }
     }
     
-    $document = pg_fetch_assoc($doc_query);
-    $file_path = $document['file_path'];
-    $verification_data_path = $document['verification_data_path'];
-    $validation_data['ocr_confidence'] = $document['ocr_confidence'];
-    $validation_data['upload_date'] = $document['upload_date'];
+    if (!$file_path || !file_exists($file_path)) {
+        echo json_encode(['success' => false, 'message' => 'Document file not found on server']);
+        exit;
+    }
     
     // ID Picture - Get identity verification data
     if ($doc_type === 'id_picture') {
@@ -103,7 +248,9 @@ try {
         }
         
         // Get OCR text
-        $ocr_text_path = $file_path . '.ocr.txt';
+        $path_info = pathinfo($file_path);
+        $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
+        $ocr_text_path = $file_base . '.ocr.txt';
         if (file_exists($ocr_text_path)) {
             $validation_data['extracted_text'] = file_get_contents($ocr_text_path);
         }
@@ -112,7 +259,10 @@ try {
     // Academic Grades - Get detailed grade validation from JSON file
     elseif ($doc_type === 'grades') {
         // Use JSON verification file which contains all grade information
-        $verify_json_path = $file_path . '.verify.json';
+        // Remove file extension before adding .verify.json
+        $path_info = pathinfo($file_path);
+        $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
+        $verify_json_path = $file_base . '.verify.json';
         
         if (file_exists($verify_json_path)) {
             // Load verification JSON
@@ -183,12 +333,40 @@ try {
                 // Add eligibility status
                 $validation_data['is_eligible'] = $verify_data['is_eligible'] ?? false;
                 $validation_data['all_grades_passing'] = $verify_data['all_grades_passing'] ?? false;
+                
+                // Add comprehensive validation checks for grades modal display
+                $validation_data['identity_verification'] = [
+                    'document_type' => 'grades',
+                    'year_level_match' => $verify_data['year_level_match'] ?? false,
+                    'year_level_confidence' => floatval($verify_data['confidence_scores']['year_level'] ?? 0),
+                    'semester_match' => $verify_data['semester_match'] ?? false,
+                    'semester_confidence' => floatval($verify_data['confidence_scores']['semester'] ?? 0),
+                    'school_year_match' => $verify_data['school_year_match'] ?? false,
+                    'school_year_confidence' => floatval($verify_data['confidence_scores']['school_year'] ?? 0),
+                    'university_match' => $verify_data['university_match'] ?? false,
+                    'university_confidence' => floatval($verify_data['confidence_scores']['university'] ?? 0),
+                    'name_match' => $verify_data['name_match'] ?? false,
+                    'name_confidence' => floatval($verify_data['confidence_scores']['name'] ?? 0),
+                    'all_grades_passing' => $verify_data['all_grades_passing'] ?? false,
+                    'grades_confidence' => floatval($verify_data['confidence_scores']['grades'] ?? 0),
+                    'is_eligible' => $verify_data['is_eligible'] ?? false,
+                    'passed_checks' => $verify_data['summary']['passed_checks'] ?? 0,
+                    'total_checks' => $verify_data['summary']['total_checks'] ?? 6,
+                    'average_confidence' => $verify_data['summary']['average_confidence'] ?? floatval($document['ocr_confidence'] ?? 0),
+                    'eligibility_status' => $verify_data['summary']['eligibility_status'] ?? 'UNKNOWN',
+                    'recommendation' => $verify_data['summary']['recommendation'] ?? 'No recommendation available',
+                    'found_text_snippets' => $verify_data['found_text_snippets'] ?? [],
+                    'validation_method' => $verify_data['validation_method'] ?? 'unknown',
+                    'university_code' => $verify_data['university_code'] ?? ''
+                ];
             }
         }
         
         // Fallback: check if OCR text exists
         if (empty($validation_data['extracted_text'])) {
-            $ocr_text_path = $file_path . '.ocr.txt';
+            $path_info = pathinfo($file_path);
+            $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
+            $ocr_text_path = $file_base . '.ocr.txt';
             if (file_exists($ocr_text_path)) {
                 $validation_data['extracted_text'] = file_get_contents($ocr_text_path);
             }
@@ -197,7 +375,7 @@ try {
     
     // EAF, Letter, Certificate - Get OCR text and verification data
     else {
-        // Use verification_data_path from database instead of manual construction
+        // Use verification_data_path from database or filesystem search
         if (!empty($verification_data_path) && file_exists($verification_data_path)) {
             $verify_data = json_decode(file_get_contents($verification_data_path), true);
             if ($verify_data) {
@@ -286,7 +464,9 @@ try {
         }
         
         // Get OCR text for all document types
-        $ocr_text_path = $file_path . '.ocr.txt';
+        $path_info = pathinfo($file_path);
+        $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
+        $ocr_text_path = $file_base . '.ocr.txt';
         if (file_exists($ocr_text_path)) {
             $validation_data['extracted_text'] = file_get_contents($ocr_text_path);
         }

@@ -50,7 +50,7 @@ if (!$qr_res) {
     <link href="../../assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="../../assets/css/admin/homepage.css" rel="stylesheet">
     <link href="../../assets/css/admin/sidebar.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="../../assets/css/bootstrap-icons.css" rel="stylesheet">
     <style>
         body { font-family: 'Poppins', sans-serif; }
         .qr-center-viewport {

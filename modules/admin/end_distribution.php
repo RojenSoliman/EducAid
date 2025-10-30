@@ -11,36 +11,117 @@ require_once __DIR__ . '/../../services/FileCompressionService.php';
 
 /**
  * Delete all student uploaded documents from the file system
+ * INCLUDING associated OCR and verification files (.ocr.txt, .verify.json, etc.)
  */
 function deleteAllStudentUploads() {
     $uploadsPath = __DIR__ . '/../../assets/uploads/student';
-    $documentTypes = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_to_mayor'];
+    $documentTypes = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_mayor']; // Fixed: letter_mayor not letter_to_mayor
     
     $totalDeleted = 0;
+    $associatedDeleted = 0;
     $errors = [];
+    
+    // Associated file extensions to delete alongside main files
+    $associatedExtensions = ['.ocr.txt', '.verify.json', '.confidence.json', '.tsv', '.ocr.json'];
     
     foreach ($documentTypes as $type) {
         $folderPath = $uploadsPath . '/' . $type;
         if (is_dir($folderPath)) {
-            $files = glob($folderPath . '/*.*');
-            foreach ($files as $file) {
+            $items = scandir($folderPath);
+            $hasStudentFolders = false;
+            
+            // Check if we have student subdirectories (new structure)
+            foreach ($items as $item) {
+                if ($item !== '.' && $item !== '..' && is_dir($folderPath . '/' . $item)) {
+                    // If it looks like a student ID folder, we have new structure
+                    $hasStudentFolders = true;
+                    break;
+                }
+            }
+            
+            $filesToProcess = [];
+            
+            if ($hasStudentFolders) {
+                // NEW STRUCTURE: student/{doc_type}/{student_id}/files
+                error_log("  Deleting from new structure: $type/");
+                foreach ($items as $item) {
+                    if ($item !== '.' && $item !== '..') {
+                        $studentFolder = $folderPath . '/' . $item;
+                        if (is_dir($studentFolder)) {
+                            // Get all files in student folder
+                            $studentFiles = glob($studentFolder . '/*.*');
+                            foreach ($studentFiles as $file) {
+                                if (is_file($file)) {
+                                    $filesToProcess[] = $file;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // OLD STRUCTURE: flat files in student/{doc_type}/
+                error_log("  Deleting from legacy structure: $type/");
+                $filesToProcess = glob($folderPath . '/*.*');
+            }
+            
+            foreach ($filesToProcess as $file) {
                 if (is_file($file)) {
-                    if (unlink($file)) {
-                        $totalDeleted++;
-                    } else {
-                        $errors[] = "Failed to delete: " . basename($file);
+                    // Skip if this is already an associated file (will be deleted with main file)
+                    $isAssociated = false;
+                    foreach ($associatedExtensions as $ext) {
+                        if (substr($file, -strlen($ext)) === $ext) {
+                            $isAssociated = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$isAssociated) {
+                        // Delete main file
+                        if (unlink($file)) {
+                            $totalDeleted++;
+                            
+                            // Delete associated files - try both patterns
+                            $pathInfo = pathinfo($file);
+                            $fileDir = $pathInfo['dirname'];
+                            $fileBasename = $pathInfo['basename']; // Includes extension
+                            $fileWithoutExt = $pathInfo['filename']; // Without extension
+                            
+                            foreach ($associatedExtensions as $ext) {
+                                // Try both patterns:
+                                // 1. file.jpg.verify.json (new style)
+                                // 2. file.verify.json (old style)
+                                $associatedFile1 = $fileDir . '/' . $fileBasename . $ext;
+                                $associatedFile2 = $fileDir . '/' . $fileWithoutExt . $ext;
+                                
+                                if (file_exists($associatedFile1)) {
+                                    if (unlink($associatedFile1)) {
+                                        $associatedDeleted++;
+                                    } else {
+                                        $errors[] = "Failed to delete associated: " . basename($associatedFile1);
+                                    }
+                                } elseif (file_exists($associatedFile2)) {
+                                    if (unlink($associatedFile2)) {
+                                        $associatedDeleted++;
+                                    } else {
+                                        $errors[] = "Failed to delete associated: " . basename($associatedFile2);
+                                    }
+                                }
+                            }
+                        } else {
+                            $errors[] = "Failed to delete: " . basename($file);
+                        }
                     }
                 }
             }
         }
     }
     
-    error_log("Deleted $totalDeleted student upload files during distribution end");
+    error_log("Deleted $totalDeleted main files and $associatedDeleted associated files (OCR/JSON) during distribution end");
     if (!empty($errors)) {
         error_log("File deletion errors: " . implode(', ', $errors));
     }
     
-    return $totalDeleted;
+    return $totalDeleted + $associatedDeleted;
 }
 
 /**
@@ -243,9 +324,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
         
+        // CRITICAL: Check if this distribution has already been compressed
+        $compressionCheckQuery = "SELECT files_compressed FROM distribution_snapshots WHERE distribution_id = $1 LIMIT 1";
+        $compressionCheckResult = pg_query_params($connection, $compressionCheckQuery, [$distributionId]);
+        if ($compressionCheckResult && pg_num_rows($compressionCheckResult) > 0) {
+            $compressionCheck = pg_fetch_assoc($compressionCheckResult);
+            if ($compressionCheck['files_compressed'] === 't' || $compressionCheck['files_compressed'] === true) {
+                ob_clean();
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'This distribution has already been ended and compressed. Please refresh the page.',
+                    'already_completed' => true
+                ]);
+                exit();
+            }
+        }
+        
         // For config-based distributions, use FileCompressionService directly
         try {
-            pg_query($connection, "BEGIN");
+            // DO NOT start transaction here - it causes issues with compression service
+            // The compression service doesn't use transactions anyway
+            
+            error_log("end_distribution.php: Calling compressDistribution with ID = '$distributionId'");
             
             // Compress files FIRST (while students still have 'given' status)
             $compressionResult = $compressionService->compressDistribution($distributionId, $adminId);
@@ -255,7 +355,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $emptyFailure = stripos($compressionMessage, 'no files') !== false || stripos($compressionMessage, "no students") !== false;
 
                 if ($emptyFailure && !$allowEmptyOverride) {
-                    pg_query($connection, "ROLLBACK");
                     ob_clean();
                     echo json_encode([
                         'success' => false,
@@ -267,7 +366,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if (!$emptyFailure || !$allowEmptyOverride) {
-                    pg_query($connection, "ROLLBACK");
                     ob_clean();
                     echo json_encode(['success' => false, 'message' => 'Compression failed: ' . $compressionMessage]);
                     exit();
@@ -281,36 +379,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             
+            
             // Update distribution_snapshots with compression information
+            // ALWAYS mark as compressed (even if skipped) to prevent re-showing the distribution
+            $archive_filename = null;
+            $compressed_size = 0;
+            $file_count = 0;
+            $compression_ratio = 0.0;
+            
             if (!empty($compressionResult['success']) && !empty($compressionResult['archive_path'])) {
                 $archive_filename = basename($compressionResult['archive_path']);
                 $compressed_size = isset($compressionResult['size']) ? intval($compressionResult['size']) : 0;
                 $file_count = isset($compressionResult['file_count']) ? intval($compressionResult['file_count']) : 0;
                 $compression_ratio = isset($compressionResult['compression_ratio']) ? floatval($compressionResult['compression_ratio']) : 0.0;
-                
-                // Find the snapshot by distribution_id
-                $update_snapshot_query = "
-                    UPDATE distribution_snapshots 
-                    SET 
-                        files_compressed = true,
-                        compression_date = NOW(),
-                        archive_filename = $1,
-                        compressed_size = $2,
-                        compression_ratio = $3,
-                        total_files_count = $4
-                    WHERE distribution_id = $5
-                ";
-                $update_result = pg_query_params($connection, $update_snapshot_query, [
-                    $archive_filename,
-                    $compressed_size,
-                    $compression_ratio,
-                    $file_count,
-                    $distributionId
-                ]);
-                
-                if (!$update_result) {
-                    error_log("Warning: Failed to update distribution snapshot with compression info: " . pg_last_error($connection));
-                }
+            }
+            
+            // Find the snapshot by distribution_id and mark as compressed
+            // This prevents the distribution from appearing on end_distribution.php again
+            $update_snapshot_query = "
+                UPDATE distribution_snapshots 
+                SET 
+                    files_compressed = true,
+                    compression_date = NOW(),
+                    archive_filename = $1,
+                    compressed_size = $2,
+                    compression_ratio = $3,
+                    total_files_count = $4
+                WHERE distribution_id = $5
+            ";
+            $update_result = pg_query_params($connection, $update_snapshot_query, [
+                $archive_filename,
+                $compressed_size,
+                $compression_ratio,
+                $file_count,
+                $distributionId
+            ]);
+            
+            if (!$update_result) {
+                error_log("Warning: Failed to update distribution snapshot with compression info: " . pg_last_error($connection));
             }
             
             // Reset all students with 'given' status back to 'applicant'
@@ -328,7 +434,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ON CONFLICT (key) DO UPDATE SET value = 'inactive'
             ");
             
-            pg_query($connection, "COMMIT");
+            // No transaction to commit - each operation is auto-committed
             
             $resultMessage = (!empty($compressionResult['skipped']))
                 ? 'Distribution ended successfully (compression skipped)'
@@ -346,7 +452,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode($result);
             
         } catch (Exception $e) {
-            pg_query($connection, "ROLLBACK");
+            // No transaction to rollback
             ob_clean();
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
@@ -374,6 +480,7 @@ if (!$workflow_status['can_manage_applicants']) {
 // CRITICAL ACCESS CONTROL: Check if distribution has been completed
 // Admin must click "Complete Distribution" in scan_qr.php before accessing this page
 // AND the distribution must have actual students who received aid
+// IMPORTANT: Only show distributions that have NOT been compressed/archived yet
 $has_completed_snapshot = false;
 $completed_snapshot_id = null;
 $check_snapshot_query = "
@@ -384,6 +491,7 @@ $check_snapshot_query = "
     LEFT JOIN distribution_student_records dsr ON ds.snapshot_id = dsr.snapshot_id
     WHERE ds.finalized_at IS NOT NULL 
     AND ds.finalized_at >= CURRENT_DATE - INTERVAL '7 days'
+    AND (ds.files_compressed = FALSE OR ds.files_compressed IS NULL)
     GROUP BY ds.snapshot_id, ds.distribution_id, ds.academic_year, ds.semester, 
              ds.total_students_count, ds.finalized_at
     HAVING COUNT(dsr.student_id) > 0
@@ -411,6 +519,7 @@ $distribution_status = $workflow_status['distribution_status'] ?? 'inactive';
 if (in_array($distribution_status, ['preparing', 'active']) && $has_completed_snapshot) {
     // Use data from completed snapshot
     $distribution_id = $completed_snapshot['distribution_id'];
+    error_log("end_distribution.php: Using distribution_id from snapshot = '$distribution_id'");
     $academic_year = $completed_snapshot['academic_year'];
     $semester = $completed_snapshot['semester'];
     $student_count = $completed_snapshot['total_students_count'];
@@ -428,7 +537,7 @@ if (in_array($distribution_status, ['preparing', 'active']) && $has_completed_sn
     // Count total files in student folders
     $file_count = 0;
     $total_size = 0;
-    $document_types = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_to_mayor'];
+    $document_types = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_mayor']; // Fixed: letter_mayor not letter_to_mayor
     foreach ($document_types as $type) {
         $folder = __DIR__ . "/../../assets/uploads/student/{$type}";
         if (is_dir($folder)) {
@@ -911,6 +1020,14 @@ $pageTitle = "End Distribution";
 
                     document.getElementById('closeProgressBtn').disabled = false;
                     setTimeout(() => location.reload(), 3000);
+                } else if (data.already_completed) {
+                    // Distribution was already compressed - show message and reload
+                    updateProgress(100, data.message, '⚠️ Already completed');
+                    document.getElementById('statusMessage').innerHTML =
+                        '<i class="bi bi-info-circle"></i> ' + data.message;
+                    document.getElementById('statusMessage').className = 'alert alert-info';
+                    document.getElementById('closeProgressBtn').disabled = false;
+                    setTimeout(() => location.reload(), 2000);
                 } else if (data.can_override) {
                     const reason = data.override_reason || data.message || 'No files were found to compress.';
                     updateProgress(0, 'Override available', '⚠️ ' + reason);

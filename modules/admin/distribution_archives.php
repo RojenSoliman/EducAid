@@ -25,20 +25,44 @@ if (is_dir($distributionsPath)) {
         // Parse distribution ID from filename (format: #MUNICIPALITY-DISTR-YYYY-MM-DD-HHMMSS.zip)
         $distribution_id = str_replace('.zip', '', $filename);
         
-        // Try to open ZIP and count files
+        // Try to open ZIP and count files AND student folders
         $fileCount = 0;
+        $studentFolderCount = 0;
         $zip = new ZipArchive();
         if ($zip->open($zipFile) === true) {
             $fileCount = $zip->numFiles;
+            
+            // Count unique student folders (top-level directories in ZIP)
+            // Format: "LastName, FirstName M. - STUDENT-ID/"
+            $studentFolders = [];
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $stat = $zip->statIndex($i);
+                $path = $stat['name'];
+                
+                // Extract first folder name (student folder)
+                $parts = explode('/', $path);
+                if (count($parts) > 1 && !empty($parts[0])) {
+                    $studentFolders[$parts[0]] = true;
+                }
+            }
+            $studentFolderCount = count($studentFolders);
+            
             $zip->close();
         }
         
         // Check if there's a matching snapshot in database
         $snapshotQuery = pg_query_params($connection,
-            "SELECT * FROM distribution_snapshots WHERE archive_filename = $1 OR distribution_id = $2 LIMIT 1",
+            "SELECT ds.*, 
+                    (SELECT COUNT(DISTINCT student_id) FROM distribution_student_records WHERE snapshot_id = ds.snapshot_id) as actual_student_count
+             FROM distribution_snapshots ds 
+             WHERE archive_filename = $1 OR distribution_id = $2 
+             LIMIT 1",
             [$filename, $distribution_id]
         );
         $snapshot = $snapshotQuery ? pg_fetch_assoc($snapshotQuery) : null;
+        
+        // Use actual count from database or ZIP folder count
+        $actualStudentCount = $snapshot['actual_student_count'] ?? $studentFolderCount;
         
         // Build distribution entry
         $dist = [
@@ -46,7 +70,7 @@ if (is_dir($distributionsPath)) {
             'created_at' => date('Y-m-d H:i:s', $filetime),
             'year_level' => $snapshot['academic_year'] ?? 'N/A',
             'semester' => $snapshot['semester'] ?? 'N/A',
-            'student_count' => $snapshot['total_students_count'] ?? 0,
+            'student_count' => $actualStudentCount, // Use accurate count from database or ZIP folders
             'file_count' => $fileCount,
             'original_size' => $filesize * 2, // Estimate: assume 50% compression
             'current_size' => $filesize,
@@ -86,8 +110,7 @@ $compressionStats = [
 // Filter distributions based on tab
 $filteredDistributions = array_filter($allDistributions, function($dist) use ($filter) {
     if ($filter === 'all') return true;
-    if ($filter === 'active') return $dist['status'] === 'active';
-    if ($filter === 'compressed') return $dist['files_compressed'] == true;
+    // All ZIP files are already archived, so 'archived' filter shows same as 'all'
     if ($filter === 'archived') return $dist['archived_files_count'] > 0;
     return true;
 });
@@ -143,6 +166,23 @@ $pageTitle = "Distribution Archives";
         .table-actions .btn {
             margin-right: 3px;
         }
+        .distribution-details .table-sm {
+            font-size: 0.875rem;
+        }
+        .distribution-details h6 {
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+            color: #495057;
+        }
+        .sticky-top {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        #detailsModal .modal-dialog {
+            max-width: 1200px;
+        }
     </style>
 </head>
 <body>
@@ -192,25 +232,13 @@ $pageTitle = "Distribution Archives";
                         <li class="nav-item">
                             <a class="nav-link <?php echo $filter === 'all' ? 'active' : ''; ?>" 
                                href="?filter=all">
-                                <i class="bi bi-list"></i> All (<?php echo count($allDistributions); ?>)
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link <?php echo $filter === 'active' ? 'active' : ''; ?>" 
-                               href="?filter=active">
-                                <i class="bi bi-play-circle"></i> Active
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link <?php echo $filter === 'compressed' ? 'active' : ''; ?>" 
-                               href="?filter=compressed">
-                                <i class="bi bi-file-zip"></i> Compressed
+                                <i class="bi bi-archive-fill"></i> All Archives (<?php echo count($allDistributions); ?>)
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link <?php echo $filter === 'archived' ? 'active' : ''; ?>" 
                                href="?filter=archived">
-                                <i class="bi bi-archive"></i> Archived
+                                <i class="bi bi-file-zip-fill"></i> With Files (<?php echo count(array_filter($allDistributions, fn($d) => $d['archived_files_count'] > 0)); ?>)
                             </a>
                         </li>
                     </ul>
@@ -287,9 +315,8 @@ $pageTitle = "Distribution Archives";
                                                     <i class="bi bi-eye"></i> View
                                                 </button>
                                                 <?php if ($dist['files_compressed']): ?>
-                                                    <a href="../../assets/uploads/distributions/<?php echo htmlspecialchars(basename($dist['distribution_id'])); ?>.zip" 
-                                                       class="btn btn-sm btn-success" 
-                                                       download>
+                                                    <a href="download_distribution.php?id=<?php echo urlencode($dist['distribution_id']); ?>" 
+                                                       class="btn btn-sm btn-success">
                                                         <i class="bi bi-download"></i> Download
                                                     </a>
                                                 <?php endif; ?>
@@ -304,47 +331,212 @@ $pageTitle = "Distribution Archives";
             </div>
         </div>
     </div>
+    </section>
+</div>
 
-    <!-- Details Modal -->
-    <div class="modal fade" id="detailsModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-info-circle"></i> Distribution Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="detailsContent">
-                    <div class="text-center">
-                        <div class="spinner-border" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
+<!-- Details Modal - Moved outside wrapper for proper z-index -->
+<div class="modal fade" id="detailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-info-circle"></i> Distribution Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailsContent">
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
+</div>
 
+<!-- Load Bootstrap JS first, BEFORE our custom scripts -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script>
-        const detailsModal = new bootstrap.Modal(document.getElementById('detailsModal'));
+        // Wait for DOM and Bootstrap to be ready
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize modal only after Bootstrap is loaded
+            window.detailsModal = new bootstrap.Modal(document.getElementById('detailsModal'));
+        });
         
         function viewDetails(distId) {
-            detailsModal.show();
-            document.getElementById('detailsContent').innerHTML = 
-                '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+            // Ensure modal is initialized
+            if (!window.detailsModal) {
+                window.detailsModal = new bootstrap.Modal(document.getElementById('detailsModal'));
+            }
             
-            // AJAX request would go here to fetch detailed information
-            // For now, show a placeholder
-            setTimeout(() => {
-                document.getElementById('detailsContent').innerHTML = 
-                    '<div class="alert alert-info">Detailed view will be implemented with student file list, compression logs, and download options.</div>';
-            }, 500);
+            window.detailsModal.show();
+            document.getElementById('detailsContent').innerHTML = 
+                '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading distribution details...</p></div>';
+            
+            // Fetch distribution details via AJAX
+            fetch(`get_distribution_details.php?id=${encodeURIComponent(distId)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to load distribution details');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        displayDistributionDetails(data);
+                    } else {
+                        throw new Error(data.error || 'Unknown error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('detailsContent').innerHTML = 
+                        `<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> ${error.message}</div>`;
+                });
+        }
+        
+        function displayDistributionDetails(data) {
+            const dist = data.distribution;
+            const comp = data.compression;
+            const students = data.students || [];
+            const files = data.files || [];
+            const zipFile = data.zip_file;
+            
+            let html = `
+                <div class="distribution-details">
+                    <!-- Header Info -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6><i class="bi bi-calendar-event"></i> Distribution Information</h6>
+                            <table class="table table-sm table-borderless">
+                                <tr><td class="text-muted">ID:</td><td><code>${dist.id}</code></td></tr>
+                                <tr><td class="text-muted">Academic Year:</td><td><strong>${dist.academic_year}</strong></td></tr>
+                                <tr><td class="text-muted">Semester:</td><td><strong>${dist.semester}</strong></td></tr>
+                                <tr><td class="text-muted">Date:</td><td>${dist.date}</td></tr>
+                                <tr><td class="text-muted">Location:</td><td>${dist.location || 'N/A'}</td></tr>
+                                <tr><td class="text-muted">Finalized By:</td><td>${dist.finalized_by}</td></tr>
+                                <tr><td class="text-muted">Finalized At:</td><td>${dist.finalized_at || 'N/A'}</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6><i class="bi bi-file-zip"></i> Compression Statistics</h6>
+                            <table class="table table-sm table-borderless">
+                                <tr><td class="text-muted">Status:</td><td><span class="badge ${comp.compressed ? 'bg-success' : 'bg-secondary'}">${comp.compressed ? 'Compressed' : 'Not Compressed'}</span></td></tr>
+                                <tr><td class="text-muted">Original Size:</td><td>${formatBytes(comp.original_size)}</td></tr>
+                                <tr><td class="text-muted">Compressed Size:</td><td>${formatBytes(comp.compressed_size)}</td></tr>
+                                <tr><td class="text-muted">Space Saved:</td><td><span class="text-success">${formatBytes(comp.space_saved)} (${comp.compression_ratio}%)</span></td></tr>
+                                <tr><td class="text-muted">Total Files:</td><td><span class="badge bg-info">${dist.file_count}</span></td></tr>
+                                <tr><td class="text-muted">Total Students:</td><td><span class="badge bg-primary">${dist.student_count}</span></td></tr>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    ${dist.notes ? `<div class="alert alert-info"><strong>Notes:</strong> ${dist.notes}</div>` : ''}
+                    
+                    <!-- Students List -->
+                    <h6><i class="bi bi-people"></i> Students (${students.length})</h6>
+                    <div class="table-responsive mb-4" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm table-hover">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Year Level</th>
+                                    <th>University</th>
+                                    <th>Barangay</th>
+                                    <th>Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+            
+            if (students.length > 0) {
+                students.forEach(student => {
+                    html += `
+                        <tr>
+                            <td><small>${student.last_name}, ${student.first_name} ${student.middle_name || ''}</small></td>
+                            <td><small>${student.email || 'N/A'}</small></td>
+                            <td><small>${student.year_level_name || 'N/A'}</small></td>
+                            <td><small>${student.university_name || 'N/A'}</small></td>
+                            <td><small>${student.barangay_name || 'N/A'}</small></td>
+                            <td><small>₱${parseFloat(student.amount_received || 0).toLocaleString()}</small></td>
+                        </tr>
+                    `;
+                });
+            } else {
+                html += '<tr><td colspan="6" class="text-center text-muted">No student records found</td></tr>';
+            }
+            
+            html += `
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- File Manifest -->
+                    <h6><i class="bi bi-files"></i> Archived Files (${files.length})</h6>
+                    <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm table-hover">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>Student ID</th>
+                                    <th>Document Type</th>
+                                    <th>File Size</th>
+                                    <th>Archived Path</th>
+                                    <th>Hash</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+            
+            if (files.length > 0) {
+                files.forEach(file => {
+                    html += `
+                        <tr>
+                            <td><small><code>${file.student_id}</code></small></td>
+                            <td><small>${file.document_type_code || 'N/A'}</small></td>
+                            <td><small>${formatBytes(file.file_size)}</small></td>
+                            <td><small class="text-muted">${file.archived_path || 'N/A'}</small></td>
+                            <td><small><code>${file.file_hash ? file.file_hash.substring(0, 8) + '...' : 'N/A'}</code></small></td>
+                        </tr>
+                    `;
+                });
+            } else {
+                html += '<tr><td colspan="5" class="text-center text-muted">No file records found</td></tr>';
+            }
+            
+            html += `
+                            </tbody>
+                        </table>
+                    </div>
+            `;
+            
+            // Add download button if ZIP exists
+            if (zipFile && zipFile.exists) {
+                html += `
+                    <div class="mt-4 text-center">
+                        <a href="download_distribution.php?id=${encodeURIComponent(dist.id)}" 
+                           class="btn btn-success btn-lg">
+                            <i class="bi bi-download"></i> Download ZIP Archive (${formatBytes(zipFile.size)})
+                        </a>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            
+            document.getElementById('detailsContent').innerHTML = html;
+        }
+        
+        function formatBytes(bytes) {
+            if (!bytes || bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    </section>
-    </div>
 </body>
 </html>

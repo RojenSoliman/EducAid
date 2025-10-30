@@ -4,10 +4,8 @@
 $studentDisplay = htmlspecialchars($_SESSION['student_username'] ?? 'Student');
 $studentId = $_SESSION['student_id'] ?? null;
 
-// Get unread notification count and recent notifications for dropdown
+// Get student info
 include_once __DIR__ . '/../../config/database.php';
-$unreadNotificationCount = 0;
-$recentNotifications = [];
 $student_info = ['first_name' => '', 'last_name' => ''];
 
 if (isset($connection) && $studentId) {
@@ -17,35 +15,6 @@ if (isset($connection) && $studentId) {
   if ($student_info_result && pg_num_rows($student_info_result) > 0) {
     $student_info = pg_fetch_assoc($student_info_result);
   }
-
-  // Student notification system temporarily disabled pending schema fix
-  $unreadNotificationCount = 0;
-  $recentNotifications = [];
-}
-
-// Function to get notification icon based on content
-if (!function_exists('getStudentHeaderNotificationIcon')) {
-    function getStudentHeaderNotificationIcon($message) {
-        $message = strtolower($message);
-        if (strpos($message, 'announcement') !== false) {
-            return 'bi-megaphone-fill';
-        } elseif (strpos($message, 'document') !== false || strpos($message, 'review') !== false) {
-            return 'bi-file-earmark-check';
-        } elseif (strpos($message, 'deadline') !== false || strpos($message, 'reminder') !== false) {
-            return 'bi-alarm';
-        } elseif (strpos($message, 'schedule') !== false) {
-            return 'bi-calendar-event';
-        } else {
-            return 'bi-info-circle';
-        }
-    }
-}
-
-// Function to truncate notification message for dropdown
-if (!function_exists('truncateStudentMessage')) {
-    function truncateStudentMessage($message, $maxLength = 50) {
-        return strlen($message) > $maxLength ? substr($message, 0, $maxLength) . '...' : $message;
-    }
 }
 ?>
 <div class="student-main-header">
@@ -56,48 +25,12 @@ if (!function_exists('truncateStudentMessage')) {
         <h5 class="mb-0 fw-semibold d-none d-md-inline text-primary-emphasis">Dashboard</h5>
       </div>
       <div class="student-header-actions">
-        <button class="student-icon-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications" data-unread-count="<?=$unreadNotificationCount?>">
-          <i class="bi bi-bell"></i>
-          <?php if ($unreadNotificationCount > 0): ?>
-            <span class="badge rounded-pill bg-danger"><?= $unreadNotificationCount ?></span>
-          <?php endif; ?>
-        </button>
-        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-          <li><h6 class="dropdown-header">
-            Notifications
-            <?php if ($unreadNotificationCount > 0): ?>
-              <span class="badge bg-danger ms-2" id="header-dropdown-unread-count"><?= $unreadNotificationCount ?></span>
-            <?php endif; ?>
-          </h6></li>
-          
-          <?php if (empty($recentNotifications)): ?>
-            <li><div class="dropdown-item-text text-muted text-center py-3">No notifications</div></li>
-          <?php else: ?>
-            <?php foreach ($recentNotifications as $notification): ?>
-              <li>
-                <a class="dropdown-item <?= !$notification['is_read'] ? 'bg-light' : '' ?>" 
-                   href="student_notifications.php" 
-                   title="<?= htmlspecialchars($notification['message']) ?>">
-                  <i class="<?= getStudentHeaderNotificationIcon($notification['message']) ?> me-2 text-primary"></i>
-                  <div class="d-inline-block">
-                    <div class="fw-medium"><?= htmlspecialchars(truncateStudentMessage($notification['message'])) ?></div>
-                    <small class="text-muted">
-                      <?= date('M j, g:i A', strtotime($notification['created_at'])) ?>
-                      <?php if (!$notification['is_read']): ?>
-                        <span class="badge badge-sm bg-primary ms-1">New</span>
-                      <?php endif; ?>
-                    </small>
-                  </div>
-                </a>
-              </li>
-            <?php endforeach; ?>
-          <?php endif; ?>
-          
-          <li><hr class="dropdown-divider"/></li>
-          <li><a class="dropdown-item text-center fw-medium" href="student_notifications.php">
-            <i class="bi bi-bell me-1"></i>View all notifications
-          </a></li>
-        </ul>
+        <?php 
+        // Include the new bell notifications component
+        if (isset($connection) && $studentId) {
+          include __DIR__ . '/bell_notifications.php';
+        }
+        ?>
         <div class="dropdown">
           <button class="student-icon-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Profile">
             <i class="bi bi-person-circle"></i>
@@ -151,7 +84,7 @@ $__hdr = educaid_get_student_header_theme($connection ?? null);
   right: 0;
   height: 56px;
   color: <?= htmlspecialchars($__hdr['header_text_color']) ?>;
-  overflow: hidden;
+  overflow: visible;
   max-width: calc(100% - 250px);
   box-sizing: border-box;
 }
@@ -239,6 +172,7 @@ $__hdr = educaid_get_student_header_theme($connection ?? null);
 .student-header-actions .dropdown-menu {
   min-width: 320px;
   max-width: 400px;
+  z-index: 1060 !important;
 }
 .student-header-actions .dropdown-item {
   padding: 0.75rem 1rem;

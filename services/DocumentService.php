@@ -85,30 +85,18 @@ class DocumentService {
             $fileExtension = pathinfo($filePath, PATHINFO_EXTENSION);
             $fileSize = file_exists($filePath) ? filesize($filePath) : 0;
             
-            // Prepare OCR paths
-            $ocrTextPath = file_exists($filePath . '.ocr.txt') ? $filePath . '.ocr.txt' : null;
-            $verificationDataPath = file_exists($filePath . '.verify.json') ? $filePath . '.verify.json' : null;
-            
-            // Extract OCR data
+            // Extract verification data
             $ocrConfidence = $ocrData['ocr_confidence'] ?? 0;
             $verificationScore = $ocrData['verification_score'] ?? 0;
             $verificationStatus = $ocrData['verification_status'] ?? 'pending';
             
-            // Prepare verification details JSONB
+            // Debug logging
+            error_log("DocumentService::saveDocument - DocType: {$docTypeName}, OCR: {$ocrConfidence}%, Verification: {$verificationScore}%");
+            
+            // Prepare verification details JSONB (this contains ALL OCR and verification data)
             $verificationDetails = null;
             if (isset($ocrData['verification_details'])) {
                 $verificationDetails = json_encode($ocrData['verification_details']);
-            }
-            
-            // Prepare extracted grades JSONB (for grades documents)
-            $extractedGrades = null;
-            $averageGrade = null;
-            $passingStatus = null;
-            
-            if ($docTypeName === 'academic_grades' && isset($ocrData['extracted_grades'])) {
-                $extractedGrades = json_encode($ocrData['extracted_grades']);
-                $averageGrade = $ocrData['average_grade'] ?? null;
-                $passingStatus = $ocrData['passing_status'] ?? null;
             }
             
             // Insert into documents table
@@ -121,35 +109,24 @@ class DocumentService {
                 file_name,
                 file_extension,
                 file_size_bytes,
-                ocr_text_path,
                 ocr_confidence,
-                verification_data_path,
-                verification_status,
                 verification_score,
+                verification_status,
                 verification_details,
-                extracted_grades,
-                average_grade,
-                passing_status,
                 status,
                 upload_year
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
-                $11, $12, $13, $14, $15, $16, $17, 'temp', $18
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'temp', $13
             )
             ON CONFLICT (document_id) 
             DO UPDATE SET
                 file_path = EXCLUDED.file_path,
                 file_name = EXCLUDED.file_name,
                 file_size_bytes = EXCLUDED.file_size_bytes,
-                ocr_text_path = EXCLUDED.ocr_text_path,
                 ocr_confidence = EXCLUDED.ocr_confidence,
-                verification_data_path = EXCLUDED.verification_data_path,
-                verification_status = EXCLUDED.verification_status,
                 verification_score = EXCLUDED.verification_score,
+                verification_status = EXCLUDED.verification_status,
                 verification_details = EXCLUDED.verification_details,
-                extracted_grades = EXCLUDED.extracted_grades,
-                average_grade = EXCLUDED.average_grade,
-                passing_status = EXCLUDED.passing_status,
                 last_modified = NOW()";
             
             $result = pg_query_params($this->db, $query, [
@@ -161,15 +138,10 @@ class DocumentService {
                 $fileName,
                 $fileExtension,
                 $fileSize,
-                $ocrTextPath,
                 $ocrConfidence,
-                $verificationDataPath,
-                $verificationStatus,
                 $verificationScore,
+                $verificationStatus,
                 $verificationDetails,
-                $extractedGrades,
-                $averageGrade,
-                $passingStatus ? 't' : 'f',
                 $currentYear
             ]);
             
@@ -190,6 +162,7 @@ class DocumentService {
                     'document_type' => $docTypeName,
                     'file_name' => $fileName,
                     'ocr_confidence' => $ocrConfidence,
+                    'verification_score' => $verificationScore,
                     'verification_status' => $verificationStatus
                 ]
             );
@@ -248,13 +221,36 @@ class DocumentService {
                     continue;
                 }
                 
-                // Determine new path (move from temp/ to student/)
-                $newPath = str_replace('/temp/', '/student/', $oldPath);
+                // NEW: Build student-organized path
+                // Extract document type folder from old path (e.g., 'eaf', 'academic_grades')
+                // Pattern: temp/{doc_type}/filename → student/{doc_type}/{student_id}/filename
+                
+                if (preg_match('#/temp/([^/]+)/([^/]+)$#', $oldPath, $matches)) {
+                    $docTypeFolder = $matches[1];
+                    $originalFilename = $matches[2];
+                    
+                    // Generate timestamped filename to prevent overwrites
+                    $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+                    $baseName = pathinfo($originalFilename, PATHINFO_FILENAME);
+                    $timestamp = date('YmdHis');
+                    $newFilename = $baseName . '_' . $timestamp . '.' . $extension;
+                    
+                    // Create student-specific folder
+                    $targetDir = dirname(dirname(dirname($oldPath))) . '/student/' . $docTypeFolder . '/' . $studentId . '/';
+                    $newPath = $targetDir . $newFilename;
+                    
+                    error_log("DocumentService::moveToPermStorage - Moving to student folder: {$newPath}");
+                } else {
+                    // Fallback to old behavior if path doesn't match expected pattern
+                    $newPath = str_replace('/temp/', '/student/', $oldPath);
+                    $targetDir = dirname($newPath);
+                    error_log("DocumentService::moveToPermStorage - Using fallback path: {$newPath}");
+                }
                 
                 // Ensure target directory exists
-                $targetDir = dirname($newPath);
                 if (!is_dir($targetDir)) {
                     mkdir($targetDir, 0755, true);
+                    error_log("DocumentService::moveToPermStorage - Created directory: {$targetDir}");
                 }
                 
                 // Move main file
@@ -263,26 +259,23 @@ class DocumentService {
                     continue;
                 }
                 
-                // Move associated OCR files
-                $this->moveAssociatedFiles($oldPath, $newPath);
+                // Move associated OCR files with timestamped naming
+                if (isset($baseName) && isset($timestamp) && isset($targetDir)) {
+                    $this->moveAssociatedFilesWithTimestamp($oldPath, $targetDir, $baseName, $timestamp);
+                } else {
+                    $this->moveAssociatedFiles($oldPath, $newPath);
+                }
                 
                 // Update database
                 $updateQuery = "UPDATE documents 
                                SET file_path = $1, 
-                                   ocr_text_path = $2,
-                                   verification_data_path = $3,
                                    status = 'approved',
                                    approved_date = NOW(),
                                    last_modified = NOW()
-                               WHERE document_id = $4";
-                
-                $ocrPath = file_exists($newPath . '.ocr.txt') ? $newPath . '.ocr.txt' : null;
-                $verifyPath = file_exists($newPath . '.verify.json') ? $newPath . '.verify.json' : null;
+                               WHERE document_id = $2";
                 
                 $updateResult = pg_query_params($this->db, $updateQuery, [
                     $newPath,
-                    $ocrPath,
-                    $verifyPath,
                     $doc['document_id']
                 ]);
                 
@@ -331,7 +324,29 @@ class DocumentService {
     }
     
     /**
+     * Move associated OCR files with timestamped naming
+     * Used when moving to student-specific folders
+     */
+    private function moveAssociatedFilesWithTimestamp($oldPath, $targetDir, $baseName, $timestamp) {
+        $extensions = ['.ocr.txt', '.verify.json', '.tsv', '.confidence.json'];
+        
+        foreach ($extensions as $ext) {
+            $oldFile = $oldPath . $ext;
+            $newFile = $targetDir . $baseName . '_' . $timestamp . $ext;
+            
+            if (file_exists($oldFile)) {
+                if (@rename($oldFile, $newFile)) {
+                    error_log("DocumentService: Moved associated file: {$ext}");
+                } else {
+                    error_log("DocumentService: Failed to move associated file: {$ext}");
+                }
+            }
+        }
+    }
+    
+    /**
      * Move associated OCR files (.ocr.txt, .verify.json, .tsv, .confidence.json)
+     * Legacy method for backward compatibility
      */
     private function moveAssociatedFiles($oldPath, $newPath) {
         $extensions = ['.ocr.txt', '.verify.json', '.tsv', '.confidence.json'];
@@ -371,19 +386,15 @@ class DocumentService {
             
             $doc = pg_fetch_assoc($result);
             
-            // Load OCR text if available
-            if ($doc['ocr_text_path'] && file_exists($doc['ocr_text_path'])) {
-                $doc['extracted_text'] = file_get_contents($doc['ocr_text_path']);
-            }
-            
-            // Parse verification details from JSONB
+            // Parse verification details from JSONB (contains ALL OCR and verification data)
             if ($doc['verification_details']) {
-                $doc['identity_verification'] = json_decode($doc['verification_details'], true);
-            }
-            
-            // Parse extracted grades from JSONB
-            if ($doc['extracted_grades']) {
-                $doc['extracted_grades_array'] = json_decode($doc['extracted_grades'], true);
+                $verificationData = json_decode($doc['verification_details'], true);
+                $doc['identity_verification'] = $verificationData;
+                
+                // Extract grades from verification_details if it's a grades document
+                if (isset($verificationData['extracted_grades'])) {
+                    $doc['extracted_grades_array'] = $verificationData['extracted_grades'];
+                }
             }
             
             return [

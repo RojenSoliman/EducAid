@@ -217,6 +217,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     . (!empty($documents_deadline) ? " Document deadline set to $documents_deadline." : "")
                     . " The distribution is now active and all features are unlocked!";
                 
+                // Send email notifications to all applicants
+                require_once __DIR__ . '/../../services/DistributionEmailService.php';
+                $emailService = new DistributionEmailService($connection);
+                $emailResult = $emailService->notifyDistributionOpened($academic_year, $semester, $documents_deadline);
+                
+                if ($emailResult['success']) {
+                    $message .= " Email notifications sent to {$emailResult['sent']} student(s).";
+                } else {
+                    $message .= " (Note: Email notifications could not be sent)";
+                }
+                
             } catch (Exception $e) {
                 pg_query($connection, "ROLLBACK");
                 $message = 'Failed to start distribution: ' . $e->getMessage();
@@ -469,10 +480,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Get distribution history
+// Get distribution history with accurate student counts
+// Order by finalized_at (most recent first) to show true chronological order
 $history_query = "
-    SELECT * FROM distribution_snapshots 
-    ORDER BY distribution_date DESC 
+    SELECT ds.*, 
+           (SELECT COUNT(DISTINCT student_id) 
+            FROM distribution_student_records 
+            WHERE snapshot_id = ds.snapshot_id) as actual_student_count
+    FROM distribution_snapshots ds
+    WHERE finalized_at IS NOT NULL
+    ORDER BY finalized_at DESC, distribution_date DESC
     LIMIT 5
 ";
 $history_result = pg_query($connection, $history_query);
@@ -720,7 +737,7 @@ $history_result = pg_query($connection, $history_query);
             <?php if (isset($message)): ?>
                 <div class="alert alert-modern alert-<?= $success ? 'success' : 'danger' ?> alert-dismissible fade show" role="alert">
                     <i class="bi bi-<?= $success ? 'check-circle' : 'exclamation-triangle' ?> me-2"></i>
-                    <?= htmlspecialchars($message) ?>
+                    <?= $message ?>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             <?php endif; ?>
@@ -933,7 +950,7 @@ $history_result = pg_query($connection, $history_query);
                                                     <tr>
                                                         <td><?= date('M j, Y', strtotime($hist['distribution_date'])) ?></td>
                                                         <td><?= htmlspecialchars($hist['academic_year']) ?> <?= htmlspecialchars($hist['semester']) ?></td>
-                                                        <td><?= $hist['total_students_count'] ?></td>
+                                                        <td><?= $hist['actual_student_count'] ?? 0 ?></td>
                                                         <td><?= htmlspecialchars($hist['location']) ?></td>
                                                     </tr>
                                                 <?php endwhile; ?>

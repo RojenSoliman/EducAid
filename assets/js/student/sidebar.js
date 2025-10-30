@@ -66,63 +66,36 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     if (isMobile()) {
-      // Mobile: animate slide-in/out with smooth transform
-      const startTransform = expand ? -100 : 0;
-      const targetTransform = expand ? 0 : -100;
-      const startOpacity = expand ? 0 : 1;
-      const targetOpacity = expand ? 1 : 0;
-      const startTime = performance.now();
-      const duration = 400; // ms - smoother with longer duration
-
-      // Setup initial state
+      // Mobile: Use CSS transitions for smooth animation
       if (expand) {
-        sidebar.classList.add("open");
-        sidebar.classList.remove("close");
+        // Show backdrop first
         backdrop.classList.remove("d-none");
         document.body.style.overflow = "hidden";
-      }
-
-      sidebarAnimating = true;
-
-      // Smooth easing function
-      function easeInOutCubic(t) {
-        return t < 0.5 
-          ? 4 * t * t * t 
-          : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      }
-
-      function step(now) {
-        const elapsed = now - startTime;
-        const progress = Math.min(1, elapsed / duration);
-        const eased = easeInOutCubic(progress);
         
-        // Animate sidebar transform
-        const currentTransform = startTransform + (targetTransform - startTransform) * eased;
-        sidebar.style.transform = `translateX(${currentTransform}%)`;
+        // Force reflow to ensure transition works
+        void backdrop.offsetWidth;
         
-        // Animate backdrop opacity
-        const currentOpacity = startOpacity + (targetOpacity - startOpacity) * eased;
-        backdrop.style.opacity = currentOpacity;
-
-        if (progress < 1) {
-          sidebarAnimFrame = requestAnimationFrame(step);
-        } else {
-          // Finish state
-          sidebarAnimating = false;
-          sidebar.style.transform = '';
-          backdrop.style.opacity = '';
-          
-          if (!expand) {
-            sidebar.classList.remove("open");
-            sidebar.classList.add("close");
+        // Add open class to trigger CSS transition
+        sidebar.classList.add("open");
+        sidebar.classList.remove("close");
+        backdrop.style.opacity = "1";
+      } else {
+        // Hide sidebar and backdrop
+        sidebar.classList.remove("open");
+        sidebar.classList.add("close");
+        backdrop.style.opacity = "0";
+        document.body.style.overflow = "";
+        
+        // Hide backdrop after transition completes
+        setTimeout(() => {
+          if (!sidebar.classList.contains("open")) {
             backdrop.classList.add("d-none");
-            document.body.style.overflow = "";
+            backdrop.style.opacity = "";
           }
-          adjustLayout();
-        }
+        }, 400); // Match CSS transition duration
       }
-
-      requestAnimationFrame(step);
+      
+      adjustLayout();
       return;
     }
 

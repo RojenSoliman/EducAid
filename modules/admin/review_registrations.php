@@ -1,6 +1,7 @@
 <?php
 include __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../services/DocumentService.php';
+require_once __DIR__ . '/../../includes/student_notification_helper.php';
 
 session_start();
 
@@ -57,6 +58,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $student_name = trim($student['first_name'] . ' ' . $student['last_name'] . ' ' . $student['extension_name']);
                             $notification_msg = "Registration approved for student: " . $student_name . " (ID: " . $student_id . ")";
                             pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
+                            
+                            // Add student notification
+                            createStudentNotification(
+                                $connection,
+                                $student_id,
+                                'Registration Approved!',
+                                'Congratulations! Your registration has been approved. You can now proceed with the next steps.',
+                                'success',
+                                'high',
+                                'student_profile.php'
+                            );
                         }
                     }
                 } elseif ($action === 'reject') {
@@ -207,6 +219,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $notification_msg = "Registration approved for student: " . $student_name . " (ID: " . $student_id . ")";
                 pg_query_params($connection, "INSERT INTO admin_notifications (message) VALUES ($1)", [$notification_msg]);
                 
+                // Add student notification
+                createStudentNotification(
+                    $connection,
+                    $student_id,
+                    'Registration Approved!',
+                    'Congratulations! Your registration has been approved by the admin. You can now proceed with your application.',
+                    'success',
+                    'high',
+                    'student_dashboard.php'
+                );
+                
                 // Log to audit trail
                 $audit_query = "INSERT INTO audit_logs (
                     user_id, user_type, username, event_type, event_category, 
@@ -246,30 +269,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $files_deleted = 0;
                 
                 // Get all document file paths from documents table
-                $documentsQuery = "SELECT file_path, ocr_text_path, verification_data_path FROM documents WHERE student_id = $1";
+                $documentsQuery = "SELECT file_path FROM documents WHERE student_id = $1";
                 $documentsResult = pg_query_params($connection, $documentsQuery, [$student_id]);
                 
                 while ($docRow = pg_fetch_assoc($documentsResult)) {
+                    $mainFilePath = $docRow['file_path'];
+                    
                     // Delete main file
-                    if (!empty($docRow['file_path']) && file_exists($docRow['file_path'])) {
-                        unlink($docRow['file_path']);
+                    if (!empty($mainFilePath) && file_exists($mainFilePath)) {
+                        unlink($mainFilePath);
                         $files_deleted++;
                     }
                     
-                    // Delete OCR text file
-                    if (!empty($docRow['ocr_text_path']) && file_exists($docRow['ocr_text_path'])) {
-                        unlink($docRow['ocr_text_path']);
-                        $files_deleted++;
+                    // Delete associated files (.ocr.txt, .verify.json, .tsv, .confidence.json, .ocr.json)
+                    if (!empty($mainFilePath)) {
+                        $associatedExtensions = ['.ocr.txt', '.verify.json', '.confidence.json', '.tsv', '.ocr.json'];
+                        foreach ($associatedExtensions as $ext) {
+                            $associatedFile = $mainFilePath . $ext;
+                            if (file_exists($associatedFile)) {
+                                unlink($associatedFile);
+                                $files_deleted++;
+                            }
+                        }
                     }
                     
-                    // Delete verification JSON file
-                    if (!empty($docRow['verification_data_path']) && file_exists($docRow['verification_data_path'])) {
-                        unlink($docRow['verification_data_path']);
-                        $files_deleted++;
-                    }
-                    
-                    // Delete associated files (.tsv, .confidence.json) based on main file path
-                    if (!empty($docRow['file_path'])) {
+                    // LEGACY: Delete associated files based on old file path patterns
+                    if (!empty($mainFilePath)) {
                         $base_path = pathinfo($docRow['file_path'], PATHINFO_DIRNAME) . '/' . pathinfo($docRow['file_path'], PATHINFO_FILENAME);
                         
                         // Delete .tsv file

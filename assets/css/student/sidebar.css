@@ -200,10 +200,11 @@
 .sidebar-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
-  z-index: 999;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1055; /* Above topbar (1050) and header (1030), below sidebar (1060) */
   opacity: 0;
   pointer-events: none;
+  transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-backdrop:not(.d-none) {
@@ -218,9 +219,14 @@
 /* === MOBILE RESPONSIVE === */
 @media (max-width: 768px) {
   .sidebar {
-    top: 60px;
-    height: calc(100vh - 60px);
+    top: 0; /* Start from very top of screen */
+    height: 100vh; /* Full viewport height */
+    width: 280px; /* Slightly narrower on mobile for better UX */
     transform: translateX(-100%);
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15); /* More prominent shadow when open */
   }
 
   .sidebar.open {
@@ -229,6 +235,7 @@
 
   .sidebar.close {
     transform: translateX(-100%);
+    width: 280px; /* Keep same width even when "closed" class is present */
   }
 
   .sidebar-backdrop {

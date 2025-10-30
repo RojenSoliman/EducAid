@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/CSRFProtection.php';
+require_once __DIR__ . '/../../includes/student_notification_helper.php';
 include_once __DIR__ . '/../../includes/workflow_control.php';
 
 // Check admin authentication
@@ -23,7 +24,7 @@ $student_check_query = "
     SELECT COUNT(*) as count 
     FROM students s 
     INNER JOIN qr_codes q ON s.student_id = q.student_id 
-    WHERE s.status = 'active' AND s.payroll_no IS NOT NULL
+    WHERE s.status IN ('active', 'given') AND s.payroll_no IS NOT NULL
 ";
 $student_check_result = pg_query($connection, $student_check_query);
 $student_count = 0;
@@ -93,6 +94,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
         exit;
     }
     
+    // CRITICAL: Check if distribution already completed for this academic period
+    if ($academic_year && $semester) {
+        $already_completed_check = pg_query_params($connection, 
+            "SELECT snapshot_id FROM distribution_snapshots 
+             WHERE academic_year = $1 AND semester = $2 
+             AND finalized_at IS NOT NULL 
+             LIMIT 1", 
+            [$academic_year, $semester]
+        );
+        
+        if ($already_completed_check && pg_num_rows($already_completed_check) > 0) {
+            $_SESSION['error_message'] = 'Distribution for ' . htmlspecialchars($academic_year . ' ' . $semester) . ' has already been completed and finalized. Cannot complete again.';
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        }
+    }
+    
     // Verify admin password
     $admin_id = $_SESSION['admin_id'] ?? null;
     if (!$admin_id) {
@@ -143,76 +161,120 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
     try {
         pg_query($connection, "BEGIN");
         
+        error_log("=== Complete Distribution Transaction Started ===");
+        error_log("Admin ID: $admin_id");
+        error_log("Location: $location");
+        error_log("Academic Year: $academic_year");
+        error_log("Semester: $semester");
+        
         // Get distribution data
         $students_query = "
             SELECT s.student_id, s.payroll_no, s.first_name, s.last_name, s.email, s.mobile,
                    b.name as barangay, u.name as university, yl.name as year_level,
-                   d.date_given
+                   dsr.scanned_at as date_given
             FROM students s
             LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
             LEFT JOIN universities u ON s.university_id = u.university_id
             LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
-            LEFT JOIN distributions d ON s.student_id = d.student_id
+            LEFT JOIN distribution_student_records dsr ON s.student_id = dsr.student_id
             WHERE s.status = 'given'
             ORDER BY s.payroll_no
         ";
         
+        error_log("Executing students query...");
+        $students_result = pg_query($connection, $students_query);
+        if (!$students_result) {
+            $error = pg_last_error($connection);
+            error_log("Students query failed: " . $error);
+            throw new Exception("Failed to query students data: " . $error);
+        }
+        error_log("Students query succeeded");
+        
         $schedules_query = "SELECT schedule_id, student_id, payroll_no, batch_no, distribution_date, time_slot, location, status FROM schedules";
         
-        $students_result = pg_query($connection, $students_query);
+        error_log("Executing schedules query...");
         $schedules_result = pg_query($connection, $schedules_query);
+        if (!$schedules_result) {
+            $error = pg_last_error($connection);
+            error_log("Schedules query failed: " . $error);
+            throw new Exception("Failed to query schedules data: " . $error);
+        }
+        error_log("Schedules query succeeded");
         
         $students_data = [];
         $schedules_data = [];
         $total_students = 0;
         
-        if ($students_result) {
-            while ($row = pg_fetch_assoc($students_result)) {
-                $students_data[] = $row;
-                $total_students++;
-            }
+        while ($row = pg_fetch_assoc($students_result)) {
+            $students_data[] = $row;
+            $total_students++;
         }
         
-        if ($schedules_result) {
-            while ($row = pg_fetch_assoc($schedules_result)) {
-                $schedules_data[] = $row;
-            }
+        while ($row = pg_fetch_assoc($schedules_result)) {
+            $schedules_data[] = $row;
         }
+        
+        error_log("Total students collected: $total_students");
         
         // Get active slot info
+        error_log("Querying signup slots...");
         $slot_query = "SELECT slot_id, academic_year, semester FROM signup_slots WHERE is_active = true LIMIT 1";
         $slot_result = pg_query($connection, $slot_query);
-        $slot_data = $slot_result ? pg_fetch_assoc($slot_result) : null;
+        if (!$slot_result) {
+            $error = pg_last_error($connection);
+            error_log("Signup slots query failed: " . $error);
+            throw new Exception("Failed to query signup slots: " . $error);
+        }
+        $slot_data = pg_fetch_assoc($slot_result);
+        error_log("Signup slots query succeeded. Active slot: " . ($slot_data ? "Yes" : "No"));
         
         if (empty($academic_year) && $slot_data) $academic_year = $slot_data['academic_year'] ?? '';
         if (empty($semester) && $slot_data) $semester = $slot_data['semester'] ?? '';
         
         // Fallback to config
         if (empty($academic_year) || empty($semester)) {
+            error_log("Querying config for academic year/semester...");
             $cfg_result = pg_query($connection, "SELECT key, value FROM config WHERE key IN ('current_academic_year','current_semester')");
-            if ($cfg_result) {
-                while ($cfg = pg_fetch_assoc($cfg_result)) {
-                    if ($cfg['key'] === 'current_academic_year' && empty($academic_year)) $academic_year = $cfg['value'];
-                    if ($cfg['key'] === 'current_semester' && empty($semester)) $semester = $cfg['value'];
-                }
+            if (!$cfg_result) {
+                $error = pg_last_error($connection);
+                error_log("Config query failed: " . $error);
+                throw new Exception("Failed to query config: " . $error);
             }
+            while ($cfg = pg_fetch_assoc($cfg_result)) {
+                if ($cfg['key'] === 'current_academic_year' && empty($academic_year)) $academic_year = $cfg['value'];
+                if ($cfg['key'] === 'current_semester' && empty($semester)) $semester = $cfg['value'];
+            }
+            error_log("Config query succeeded");
         }
         
+        error_log("Final academic period: $academic_year $semester");
+        
         // Check if snapshot already exists for this academic period
+        error_log("Checking for existing snapshot...");
         $check_snapshot = pg_query_params($connection, 
             "SELECT snapshot_id FROM distribution_snapshots WHERE academic_year = $1 AND semester = $2",
             [$academic_year, $semester]
         );
         
-        $snapshot_exists = $check_snapshot && pg_num_rows($check_snapshot) > 0;
+        if (!$check_snapshot) {
+            $error = pg_last_error($connection);
+            error_log("Snapshot check query failed: " . $error);
+            throw new Exception("Failed to check existing snapshot: " . $error);
+        }
+        
+        $snapshot_exists = pg_num_rows($check_snapshot) > 0;
+        error_log("Snapshot exists: " . ($snapshot_exists ? "Yes" : "No"));
         
         // Generate distribution ID for archive linking
         $municipality_name = 'GENERALTRIAS'; // Can be fetched from config
         $distribution_id = $municipality_name . '-DISTR-' . date('Y-m-d-His');
         $archive_filename = $distribution_id . '.zip';
         
+        error_log("Distribution ID: $distribution_id");
+        
         if ($snapshot_exists) {
             // Update existing snapshot instead of creating a new one
+            error_log("Updating existing snapshot...");
             $existing_snapshot = pg_fetch_assoc($check_snapshot);
             $snapshot_query = "
                 UPDATE distribution_snapshots 
@@ -220,7 +282,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
                     location = $2, 
                     total_students_count = $3, 
                     active_slot_id = $4,
-                    finalized_by = $5, 
+                    finalized_by = $5,
+                    finalized_at = NOW(),
                     notes = $6,
                     schedules_data = $7, 
                     students_data = $8,
@@ -236,13 +299,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
                 $distribution_id, $archive_filename,
                 $existing_snapshot['snapshot_id']
             ]);
+            
+            if (!$snapshot_result) {
+                $error = pg_last_error($connection);
+                error_log("Snapshot update failed: " . $error);
+                throw new Exception("Failed to update distribution snapshot: " . $error);
+            }
+            error_log("Snapshot update succeeded");
         } else {
             // Create new snapshot
+            error_log("Creating new snapshot...");
             $snapshot_query = "
                 INSERT INTO distribution_snapshots 
                 (distribution_date, location, total_students_count, active_slot_id, academic_year, semester, 
-                 finalized_by, notes, schedules_data, students_data, distribution_id, archive_filename)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                 finalized_by, finalized_at, notes, schedules_data, students_data, distribution_id, archive_filename)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9, $10, $11, $12)
             ";
             
             $snapshot_result = pg_query_params($connection, $snapshot_query, [
@@ -251,32 +322,140 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_distribution
                 json_encode($schedules_data), json_encode($students_data),
                 $distribution_id, $archive_filename
             ]);
+            
+            if (!$snapshot_result) {
+                $error = pg_last_error($connection);
+                error_log("Snapshot insert failed: " . $error);
+                throw new Exception("Failed to create distribution snapshot: " . $error);
+            }
+            error_log("Snapshot insert succeeded");
         }
         
-        if ($snapshot_result) {
-            // AUTO-CLOSE ACTIVE SLOTS when distribution is completed
-            // This prevents new registrations after distribution is finalized
-            $close_slots_query = "UPDATE signup_slots SET is_active = FALSE WHERE is_active = TRUE";
-            $close_slots_result = pg_query($connection, $close_slots_query);
+        // Get the snapshot_id we just created/updated
+        $snapshot_id_query = "SELECT snapshot_id FROM distribution_snapshots WHERE academic_year = $1 AND semester = $2 LIMIT 1";
+        $snapshot_id_result = pg_query_params($connection, $snapshot_id_query, [$academic_year, $semester]);
+        $final_snapshot_id = null;
+        if ($snapshot_id_result && pg_num_rows($snapshot_id_result) > 0) {
+            $snapshot_row = pg_fetch_assoc($snapshot_id_result);
+            $final_snapshot_id = $snapshot_row['snapshot_id'];
+            error_log("Final snapshot ID: $final_snapshot_id");
+        }
+        
+        // CRITICAL: Backfill distribution_student_records for students with 'given' status
+        // This ensures the snapshot has student records even if QR codes weren't scanned yet
+        if ($final_snapshot_id) {
+            error_log("Backfilling distribution_student_records...");
             
-            if ($close_slots_result) {
-                $closed_slots_count = pg_affected_rows($close_slots_result);
-                error_log("Auto-closed $closed_slots_count active slot(s) after distribution completion");
+            // For each student with 'given' status, ensure they have a record
+            $backfill_query = "
+                INSERT INTO distribution_student_records 
+                (snapshot_id, student_id, scanned_by, verification_method, notes)
+                SELECT $1, student_id, $2, 'manual_completion', 'Added during Complete Distribution'
+                FROM students
+                WHERE status = 'given'
+                ON CONFLICT (snapshot_id, student_id) DO NOTHING
+            ";
+            
+            $backfill_result = pg_query_params($connection, $backfill_query, [$final_snapshot_id, $admin_id]);
+            
+            if (!$backfill_result) {
+                error_log("Warning: Failed to backfill distribution records: " . pg_last_error($connection));
             } else {
-                error_log("Warning: Failed to auto-close slots: " . pg_last_error($connection));
+                $backfilled_count = pg_affected_rows($backfill_result);
+                error_log("Backfilled $backfilled_count student record(s) into distribution_student_records");
             }
             
-            pg_query($connection, "COMMIT");
-            $action_type = $snapshot_exists ? 'updated' : 'created';
-            $slot_message = ($closed_slots_count > 0) ? " Active signup slots have been automatically closed." : "";
-            $_SESSION['success_message'] = "Distribution snapshot $action_type successfully! Recorded $total_students students for " . 
-                trim($academic_year . ' ' . ($semester ?? '')) . ". You can now proceed to End Distribution when ready." . $slot_message;
-        } else {
-            $error = pg_last_error($connection);
-            pg_query($connection, "ROLLBACK");
-            error_log("Complete Distribution Failed - Snapshot Result: FAIL | Error: " . $error);
-            $_SESSION['error_message'] = 'Failed to ' . ($snapshot_exists ? 'update' : 'create') . ' distribution snapshot. ' . ($error ? 'DB Error: ' . $error : 'Unknown error.');
+            // OPTION 2 IMPLEMENTATION: Create student profile snapshots
+            // This preserves student data at the time of distribution, even if they edit their profile later
+            error_log("Creating student profile snapshots using distribution_id: $distribution_id");
+            
+            $snapshot_insert_query = "
+                INSERT INTO distribution_student_snapshot 
+                (distribution_id, student_id, first_name, last_name, middle_name, email, mobile,
+                 year_level_name, university_name, barangay_name, payroll_number, 
+                 amount_received, distribution_date)
+                SELECT 
+                    $1,
+                    s.student_id,
+                    s.first_name,
+                    s.last_name,
+                    s.middle_name,
+                    s.email,
+                    s.mobile,
+                    yl.name as year_level_name,
+                    u.name as university_name,
+                    b.name as barangay_name,
+                    s.payroll_no::text as payroll_number,
+                    3000.00 as amount_received,
+                    CURRENT_DATE as distribution_date
+                FROM students s
+                LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
+                LEFT JOIN universities u ON s.university_id = u.university_id
+                LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
+                WHERE s.status = 'given'
+                ON CONFLICT (distribution_id, student_id) DO UPDATE
+                SET first_name = EXCLUDED.first_name,
+                    last_name = EXCLUDED.last_name,
+                    middle_name = EXCLUDED.middle_name,
+                    email = EXCLUDED.email,
+                    mobile = EXCLUDED.mobile,
+                    year_level_name = EXCLUDED.year_level_name,
+                    university_name = EXCLUDED.university_name,
+                    barangay_name = EXCLUDED.barangay_name,
+                    payroll_number = EXCLUDED.payroll_number,
+                    amount_received = EXCLUDED.amount_received,
+                    distribution_date = EXCLUDED.distribution_date
+            ";
+            
+            $snapshot_student_result = pg_query_params($connection, $snapshot_insert_query, [$distribution_id]);
+            
+            if (!$snapshot_student_result) {
+                error_log("ERROR: Failed to create student snapshots: " . pg_last_error($connection));
+                throw new Exception("Failed to create student profile snapshots");
+            } else {
+                $snapshot_count = pg_affected_rows($snapshot_student_result);
+                error_log("Created/updated $snapshot_count student profile snapshot(s) for distribution: $distribution_id");
+            }
         }
+        
+        // AUTO-CLOSE ACTIVE SLOTS when distribution is completed
+        // This prevents new registrations after distribution is finalized
+        $close_slots_query = "UPDATE signup_slots SET is_active = FALSE WHERE is_active = TRUE";
+        $close_slots_result = pg_query($connection, $close_slots_query);
+        
+        $closed_slots_count = 0;
+        if (!$close_slots_result) {
+            error_log("Warning: Failed to auto-close slots: " . pg_last_error($connection));
+        } else {
+            $closed_slots_count = pg_affected_rows($close_slots_result);
+            error_log("Auto-closed $closed_slots_count active slot(s) after distribution completion");
+        }
+        
+        // AUTO-UNPUBLISH SCHEDULE when distribution is completed
+        // This prevents students from seeing outdated schedules after distribution is done
+        $settingsPath = __DIR__ . '/../../data/municipal_settings.json';
+        $settings = file_exists($settingsPath) ? json_decode(file_get_contents($settingsPath), true) : [];
+        $settings['schedule_published'] = false;
+        file_put_contents($settingsPath, json_encode($settings, JSON_PRETTY_PRINT));
+        error_log("Auto-unpublished schedule after distribution completion");
+        
+        pg_query($connection, "COMMIT");
+        $action_type = $snapshot_exists ? 'updated' : 'created';
+        $slot_message = ($closed_slots_count > 0) ? " Active signup slots have been automatically closed." : "";
+        $schedule_message = " Distribution schedule has been automatically unpublished.";
+        
+        // Send email notifications to all students about distribution completion
+        require_once __DIR__ . '/../../services/DistributionEmailService.php';
+        $emailService = new DistributionEmailService($connection);
+        $emailResult = $emailService->notifyDistributionClosed($academic_year, $semester);
+        
+        $email_message = '';
+        if ($emailResult['success']) {
+            $email_message = " Email notifications sent to {$emailResult['sent']} student(s).";
+        }
+        
+        $_SESSION['success_message'] = "Distribution snapshot $action_type successfully! Recorded $total_students students for " . 
+            trim($academic_year . ' ' . ($semester ?? '')) . ". You can now proceed to End Distribution when ready." . $slot_message . $schedule_message . $email_message;
     } catch (Exception $e) {
         pg_query($connection, "ROLLBACK");
         $error_details = $e->getMessage() . " | Line: " . $e->getLine();
@@ -399,14 +578,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_distribution'
             error_log("Warning: Failed to log QR scan for student $student_id: " . pg_last_error($connection));
         }
         
-        // Add notification to student
-        $notif_query = "INSERT INTO notifications (student_id, message) VALUES ($1, $2)";
-        $notif_message = "Your scholarship aid has been successfully distributed. Thank you for participating in the EducAid program.";
-        $notif_result = pg_query_params($connection, $notif_query, [$student_id, $notif_message]);
-        
-        if (!$notif_result) {
-            error_log("Warning: Failed to create notification for student $student_id");
-        }
+        // Add student notification for successful distribution
+        createStudentNotification(
+            $connection,
+            $student_id,
+            'Scholarship Aid Distributed!',
+            'Your scholarship aid has been successfully distributed. Thank you for participating in the EducAid program.',
+            'success',
+            'high',
+            'student_dashboard.php'
+        );
         
         // Commit transaction
         pg_query($connection, "COMMIT");
@@ -492,7 +673,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lookup_qr'])) {
 
 // Fetch all students with payroll numbers for the table
 $students_query = "
-    SELECT s.student_id, s.payroll_no, s.first_name, s.middle_name, s.last_name, 
+    SELECT DISTINCT ON (s.student_id) 
+           s.student_id, s.payroll_no, s.first_name, s.middle_name, s.last_name, 
            s.status, q.unique_id as qr_unique_id, q.status as qr_status,
            COALESCE(qr_log.scanned_at, dsr.scanned_at) as distribution_date,
            dsr.snapshot_id,
@@ -514,7 +696,7 @@ $students_query = "
     ) qr_log ON true
     LEFT JOIN admins qr_admin ON qr_log.scanned_by = qr_admin.admin_id
     WHERE s.status IN ('active', 'given') AND s.payroll_no IS NOT NULL
-    ORDER BY s.payroll_no ASC
+    ORDER BY s.student_id, dsr.scanned_at DESC NULLS LAST, s.payroll_no ASC
 ";
 
 $students_result = pg_query($connection, $students_query);
@@ -525,10 +707,65 @@ if ($students_result) {
     }
 }
 
-// Count distributed students
-$count_query = "SELECT COUNT(*) as total FROM students WHERE status = 'given'";
-$count_result = pg_query($connection, $count_query);
-$total_distributed = $count_result ? pg_fetch_assoc($count_result)['total'] : 0;
+// Count distributed students for CURRENT academic period only
+// First, get the current active snapshot (if exists)
+$current_snapshot_query = "
+    SELECT snapshot_id FROM distribution_snapshots 
+    WHERE academic_year = $1 AND semester = $2 
+    LIMIT 1
+";
+
+$total_distributed = 0;
+
+// Get active slot for current period
+$slot_query_temp = "SELECT academic_year, semester FROM signup_slots WHERE is_active = true LIMIT 1";
+$slot_result_temp = pg_query($connection, $slot_query_temp);
+$slot_data_temp = $slot_result_temp ? pg_fetch_assoc($slot_result_temp) : null;
+
+$current_academic_year = $slot_data_temp['academic_year'] ?? '';
+$current_semester = $slot_data_temp['semester'] ?? '';
+
+// Fallback to config if no active slot
+if (empty($current_academic_year) || empty($current_semester)) {
+    $cfg_result_temp = pg_query($connection, "SELECT key, value FROM config WHERE key IN ('current_academic_year','current_semester')");
+    if ($cfg_result_temp) {
+        while ($cfg = pg_fetch_assoc($cfg_result_temp)) {
+            if ($cfg['key'] === 'current_academic_year') $current_academic_year = $cfg['value'];
+            if ($cfg['key'] === 'current_semester') $current_semester = $cfg['value'];
+        }
+    }
+}
+
+// Count students in current snapshot (if snapshot exists)
+if ($current_academic_year && $current_semester) {
+    $snapshot_result = pg_query_params($connection, $current_snapshot_query, [$current_academic_year, $current_semester]);
+    
+    if ($snapshot_result && pg_num_rows($snapshot_result) > 0) {
+        $snapshot = pg_fetch_assoc($snapshot_result);
+        $snapshot_id = $snapshot['snapshot_id'];
+        
+        // Count distinct students in this snapshot's distribution records
+        $count_query = "SELECT COUNT(DISTINCT student_id) as total FROM distribution_student_records WHERE snapshot_id = $1";
+        $count_result = pg_query_params($connection, $count_query, [$snapshot_id]);
+        
+        if ($count_result) {
+            $row = pg_fetch_assoc($count_result);
+            $total_distributed = intval($row['total']);
+        }
+    } else {
+        // No snapshot yet, count students with 'given' status (temporary count before snapshot created)
+        $count_query = "SELECT COUNT(*) as total FROM students WHERE status = 'given'";
+        $count_result = pg_query($connection, $count_query);
+        
+        if ($count_result) {
+            $row = pg_fetch_assoc($count_result);
+            $total_distributed = intval($row['total']);
+        }
+    }
+}
+
+// Debug logging
+error_log("Total distributed students (current period: {$current_academic_year} {$current_semester}): " . $total_distributed);
 
 // Get config for modal prefill
 $config_academic_year = '';
@@ -547,6 +784,21 @@ $slot_result = pg_query($connection, $slot_query);
 $slot_data = $slot_result ? pg_fetch_assoc($slot_result) : null;
 $prefill_academic_year = $slot_data['academic_year'] ?? $config_academic_year;
 $prefill_semester = $slot_data['semester'] ?? $config_semester;
+
+// Check if distribution snapshot already exists for current academic period (distribution completed)
+$distribution_completed = false;
+if ($prefill_academic_year && $prefill_semester) {
+    $snapshot_check_query = "SELECT snapshot_id, finalized_at FROM distribution_snapshots 
+                             WHERE academic_year = $1 AND semester = $2 
+                             AND finalized_at IS NOT NULL 
+                             LIMIT 1";
+    $snapshot_check_result = pg_query_params($connection, $snapshot_check_query, [$prefill_academic_year, $prefill_semester]);
+    
+    if ($snapshot_check_result && pg_num_rows($snapshot_check_result) > 0) {
+        $distribution_completed = true;
+        error_log("Distribution already completed for {$prefill_academic_year} {$prefill_semester}");
+    }
+}
 
 // Load settings for location
 $settingsPath = __DIR__ . '/../../data/municipal_settings.json';
@@ -644,30 +896,53 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
 
         <!-- Action Buttons Row -->
         <div class="d-flex justify-content-end align-items-center mb-4">
+          <?php if ($distribution_completed): ?>
+          <div class="alert alert-success d-inline-flex align-items-center mb-0 me-3">
+            <i class="bi bi-check-circle-fill me-2"></i>
+            <strong>Distribution Completed</strong> - The distribution for <?= htmlspecialchars($prefill_academic_year . ' ' . $prefill_semester) ?> has been finalized.
+          </div>
+          <button type="button" class="btn btn-secondary btn-lg" disabled title="Distribution already completed for this academic period">
+            <i class="bi bi-check-circle me-2"></i>Distribution Completed
+          </button>
+          <?php else: ?>
           <button type="button" class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#completeDistributionModal">
             <i class="bi bi-check-circle me-2"></i>Complete Distribution
           </button>
+          <?php endif; ?>
         </div>
 
         <!-- Scanner Section -->
-        <div class="scanner-section">
+        <div class="scanner-section <?= $distribution_completed ? 'opacity-50' : '' ?>">
           <h3 class="text-center mb-4"><i class="bi bi-camera me-2"></i>Scan Student QR Code</h3>
-          <div id="reader"></div>
+          <?php if ($distribution_completed): ?>
+          <div class="alert alert-warning mb-3">
+            <i class="bi bi-lock-fill me-2"></i>
+            <strong>Scanner Disabled</strong> - Distribution has been completed and finalized. No more students can be scanned.
+          </div>
+          <?php endif; ?>
+          <div id="reader" <?= $distribution_completed ? 'style="pointer-events: none; opacity: 0.5;"' : '' ?>></div>
           <div class="controls">
-            <select id="camera-select" class="form-select w-auto d-inline-block me-2">
+            <select id="camera-select" class="form-select w-auto d-inline-block me-2" <?= $distribution_completed ? 'disabled' : '' ?>>
               <option value="">Select Camera</option>
             </select>
-            <button id="start-button" class="btn btn-success me-2">
+            <button id="start-button" class="btn btn-success me-2" <?= $distribution_completed ? 'disabled' : '' ?>>
               <i class="bi bi-play-fill me-1"></i>Start Scanner
             </button>
             <button id="stop-button" class="btn btn-danger me-2" disabled>
               <i class="bi bi-stop-fill me-1"></i>Stop Scanner
             </button>
           </div>
+          <?php if (!$distribution_completed): ?>
           <div class="alert alert-info mt-3">
             <i class="bi bi-info-circle me-2"></i>
             <strong>Instructions:</strong> Point the camera at a student's QR code to identify them and confirm aid distribution.
           </div>
+          <?php else: ?>
+          <div class="alert alert-secondary mt-3">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>Distribution Completed:</strong> The distribution for <?= htmlspecialchars($prefill_academic_year . ' ' . $prefill_semester) ?> has been finalized. Please proceed to "End Distribution" to archive files and reset the system.
+          </div>
+          <?php endif; ?>
         </div>
 
         <!-- Students Table -->
@@ -831,6 +1106,7 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
     const html5QrCode = new Html5Qrcode("reader");
     let currentCameraId = null;
     let currentStudentData = null;
+    const distributionCompleted = <?= $distribution_completed ? 'true' : 'false' ?>;
     const csrfTokens = {
       lookup: <?= json_encode($csrf_lookup_token) ?>,
       confirm: <?= json_encode($csrf_confirm_token) ?>
@@ -878,6 +1154,12 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
 
     // Start scanner
     startButton.addEventListener('click', () => {
+      // Prevent starting if distribution is completed
+      if (distributionCompleted) {
+        alert("Scanner is disabled. The distribution has been completed and finalized.");
+        return;
+      }
+      
       if (!currentCameraId) {
         alert("Please select a camera.");
         return;
@@ -1235,6 +1517,9 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
         // Update table row
         updateStudentRow(currentStudentData.student_id);
         
+        // Update distributed count in real-time
+        updateDistributedCount();
+        
         // Show success message
         showSuccessMessage('Distribution confirmed successfully!');
         
@@ -1303,6 +1588,33 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
       }
     }
 
+    // Update distributed count in the progress card
+    function updateDistributedCount() {
+      // Count all rows with "Given" status by specifically targeting status badges with "Given" text
+      const tableRows = document.querySelectorAll('#students-table tbody tr');
+      let count = 0;
+      
+      tableRows.forEach(row => {
+        // Check if the status column (5th column) contains a success badge with "Given" text
+        const statusCell = row.cells[4]; // Status is the 5th column (index 4)
+        if (statusCell) {
+          const successBadge = statusCell.querySelector('.badge.bg-success');
+          if (successBadge && successBadge.textContent.trim().includes('Given')) {
+            count++;
+          }
+        }
+      });
+      
+      // Update the distribution progress card
+      const progressNumber = document.querySelector('.display-3');
+      if (progressNumber) {
+        progressNumber.textContent = count;
+      }
+      
+      // Update "Complete Distribution" modal count when it opens
+      console.log('Updated distributed count to:', count);
+    }
+
     // Show success message
     function showSuccessMessage(message) {
       const alertDiv = document.createElement('div');
@@ -1338,11 +1650,12 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
           <input type="hidden" name="complete_distribution" value="1">
           
           <div class="modal-body">
-            <div class="alert alert-warning border-warning">
+            <div class="alert alert-warning border-warning" id="distributionWarningBox">
               <i class="bi bi-exclamation-triangle me-2"></i>
               <strong>REQUIRED: Create Distribution Snapshot</strong>
-              <p class="mb-2">This will save a permanent record of your current distribution session.
-              You have distributed aid to <strong><?php echo $total_distributed; ?> student<?php echo $total_distributed != 1 ? 's' : ''; ?></strong>.</p>
+              <p class="mb-2" id="distributionCountText">
+                You have distributed aid to <strong id="currentDistributedCount"><?php echo $total_distributed; ?></strong> student<span id="studentPlural"><?php echo $total_distributed != 1 ? 's' : ''; ?></span>.
+              </p>
               
               <div class="mt-2 p-2 bg-light rounded">
                 <small class="text-dark">
@@ -1443,6 +1756,57 @@ $csrf_complete_token = CSRFProtection::generateToken('complete_distribution');
           const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
           passwordInput.setAttribute('type', type);
           passwordIcon.className = type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+        });
+      }
+
+      // Update distributed count when modal opens
+      const completeModal = document.getElementById('completeDistributionModal');
+      if (completeModal) {
+        completeModal.addEventListener('show.bs.modal', function() {
+          // Count students with status='given' from the current table
+          const givenRows = document.querySelectorAll('tr[id^="student-"]');
+          let distributedCount = 0;
+          
+          givenRows.forEach(row => {
+            const statusBadge = row.querySelector('.badge');
+            if (statusBadge && statusBadge.textContent.trim().toLowerCase() === 'given') {
+              distributedCount++;
+            }
+          });
+          
+          console.log('Distributed count from table:', distributedCount);
+          
+          // Update the modal display
+          const countElement = document.getElementById('currentDistributedCount');
+          const pluralElement = document.getElementById('studentPlural');
+          const warningBox = document.getElementById('distributionWarningBox');
+          
+          if (countElement) {
+            countElement.textContent = distributedCount;
+          }
+          if (pluralElement) {
+            pluralElement.textContent = distributedCount !== 1 ? 's' : '';
+          }
+          
+          // Add warning styling if no students distributed
+          if (distributedCount === 0 && warningBox) {
+            warningBox.classList.remove('alert-warning');
+            warningBox.classList.add('alert-danger');
+            const existingWarning = warningBox.querySelector('.no-students-warning');
+            if (!existingWarning) {
+              const warningText = document.createElement('div');
+              warningText.className = 'alert alert-danger mt-2 no-students-warning';
+              warningText.innerHTML = '<i class="bi bi-x-circle me-2"></i><strong>WARNING:</strong> No students have been distributed yet! Please scan at least one student QR code before creating a snapshot.';
+              warningBox.appendChild(warningText);
+            }
+          } else if (warningBox) {
+            warningBox.classList.remove('alert-danger');
+            warningBox.classList.add('alert-warning');
+            const existingWarning = warningBox.querySelector('.no-students-warning');
+            if (existingWarning) {
+              existingWarning.remove();
+            }
+          }
         });
       }
 
