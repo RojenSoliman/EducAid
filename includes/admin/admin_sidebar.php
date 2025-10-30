@@ -571,6 +571,222 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 </script>
 
+<script>
+// Admin sidebar open/close behavior (mobile + desktop)
+document.addEventListener('DOMContentLoaded', function(){
+  const sidebar = document.getElementById('sidebar');
+  const toggleBtn = document.getElementById('menu-toggle');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const header = document.querySelector('.admin-main-header');
+  const homeSection = document.querySelector('.home-section') || document.getElementById('mainContent');
+  if(!sidebar || !toggleBtn) return;
+
+  const isMobile = () => window.innerWidth <= 768;
+
+  // Align header/content offsets with sidebar width on desktop
+  const adjustLayout = () => {
+    if(!header) return;
+    if(isMobile()){
+      header.style.left = '0px';
+      if (homeSection) { homeSection.style.marginLeft = '0px'; homeSection.style.width = '100%'; }
+      return;
+    }
+    const closed = sidebar.classList.contains('close');
+    const left = closed ? 70 : 250;
+    header.style.left = left + 'px';
+    if (homeSection) { homeSection.style.marginLeft = ''; homeSection.style.width = ''; }
+  };
+
+  function updateSidebarState(){
+    // On mobile, sidebar state is always "open" only when toggled, never saved
+    if(isMobile()){
+      sidebar.classList.remove('open','close');
+      if(backdrop){ backdrop.classList.add('d-none'); }
+      document.body.style.overflow = '';
+      if (homeSection) homeSection.classList.remove('expanded');
+      adjustLayout();
+    } else {
+      // Desktop: remember state in localStorage
+      const state = localStorage.getItem('adminSidebarState');
+      if(state === 'closed'){
+        sidebar.classList.add('close');
+        if (homeSection) homeSection.classList.remove('expanded');
+      } else {
+        sidebar.classList.remove('close');
+        if (homeSection) homeSection.classList.add('expanded');
+      }
+      sidebar.classList.remove('open');
+      if(backdrop){ backdrop.classList.add('d-none'); }
+      document.body.style.overflow = '';
+      adjustLayout();
+    }
+  }
+
+  // On page load, set sidebar state
+  updateSidebarState();
+
+  // === JS Animation for both desktop and mobile ===
+  let sidebarAnimFrame = null;
+  let backdropAnimFrame = null;
+  let sidebarAnimating = false;
+
+  function animateSidebar(expand) {
+    if (sidebarAnimating) {
+      cancelAnimationFrame(sidebarAnimFrame);
+      if (backdropAnimFrame) cancelAnimationFrame(backdropAnimFrame);
+      sidebarAnimating = false;
+    }
+
+    if (isMobile()) {
+      // Mobile: JS-driven animation
+      if (expand) {
+        sidebar.classList.add('open');
+        sidebar.classList.remove('close');
+        if(backdrop) backdrop.classList.remove('d-none');
+        document.body.style.overflow = 'hidden';
+        
+        sidebarAnimating = true;
+        const startTime = performance.now();
+        const duration = 350;
+        
+        function slideIn(now){
+          const elapsed = now - startTime;
+          const progress = Math.min(1, elapsed / duration);
+          const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+          
+          const translateX = -100 + (eased * 100); // -100% to 0%
+          sidebar.style.transform = `translateX(${translateX}%)`;
+          if(backdrop) backdrop.style.opacity = eased;
+          
+          if(progress < 1){
+            sidebarAnimFrame = requestAnimationFrame(slideIn);
+          } else {
+            sidebar.style.transform = '';
+            sidebarAnimating = false;
+          }
+        }
+        requestAnimationFrame(slideIn);
+      } else {
+        sidebar.classList.remove('open');
+        sidebar.classList.add('close');
+        document.body.style.overflow = '';
+        
+        sidebarAnimating = true;
+        const startTime = performance.now();
+        const duration = 350;
+        
+        function slideOut(now){
+          const elapsed = now - startTime;
+          const progress = Math.min(1, elapsed / duration);
+          const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+          
+          const translateX = -(eased * 100); // 0% to -100%
+          sidebar.style.transform = `translateX(${translateX}%)`;
+          if(backdrop) backdrop.style.opacity = 1 - eased;
+          
+          if(progress < 1){
+            sidebarAnimFrame = requestAnimationFrame(slideOut);
+          } else {
+            sidebar.style.transform = '';
+            if(backdrop){
+              backdrop.classList.add('d-none');
+              backdrop.style.opacity = '';
+            }
+            sidebarAnimating = false;
+          }
+        }
+        requestAnimationFrame(slideOut);
+      }
+      
+      adjustLayout();
+      return;
+    }
+
+    // Desktop animation
+    const startWidth = sidebar.offsetWidth;
+    const targetWidth = expand ? 250 : 70;
+    const startTime = performance.now();
+    const duration = 220;
+
+    if (!expand) {
+      sidebar.classList.remove("close");
+    }
+
+    sidebarAnimating = true;
+
+    function easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
+
+    function step(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / duration);
+      const eased = easeOutQuad(progress);
+      const current = Math.round(startWidth + (targetWidth - startWidth) * eased);
+      sidebar.style.width = current + 'px';
+
+      if (header && !isMobile()) header.style.left = current + 'px';
+      if (homeSection && !isMobile()) {
+        homeSection.style.marginLeft = current + 'px';
+        homeSection.style.width = `calc(100% - ${current}px)`;
+      }
+
+      if (progress < 1) {
+        sidebarAnimFrame = requestAnimationFrame(step);
+      } else {
+        sidebarAnimating = false;
+        sidebar.style.width = '';
+        if (expand) {
+          sidebar.classList.remove("close");
+          localStorage.setItem("adminSidebarState", "open");
+          if (homeSection) homeSection.classList.add("expanded");
+        } else {
+          sidebar.classList.add("close");
+          localStorage.setItem("adminSidebarState", "closed");
+          if (homeSection) homeSection.classList.remove("expanded");
+        }
+        if (homeSection) {
+          homeSection.style.marginLeft = '';
+          homeSection.style.width = '';
+        }
+        adjustLayout();
+      }
+    }
+
+    requestAnimationFrame(step);
+  }
+
+  toggleBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    const expanding = sidebar.classList.contains('close');
+    animateSidebar(expanding);
+  });
+
+  if(backdrop){
+    backdrop.addEventListener('click', function(){
+      animateSidebar(false);
+    });
+  }
+
+  // Hide sidebar on mobile when clicking outside of it
+  document.addEventListener('click', function(e){
+    if(isMobile() && sidebar.classList.contains('open')){
+      const isClickInside = sidebar.contains(e.target) || toggleBtn.contains(e.target);
+      if(!isClickInside){
+        animateSidebar(false);
+      }
+    }
+  });
+
+  // Always update sidebar state on resize to keep in sync
+  window.addEventListener('resize', () => { updateSidebarState(); });
+  
+  document.addEventListener('keydown', function(e){
+    if(isMobile() && e.key === 'Escape' && sidebar.classList.contains('open')){
+      animateSidebar(false);
+    }
+  });
+});
+</script>
+
 </style>
 <!-- No longer needed - Edit Landing Page moved to Content Areas -->
 <script>
