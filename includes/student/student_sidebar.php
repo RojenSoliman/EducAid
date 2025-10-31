@@ -107,6 +107,10 @@ if (!function_exists('student_menu_link')) {
     <!-- Notifications -->
     <?= student_menu_link('student_notifications.php', 'bi bi-bell', 'Notifications', is_active_student('student_notifications.php', $current)); ?>
 
+  
+
+  
+
     <!-- Profile -->
     <?= student_menu_link('student_profile.php', 'bi bi-person-circle', 'Profile', is_active_student('student_profile.php', $current)); ?>
 

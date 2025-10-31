@@ -416,6 +416,12 @@ unset($_SESSION['session_flash'], $_SESSION['session_flash_type']);
                         <i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars($session['ip_address']); ?>
                         <span class="mx-2">•</span>
                         <i class="bi bi-clock me-1"></i>Last active: <?php echo $lastActivity; ?>
+                        <span class="mx-2">•</span>
+                        <?php 
+                          $sid = $session['session_id']; 
+                          $sidShort = substr($sid, -8);
+                        ?>
+                        <i class="bi bi-key me-1"></i>Token: …<?php echo htmlspecialchars($sidShort); ?>
                       </small>
                     </div>
                   </div>

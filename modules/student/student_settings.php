@@ -982,6 +982,10 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
                 <i class="bi bi-shield-lock me-2"></i>
                 Security & Privacy
               </a>
+              <a href="#privacy-data" class="settings-nav-item">
+                <i class="bi bi-incognito me-2"></i>
+                Privacy & Data
+              </a>
               <a href="accessibility.php" class="settings-nav-item">
                 <i class="bi bi-universal-access me-2"></i>
                 Accessibility
@@ -1087,6 +1091,29 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
                       <button class="btn btn-setting btn-setting-danger" data-bs-toggle="modal" data-bs-target="#passwordModal">
                         <i class="bi bi-key me-1"></i>Change Password
                       </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Privacy & Data Section (inline) -->
+            <div class="settings-content-section" id="privacy-data">
+              <h2 class="section-title">Privacy & Data</h2>
+              <p class="section-description">Download a copy of your data from EducAid.</p>
+              <div class="settings-section">
+                <div class="settings-section-body">
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Download My Data</div>
+                      <div id="exportStatus" class="setting-description">No export requested yet.</div>
+                      <div id="downloadContainer" class="mt-2 d-none">
+                        <a id="downloadLink" href="#" class="btn btn-success btn-sm"><i class="bi bi-file-zip me-1"></i> Download ZIP</a>
+                        <small class="text-muted ms-2" id="fileMeta"></small>
+                      </div>
+                    </div>
+                    <div class="setting-actions">
+                      <button id="requestExportBtn" class="btn btn-setting btn-setting-primary"><i class="bi bi-cloud-arrow-down me-1"></i> Request Export</button>
                     </div>
                   </div>
                 </div>
@@ -1323,6 +1350,57 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
           }, 100);
         }
       }
+    });
+
+    // Initialize Privacy & Data export controls if present
+    document.addEventListener('DOMContentLoaded', function() {
+      const statusEl = document.getElementById('exportStatus');
+      const btn = document.getElementById('requestExportBtn');
+      const dlWrap = document.getElementById('downloadContainer');
+      const dlLink = document.getElementById('downloadLink');
+      const fileMeta = document.getElementById('fileMeta');
+
+      if (!statusEl || !btn) return; // Section not on page
+
+      async function fetchStatus() {
+        try {
+          const res = await fetch('../../api/student/export_status.php', { credentials: 'include' });
+          const data = await res.json();
+          if (!data.success) { statusEl.textContent = 'Unable to fetch export status.'; return; }
+          if (!data.exists) { statusEl.textContent = 'No export requested yet.'; dlWrap.classList.add('d-none'); return; }
+
+          statusEl.textContent = `Status: ${data.status}` + (data.processed_at ? ` • Processed: ${new Date(data.processed_at).toLocaleString()}` : '');
+          if (data.status === 'ready' && data.download_url) {
+            dlLink.href = data.download_url;
+            dlWrap.classList.remove('d-none');
+            if (data.file_size_bytes) {
+              const mb = (data.file_size_bytes / (1024*1024)).toFixed(2);
+              fileMeta.textContent = `(~${mb} MB) • Expires: ${data.expires_at ? new Date(data.expires_at).toLocaleString() : ''}`;
+            } else {
+              fileMeta.textContent = '';
+            }
+          } else {
+            dlWrap.classList.add('d-none');
+          }
+        } catch (e) {
+          statusEl.textContent = 'Error fetching export status.';
+        }
+      }
+
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; const original = btn.innerHTML; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing…';
+        try {
+          const res = await fetch('../../api/student/request_data_export.php', { method: 'POST', credentials: 'include' });
+          const data = await res.json();
+          if (!data.success) { statusEl.textContent = 'Export request failed.'; }
+          await fetchStatus();
+        } catch (e) {
+          statusEl.textContent = 'Export request failed.';
+        } finally { btn.disabled = false; btn.innerHTML = original; }
+      });
+
+      // Initial status
+      fetchStatus();
     });
   </script>
 </body>

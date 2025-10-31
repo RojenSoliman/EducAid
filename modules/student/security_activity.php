@@ -16,22 +16,12 @@ require_once __DIR__ . '/../../includes/SessionManager.php';
 $sessionManager = new SessionManager($connection);
 
 // Fetch login history (last 10 successful logins only)
-$loginHistory = $sessionManager->getLoginHistory($student_id, 20);
+$loginHistory = $sessionManager->getLoginHistory($student_id, 50);
 
-// Filter to show only successful logins (unless there are many failed attempts)
+// Count failed attempts for notice, but always display both success and failed attempts
 $failedCount = 0;
 foreach ($loginHistory as $log) {
-    if ($log['status'] === 'failed') {
-        $failedCount++;
-    }
-}
-
-// Show failed logins only if there are 3+ recent failures (potential security issue)
-$showFailedLogins = $failedCount >= 3;
-if (!$showFailedLogins) {
-    $loginHistory = array_filter($loginHistory, function($log) {
-        return $log['status'] === 'success';
-    });
+  if (($log['status'] ?? '') === 'failed') { $failedCount++; }
 }
 
 // Get student info for header dropdown
@@ -316,7 +306,7 @@ $student_info = pg_fetch_assoc($student_info_result);
               
         <!-- Content Card -->
         <div class="content-card">
-          <?php if ($showFailedLogins && $failedCount >= 3): ?>
+          <?php if ($failedCount >= 3): ?>
             <div class="alert alert-warning mb-3">
               <i class="bi bi-exclamation-triangle me-2"></i>
               <strong>Security Notice:</strong> We detected <?php echo $failedCount; ?> recent failed login attempt(s). 
@@ -331,7 +321,7 @@ $student_info = pg_fetch_assoc($student_info_result);
             </div>
           <?php else: ?>
             <div class="login-history-list">
-              <?php foreach (array_slice($loginHistory, 0, 15) as $log): ?>
+              <?php foreach (array_slice($loginHistory, 0, 20) as $log): ?>
                 <?php 
                   $isSuccess = $log['status'] === 'success';
                   $deviceIcon = '';
@@ -377,10 +367,10 @@ $student_info = pg_fetch_assoc($student_info_result);
               <?php endforeach; ?>
             </div>
 
-            <?php if (count($loginHistory) > 15): ?>
+            <?php if (count($loginHistory) > 20): ?>
               <div class="text-center mt-3">
                 <small class="text-muted">
-                  Showing 15 most recent activities
+                  Showing 20 most recent activities
                 </small>
               </div>
             <?php endif; ?>
