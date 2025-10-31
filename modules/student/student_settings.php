@@ -11,47 +11,10 @@ $student_id = $_SESSION['student_id'];
 // Track session activity
 include __DIR__ . '/../../includes/student_session_tracker.php';
 
-// Include SessionManager for session management
-require_once __DIR__ . '/../../includes/SessionManager.php';
-$sessionManager = new SessionManager($connection);
-
 // PHPMailer setup
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require 'C:/xampp/htdocs/EducAid/phpmailer/vendor/autoload.php';
-
-// --------- Handle Session Management Actions -----------
-// Revoke a specific session
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['revoke_session'])) {
-    $sessionToRevoke = $_POST['session_id'] ?? '';
-    
-    if ($sessionManager->revokeSession($student_id, $sessionToRevoke)) {
-        $_SESSION['profile_flash'] = 'Session signed out successfully.';
-        $_SESSION['profile_flash_type'] = 'success';
-    } else {
-        $_SESSION['profile_flash'] = 'Failed to sign out session.';
-        $_SESSION['profile_flash_type'] = 'error';
-    }
-    
-    header("Location: student_settings.php#sessions");
-    exit;
-}
-
-// Revoke all other sessions
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['revoke_all_sessions'])) {
-    $count = $sessionManager->revokeAllOtherSessions($student_id, session_id());
-    
-    if ($count > 0) {
-        $_SESSION['profile_flash'] = "Signed out from $count other device(s) successfully.";
-        $_SESSION['profile_flash_type'] = 'success';
-    } else {
-        $_SESSION['profile_flash'] = 'No other active sessions found.';
-        $_SESSION['profile_flash_type'] = 'info';
-    }
-    
-    header("Location: student_settings.php#sessions");
-    exit;
-}
 
 // --------- Handle AJAX OTP Requests -----------
 // Email Change OTP
@@ -318,16 +281,6 @@ $student_info_query = "SELECT first_name, last_name FROM students WHERE student_
 $student_info_result = pg_query_params($connection, $student_info_query, [$student_id]);
 $student_info = pg_fetch_assoc($student_info_result);
 
-// Fetch active sessions
-$activeSessions = $sessionManager->getActiveSessions($student_id);
-$currentSessionId = session_id();
-$otherSessionsCount = 0;
-foreach ($activeSessions as $session) {
-    if ($session['session_id'] !== $currentSessionId) {
-        $otherSessionsCount++;
-    }
-}
-
 // Flash message
 $flash = $_SESSION['profile_flash'] ?? '';
 $flash_type = $_SESSION['profile_flash_type'] ?? '';
@@ -353,6 +306,80 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
     
     /* Settings Header */
     .settings-header {
+      background: transparent;
+      border-bottom: none;
+      padding: 0;
+      margin-bottom: 2rem;
+    }
+    
+    .settings-header h1 {
+      color: #1a202c;
+      font-weight: 600;
+      font-size: 2rem;
+      margin: 0;
+    }
+
+    /* YouTube-Style Settings Navigation */
+    .settings-nav {
+      background: #f7fafc;
+      border-radius: 12px;
+      padding: 0.5rem;
+      border: 1px solid #e2e8f0;
+    }
+
+    .settings-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      color: #4a5568;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+      margin-bottom: 0.25rem;
+    }
+
+    .settings-nav-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .settings-nav-item:hover {
+      background: #edf2f7;
+      color: #2d3748;
+      text-decoration: none;
+    }
+
+    .settings-nav-item.active {
+      background: #4299e1;
+      color: white;
+    }
+
+    .settings-nav-item.active:hover {
+      background: #3182ce;
+    }
+
+    /* Settings Content Sections */
+    .settings-content-section {
+      margin-bottom: 3rem;
+      scroll-margin-top: 100px;
+    }
+
+    .section-title {
+      color: #1a202c;
+      font-weight: 600;
+      font-size: 1.5rem;
+      margin: 0 0 0.5rem 0;
+    }
+
+    .section-description {
+      color: #718096;
+      font-size: 0.95rem;
+      margin: 0 0 1.5rem 0;
+    }
+    
+    /* Settings Header */
+    .settings-header-old {
       background: white;
       border-bottom: 1px solid #e9ecef;
       padding: 1.5rem 0;
@@ -744,6 +771,88 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
         width: 100%;
       }
     }
+
+    /* Login History Styling */
+    .login-history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .history-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #ffffff;
+      transition: all 0.2s ease;
+    }
+
+    .history-item:hover {
+      border-color: #cbd5e0;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .history-item.failed {
+      background: #fef2f2;
+      border-color: #fecaca;
+    }
+
+    .history-icon {
+      flex-shrink: 0;
+      font-size: 1.5rem;
+      padding-top: 0.25rem;
+    }
+
+    .history-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .history-status {
+      color: #2d3748;
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .history-meta {
+      font-size: 0.85rem;
+      color: #718096;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 576px) {
+      .history-item {
+        padding: 0.75rem;
+      }
+
+      .history-icon {
+        font-size: 1.25rem;
+      }
+
+      .history-status {
+        font-size: 0.9rem;
+      }
+
+      .history-meta {
+        font-size: 0.8rem;
+      }
+
+      .history-meta .mx-2 {
+        display: none;
+      }
+
+      .history-meta small {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -761,17 +870,8 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
     <section class="home-section" id="page-content-wrapper">
       <div class="container-fluid py-4 px-4">
         <!-- Settings Header -->
-        <div class="settings-header">
-          <div class="d-flex justify-content-between align-items-center">
-            <div>
-              <h1>Settings</h1>
-              <p>Manage your account settings and preferences</p>
-            </div>
-            <a href="student_profile.php" class="back-btn">
-              <i class="bi bi-arrow-left"></i>
-              Back to Profile
-            </a>
-          </div>
+        <div class="settings-header mb-4">
+          <h1 class="mb-1">Settings</h1>
         </div>
 
         <!-- Flash Messages -->
@@ -783,120 +883,132 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
           </div>
         <?php endif; ?>
 
-        <!-- Account Information Section -->
-        <div class="settings-section" id="account">
-          <div class="settings-section-header">
-            <h3>
-              <i class="bi bi-person-circle"></i>
-              Account Information
-            </h3>
-            <p>Your basic account details and personal information</p>
-          </div>
-          <div class="settings-section-body">
-            <div class="setting-item">
-              <div class="setting-info">
-                <div class="setting-label">Full Name</div>
-                <div class="setting-value"><?php echo htmlspecialchars($student['last_name'] . ', ' . $student['first_name'] . ' ' . $student['middle_name']); ?></div>
-                <div class="setting-description">Your registered name with the institution</div>
-              </div>
-              <div class="setting-actions">
-                <span class="text-muted small">Read-only</span>
-              </div>
-            </div>
-            
-            <div class="setting-item">
-              <div class="setting-info">
-                <div class="setting-label">Date of Birth</div>
-                <div class="setting-value"><?php echo htmlspecialchars(date('F j, Y', strtotime($student['bdate']))); ?></div>
-                <div class="setting-description">Your birth date as registered</div>
-              </div>
-              <div class="setting-actions">
-                <span class="text-muted small">Read-only</span>
-              </div>
-            </div>
-            
-            <div class="setting-item">
-              <div class="setting-info">
-                <div class="setting-label">Student ID</div>
-                <div class="setting-value"><?php echo htmlspecialchars($student_id); ?></div>
-                <div class="setting-description">Your unique student identification number</div>
-              </div>
-              <div class="setting-actions">
-                <span class="text-muted small">Read-only</span>
-              </div>
+        <!-- YouTube-style Layout: Sidebar + Content -->
+        <div class="row g-4">
+          <!-- Settings Navigation Sidebar -->
+          <div class="col-12 col-lg-3">
+            <div class="settings-nav sticky-top" style="top: 100px;">
+              <a href="#account" class="settings-nav-item active">
+                <i class="bi bi-person-circle me-2"></i>
+                Account
+              </a>
+              <a href="#security" class="settings-nav-item">
+                <i class="bi bi-shield-lock me-2"></i>
+                Security & Privacy
+              </a>
+              <a href="active_sessions.php" class="settings-nav-item">
+                <i class="bi bi-laptop me-2"></i>
+                Active Sessions
+              </a>
+              <a href="security_activity.php" class="settings-nav-item">
+                <i class="bi bi-clock-history me-2"></i>
+                Security Activity
+              </a>
             </div>
           </div>
-        </div>
 
-        <!-- Contact Information Section -->
-        <div class="settings-section" id="contact">
-          <div class="settings-section-header">
-            <h3>
-              <i class="bi bi-envelope"></i>
-              Contact Information
-            </h3>
-            <p>Manage your contact details for important notifications</p>
-          </div>
-          <div class="settings-section-body">
-            <div class="setting-item" id="email">
-              <div class="setting-info">
-                <div class="setting-label">Email Address</div>
-                <div class="setting-value"><?php echo htmlspecialchars($student['email']); ?></div>
-                <div class="setting-description">Used for notifications and account recovery</div>
-              </div>
-              <div class="setting-actions">
-                <button class="btn btn-setting btn-setting-primary" data-bs-toggle="modal" data-bs-target="#emailModal">
-                  <i class="bi bi-pencil me-1"></i>Change Email
-                </button>
-              </div>
-            </div>
-            
-            <div class="setting-item" id="mobile">
-              <div class="setting-info">
-                <div class="setting-label">Mobile Number</div>
-                <div class="setting-value"><?php echo htmlspecialchars($student['mobile']); ?></div>
-                <div class="setting-description">For SMS notifications and contact purposes</div>
-              </div>
-              <div class="setting-actions">
-                <button class="btn btn-setting btn-setting-primary" data-bs-toggle="modal" data-bs-target="#mobileModal">
-                  <i class="bi bi-pencil me-1"></i>Change Number
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+          <!-- Settings Content -->
+          <div class="col-12 col-lg-9">
+            <!-- Account Information Section -->
+            <div class="settings-content-section" id="account">
+              <h2 class="section-title">Account</h2>
+              <p class="section-description">Your basic account details and contact information</p>
+              
+              <div class="settings-section">
+                <div class="settings-section-body">
+                  <!-- Account Information -->
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Full Name</div>
+                      <div class="setting-value"><?php echo htmlspecialchars($student['last_name'] . ', ' . $student['first_name'] . ' ' . $student['middle_name']); ?></div>
+                      <div class="setting-description">Your registered name with the institution</div>
+                    </div>
+                    <div class="setting-actions">
+                      <span class="text-muted small">Read-only</span>
+                    </div>
+                  </div>
+                  
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Date of Birth</div>
+                      <div class="setting-value"><?php echo htmlspecialchars(date('F j, Y', strtotime($student['bdate']))); ?></div>
+                      <div class="setting-description">Your birth date as registered</div>
+                    </div>
+                    <div class="setting-actions">
+                      <span class="text-muted small">Read-only</span>
+                    </div>
+                  </div>
+                  
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Student ID</div>
+                      <div class="setting-value"><?php echo htmlspecialchars($student_id); ?></div>
+                      <div class="setting-description">Your unique student identification number</div>
+                    </div>
+                    <div class="setting-actions">
+                      <span class="text-muted small">Read-only</span>
+                    </div>
+                  </div>
 
-        <!-- Security Settings Section -->
-        <div class="settings-section" id="security">
-          <div class="settings-section-header">
-            <h3>
-              <i class="bi bi-shield-lock"></i>
-              Security & Privacy
-            </h3>
-            <p>Protect your account with strong security settings</p>
-          </div>
-          <div class="settings-section-body">
-            <div class="setting-item" id="password">
-              <div class="setting-info">
-                <div class="setting-label">Password</div>
-                <div class="setting-value">••••••••••••</div>
-                <div class="setting-description">Last changed: Recently (secure password required)</div>
-              </div>
-              <div class="setting-actions">
-                <button class="btn btn-setting btn-setting-danger" data-bs-toggle="modal" data-bs-target="#passwordModal">
-                  <i class="bi bi-key me-1"></i>Change Password
-                </button>
+                  <!-- Contact Information (combined in Account section) -->
+                  <div class="setting-item" id="email">
+                    <div class="setting-info">
+                      <div class="setting-label">Email Address</div>
+                      <div class="setting-value"><?php echo htmlspecialchars($student['email']); ?></div>
+                      <div class="setting-description">Used for notifications and account recovery</div>
+                    </div>
+                    <div class="setting-actions">
+                      <button class="btn btn-setting btn-setting-primary" data-bs-toggle="modal" data-bs-target="#emailModal">
+                        <i class="bi bi-pencil me-1"></i>Change Email
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div class="setting-item" id="mobile">
+                    <div class="setting-info">
+                      <div class="setting-label">Mobile Number</div>
+                      <div class="setting-value"><?php echo htmlspecialchars($student['mobile']); ?></div>
+                      <div class="setting-description">For SMS notifications and contact purposes</div>
+                    </div>
+                    <div class="setting-actions">
+                      <button class="btn btn-setting btn-setting-primary" data-bs-toggle="modal" data-bs-target="#mobileModal">
+                        <i class="bi bi-pencil me-1"></i>Change Number
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <!-- Modals (same as before but updated redirects) -->
-        <!-- Email Modal with OTP -->
-        <div class="modal fade" id="emailModal" tabindex="-1">
-          <div class="modal-dialog modal-dialog-centered">
-            <form id="emailUpdateForm" method="POST" class="modal-content">
-              <div class="modal-header">
+            <!-- Security & Privacy Section -->
+            <div class="settings-content-section" id="security">
+              <h2 class="section-title">Security & Privacy</h2>
+              <p class="section-description">Protect your account with strong security settings</p>
+              
+              <div class="settings-section">
+                <div class="settings-section-body">
+                  <div class="setting-item" id="password">
+                    <div class="setting-info">
+                      <div class="setting-label">Password</div>
+                      <div class="setting-value">••••••••••••</div>
+                      <div class="setting-description">Last changed: Recently (secure password required)</div>
+                    </div>
+                    <div class="setting-actions">
+                      <button class="btn btn-setting btn-setting-danger" data-bs-toggle="modal" data-bs-target="#passwordModal">
+                        <i class="bi bi-key me-1"></i>Change Password
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modals (same as before but updated redirects) -->
+            <!-- Email Modal with OTP -->
+            <div class="modal fade" id="emailModal" tabindex="-1">
+              <div class="modal-dialog modal-dialog-centered">
+                <form id="emailUpdateForm" method="POST" class="modal-content">
+                  <div class="modal-header">
                 <h5 class="modal-title">
                   <i class="bi bi-envelope me-2"></i>Update Email Address
                 </h5>
@@ -1048,123 +1160,76 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
       </div>
     </section>
 
-    <!-- Active Sessions Section -->
-    <section class="settings-section" id="sessions">
-      <div class="section-header">
-        <h2>
-          <i class="bi bi-shield-lock me-2"></i>
-          Active Sessions
-        </h2>
-        <p>Manage devices where you're currently logged in</p>
-      </div>
-
-      <div class="section-content">
-        <?php if (empty($activeSessions)): ?>
-          <div class="alert alert-info">
-            <i class="bi bi-info-circle me-2"></i>
-            No active sessions found.
           </div>
-        <?php else: ?>
-          <div class="active-sessions-list">
-            <?php foreach ($activeSessions as $session): ?>
-              <?php 
-                $isCurrent = $session['session_id'] === $currentSessionId;
-                $deviceIcon = '';
-                switch ($session['device_type']) {
-                  case 'mobile':
-                    $deviceIcon = 'bi-phone';
-                    break;
-                  case 'tablet':
-                    $deviceIcon = 'bi-tablet';
-                    break;
-                  default:
-                    $deviceIcon = 'bi-laptop';
-                }
-                
-                $browserInfo = $session['browser'] ?: 'Unknown Browser';
-                $osInfo = $session['os'] ?: 'Unknown OS';
-                $lastActivity = $session['last_activity'] ? date('M d, Y h:i A', strtotime($session['last_activity'])) : 'Unknown';
-              ?>
-              <div class="session-item <?php echo $isCurrent ? 'current-session' : ''; ?>">
-                <div class="session-icon">
-                  <i class="bi <?php echo $deviceIcon; ?>"></i>
-                </div>
-                <div class="session-details">
-                  <div class="session-device">
-                    <strong><?php echo htmlspecialchars($browserInfo); ?></strong> on <?php echo htmlspecialchars($osInfo); ?>
-                    <?php if ($isCurrent): ?>
-                      <span class="badge bg-success ms-2">
-                        <i class="bi bi-check-circle me-1"></i>Current Device
-                      </span>
-                    <?php endif; ?>
-                  </div>
-                  <div class="session-meta text-muted">
-                    <small>
-                      <i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars($session['ip_address']); ?>
-                      <span class="mx-2">•</span>
-                      <i class="bi bi-clock me-1"></i>Last active: <?php echo $lastActivity; ?>
-                    </small>
-                  </div>
-                </div>
-                <div class="session-action">
-                  <?php if (!$isCurrent): ?>
-                    <form method="POST" action="student_settings.php#sessions" style="display:inline;">
-                      <input type="hidden" name="session_id" value="<?php echo htmlspecialchars($session['session_id']); ?>">
-                      <button type="submit" name="revoke_session" class="btn btn-sm btn-outline-danger">
-                        <i class="bi bi-box-arrow-right me-1"></i>Sign Out
-                      </button>
-                    </form>
-                  <?php endif; ?>
-                </div>
-              </div>
-            <?php endforeach; ?>
-          </div>
-
-          <?php if ($otherSessionsCount > 0): ?>
-            <div class="mt-4 pt-3 border-top">
-              <div class="d-flex align-items-center justify-content-between">
-                <div>
-                  <h6 class="mb-1">Sign Out All Other Devices</h6>
-                  <small class="text-muted">
-                    You have <?php echo $otherSessionsCount; ?> other active session<?php echo $otherSessionsCount > 1 ? 's' : ''; ?>
-                  </small>
-                </div>
-                <form method="POST" action="student_settings.php#sessions" style="display:inline;">
-                  <button type="submit" name="revoke_all_sessions" class="btn btn-danger" onclick="return confirm('Are you sure you want to sign out from all other devices?');">
-                    <i class="bi bi-power me-2"></i>Sign Out All
-                  </button>
-                </form>
-              </div>
-            </div>
-          <?php endif; ?>
-        <?php endif; ?>
+        </div>
       </div>
     </section>
-  </div>
 
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/student/sidebar.js"></script>
   <script src="../../assets/js/student/student_profile.js"></script>
   
   <script>
-    // Smooth scroll to anchor on page load
+    // Smooth scroll and active navigation highlighting
     document.addEventListener('DOMContentLoaded', function() {
+      const navItems = document.querySelectorAll('.settings-nav-item[href^="#"]'); // Only hash links
+      const sections = document.querySelectorAll('.settings-content-section');
+
+      // Handle navigation clicks (only for hash links)
+      navItems.forEach(item => {
+        item.addEventListener('click', function(e) {
+          e.preventDefault();
+          const targetId = this.getAttribute('href').substring(1);
+          const targetSection = document.getElementById(targetId);
+          
+          // Remove active class from all nav items
+          navItems.forEach(nav => nav.classList.remove('active'));
+          // Add active class to clicked item
+          this.classList.add('active');
+          
+          // Smooth scroll to section
+          if (targetSection) {
+            targetSection.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'start'
+            });
+            // Update URL
+            history.pushState(null, null, '#' + targetId);
+          }
+        });
+      });
+
+      // Highlight nav on scroll (intersection observer)
+      const observerOptions = {
+        rootMargin: '-100px 0px -50% 0px',
+        threshold: 0
+      };
+
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            navItems.forEach(item => {
+              item.classList.remove('active');
+              if (item.getAttribute('href') === '#' + entry.target.id) {
+                item.classList.add('active');
+              }
+            });
+          }
+        });
+      }, observerOptions);
+
+      sections.forEach(section => observer.observe(section));
+
+      // Handle initial hash
       const hash = window.location.hash;
       if (hash) {
-        const target = document.querySelector(hash);
-        if (target) {
+        const targetSection = document.querySelector(hash);
+        const targetNav = document.querySelector(`.settings-nav-item[href="${hash}"]`);
+        if (targetSection && targetNav) {
+          navItems.forEach(nav => nav.classList.remove('active'));
+          targetNav.classList.add('active');
           setTimeout(() => {
-            target.scrollIntoView({ 
-              behavior: 'smooth', 
-              block: 'start',
-              inline: 'nearest'
-            });
-            // Add highlight effect
-            target.style.backgroundColor = '#e3f2fd';
-            target.style.transition = 'background-color 0.3s ease';
-            setTimeout(() => {
-              target.style.backgroundColor = '';
-            }, 2000);
+            targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }, 100);
         }
       }
