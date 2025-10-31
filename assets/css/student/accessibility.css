@@ -1,0 +1,99 @@
+/* ===========================
+   Global Accessibility Styles
+   Applied across all student pages
+=========================== */
+
+/* Text Size Options */
+html.text-small {
+  font-size: 14px;
+}
+
+html.text-normal {
+  font-size: 16px;
+}
+
+html.text-large {
+  font-size: 18px;
+}
+
+/* Adjust specific elements for text size changes */
+html.text-small body {
+  font-size: 14px;
+}
+
+html.text-normal body {
+  font-size: 16px;
+}
+
+html.text-large body {
+  font-size: 18px;
+}
+
+/* High Contrast Mode */
+html.high-contrast {
+  filter: contrast(1.5);
+}
+
+html.high-contrast body {
+  background: #000 !important;
+  color: #fff !important;
+}
+
+html.high-contrast .settings-section,
+html.high-contrast .content-card,
+html.high-contrast .settings-nav,
+html.high-contrast .welcome-banner,
+html.high-contrast .stat-card,
+html.high-contrast .card {
+  background: #1a1a1a !important;
+  border-color: #444 !important;
+  color: #fff !important;
+}
+
+html.high-contrast .session-item,
+html.high-contrast .history-item {
+  background: #222 !important;
+  border-color: #555 !important;
+  color: #fff !important;
+}
+
+html.high-contrast .btn {
+  border: 2px solid #fff !important;
+  font-weight: 600 !important;
+}
+
+html.high-contrast .modal-content {
+  background: #1a1a1a !important;
+  color: #fff !important;
+}
+
+html.high-contrast .form-control,
+html.high-contrast .form-select {
+  background: #222 !important;
+  color: #fff !important;
+  border-color: #555 !important;
+}
+
+html.high-contrast .table {
+  color: #fff !important;
+}
+
+html.high-contrast .table td,
+html.high-contrast .table th {
+  border-color: #555 !important;
+}
+
+/* Reduce Animations */
+html.reduce-animations *,
+html.reduce-animations *::before,
+html.reduce-animations *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+html.reduce-animations .sidebar,
+html.reduce-animations .modal {
+  transition: none !important;
+}

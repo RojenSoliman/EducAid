@@ -78,6 +78,8 @@ unset($_SESSION['session_flash'], $_SESSION['session_flash_type']);
   <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" />
   <link href="../../assets/css/student/sidebar.css" rel="stylesheet" />
+  <link rel="stylesheet" href="../../assets/css/student/accessibility.css" />
+  <script src="../../assets/js/student/accessibility.js"></script>
   <style>
     body { background: #f7fafc; }
     

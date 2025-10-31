@@ -26,6 +26,8 @@ $student_info = pg_fetch_assoc($student_info_result);
   <link href="../../assets/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" />
   <link href="../../assets/css/student/sidebar.css" rel="stylesheet" />
+  <link rel="stylesheet" href="../../assets/css/student/accessibility.css" />
+  <script src="../../assets/js/student/accessibility.js"></script>
   <style>
     body { background: #f7fafc; }
     

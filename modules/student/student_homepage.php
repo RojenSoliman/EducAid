@@ -124,6 +124,8 @@ if (!isset($_SESSION['schedule_modal_shown'])) {
   <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
   <link rel="stylesheet" href="../../assets/css/student/sidebar.css" />
   <link rel="stylesheet" href="../../assets/css/student/distribution_notifications.css" />
+  <link rel="stylesheet" href="../../assets/css/student/accessibility.css" />
+  <script src="../../assets/js/student/accessibility.js"></script>
   <style>
     body:not(.js-ready) .sidebar { visibility: hidden; transition: none !important; }
     
