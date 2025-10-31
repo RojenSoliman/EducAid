@@ -38,7 +38,7 @@ function convertToWebPath($inputPath) {
         'assets/uploads/temp/letter_mayor',
         'assets/uploads/temp/indigency',
         'assets/uploads/student/enrollment_forms',
-        'assets/uploads/student/letter_to_mayor',
+        'assets/uploads/student/letter_mayor',
         'assets/uploads/student/indigency'
     ];
     foreach ($candidateDirs as $dir) {

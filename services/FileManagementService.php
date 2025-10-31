@@ -162,15 +162,6 @@ class FileManagementService {
             }
         }
         
-        // Clean up empty temp OCR folder
-        $tempOcrPath = $this->basePath . '/temp/temp_ocr';
-        if (is_dir($tempOcrPath)) {
-            $ocrFiles = glob($tempOcrPath . '/*');
-            foreach ($ocrFiles as $ocrFile) {
-                @unlink($ocrFile);
-            }
-        }
-        
         $result = [
             'success' => count($errors) === 0,
             'files_moved' => count($movedFiles),
@@ -288,24 +279,6 @@ class FileManagementService {
             }
         }
         
-        // Also check temp_ocr folder for any OCR files
-        $tempOcrPath = $this->basePath . '/temp/temp_ocr';
-        if (is_dir($tempOcrPath)) {
-            $ocrFiles = glob($tempOcrPath . '/' . $studentId . '_*');
-            foreach ($ocrFiles as $file) {
-                if (is_file($file)) {
-                    $filename = basename($file);
-                    $zipPath = 'ocr/' . $filename;
-                    if ($zip->addFile($file, $zipPath)) {
-                        $filesAdded++;
-                        $filesToDelete[] = $file;
-                        $totalOriginalSize += filesize($file);
-                        error_log("FileManagement: Added OCR file to ZIP: $zipPath");
-                    }
-                }
-            }
-        }
-        
         $zip->close();
         
         if ($filesAdded === 0) {
@@ -363,7 +336,7 @@ class FileManagementService {
         $deletedSize = 0;
         
         $tempPath = $this->basePath . '/temp';
-        $folders = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_mayor', 'temp_ocr'];
+        $folders = ['enrollment_forms', 'grades', 'id_pictures', 'indigency', 'letter_mayor'];
         
         foreach ($folders as $folder) {
             $folderPath = $tempPath . '/' . $folder;

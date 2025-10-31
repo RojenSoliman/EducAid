@@ -36,7 +36,7 @@ $query = "
         s.archived_by,
         s.archive_reason,
         s.expected_graduation_year,
-        s.academic_year_registered,
+        s.first_registered_academic_year as academic_year_registered,
         yl.name as year_level_name,
         u.name as university_name,
         b.name as barangay_name,

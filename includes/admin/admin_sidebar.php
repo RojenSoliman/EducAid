@@ -134,6 +134,9 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
     <!-- Review Registrations -->
     <?= menu_link('review_registrations.php', 'bi bi-clipboard-check', 'Review Registrations', is_active('review_registrations.php', $current)); ?>
 
+    <!-- Manage Course Mappings -->
+    <?= menu_link('manage_course_mappings.php', 'bi bi-journal-check', 'Course Mappings', is_active('manage_course_mappings.php', $current)); ?>
+
     <!-- Manage Applicants -->
     <?= menu_link('manage_applicants.php', 'bi bi-people', 'Manage Applicants', is_active('manage_applicants.php', $current)); ?>
 
