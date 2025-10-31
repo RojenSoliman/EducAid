@@ -982,6 +982,10 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
                 <i class="bi bi-shield-lock me-2"></i>
                 Security & Privacy
               </a>
+              <a href="#notifications" class="settings-nav-item">
+                <i class="bi bi-envelope-open me-2"></i>
+                Notification Preferences
+              </a>
               <a href="#privacy-data" class="settings-nav-item">
                 <i class="bi bi-incognito me-2"></i>
                 Privacy & Data
@@ -1116,6 +1120,81 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
                       <button id="requestExportBtn" class="btn btn-setting btn-setting-primary"><i class="bi bi-cloud-arrow-down me-1"></i> Request Export</button>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Notification Preferences (email-only) -->
+            <div class="settings-content-section" id="notifications">
+              <h2 class="section-title">Notification Preferences</h2>
+              <p class="section-description">Choose how you receive notifications by email.</p>
+              <div class="settings-section">
+                <div class="settings-section-body">
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Email Delivery</div>
+                      <div class="setting-description">Select immediate emails or a once-daily digest.</div>
+                      <div class="d-flex align-items-center gap-2 mt-1">
+                        <div class="form-check form-switch">
+                          <input class="form-check-input" type="checkbox" id="prefEmailEnabled">
+                          <label class="form-check-label" for="prefEmailEnabled">Enable email notifications</label>
+                        </div>
+                        <select id="prefEmailFrequency" class="form-select form-select-sm" style="width:auto;">
+                          <option value="immediate">Immediate</option>
+                          <option value="daily">Daily digest</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="setting-actions">
+                      <button id="saveNotifPrefsBtn" class="btn btn-setting btn-setting-primary"><i class="bi bi-save me-1"></i>Save</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Types to email</div>
+                      <div class="setting-description">Toggle which notification types should be emailed to you.</div>
+                      <div class="row mt-2 g-2">
+                        <div class="col-12 col-md-6">
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_announcement">
+                            <label class="form-check-label" for="email_announcement">Announcements</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_document">
+                            <label class="form-check-label" for="email_document">Documents</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_schedule">
+                            <label class="form-check-label" for="email_schedule">Schedule</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_system">
+                            <label class="form-check-label" for="email_system">System</label>
+                          </div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_warning">
+                            <label class="form-check-label" for="email_warning">Warnings</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_error">
+                            <label class="form-check-label" for="email_error">Errors / Rejections</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_success">
+                            <label class="form-check-label" for="email_success">Success / Approvals</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_info">
+                            <label class="form-check-label" for="email_info">General Info</label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
               </div>
             </div>
@@ -1401,6 +1480,57 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
 
       // Initial status
       fetchStatus();
+    });
+
+    // Notification Preferences: load and save
+    document.addEventListener('DOMContentLoaded', function() {
+      const enableEl = document.getElementById('prefEmailEnabled');
+      const freqEl = document.getElementById('prefEmailFrequency');
+      const saveBtn = document.getElementById('saveNotifPrefsBtn');
+      const typeIds = [
+        'email_announcement','email_document','email_schedule','email_warning',
+        'email_error','email_success','email_system','email_info'
+      ];
+      const typeInputs = Object.fromEntries(typeIds.map(id => [id, document.getElementById(id)]));
+
+      async function loadPrefs() {
+        try {
+          const res = await fetch('../../api/student/get_notification_preferences.php', { credentials: 'include' });
+          const data = await res.json();
+          if (!data.success) return;
+          const p = data.preferences;
+          enableEl.checked = !!p.email_enabled;
+          freqEl.value = p.email_frequency === 'daily' ? 'daily' : 'immediate';
+          typeIds.forEach(id => { if (id in typeInputs && id in p) typeInputs[id].checked = !!p[id]; });
+        } catch (e) { /* noop */ }
+      }
+
+      async function savePrefs() {
+        const payload = {
+          email_enabled: enableEl.checked,
+          email_frequency: freqEl.value
+        };
+        typeIds.forEach(id => payload[id] = !!typeInputs[id].checked);
+        saveBtn.disabled = true; const original = saveBtn.innerHTML; saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+        try {
+          const res = await fetch('../../api/student/save_notification_preferences.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(payload)
+          });
+          const out = await res.json();
+          // Lightweight feedback via alert() to avoid extra toasts framework
+          alert(out.success ? 'Preferences saved.' : 'Failed to save preferences.');
+        } catch (e) {
+          alert('Failed to save preferences.');
+        } finally { saveBtn.disabled = false; saveBtn.innerHTML = original; }
+      }
+
+      if (enableEl && freqEl && saveBtn) {
+        loadPrefs();
+        saveBtn.addEventListener('click', savePrefs);
+      }
     });
   </script>
 </body>

@@ -21,12 +21,14 @@
  */
 function createStudentNotification($connection, $student_id, $title, $message, $type = 'info', $priority = 'low', $action_url = null, $is_priority = false, $expires_at = null) {
     if (!$connection) return false;
-    
+
+    // Insert and capture notification_id for potential email delivery
     $query = "INSERT INTO student_notifications 
               (student_id, title, message, type, priority, action_url, is_priority, expires_at)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
-    
-    $result = @pg_query_params($connection, $query, [
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+              RETURNING notification_id";
+
+    $res = @pg_query_params($connection, $query, [
         $student_id,
         $title,
         $message,
@@ -36,8 +38,16 @@ function createStudentNotification($connection, $student_id, $title, $message, $
         $is_priority ? 'true' : 'false',
         $expires_at
     ]);
-    
-    return $result !== false;
+    if ($res === false) return false;
+
+    $row = pg_fetch_assoc($res);
+    $notification_id = $row ? $row['notification_id'] : null;
+
+    // Attempt email delivery based on preferences (email-only feature)
+    if ($notification_id) {
+        student_handle_email_delivery($connection, $student_id, $title, $message, $type, $action_url);
+    }
+    return true;
 }
 
 /**
@@ -54,11 +64,12 @@ function createStudentNotification($connection, $student_id, $title, $message, $
  */
 function createBulkStudentNotification($connection, $title, $message, $type = 'info', $priority = 'low', $action_url = null, $where_clause = '') {
     if (!$connection) return false;
-    
+
+    // Insert for selected students and return rows so we can attempt email delivery per preferences
     $query = "INSERT INTO student_notifications (student_id, title, message, type, priority, action_url)
-              SELECT student_id, $1, $2, $3, $4, $5
-              FROM students " . $where_clause;
-    
+              SELECT student_id, $1, $2, $3, $4, $5 FROM students " . $where_clause . "
+              RETURNING notification_id, student_id";
+
     $result = @pg_query_params($connection, $query, [
         $title,
         $message,
@@ -66,8 +77,14 @@ function createBulkStudentNotification($connection, $title, $message, $type = 'i
         $priority,
         $action_url
     ]);
-    
-    return $result !== false;
+    if ($result === false) return false;
+
+    // Try email delivery for each row (best-effort; ignore failures per-row)
+    while ($row = pg_fetch_assoc($result)) {
+        $sid = $row['student_id'];
+        student_handle_email_delivery($connection, $sid, $title, $message, $type, $action_url);
+    }
+    return true;
 }
 
 /**
@@ -252,5 +269,41 @@ function sendSystemAnnouncement($connection, $title, $message, $action_url = nul
         'low',
         $action_url
     );
+}
+
+/**
+ * Internal: Decide whether to send an email now based on student preferences.
+ * Email-only: if email is enabled, type is enabled, and frequency is immediate => send immediately.
+ */
+function student_handle_email_delivery($connection, $student_id, $title, $message, $type, $action_url) {
+    // Fetch or initialize preferences
+    $pref = student_get_or_create_email_prefs($connection, $student_id);
+    if (!$pref || !$pref['email_enabled']) return;
+
+    // Type-specific check
+    $typeKey = 'email_' . strtolower(preg_replace('/[^a-zA-Z0-9_]+/', '', $type));
+    if (isset($pref[$typeKey]) && $pref[$typeKey] === 'f') { // 'f' from PG boolean
+        return;
+    }
+
+    if (($pref['email_frequency'] ?? 'immediate') === 'immediate') {
+        // Immediate email
+        require_once __DIR__ . '/../services/StudentEmailNotificationService.php';
+        $svc = new StudentEmailNotificationService($connection);
+        $svc->sendImmediateEmail($student_id, $title, $message, $type, $action_url);
+    }
+}
+
+/**
+ * Get preferences or create with defaults.
+ * @return array|null
+ */
+function student_get_or_create_email_prefs($connection, $student_id) {
+    $res = @pg_query_params($connection, "SELECT * FROM student_notification_preferences WHERE student_id = $1", [$student_id]);
+    if ($res && ($row = pg_fetch_assoc($res))) return $row;
+    // Create defaults
+    $ins = @pg_query_params($connection, "INSERT INTO student_notification_preferences (student_id) VALUES ($1) RETURNING *", [$student_id]);
+    if ($ins && ($n = pg_fetch_assoc($ins))) return $n;
+    return null;
 }
 ?>
