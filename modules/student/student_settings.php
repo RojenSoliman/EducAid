@@ -883,9 +883,33 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
     html.high-contrast .settings-section,
     html.high-contrast .content-card,
     html.high-contrast .settings-nav {
-      background: #1a1a1a !important;
-      border-color: #444 !important;
-      color: #fff !important;
+      background: #000 !important;
+      border-color: #FFFF00 !important;
+      color: #FFFF00 !important;
+    }
+
+    /* Inline settings nav items - high contrast overrides */
+    html.high-contrast .settings-nav-item {
+      background: #000 !important;
+      color: #FFFF00 !important;
+      border: 2px solid transparent !important;
+    }
+
+    html.high-contrast .settings-nav-item:hover,
+    html.high-contrast .settings-nav-item:focus-visible {
+      background: #1a1a00 !important;
+      color: #FFFF00 !important;
+      border-color: #FFFF00 !important;
+      outline: 3px solid #FFFF00 !important;
+      outline-offset: 2px !important;
+    }
+
+    html.high-contrast .settings-nav-item.active,
+    html.high-contrast .settings-nav-item.active:hover {
+      background: #1a1a00 !important;
+      color: #FFFF00 !important;
+      border: 2px solid #FFFF00 !important;
+      font-weight: 700 !important;
     }
 
     html.high-contrast .session-item,
