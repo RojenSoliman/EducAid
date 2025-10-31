@@ -125,4 +125,73 @@ function formatChatbotResponse(text){
     animateElement(el){ el.classList.add('visible'); if(el.classList.contains('fade-in-stagger')){ const children=el.querySelectorAll('.fade-in'); children.forEach((c,i)=>{ setTimeout(()=>c.classList.add('visible'), i*100); }); } }
   }
   document.addEventListener('DOMContentLoaded',()=> new ScrollAnimations());
+    // Live distribution/slots widget (landing page)
+    const banner = document.getElementById('lpDistBanner');
+    const statusEl = document.getElementById('lpDistStatus');
+    const periodEl = document.getElementById('lpDistPeriod');
+    const slotsEl = document.getElementById('lpDistSlots');
+    if (!banner || !statusEl || !periodEl || !slotsEl) return;
+
+    let lastSlots = null;
+    let timer = null;
+
+    async function fetchSummary(){
+      try {
+        const res = await fetch('../api/public/distribution_summary.php', { cache: 'no-store' });
+        const data = await res.json();
+        if (!data.success) { hide(); return; }
+        if (data.status !== 'open') { showClosed(); return; }
+
+        // Open: show AY/semester and live slots
+        const period = [data.academic_year, data.semester].filter(Boolean).join(' • ');
+        periodEl.textContent = period || 'Current distribution';
+        statusEl.textContent = 'Open';
+        statusEl.classList.remove('text-bg-secondary');
+        statusEl.classList.add('text-bg-success');
+
+        const slotsLeft = parseInt(data.slots_left || 0, 10);
+        const slotCount = parseInt(data.slot_count || 0, 10);
+        slotsEl.textContent = `${slotsLeft} / ${slotCount} slots left`;
+        slotsEl.classList.remove('closed');
+
+        // Subtle pulse on change
+        if (lastSlots !== null && lastSlots !== slotsLeft) {
+          banner.classList.remove('pulse'); // restart animation
+          // Force reflow
+          // eslint-disable-next-line no-unused-expressions
+          banner.offsetWidth;
+          banner.classList.add('pulse');
+        }
+        lastSlots = slotsLeft;
+
+        // Show banner
+        banner.style.display = 'flex';
+        banner.setAttribute('aria-hidden', 'false');
+      } catch (e) {
+        hide();
+      }
+    }
+
+    function showClosed(){
+      statusEl.textContent = 'Closed';
+      statusEl.classList.remove('text-bg-success');
+      statusEl.classList.add('text-bg-secondary');
+      periodEl.textContent = 'No active distribution';
+      slotsEl.textContent = '0 slots';
+      slotsEl.classList.add('closed');
+      banner.style.display = 'flex';
+      banner.setAttribute('aria-hidden', 'false');
+    }
+
+    function hide(){
+      banner.style.display = 'none';
+      banner.setAttribute('aria-hidden', 'true');
+    }
+
+    // Initial fetch and poll every 15s
+    fetchSummary();
+    timer = setInterval(fetchSummary, 15000);
+
+    // Cleanup if needed (single page)
+    window.addEventListener('beforeunload', ()=>{ if (timer) clearInterval(timer); });
 })();

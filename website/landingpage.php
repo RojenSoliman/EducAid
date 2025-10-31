@@ -754,6 +754,8 @@ function formatChatbotResponse(text) {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <!-- Mobile Navbar JS -->
 <script src="../assets/js/website/mobile-navbar.js"></script>
+<!-- Landing page behaviors (includes live distribution banner polling) -->
+<script src="../assets/js/website/landing_page.js"></script>
 
 <!-- Enhanced scroll animations - KEEP ONLY THIS ONE -->
 <script>

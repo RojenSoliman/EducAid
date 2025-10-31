@@ -381,6 +381,42 @@ body.navbar-open {
   filter: brightness(.92);
 }
 
+/* Live distribution banner (landing page) */
+.dist-banner {
+  display: none; /* hidden until data loads */
+  align-items: center;
+  gap: .65rem;
+  padding: .6rem .8rem;
+  background: var(--thm-white);
+  border: 1px solid #e2e8f0;
+  border-radius: .75rem;
+  box-shadow: var(--shadow);
+  margin-top: .75rem;
+}
+.dist-banner .dist-badge {
+  font-size: .72rem;
+}
+.dist-banner .dist-period {
+  font-weight: 600;
+}
+.dist-banner .dist-slots {
+  margin-left: .5rem;
+  font-weight: 700;
+  color: var(--thm-green);
+}
+.dist-banner .dist-slots.closed {
+  color: #dc3545; /* bootstrap danger */
+  font-weight: 600;
+}
+.dist-banner.pulse {
+  animation: distPulse .9s ease;
+}
+@keyframes distPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+
 /* Quick links row */
 .quick-links {
   margin-top: 2rem;
