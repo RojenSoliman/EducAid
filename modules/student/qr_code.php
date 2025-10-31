@@ -81,6 +81,8 @@ if ($has_qr_code) {
   <link href="../../assets/css/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="../../assets/css/student/homepage.css">
   <link rel="stylesheet" href="../../assets/css/student/sidebar.css">
+  <link rel="stylesheet" href="../../assets/css/student/accessibility.css" />
+  <script src="../../assets/js/student/accessibility.js"></script>
   <style>
     body {
       background: linear-gradient(135deg, #0068DA 0%, #0088C8 50%, #00B1C6 100%);

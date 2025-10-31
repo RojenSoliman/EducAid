@@ -76,6 +76,8 @@ function getNotificationIcon($type) {
   <link rel="stylesheet" href="../../assets/css/student/sidebar.css" />
   <!-- Reuse admin notification stylesheet for 1:1 UI parity -->
   <link rel="stylesheet" href="../../assets/css/admin/notification.css" />
+  <link rel="stylesheet" href="../../assets/css/student/accessibility.css" />
+  <script src="../../assets/js/student/accessibility.js"></script>
   <style>body:not(.js-ready) .sidebar { visibility:hidden; }</style>
 </head>
 <body>
