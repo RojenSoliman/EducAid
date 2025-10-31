@@ -1,8 +1,10 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../config/database.php';
-require_once __DIR__ . '/../../services/DocumentService.php';
+require_once __DIR__ . '/../../services/UnifiedFileService.php';
 require_once __DIR__ . '/../../services/DocumentReuploadService.php';
+require_once __DIR__ . '/../../services/EnrollmentFormOCRService.php';
+require_once __DIR__ . '/../../services/CourseMappingService.php';
 
 // Check if student is logged in
 if (!isset($_SESSION['student_id'])) {
@@ -11,7 +13,7 @@ if (!isset($_SESSION['student_id'])) {
 }
 
 $student_id = $_SESSION['student_id'];
-$docService = new DocumentService($connection);
+$fileService = new UnifiedFileService($connection);
 $reuploadService = new DocumentReuploadService($connection);
 
 // Get student information and upload permission
@@ -97,6 +99,9 @@ while ($doc = pg_fetch_assoc($docs_query)) {
     } elseif (strpos($file_path, '/xampp/htdocs/EducAid/') === 0 || strpos($file_path, dirname(dirname(__DIR__)) . '/') === 0) {
         // Linux/Mac absolute path
         $file_path = '../../' . str_replace(dirname(dirname(__DIR__)) . '/', '', $file_path);
+    } elseif (strpos($file_path, 'assets/uploads/') === 0) {
+        // Relative path stored in DB - add ../../ prefix for web access from modules/student/
+        $file_path = '../../' . $file_path;
     }
     
     $doc['file_path'] = $file_path;
@@ -185,6 +190,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_document'])) 
             exit;
         }
 
+        // Use NEW TSV-based OCR for Enrollment Forms (document type '00')
+        if ($doc_type_code === '00') {
+            try {
+                $enrollmentOCR = new EnrollmentFormOCRService($connection);
+                $courseMappingService = new CourseMappingService($connection);
+                
+                $studentData = [
+                    'first_name' => $student['first_name'] ?? '',
+                    'middle_name' => $student['middle_name'] ?? '',
+                    'last_name' => $student['last_name'] ?? '',
+                    'university_name' => $student['university_name'] ?? '',
+                    'year_level' => $student['year_level_name'] ?? ''
+                ];
+                
+                $ocrResult = $enrollmentOCR->processEnrollmentForm($tempPath, $studentData);
+                
+                if (!$ocrResult['success']) {
+                    echo json_encode([
+                        'success' => false,
+                        'message' => 'TSV OCR processing failed: ' . ($ocrResult['error'] ?? 'Unknown error')
+                    ]);
+                    exit;
+                }
+                
+                $extracted = $ocrResult['data'];
+                $overallConfidence = $ocrResult['overall_confidence'];
+                $tsvQuality = $ocrResult['tsv_quality'];
+                
+                // Process course if found
+                $courseData = null;
+                if ($extracted['course']['found']) {
+                    $courseMatch = $courseMappingService->findMatchingCourse($extracted['course']['normalized']);
+                    
+                    if ($courseMatch) {
+                        $courseData = [
+                            'raw_course' => $extracted['course']['raw'],
+                            'normalized_course' => $courseMatch['normalized_course'],
+                            'course_category' => $courseMatch['course_category'],
+                            'program_duration' => $courseMatch['program_duration_years'],
+                            'confidence' => $courseMatch['confidence']
+                        ];
+                    }
+                }
+                
+                // Store TSV OCR results in session
+                $_SESSION['temp_uploads'][$doc_type_code]['ocr_confidence'] = $overallConfidence;
+                $_SESSION['temp_uploads'][$doc_type_code]['verification_score'] = $ocrResult['verification_passed'] ? 100 : ($overallConfidence * 0.8);
+                $_SESSION['temp_uploads'][$doc_type_code]['verification_status'] = $ocrResult['verification_passed'] ? 'verified' : 'pending';
+                $_SESSION['temp_uploads'][$doc_type_code]['ocr_processed_at'] = date('Y-m-d H:i:s');
+                $_SESSION['temp_uploads'][$doc_type_code]['tsv_quality'] = $tsvQuality;
+                $_SESSION['temp_uploads'][$doc_type_code]['extracted_data'] = $extracted;
+                $_SESSION['temp_uploads'][$doc_type_code]['course_data'] = $courseData;
+                
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'TSV OCR processing completed successfully.',
+                    'ocr_confidence' => round($overallConfidence, 2),
+                    'verification_score' => round($_SESSION['temp_uploads'][$doc_type_code]['verification_score'], 2),
+                    'verification_status' => $ocrResult['verification_passed'] ? 'verified' : 'pending',
+                    'tsv_quality' => [
+                        'total_words' => $tsvQuality['total_words'],
+                        'avg_confidence' => $tsvQuality['avg_confidence'],
+                        'quality_score' => $tsvQuality['quality_score']
+                    ],
+                    'course_detected' => $courseData !== null,
+                    'course_name' => $courseData['normalized_course'] ?? null
+                ]);
+                exit;
+                
+            } catch (Exception $e) {
+                error_log('TSV OCR Error for enrollment form: ' . $e->getMessage());
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'TSV OCR processing error: ' . $e->getMessage()
+                ]);
+                exit;
+            }
+        }
+        
+        // For other document types, use the old DocumentReuploadService
         $ocrResult = $reuploadService->processTempOcr(
             $student_id,
             $doc_type_code,
@@ -1007,31 +1092,6 @@ $page_title = 'Upload Documents';
                             </div>
                             <?php endif; ?>
                             
-                            <!-- Confidence Badges -->
-                            <?php if ($doc['ocr_confidence'] || $doc['verification_score']): ?>
-                            <div class="confidence-badges">
-                                <?php if ($doc['ocr_confidence']): ?>
-                                <?php 
-                                    $ocr_conf = floatval($doc['ocr_confidence']);
-                                    $ocr_color = $ocr_conf >= 80 ? 'success' : ($ocr_conf >= 60 ? 'warning' : 'danger');
-                                ?>
-                                <span class="confidence-badge bg-<?= $ocr_color ?>">
-                                    <i class="bi bi-robot"></i> OCR: <?= round($ocr_conf) ?>%
-                                </span>
-                                <?php endif; ?>
-                                
-                                <?php if ($doc['verification_score']): ?>
-                                <?php 
-                                    $verify_score = floatval($doc['verification_score']);
-                                    $verify_color = $verify_score >= 80 ? 'success' : ($verify_score >= 60 ? 'warning' : 'danger');
-                                ?>
-                                <span class="confidence-badge bg-<?= $verify_color ?>">
-                                    <i class="bi bi-check-circle-fill"></i> Verified: <?= round($verify_score) ?>%
-                                </span>
-                                <?php endif; ?>
-                            </div>
-                            <?php endif; ?>
-                            
                             <div class="document-meta">
                                 <i class="bi bi-calendar3"></i> 
                                 Uploaded: <?= date('M d, Y g:i A', strtotime($doc['upload_date'])) ?>
@@ -1047,32 +1107,6 @@ $page_title = 'Upload Documents';
                                    class="btn btn-outline-secondary btn-sm">
                                     <i class="bi bi-download"></i> Download
                                 </a>
-                                <?php 
-                                // Check if OCR files exist
-                                $ocr_text_file = $doc['file_path'] . '.ocr.txt';
-                                $verify_json_file = $doc['file_path'] . '.verify.json';
-                                $server_root = dirname(__DIR__, 2);
-                                $ocr_text_exists = file_exists($server_root . '/' . ltrim(str_replace('../../', '', $ocr_text_file), '/'));
-                                $verify_json_exists = file_exists($server_root . '/' . ltrim(str_replace('../../', '', $verify_json_file), '/'));
-                                ?>
-                                <?php if ($ocr_text_exists || $verify_json_exists): ?>
-                                <div class="btn-group btn-group-sm" role="group">
-                                    <?php if ($ocr_text_exists): ?>
-                                    <a href="<?= htmlspecialchars($ocr_text_file) ?>" 
-                                       target="_blank"
-                                       class="btn btn-outline-info btn-sm">
-                                        <i class="bi bi-file-text"></i> OCR Text
-                                    </a>
-                                    <?php endif; ?>
-                                    <?php if ($verify_json_exists): ?>
-                                    <a href="<?= htmlspecialchars($verify_json_file) ?>" 
-                                       target="_blank"
-                                       class="btn btn-outline-success btn-sm">
-                                        <i class="bi bi-file-code"></i> Verification
-                                    </a>
-                                    <?php endif; ?>
-                                </div>
-                                <?php endif; ?>
                                 <?php if ($needs_reupload): ?>
                                 <form method="POST" style="display: inline;">
                                     <input type="hidden" name="document_type" value="<?= $type_code ?>">
@@ -1118,38 +1152,6 @@ $page_title = 'Upload Documents';
                                 </div>
                                 <?php endif; ?>
                                 
-                                <?php 
-                                $has_ocr = isset($preview_data['ocr_confidence']) && floatval($preview_data['ocr_confidence']) > 0;
-                                ?>
-                                <div class="confidence-badges <?= $has_ocr ? '' : 'd-none' ?>" id="ocr-badges-<?= $type_code ?>">
-                                    <?php if ($has_ocr): ?>
-                                        <?php 
-                                            $ocr_conf = floatval($preview_data['ocr_confidence']);
-                                            $ocr_color = $ocr_conf >= 80 ? 'success' : ($ocr_conf >= 60 ? 'warning' : 'danger');
-                                        ?>
-                                        <span class="confidence-badge bg-<?= $ocr_color ?>">
-                                            <i class="bi bi-robot"></i> OCR Confidence: <?= round($ocr_conf) ?>%
-                                        </span>
-                                        <?php if (isset($preview_data['verification_score'])): ?>
-                                            <?php 
-                                                $verify_score = floatval($preview_data['verification_score']);
-                                                if (abs($verify_score - $ocr_conf) > 0.1) {
-                                                    $verify_color = $verify_score >= 80 ? 'success' : ($verify_score >= 60 ? 'warning' : 'danger');
-                                                    echo '<span class="confidence-badge bg-' . $verify_color . '"><i class="bi bi-check-circle-fill"></i> Verification: ' . round($verify_score) . '%</span>';
-                                                }
-                                            ?>
-                                        <?php endif; ?>
-                                    <?php endif; ?>
-                                </div>
-
-                                <div class="mt-2 small" id="ocr-status-<?= $type_code ?>">
-                                    <?php if ($has_ocr): ?>
-                                        <span class="text-success"><i class="bi bi-check-circle"></i> OCR processed successfully.</span>
-                                    <?php else: ?>
-                                        <span class="text-muted"><i class="bi bi-robot"></i> OCR not processed yet. Click "Process OCR" to analyze this document.</span>
-                                    <?php endif; ?>
-                                </div>
-                                
                                 <div class="document-meta">
                                     <i class="bi bi-file-earmark"></i> <?= htmlspecialchars($preview_data['original_name']) ?>
                                     <span class="ms-2">
@@ -1163,23 +1165,12 @@ $page_title = 'Upload Documents';
                                 </div>
                                 
                                 <div class="document-actions mt-3">
-                                    <?php $processLabel = $has_ocr ? 'Reprocess OCR' : 'Process OCR'; ?>
-                                    <button type="button"
-                                            class="btn btn-primary btn-sm"
-                                            id="process-btn-<?= $type_code ?>"
-                                            data-default-label="<?= htmlspecialchars($processLabel) ?>"
-                                            onclick="processDocument('<?= $type_code ?>')">
-                                        <i class="bi bi-cpu"></i> <?= htmlspecialchars($processLabel) ?>
-                                    </button>
-
                                     <form method="POST" style="display: inline;">
                                         <input type="hidden" name="document_type" value="<?= $type_code ?>">
                                         <input type="hidden" name="confirm_upload" value="1">
                                         <button type="submit" 
-                                                class="btn btn-success btn-sm <?= !$has_ocr || (isset($preview_data['ocr_confidence']) && floatval($preview_data['ocr_confidence']) < 50) ? 'disabled' : '' ?>"
-                                                id="confirm-btn-<?= $type_code ?>"
-                                                <?= !$has_ocr || (isset($preview_data['ocr_confidence']) && floatval($preview_data['ocr_confidence']) < 50) ? 'disabled' : '' ?>
-                                                title="<?= !$has_ocr ? 'Process OCR first before confirming' : (isset($preview_data['ocr_confidence']) && floatval($preview_data['ocr_confidence']) < 50 ? 'OCR confidence too low. Please re-upload a clearer image.' : 'Click to confirm and submit this document') ?>">
+                                                class="btn btn-success btn-sm"
+                                                id="confirm-btn-<?= $type_code ?>">
                                             <i class="bi bi-check-circle"></i> Confirm & Submit
                                         </button>
                                     </form>
@@ -1330,142 +1321,6 @@ $page_title = 'Upload Documents';
         
         function showUploadForm(typeCode) {
             document.getElementById('file-' + typeCode).click();
-        }
-        
-        // OCR Processing Function
-        async function processDocument(typeCode) {
-            const button = document.getElementById('process-btn-' + typeCode);
-            const statusEl = document.getElementById('ocr-status-' + typeCode);
-            const badgesEl = document.getElementById('ocr-badges-' + typeCode);
-            const confirmBtn = document.getElementById('confirm-btn-' + typeCode);
-
-            if (!button) {
-                console.error('Process button not found for type:', typeCode);
-                return;
-            }
-
-            const originalLabel = button.dataset.defaultLabel || button.innerText;
-
-            button.disabled = true;
-            button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Processing...';
-
-            if (statusEl) {
-                statusEl.classList.remove('text-success', 'text-danger');
-                statusEl.classList.add('text-muted');
-                statusEl.innerHTML = '<span class="text-muted"><i class="bi bi-hourglass-split"></i> Processing OCR...</span>';
-            }
-
-            const formData = new FormData();
-            formData.append('process_document', '1');
-            formData.append('document_type', typeCode);
-
-            try {
-                const response = await fetch('upload_document.php', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                // Log response for debugging
-                const responseText = await response.text();
-                console.log('OCR Response:', responseText);
-
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                } catch (jsonError) {
-                    console.error('JSON Parse Error:', jsonError);
-                    console.error('Response was:', responseText.substring(0, 500));
-                    throw new Error('Server returned invalid response. Check console for details.');
-                }
-
-                if (!data.success) {
-                    throw new Error(data.message || 'OCR processing failed.');
-                }
-
-                const ocrScore = Math.round(data.ocr_confidence || 0);
-                const verificationScore = Math.round(data.verification_score || ocrScore);
-
-                // Update badges
-                if (badgesEl) {
-                    badgesEl.classList.remove('d-none');
-                    const ocrColor = getConfidenceColor(ocrScore);
-                    let badgesHtml = `
-                        <span class="confidence-badge bg-${ocrColor}">
-                            <i class="bi bi-robot"></i> OCR Confidence: ${ocrScore}%
-                        </span>
-                    `;
-
-                    if (Math.abs(verificationScore - ocrScore) > 0.1) {
-                        const verifyColor = getConfidenceColor(verificationScore);
-                        badgesHtml += `
-                            <span class="confidence-badge bg-${verifyColor}">
-                                <i class="bi bi-check-circle-fill"></i> Verification: ${verificationScore}%
-                            </span>
-                        `;
-                    }
-
-                    badgesEl.innerHTML = badgesHtml;
-                }
-
-                // Update status message
-                if (statusEl) {
-                    statusEl.classList.remove('text-muted', 'text-danger');
-                    statusEl.classList.add('text-success');
-                    statusEl.innerHTML = `<span class="text-success"><i class="bi bi-check-circle"></i> OCR processed successfully. Confidence ${ocrScore}%.</span>`;
-                }
-
-                // Enable/disable confirm button based on confidence
-                if (confirmBtn) {
-                    if (ocrScore < 50) {
-                        confirmBtn.disabled = true;
-                        confirmBtn.classList.add('disabled');
-                        confirmBtn.title = 'OCR confidence too low. Please re-upload a clearer image.';
-                        
-                        // Add warning message
-                        if (statusEl) {
-                            statusEl.innerHTML += '<br><span class="text-danger"><i class="bi bi-exclamation-triangle"></i> <strong>Upload disabled:</strong> OCR confidence is below 50%. Please upload a clearer image.</span>';
-                        }
-                    } else {
-                        confirmBtn.disabled = false;
-                        confirmBtn.classList.remove('disabled');
-                        confirmBtn.title = 'Click to confirm and submit this document';
-                    }
-                }
-
-                button.dataset.defaultLabel = 'Reprocess OCR';
-                button.innerHTML = '<i class="bi bi-arrow-repeat"></i> Reprocess OCR';
-
-            } catch (error) {
-                console.error('OCR processing error:', error);
-                
-                if (statusEl) {
-                    statusEl.classList.remove('text-muted', 'text-success');
-                    statusEl.classList.add('text-danger');
-                    statusEl.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle"></i> ${error.message}</span>`;
-                }
-
-                // Disable confirm button on error
-                if (confirmBtn) {
-                    confirmBtn.disabled = true;
-                    confirmBtn.classList.add('disabled');
-                    confirmBtn.title = 'Process OCR first before confirming';
-                }
-
-                button.innerHTML = `<i class="bi bi-cpu"></i> ${originalLabel}`;
-
-            } finally {
-                button.disabled = false;
-            }
-        }
-
-        function getConfidenceColor(score) {
-            if (score >= 80) {
-                return 'success';
-            }
-            if (score >= 60) {
-                return 'warning';
-            }
-            return 'danger';
         }
         
         // Attach AJAX upload handlers to file inputs

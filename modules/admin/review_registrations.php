@@ -1,6 +1,6 @@
 <?php
 include __DIR__ . '/../../config/database.php';
-require_once __DIR__ . '/../../services/DocumentService.php';
+require_once __DIR__ . '/../../services/UnifiedFileService.php';
 require_once __DIR__ . '/../../includes/student_notification_helper.php';
 
 session_start();
@@ -15,8 +15,8 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 
-// Initialize DocumentService
-$docService = new DocumentService($connection);
+// Initialize UnifiedFileService
+$fileService = new UnifiedFileService($connection);
 
 // Handle approval/rejection
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -32,18 +32,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             foreach ($student_ids as $student_id) {
                 if ($action === 'approve') {
-                    // Update student status to applicant
-                    $updateQuery = "UPDATE students SET status = 'applicant' WHERE student_id = $1 AND status = 'under_registration'";
-                    $result = pg_query_params($connection, $updateQuery, [$student_id]);
+                    // Get slot's academic year first
+                    $slotQuery = "SELECT ss.academic_year, ss.semester 
+                                 FROM students s 
+                                 LEFT JOIN signup_slots ss ON s.slot_id = ss.slot_id 
+                                 WHERE s.student_id = $1";
+                    $slotResult = pg_query_params($connection, $slotQuery, [$student_id]);
+                    $slotData = pg_fetch_assoc($slotResult);
+                    
+                    // Update student status to applicant and set first_registered_academic_year
+                    $updateQuery = "UPDATE students 
+                                   SET status = 'applicant',
+                                       first_registered_academic_year = $2,
+                                       current_academic_year = $2
+                                   WHERE student_id = $1 AND status = 'under_registration'";
+                    $result = pg_query_params($connection, $updateQuery, [
+                        $student_id,
+                        $slotData['academic_year'] ?? null
+                    ]);
                     
                     if ($result && pg_affected_rows($result) > 0) {
-                        // Use DocumentService to move all documents from temp to permanent storage
-                        $moveResult = $docService->moveToPermStorage($student_id);
+                        // Update or create course mapping
+                        $courseQuery = "SELECT course, university_id FROM students WHERE student_id = $1";
+                        $courseResult = pg_query_params($connection, $courseQuery, [$student_id]);
+                        $courseData = pg_fetch_assoc($courseResult);
+                        
+                        if ($courseData && !empty($courseData['course'])) {
+                            $checkMappingQuery = "SELECT mapping_id, occurrence_count 
+                                                 FROM courses_mapping 
+                                                 WHERE raw_course_name = $1 AND university_id = $2";
+                            $mappingResult = pg_query_params($connection, $checkMappingQuery, [
+                                $courseData['course'],
+                                $courseData['university_id']
+                            ]);
+                            
+                            if ($mappingResult && pg_num_rows($mappingResult) > 0) {
+                                $mapping = pg_fetch_assoc($mappingResult);
+                                pg_query_params($connection, 
+                                    "UPDATE courses_mapping 
+                                     SET occurrence_count = occurrence_count + 1, last_seen = NOW()
+                                     WHERE mapping_id = $1", 
+                                    [$mapping['mapping_id']]);
+                            } else {
+                                pg_query_params($connection, 
+                                    "INSERT INTO courses_mapping 
+                                     (raw_course_name, normalized_course, university_id, program_duration,
+                                      occurrence_count, is_verified, created_by, created_at, last_seen)
+                                     VALUES ($1, $2, $3, 4, 1, FALSE, $4, NOW(), NOW())", 
+                                    [$courseData['course'], $courseData['course'], 
+                                     $courseData['university_id'], $_SESSION['admin_id'] ?? null]);
+                            }
+                        }
+                        
+                        // Use UnifiedFileService to move all documents from temp to permanent storage
+                        $moveResult = $fileService->moveToPermStorage($student_id, $_SESSION['admin_id'] ?? null);
                         
                         if ($moveResult['success']) {
-                            error_log("DocumentService: Successfully moved " . $moveResult['moved_count'] . " documents for student $student_id");
+                            error_log("UnifiedFileService: Successfully moved " . $moveResult['moved_count'] . " documents for student $student_id");
                         } else {
-                            error_log("DocumentService: Error moving documents for student $student_id - " . ($moveResult['error'] ?? 'Unknown error'));
+                            error_log("UnifiedFileService: Error moving documents for student $student_id - " . ($moveResult['errors'][0] ?? 'Unknown error'));
                         }
                         
                         $success_count++;
@@ -159,9 +206,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $remarks = trim($_POST['remarks'] ?? '');
         
         if ($action === 'approve') {
-            // Update student status to applicant and mark as new registration (no upload needed)
-            $updateQuery = "UPDATE students SET status = 'applicant', needs_document_upload = FALSE WHERE student_id = $1";
-            $result = pg_query_params($connection, $updateQuery, [$student_id]);
+            error_log("=== APPROVAL WORKFLOW START for student: $student_id ===");
+            
+            // Get slot's academic year first to populate student's first_registered_academic_year
+            $slotQuery = "SELECT ss.academic_year, ss.semester 
+                         FROM students s 
+                         LEFT JOIN signup_slots ss ON s.slot_id = ss.slot_id 
+                         WHERE s.student_id = $1";
+            $slotResult = pg_query_params($connection, $slotQuery, [$student_id]);
+            $slotData = pg_fetch_assoc($slotResult);
+            
+            error_log("Step 1: Got slot data - Academic Year: " . ($slotData['academic_year'] ?? 'NULL'));
+            
+            // Update student status to applicant and set first_registered_academic_year from slot
+            $updateQuery = "UPDATE students 
+                           SET status = 'applicant', 
+                               needs_document_upload = FALSE,
+                               first_registered_academic_year = $2,
+                               current_academic_year = $2
+                           WHERE student_id = $1";
+            $result = pg_query_params($connection, $updateQuery, [
+                $student_id,
+                $slotData['academic_year'] ?? null
+            ]);
+            
+            error_log("Step 2: Updated student status to applicant - Result: " . ($result ? 'SUCCESS' : 'FAILED'));
             
             if ($result) {
                 // Get student information for school_student_ids tracking
@@ -197,13 +266,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                 }
                 
-                // Use DocumentService to move all documents from temp to permanent storage
-                $moveResult = $docService->moveToPermStorage($student_id);
+                // Update or create course mapping after approval
+                $courseQuery = "SELECT course, course_verified, university_id FROM students WHERE student_id = $1";
+                $courseResult = pg_query_params($connection, $courseQuery, [$student_id]);
+                $courseData = pg_fetch_assoc($courseResult);
+                
+                if ($courseData && !empty($courseData['course'])) {
+                    // Check if course mapping exists
+                    $checkMappingQuery = "SELECT mapping_id, is_verified, occurrence_count 
+                                         FROM courses_mapping 
+                                         WHERE raw_course_name = $1 AND university_id = $2";
+                    $mappingResult = pg_query_params($connection, $checkMappingQuery, [
+                        $courseData['course'],
+                        $courseData['university_id']
+                    ]);
+                    
+                    if ($mappingResult && pg_num_rows($mappingResult) > 0) {
+                        // Update existing mapping - increment occurrence count
+                        $mapping = pg_fetch_assoc($mappingResult);
+                        $updateMappingQuery = "UPDATE courses_mapping 
+                                              SET occurrence_count = occurrence_count + 1,
+                                                  last_seen = NOW()
+                                              WHERE mapping_id = $1";
+                        pg_query_params($connection, $updateMappingQuery, [$mapping['mapping_id']]);
+                    } else {
+                        // Create new unverified course mapping (default to 4-year program)
+                        $insertMappingQuery = "INSERT INTO courses_mapping 
+                                              (raw_course_name, normalized_course, university_id, 
+                                               program_duration, occurrence_count, is_verified, created_by, created_at, last_seen)
+                                              VALUES ($1, $2, $3, 4, 1, FALSE, $4, NOW(), NOW())";
+                        pg_query_params($connection, $insertMappingQuery, [
+                            $courseData['course'],
+                            $courseData['course'], // Use raw name as normalized until verified
+                            $courseData['university_id'],
+                            $_SESSION['admin_id'] ?? null
+                        ]);
+                    }
+                }
+                
+                error_log("Step 3: About to call moveToPermStorage for student: $student_id");
+                
+                // Use UnifiedFileService to move all documents from temp to permanent storage
+                $moveResult = $fileService->moveToPermStorage($student_id, $_SESSION['admin_id'] ?? null);
+                
+                error_log("Step 4: moveToPermStorage completed - Success: " . ($moveResult['success'] ? 'YES' : 'NO') . ", Moved: " . ($moveResult['moved_count'] ?? 0) . ", Errors: " . count($moveResult['errors'] ?? []));
                 
                 if ($moveResult['success']) {
-                    error_log("DocumentService: Successfully moved " . $moveResult['moved_count'] . " documents for student $student_id");
+                    error_log("UnifiedFileService: Successfully moved " . $moveResult['moved_count'] . " documents for student $student_id");
                 } else {
-                    error_log("DocumentService: Error moving documents for student $student_id - " . ($moveResult['error'] ?? 'Unknown error'));
+                    error_log("UnifiedFileService: Error moving documents for student $student_id - " . ($moveResult['errors'][0] ?? 'Unknown error'));
+                    // Log all errors
+                    foreach ($moveResult['errors'] ?? [] as $error) {
+                        error_log("  - File move error: $error");
+                    }
                 }
                 
                 // Get student email for notification
@@ -292,25 +407,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             }
                         }
                     }
-                    
-                    // LEGACY: Delete associated files based on old file path patterns
-                    if (!empty($mainFilePath)) {
-                        $base_path = pathinfo($docRow['file_path'], PATHINFO_DIRNAME) . '/' . pathinfo($docRow['file_path'], PATHINFO_FILENAME);
-                        
-                        // Delete .tsv file
-                        $tsv_file = $base_path . '.tsv';
-                        if (file_exists($tsv_file)) {
-                            unlink($tsv_file);
-                            $files_deleted++;
-                        }
-                        
-                        // Delete .confidence.json file
-                        $confidence_file = $base_path . '.confidence.json';
-                        if (file_exists($confidence_file)) {
-                            unlink($confidence_file);
-                            $files_deleted++;
-                        }
-                    }
                 }
                 
                 // Clean up any remaining files in temp directories using glob patterns
@@ -332,6 +428,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $files_deleted++;
                             }
                         }
+                    }
+                }
+                
+                // NEW: Clean up student-organized permanent directories
+                $permanentDirs = [
+                    __DIR__ . '/../../assets/uploads/student/id_pictures/' . $student_id . '/',
+                    __DIR__ . '/../../assets/uploads/student/enrollment_forms/' . $student_id . '/',
+                    __DIR__ . '/../../assets/uploads/student/letter_to_mayor/' . $student_id . '/',
+                    __DIR__ . '/../../assets/uploads/student/indigency/' . $student_id . '/',
+                    __DIR__ . '/../../assets/uploads/student/grades/' . $student_id . '/'
+                ];
+                
+                foreach ($permanentDirs as $dir) {
+                    if (is_dir($dir)) {
+                        // Delete all files in the student's folder
+                        $files = glob($dir . '*');
+                        foreach ($files as $file) {
+                            if (is_file($file)) {
+                                unlink($file);
+                                $files_deleted++;
+                            }
+                        }
+                        // Remove the empty directory
+                        @rmdir($dir);
                     }
                 }
                 
@@ -512,16 +632,21 @@ $countResult = pg_query_params($connection, $countQuery, $params);
 $totalRecords = intval(pg_fetch_result($countResult, 0, 0));
 $totalPages = ceil($totalRecords / $limit);
 
-// Fetch pending registrations with pagination including confidence scores
-$query = "SELECT s.*, b.name as barangay_name, u.name as university_name, yl.name as year_level_name,
+// Fetch pending registrations with pagination including confidence scores and course mapping info
+$query = "SELECT DISTINCT ON (s.student_id) s.*, b.name as barangay_name, u.name as university_name, yl.name as year_level_name,
                  COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) as confidence_score,
-                 get_confidence_level(COALESCE(s.confidence_score, calculate_confidence_score(s.student_id))) as confidence_level
+                 get_confidence_level(COALESCE(s.confidence_score, calculate_confidence_score(s.student_id))) as confidence_level,
+                 cm.is_verified as course_is_verified,
+                 cm.mapping_id as course_mapping_id,
+                 cm.normalized_course as course_normalized_name
           FROM students s
           LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
           LEFT JOIN universities u ON s.university_id = u.university_id
           LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
+          LEFT JOIN courses_mapping cm ON s.course = cm.raw_course_name 
+                                        AND (cm.university_id = s.university_id OR cm.university_id IS NULL)
           WHERE $whereClause
-          ORDER BY s.$sort_by $sort_order
+          ORDER BY s.student_id, cm.university_id NULLS LAST
           LIMIT $limit OFFSET $offset";
 
 $result = pg_query_params($connection, $query, $params);
@@ -848,18 +973,18 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                     <div class="d-flex align-items-center justify-content-between">
                         <div>
                             <h5 class="mb-1"><i class="bi bi-lightning-charge me-2"></i>Quick Actions</h5>
-                            <small>Streamline review process for high-confidence registrations</small>
+                            <small>Streamline review process for high-confidence registrations (80%+)</small>
                         </div>
                         <div class="d-flex gap-2">
                             <?php
-                            // Count high confidence registrations
-                            $highConfidenceQuery = "SELECT COUNT(*) FROM students s WHERE s.status = 'under_registration' AND COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) >= 85";
+                            // Count high confidence registrations (80%+)
+                            $highConfidenceQuery = "SELECT COUNT(*) FROM students s WHERE s.status = 'under_registration' AND COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) >= 80";
                             $highConfidenceResult = pg_query($connection, $highConfidenceQuery);
                             $highConfidenceCount = pg_fetch_result($highConfidenceResult, 0, 0);
                             ?>
                             <?php if ($highConfidenceCount > 0): ?>
                                 <button type="button" class="btn auto-approve-btn" onclick="autoApproveHighConfidence()">
-                                    <i class="bi bi-lightning"></i> Auto-Approve High Confidence 
+                                    <i class="bi bi-lightning"></i> Auto-Approve High Confidence (80%+)
                                     <span class="badge bg-white text-success ms-1"><?php echo $highConfidenceCount; ?></span>
                                 </button>
                             <?php else: ?>
@@ -919,6 +1044,7 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                     <th>Contact</th>
                                     <th>Barangay</th>
                                     <th>University</th>
+                                    <th>Course</th>
                                     <th>Year</th>
                                     <th>
                                         <a href="?<?php echo http_build_query(array_merge($_GET, ['sort' => 'application_date', 'order' => $sort_by === 'application_date' && $sort_order === 'ASC' ? 'DESC' : 'ASC'])); ?>" class="sort-link <?php echo $sort_by === 'application_date' ? 'sort-active' : ''; ?>">
@@ -960,6 +1086,28 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                                             <div class="small">
                                                 <?php echo htmlspecialchars($registration['university_name']); ?>
                                             </div>
+                                        </td>
+                                        <td>
+                                            <?php if (!empty($registration['course'])): ?>
+                                                <div class="small">
+                                                    <?php echo htmlspecialchars($registration['course']); ?>
+                                                    <?php if ($registration['course_is_verified'] === 't'): ?>
+                                                        <span class="badge bg-success" title="Course verified in database">
+                                                            <i class="bi bi-check-circle"></i>
+                                                        </span>
+                                                    <?php elseif ($registration['course_mapping_id']): ?>
+                                                        <span class="badge bg-warning text-dark" title="Course exists but not verified">
+                                                            <i class="bi bi-exclamation-circle"></i> Unverified
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="badge bg-danger" title="New course - needs mapping">
+                                                            <i class="bi bi-plus-circle"></i> New
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <span class="text-muted small">Not specified</span>
+                                            <?php endif; ?>
                                         </td>
                                         <td><?php echo htmlspecialchars($registration['year_level_name']); ?></td>
                                         <td>
@@ -1101,12 +1249,12 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
         </div>
     </div>
 
-    <!-- Student Details Modal -->
+    <!-- Registrant Details Modal -->
     <div class="modal fade" id="studentDetailsModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Student Details</h5>
+                    <h5 class="modal-title">Registrant Details</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="studentDetailsContent">
@@ -1196,19 +1344,19 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
         }
 
         function viewDetails(studentId) {
-            fetch(`get_student_details.php?id=${studentId}`)
+            fetch(`get_registrant_details.php?id=${studentId}`)
                 .then(response => response.text())
                 .then(html => {
                     document.getElementById('studentDetailsContent').innerHTML = html;
                     new bootstrap.Modal(document.getElementById('studentDetailsModal')).show();
                 })
                 .catch(error => {
-                    alert('Error loading student details. Please try again.');
+                    alert('Error loading registrant details. Please try again.');
                 });
         }
 
         function autoApproveHighConfidence() {
-            if (!confirm('Are you sure you want to auto-approve all registrations with Very High confidence scores (85%+)?\n\nThis action will approve all students who meet the criteria and cannot be undone.')) {
+            if (!confirm('Are you sure you want to auto-approve all registrations with High confidence scores (80%+)?\n\nThis action will approve all students who meet the criteria and cannot be undone.')) {
                 return;
             }
 
@@ -1225,7 +1373,7 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                 },
                 body: JSON.stringify({
                     action: 'auto_approve_high_confidence',
-                    min_confidence: 85
+                    min_confidence: 80
                 })
             })
             .then(response => response.json())
@@ -1528,6 +1676,405 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
             applyTransform();
         }
     </script>
+
+    <!-- Include Blacklist Modal -->
+    <?php include '../../includes/admin/blacklist_modal.php'; ?>
+    
+    <script>
+    async function loadValidationData(docType, studentId) {
+        console.log('loadValidationData called:', docType, studentId);
+        
+        const modalBody = document.getElementById('validationModalBody');
+        const modalTitle = document.getElementById('validationModalLabel');
+        
+        const docNames = {
+            'id_picture': 'ID Picture',
+            'eaf': 'Enrollment Assessment Form',
+            'letter_to_mayor': 'Letter to Mayor',
+            'certificate_of_indigency': 'Certificate of Indigency',
+            'grades': 'Academic Grades'
+        };
+        modalTitle.innerHTML = `<i class="bi bi-clipboard-check me-2"></i>${docNames[docType] || docType} - Validation Results`;
+        
+        modalBody.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-info"></div><p class="mt-3">Loading...</p></div>';
+        
+        try {
+            const response = await fetch('../student/get_validation_details.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({doc_type: docType, student_id: studentId})
+            });
+            
+            console.log('Response status:', response.status);
+            const responseText = await response.text();
+            console.log('Raw response:', responseText);
+            
+            let data;
+            try {
+                data = JSON.parse(responseText);
+                console.log('Parsed data:', data);
+            } catch (parseError) {
+                console.error('JSON parse error:', parseError);
+                modalBody.innerHTML = `<div class="alert alert-danger">
+                    <h6>Error parsing response</h6>
+                    <pre style="max-height:200px;overflow:auto;">${responseText.substring(0, 500)}</pre>
+                </div>`;
+                return;
+            }
+            
+            if (data.success) {
+                const html = generateValidationHTML(data.validation, docType);
+                console.log('Generated HTML length:', html.length);
+                modalBody.innerHTML = html;
+            } else {
+                modalBody.innerHTML = `<div class="alert alert-warning">
+                    <h6><i class="bi bi-exclamation-triangle me-2"></i>${data.message || 'No validation data available.'}</h6>
+                    <small>Document Type: ${docType}, Student ID: ${studentId}</small>
+                </div>`;
+            }
+        } catch (error) {
+            console.error('Validation fetch error:', error);
+            modalBody.innerHTML = `<div class="alert alert-danger">
+                <h6><i class="bi bi-x-circle me-2"></i>Error loading validation data</h6>
+                <p>${error.message}</p>
+                <small>Document Type: ${docType}, Student ID: ${studentId}</small>
+            </div>`;
+        }
+    }
+
+    function generateValidationHTML(validation, docType) {
+        console.log('=== generateValidationHTML DEBUG ===');
+        console.log('docType:', docType);
+        console.log('validation object:', validation);
+        
+        if (!validation || typeof validation !== 'object') {
+            return `<div class="alert alert-warning p-4">
+                <h6><i class="bi bi-exclamation-triangle me-2"></i>No Validation Data</h6>
+                <p>Validation data is not available or malformed for this document.</p>
+                <small>Document Type: ${docType}</small>
+            </div>`;
+        }
+        
+        let html = '';
+        
+        // === OCR CONFIDENCE BANNER ===
+        if (validation.ocr_confidence !== undefined && validation.ocr_confidence !== null) {
+            const conf = parseFloat(validation.ocr_confidence) || 0;
+            const confColor = conf >= 80 ? 'success' : (conf >= 60 ? 'warning' : 'danger');
+            html += `<div class="alert alert-${confColor} d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h5 class="mb-0"><i class="bi bi-robot me-2"></i>Overall OCR Confidence</h5>
+                    <small class="text-muted">How well Tesseract extracted text from the image</small>
+                </div>
+                <h3 class="mb-0 fw-bold">${conf.toFixed(1)}%</h3>
+            </div>`;
+        }
+        
+        // === CHECK IF VERIFICATION DATA EXISTS ===
+        const hasVerificationData = validation.identity_verification && 
+                                    (parseFloat(validation.identity_verification.first_name_confidence || 0) > 0 ||
+                                     parseFloat(validation.identity_verification.last_name_confidence || 0) > 0 ||
+                                     parseFloat(validation.identity_verification.school_confidence || 0) > 0 ||
+                                     parseInt(validation.identity_verification.passed_checks || 0) > 0);
+        
+        if (!hasVerificationData && parseFloat(validation.ocr_confidence || 0) > 0) {
+            html += `<div class="alert alert-warning mb-4">
+                <h6><i class="bi bi-exclamation-triangle me-2"></i>Verification Incomplete</h6>
+                <p><strong>Text was successfully extracted (${parseFloat(validation.ocr_confidence || 0).toFixed(1)}% OCR confidence)</strong>, 
+                but verification against student data has not been performed yet.</p>
+                <p class="mb-0"><small>This usually happens when the .verify.json file is missing or corrupted.</small></p>
+            </div>`;
+            
+            // Show extracted text if available
+            if (validation.extracted_text) {
+                html += `<div class="card mb-3">
+                    <div class="card-header bg-secondary text-white">
+                        <h6 class="mb-0"><i class="bi bi-file-text me-2"></i>Extracted Text (${parseFloat(validation.ocr_confidence || 0).toFixed(1)}% confidence)</h6>
+                    </div>
+                    <div class="card-body">
+                        <pre style="max-height: 300px; overflow-y: auto; white-space: pre-wrap; font-size: 0.85rem;">${validation.extracted_text}</pre>
+                    </div>
+                </div>`;
+            }
+            
+            return html;
+        }
+        
+        // === DETAILED VERIFICATION CHECKLIST ===
+        if (validation.identity_verification) {
+            const idv = validation.identity_verification;
+            const isIdOrEaf = (docType === 'id_picture' || docType === 'eaf');
+            const isLetter = (docType === 'letter_to_mayor');
+            const isCert = (docType === 'certificate_of_indigency');
+            
+            html += '<div class="card mb-4"><div class="card-header bg-primary text-white">';
+            html += '<h5 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Verification Checklist</h5>';
+            html += '</div><div class="card-body"><div class="verification-checklist">';
+            
+            // FIRST NAME
+            const fnMatch = idv.first_name_match;
+            const fnConf = parseFloat(idv.first_name_confidence || 0);
+            const fnClass = fnMatch ? 'check-passed' : 'check-failed';
+            const fnIcon = fnMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${fnClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${fnIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>First Name</strong> ${fnMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${fnMatch ? 'bg-success' : 'bg-danger'} confidence-score">${fnConf.toFixed(0)}%</span>
+            </div>`;
+            
+            // MIDDLE NAME (ID/EAF only)
+            if (isIdOrEaf) {
+                const mnMatch = idv.middle_name_match;
+                const mnConf = parseFloat(idv.middle_name_confidence || 0);
+                const mnClass = mnMatch ? 'check-passed' : 'check-failed';
+                const mnIcon = mnMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${mnClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${mnIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Middle Name</strong> ${mnMatch ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${mnMatch ? 'bg-success' : 'bg-danger'} confidence-score">${mnConf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            // LAST NAME
+            const lnMatch = idv.last_name_match;
+            const lnConf = parseFloat(idv.last_name_confidence || 0);
+            const lnClass = lnMatch ? 'check-passed' : 'check-failed';
+            const lnIcon = lnMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${lnClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${lnIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Last Name</strong> ${lnMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${lnMatch ? 'bg-success' : 'bg-danger'} confidence-score">${lnConf.toFixed(0)}%</span>
+            </div>`;
+            
+            // YEAR LEVEL or BARANGAY
+            if (isIdOrEaf) {
+                const ylMatch = idv.year_level_match;
+                const ylClass = ylMatch ? 'check-passed' : 'check-failed';
+                const ylIcon = ylMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${ylClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${ylIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Year Level</strong> ${ylMatch ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${ylMatch ? 'bg-success' : 'bg-secondary'} confidence-score">${ylMatch ? '✓' : '✗'}</span>
+                </div>`;
+            } else if (isLetter || isCert) {
+                const brgyMatch = idv.barangay_match;
+                const brgyConf = parseFloat(idv.barangay_confidence || 0);
+                const brgyClass = brgyMatch ? 'check-passed' : 'check-failed';
+                const brgyIcon = brgyMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${brgyClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${brgyIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Barangay</strong> ${brgyMatch ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${brgyMatch ? 'bg-success' : 'bg-danger'} confidence-score">${brgyConf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            // UNIVERSITY/SCHOOL (ID/EAF only)
+            if (isIdOrEaf) {
+                const schoolMatch = idv.school_match || idv.university_match;
+                const schoolConf = parseFloat(idv.school_confidence || idv.university_confidence || 0);
+                const schoolClass = schoolMatch ? 'check-passed' : 'check-failed';
+                const schoolIcon = schoolMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${schoolClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${schoolIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>University/School</strong> ${schoolMatch ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${schoolMatch ? 'bg-success' : 'bg-danger'} confidence-score">${schoolConf.toFixed(0)}%</span>
+                </div>`;
+            } else if (isLetter) {
+                const officeMatch = idv.office_header_found;
+                const officeConf = parseFloat(idv.office_header_confidence || 0);
+                const officeClass = officeMatch ? 'check-passed' : 'check-warning';
+                const officeIcon = officeMatch ? 'check-circle-fill text-success' : 'exclamation-circle-fill text-warning';
+                html += `<div class="form-check ${officeClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${officeIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Mayor's Office Header</strong> ${officeMatch ? 'Found' : 'Not Found'}</span></div>
+                    <span class="badge ${officeMatch ? 'bg-success' : 'bg-warning'} confidence-score">${officeConf.toFixed(0)}%</span>
+                </div>`;
+            } else if (isCert) {
+                const certMatch = idv.certificate_title_found;
+                const certConf = parseFloat(idv.certificate_title_confidence || 0);
+                const certClass = certMatch ? 'check-passed' : 'check-warning';
+                const certIcon = certMatch ? 'check-circle-fill text-success' : 'exclamation-circle-fill text-warning';
+                html += `<div class="form-check ${certClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${certIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Certificate Title</strong> ${certMatch ? 'Found' : 'Not Found'}</span></div>
+                    <span class="badge ${certMatch ? 'bg-success' : 'bg-warning'} confidence-score">${certConf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            // OFFICIAL KEYWORDS (ID/EAF only)
+            if (isIdOrEaf) {
+                const kwMatch = idv.official_keywords;
+                const kwConf = parseFloat(idv.keywords_confidence || 0);
+                const kwClass = kwMatch ? 'check-passed' : 'check-failed';
+                const kwIcon = kwMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${kwClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${kwIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Official Document Keywords</strong> ${kwMatch ? 'Found' : 'Not Found'}</span></div>
+                    <span class="badge ${kwMatch ? 'bg-success' : 'bg-danger'} confidence-score">${kwConf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            html += '</div></div></div>'; // Close checklist, card-body, card
+            
+            // === OVERALL SUMMARY ===
+            const avgConf = parseFloat(idv.average_confidence || validation.ocr_confidence || 0);
+            const passedChecks = idv.passed_checks || 0;
+            const totalChecks = idv.total_checks || 6;
+            const verificationScore = ((passedChecks / totalChecks) * 100);
+            
+            let statusMessage = '';
+            let statusClass = '';
+            let statusIcon = '';
+            
+            if (verificationScore >= 80) {
+                statusMessage = 'Document validation successful';
+                statusClass = 'alert-success';
+                statusIcon = 'check-circle-fill';
+            } else if (verificationScore >= 60) {
+                statusMessage = 'Document validation passed with warnings';
+                statusClass = 'alert-warning';
+                statusIcon = 'exclamation-triangle-fill';
+            } else {
+                statusMessage = 'Document validation failed - manual review required';
+                statusClass = 'alert-danger';
+                statusIcon = 'x-circle-fill';
+            }
+            
+            html += `<div class="card mb-4"><div class="card-header bg-light"><h6 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Overall Analysis</h6></div><div class="card-body">`;
+            html += `<div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <div class="text-center p-3 bg-light rounded">
+                        <small class="text-muted d-block mb-1">Average Confidence</small>
+                        <h4 class="mb-0 fw-bold text-primary">${avgConf.toFixed(1)}%</h4>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-center p-3 bg-light rounded">
+                        <small class="text-muted d-block mb-1">Passed Checks</small>
+                        <h4 class="mb-0 fw-bold text-success">${passedChecks}/${totalChecks}</h4>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-center p-3 bg-light rounded">
+                        <small class="text-muted d-block mb-1">Verification Score</small>
+                        <h4 class="mb-0 fw-bold ${verificationScore >= 80 ? 'text-success' : (verificationScore >= 60 ? 'text-warning' : 'text-danger')}">${verificationScore.toFixed(0)}%</h4>
+                    </div>
+                </div>
+            </div>`;
+            
+            html += `<div class="alert ${statusClass} mb-0">
+                <h6 class="mb-0"><i class="bi bi-${statusIcon} me-2"></i>${statusMessage}</h6>`;
+            if (idv.recommendation) {
+                html += `<small class="mt-2 d-block"><strong>Recommendation:</strong> ${idv.recommendation}</small>`;
+            }
+            html += `</div></div></div>`; // Close card-body, card
+        }
+        
+        // === EXTRACTED GRADES (for grades document) ===
+        if (docType === 'grades' && validation.extracted_grades) {
+            html += '<div class="card mb-4"><div class="card-header bg-success text-white">';
+            html += '<h6 class="mb-0"><i class="bi bi-list-check me-2"></i>Extracted Grades</h6>';
+            html += '</div><div class="card-body p-0"><div class="table-responsive">';
+            html += '<table class="table table-bordered table-hover mb-0"><thead class="table-light"><tr><th>Subject</th><th>Grade</th><th>Confidence</th><th>Status</th></tr></thead><tbody>';
+            
+            validation.extracted_grades.forEach(grade => {
+                const conf = parseFloat(grade.extraction_confidence || 0);
+                const confColor = conf >= 80 ? 'success' : (conf >= 60 ? 'warning' : 'danger');
+                const statusIcon = grade.is_passing === 't' ? 'check-circle-fill' : 'x-circle-fill';
+                const statusColor = grade.is_passing === 't' ? 'success' : 'danger';
+                
+                html += `<tr>
+                    <td>${grade.subject_name || 'N/A'}</td>
+                    <td><strong>${grade.grade_value || 'N/A'}</strong></td>
+                    <td><span class="badge bg-${confColor}">${conf.toFixed(1)}%</span></td>
+                    <td><i class="bi bi-${statusIcon} text-${statusColor}"></i> ${grade.is_passing === 't' ? 'Passing' : 'Failing'}</td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table></div></div></div>';
+            
+            if (validation.validation_status) {
+                const statusColors = {'passed': 'success', 'failed': 'danger', 'manual_review': 'warning', 'pending': 'info'};
+                const statusColor = statusColors[validation.validation_status] || 'secondary';
+                html += `<div class="alert alert-${statusColor}"><strong>Grade Validation Status:</strong> ${validation.validation_status.toUpperCase().replace('_', ' ')}</div>`;
+            }
+        }
+        
+        // === EXTRACTED TEXT ===
+        if (validation.extracted_text) {
+            html += '<div class="card"><div class="card-header bg-secondary text-white">';
+            html += '<h6 class="mb-0"><i class="bi bi-file-text me-2"></i>Extracted Text (OCR)</h6>';
+            html += '</div><div class="card-body">';
+            const textPreview = validation.extracted_text.substring(0, 2000);
+            const hasMore = validation.extracted_text.length > 2000;
+            html += `<pre style="max-height:400px;overflow-y:auto;font-size:0.85em;white-space:pre-wrap;background:#f8f9fa;padding:15px;border-radius:4px;border:1px solid #dee2e6;">${textPreview}${hasMore ? '\n\n... (text truncated)' : ''}</pre>`;
+            html += '</div></div>';
+        }
+        
+        return html;
+    }
+
+    // Show validation modal
+    function showValidationModal() {
+        const validationModalEl = document.getElementById('validationModal');
+        let validationModal = bootstrap.Modal.getInstance(validationModalEl);
+        
+        if (!validationModal) {
+            validationModal = new bootstrap.Modal(validationModalEl, {
+                backdrop: 'static',
+                keyboard: true,
+                focus: true
+            });
+        }
+        
+        // Create custom backdrop to dim the student info modal
+        let backdrop = document.getElementById('validationModalBackdrop');
+        if (!backdrop) {
+            backdrop = document.createElement('div');
+            backdrop.id = 'validationModalBackdrop';
+            backdrop.className = 'validation-backdrop';
+            document.body.appendChild(backdrop);
+        }
+        
+        // Show backdrop
+        backdrop.classList.add('show');
+        
+        // Show the validation modal (it will appear on top of student info modal)
+        validationModal.show();
+        
+        // Hide backdrop when modal is closed
+        validationModalEl.addEventListener('hidden.bs.modal', function() {
+            backdrop.classList.remove('show');
+        }, { once: true });
+    }
+    </script>
+
+    <!-- Validation Modal -->
+    <div class="modal fade" id="validationModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title" id="validationModalLabel">
+                        <i class="bi bi-clipboard-check me-2"></i>Validation Results
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="validationModalBody">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-info" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3 text-muted">Loading validation data...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Include Blacklist Modal -->
     <?php include '../../includes/admin/blacklist_modal.php'; ?>

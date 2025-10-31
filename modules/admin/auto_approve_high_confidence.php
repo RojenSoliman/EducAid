@@ -1,5 +1,6 @@
 <?php
 include __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../services/UnifiedFileService.php';
 require_once __DIR__ . '/../../includes/student_notification_helper.php';
 session_start();
 
@@ -22,14 +23,18 @@ if (!$input || $input['action'] !== 'auto_approve_high_confidence') {
     exit;
 }
 
-$min_confidence = $input['min_confidence'] ?? 85;
+$min_confidence = $input['min_confidence'] ?? 80;
 
 try {
     // Begin transaction
     pg_query($connection, "BEGIN");
     
+    // Initialize UnifiedFileService
+    $fileService = new UnifiedFileService($connection);
+    
     // Get high confidence registrations
     $query = "SELECT s.student_id, s.first_name, s.last_name, s.extension_name, s.email,
+                     s.school_student_id, s.university_id,
                      COALESCE(s.confidence_score, calculate_confidence_score(s.student_id)) as confidence_score
               FROM students s 
               WHERE s.status = 'under_registration' 
@@ -50,18 +55,86 @@ try {
     
     // Process each student
     foreach ($students_to_approve as $student) {
-        // Update student status to applicant
-        $updateQuery = "UPDATE students SET status = 'applicant' WHERE student_id = $1";
-        $updateResult = pg_query_params($connection, $updateQuery, [$student['student_id']]);
+        // Get slot's academic year first
+        $slotQuery = "SELECT ss.academic_year, ss.semester 
+                     FROM students s 
+                     LEFT JOIN signup_slots ss ON s.slot_id = ss.slot_id 
+                     WHERE s.student_id = $1";
+        $slotResult = pg_query_params($connection, $slotQuery, [$student['student_id']]);
+        $slotData = pg_fetch_assoc($slotResult);
+        
+        // Update student status to applicant and mark as new registration (no upload needed)
+        $updateQuery = "UPDATE students 
+                       SET status = 'applicant', 
+                           needs_document_upload = FALSE,
+                           first_registered_academic_year = $2,
+                           current_academic_year = $2
+                       WHERE student_id = $1";
+        $updateResult = pg_query_params($connection, $updateQuery, [
+            $student['student_id'],
+            $slotData['academic_year'] ?? null
+        ]);
         
         if ($updateResult) {
-            // Move files from temp to permanent storage using FileManagementService AND update documents table
-            require_once __DIR__ . '/../../services/FileManagementService.php';
-            $fileService = new FileManagementService($connection);
-            $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($student['student_id'], $_SESSION['admin_id']);
+            // Insert into school_student_ids table if applicable
+            if (!empty($student['school_student_id']) && !empty($student['university_id'])) {
+                // Get university name
+                $uniQuery = "SELECT name FROM universities WHERE university_id = $1";
+                $uniResult = pg_query_params($connection, $uniQuery, [$student['university_id']]);
+                $uniData = pg_fetch_assoc($uniResult);
+                
+                if ($uniData) {
+                    $schoolIdInsert = "INSERT INTO school_student_ids (
+                        student_id, university_id, school_student_id, university_name,
+                        first_name, last_name, registered_at, status, notes
+                    ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'active', 'Auto-approved by system')
+                    ON CONFLICT (university_id, school_student_id) DO NOTHING";
+                    
+                    pg_query_params($connection, $schoolIdInsert, [
+                        $student['student_id'],
+                        $student['university_id'],
+                        $student['school_student_id'],
+                        $uniData['name'],
+                        $student['first_name'],
+                        $student['last_name']
+                    ]);
+                }
+            }
             
-            if (!$fileMoveResult['success']) {
-                error_log("Auto-approve FileManagement: Error moving files for student " . $student['student_id'] . ": " . implode(', ', $fileMoveResult['errors']));
+            // Update or create course mapping
+            if (!empty($student['course'])) {
+                $checkMappingQuery = "SELECT mapping_id, occurrence_count 
+                                     FROM courses_mapping 
+                                     WHERE raw_course_name = $1 AND university_id = $2";
+                $mappingResult = pg_query_params($connection, $checkMappingQuery, [
+                    $student['course'],
+                    $student['university_id']
+                ]);
+                
+                if ($mappingResult && pg_num_rows($mappingResult) > 0) {
+                    $mapping = pg_fetch_assoc($mappingResult);
+                    pg_query_params($connection, 
+                        "UPDATE courses_mapping 
+                         SET occurrence_count = occurrence_count + 1, last_seen = NOW()
+                         WHERE mapping_id = $1", 
+                        [$mapping['mapping_id']]);
+                } else {
+                    pg_query_params($connection, 
+                        "INSERT INTO courses_mapping 
+                         (raw_course_name, normalized_course, university_id, program_duration,
+                          occurrence_count, is_verified, created_by, created_at, last_seen)
+                         VALUES ($1, $2, $3, 4, 1, FALSE, $4, NOW(), NOW())", 
+                        [$student['course'], $student['course'], $student['university_id'], null]);
+                }
+            }
+            
+            // Use UnifiedFileService to move files from temp to permanent storage
+            $moveResult = $fileService->moveToPermStorage($student['student_id'], $_SESSION['admin_id'] ?? null);
+            
+            if ($moveResult['success']) {
+                error_log("Auto-approve: Successfully moved " . $moveResult['moved_count'] . " documents for student " . $student['student_id']);
+            } else {
+                error_log("Auto-approve: Error moving documents for student " . $student['student_id'] . " - " . ($moveResult['errors'][0] ?? 'Unknown error'));
             }
             
             // Send approval email

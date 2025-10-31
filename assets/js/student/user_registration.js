@@ -571,13 +571,6 @@ function nextStep() {
     console.log('=== End Debug ===');
     
     if (currentStep === 8) return;
-    
-    // TEMPORARY DEBUG: Skip validation for Step 1-3 to test progression
-    if (currentStep <= 3) {
-        console.log('🚀 DEBUG: Skipping validation for steps 1-3');
-        showStep(currentStep + 1);
-        return;
-    }
 
     // Clear any existing highlights first
     clearFieldHighlights();
