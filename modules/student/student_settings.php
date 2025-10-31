@@ -853,6 +853,66 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
         gap: 0.25rem;
       }
     }
+
+    /* Accessibility Features CSS */
+    /* Text Size Options */
+    html.text-small {
+      font-size: 14px;
+    }
+
+    html.text-normal {
+      font-size: 16px;
+    }
+
+    html.text-large {
+      font-size: 18px;
+    }
+
+    /* High Contrast Mode */
+    html.high-contrast {
+      filter: contrast(1.5);
+    }
+
+    html.high-contrast body {
+      background: #000 !important;
+      color: #fff !important;
+    }
+
+    html.high-contrast .settings-section,
+    html.high-contrast .content-card,
+    html.high-contrast .settings-nav {
+      background: #1a1a1a !important;
+      border-color: #444 !important;
+      color: #fff !important;
+    }
+
+    html.high-contrast .session-item,
+    html.high-contrast .history-item {
+      background: #222 !important;
+      border-color: #555 !important;
+      color: #fff !important;
+    }
+
+    html.high-contrast .btn {
+      border: 2px solid #fff !important;
+      font-weight: 600 !important;
+    }
+
+    /* Reduce Animations */
+    html.reduce-animations *,
+    html.reduce-animations *::before,
+    html.reduce-animations *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+
+    /* Toggle Switch Styling */
+    .form-check-input:checked {
+      background-color: #4299e1;
+      border-color: #4299e1;
+    }
   </style>
 </head>
 <body>
@@ -895,6 +955,10 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
               <a href="#security" class="settings-nav-item">
                 <i class="bi bi-shield-lock me-2"></i>
                 Security & Privacy
+              </a>
+              <a href="accessibility.php" class="settings-nav-item">
+                <i class="bi bi-universal-access me-2"></i>
+                Accessibility
               </a>
               <a href="active_sessions.php" class="settings-nav-item">
                 <i class="bi bi-laptop me-2"></i>

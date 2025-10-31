@@ -337,6 +337,10 @@ unset($_SESSION['session_flash'], $_SESSION['session_flash_type']);
                 <i class="bi bi-shield-lock me-2"></i>
                 Security & Privacy
               </a>
+              <a href="accessibility.php" class="settings-nav-item">
+                <i class="bi bi-universal-access me-2"></i>
+                Accessibility
+              </a>
               <a href="active_sessions.php" class="settings-nav-item active">
                 <i class="bi bi-laptop me-2"></i>
                 Active Sessions

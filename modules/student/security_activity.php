@@ -290,6 +290,10 @@ $student_info = pg_fetch_assoc($student_info_result);
                 <i class="bi bi-shield-lock me-2"></i>
                 Security & Privacy
               </a>
+              <a href="accessibility.php" class="settings-nav-item">
+                <i class="bi bi-universal-access me-2"></i>
+                Accessibility
+              </a>
               <a href="active_sessions.php" class="settings-nav-item">
                 <i class="bi bi-laptop me-2"></i>
                 Active Sessions
