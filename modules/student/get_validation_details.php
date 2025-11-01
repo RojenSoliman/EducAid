@@ -148,8 +148,19 @@ function getValidationDetails_Permanent($connection, $student_id, $document_type
             });
             
             $file_path = $main_files[0];  // Get newest file
-            // Get verify.json path - same filename but add .verify.json
-            $verify_json_path = $file_path . '.verify.json';
+            
+            // Get verify.json path - remove extension first, then add .verify.json
+            // For permanent files: filename_timestamp.verify.json (without document extension)
+            $path_without_ext = preg_replace('/\.(pdf|jpg|jpeg|png|gif)$/i', '', $file_path);
+            $verify_json_path = $path_without_ext . '.verify.json';
+            
+            // Fallback: try with extension if the first doesn't exist (for temp files)
+            if (!file_exists($verify_json_path)) {
+                $verify_json_path_alt = $file_path . '.verify.json';
+                if (file_exists($verify_json_path_alt)) {
+                    $verify_json_path = $verify_json_path_alt;
+                }
+            }
         }
     }
     
@@ -165,7 +176,18 @@ function getValidationDetails_Permanent($connection, $student_id, $document_type
     
     // Load OCR text if exists
     $ocr_text = null;
-    $ocr_text_path = $file_path . '.ocr.txt';
+    // Also remove extension for OCR text path
+    $path_without_ext = preg_replace('/\.(pdf|jpg|jpeg|png|gif)$/i', '', $file_path);
+    $ocr_text_path = $path_without_ext . '.ocr.txt';
+    
+    // Fallback to with-extension version for temp files
+    if (!file_exists($ocr_text_path)) {
+        $ocr_text_path_alt = $file_path . '.ocr.txt';
+        if (file_exists($ocr_text_path_alt)) {
+            $ocr_text_path = $ocr_text_path_alt;
+        }
+    }
+    
     if (file_exists($ocr_text_path)) {
         $ocr_text = file_get_contents($ocr_text_path);
     }

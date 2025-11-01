@@ -3654,16 +3654,18 @@ function generateValidationHTML(validation, docType) {
                 <span class="badge ${mayorMatch ? 'bg-success' : 'bg-danger'} confidence-score">${mayorConf.toFixed(0)}%</span>
             </div>`;
             
-            // Municipality
-            const muniMatch = idv.municipality_match;
-            const muniConf = parseFloat(idv.municipality_confidence || 0);
-            const muniClass = muniMatch ? 'check-passed' : 'check-failed';
-            const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
-            html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
-                <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
-                <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
-                <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
-            </div>`;
+            // Municipality (only show if municipality check exists in validation data)
+            if (idv.municipality !== undefined || idv.general_trias !== undefined) {
+                const muniMatch = idv.municipality || idv.general_trias;
+                const muniConf = parseFloat(idv.confidence_scores?.municipality || idv.confidence_scores?.general_trias || 0);
+                const muniClass = muniMatch ? 'check-passed' : 'check-failed';
+                const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
+                </div>`;
+            }
         } else if (isCert) {
             // Certificate Title
             const certMatch = idv.certificate_title_match;
@@ -3687,16 +3689,18 @@ function generateValidationHTML(validation, docType) {
                 <span class="badge ${barangayMatch ? 'bg-success' : 'bg-danger'} confidence-score">${barangayConf.toFixed(0)}%</span>
             </div>`;
             
-            // Municipality
-            const muniMatch = idv.municipality_match;
-            const muniConf = parseFloat(idv.municipality_confidence || 0);
-            const muniClass = muniMatch ? 'check-passed' : 'check-failed';
-            const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
-            html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
-                <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
-                <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
-                <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
-            </div>`;
+            // Municipality (only show if municipality check exists in validation data)
+            if (idv.municipality !== undefined || idv.general_trias !== undefined) {
+                const muniMatch = idv.municipality || idv.general_trias;
+                const muniConf = parseFloat(idv.confidence_scores?.municipality || idv.confidence_scores?.general_trias || 0);
+                const muniClass = muniMatch ? 'check-passed' : 'check-failed';
+                const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
+                </div>`;
+            }
         }
         
         // OFFICIAL KEYWORDS (ID/EAF only)
