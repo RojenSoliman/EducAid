@@ -497,6 +497,9 @@ function _normalize_token($s) {
 }
 
 // Find newest file in a folder that matches both first and last name (case-insensitive)
+// NOTE: This function is used by check_documents() to verify document completeness
+// Searches permanent storage: student/{doc_type}/{student_id}/ and legacy flat structure
+// For modal display, use get_applicant_details.php endpoint instead
 function find_student_documents($first_name, $last_name, $student_id = null) {
     $server_base = dirname(__DIR__, 2) . '/assets/uploads/student/'; // absolute server path
     $web_base    = '../../assets/uploads/student/';                   // web path from this PHP file
@@ -561,6 +564,8 @@ function find_student_documents($first_name, $last_name, $student_id = null) {
 }
 
 // Helper to find documents by student_id by first fetching the name
+// NOTE: This function is still used by check_documents() to verify document completeness
+// For modal display, use get_applicant_details.php endpoint instead
 function find_student_documents_by_id($connection, $student_id) {
     $res = pg_query_params($connection, "SELECT first_name, last_name FROM students WHERE student_id = $1", [$student_id]);
     if ($res && pg_num_rows($res)) {
@@ -568,60 +573,6 @@ function find_student_documents_by_id($connection, $student_id) {
         return find_student_documents($row['first_name'] ?? '', $row['last_name'] ?? '', $student_id);
     }
     return [];
-}
-
-// Scan the students upload directory for files following the pattern {student_id}_{token}_{timestamp}.{ext}
-// Supports tokens: eaf, letter, indigency, id, grades (grades handled separately in UI)
-function find_student_documents_in_students_dir($student_id) {
-    $found = [];
-    $server_base = dirname(__DIR__, 2) . '/assets/uploads/students/'; // absolute server path
-    $web_base    = '../../assets/uploads/students/';                   // web path from this PHP file
-
-    if (!is_dir($server_base)) return $found;
-
-    // Iterate each student folder and look for files starting with this student_id
-    foreach (glob($server_base . '*', GLOB_ONLYDIR) as $studentFolder) {
-        $pattern = $studentFolder . '/' . $student_id . '_*.*';
-        $matches = glob($pattern);
-        if (empty($matches)) continue;
-
-        // Map tokens to doc types used in DB/UI
-        $map = [
-            'eaf' => 'eaf',
-            'letter' => 'letter_to_mayor',
-            'indigency' => 'certificate_of_indigency',
-            'id' => 'id_picture',
-            'grades' => 'grades', // Map to 'grades' for consistency
-        ];
-
-        // Keep latest file per type
-        $latest = [];
-        foreach ($matches as $file) {
-            $base = basename($file);
-            // Expect filename like: {student_id}_{token}_{timestamp}.ext
-            if (preg_match('/^' . preg_quote($student_id, '/') . '_([a-zA-Z0-9_-]+)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.[a-z0-9]+$/i', $base, $m)) {
-                $token = strtolower($m[1]);
-                $type = $map[$token] ?? null;
-                if (!$type) continue;
-                $mtime = @filemtime($file) ?: 0;
-                if (!isset($latest[$type]) || $mtime > $latest[$type]['mtime']) {
-                    $latest[$type] = ['file' => $file, 'mtime' => $mtime];
-                }
-            }
-        }
-
-        foreach ($latest as $type => $info) {
-            // Build web path
-            $rel = str_replace($server_base, $web_base, $info['file']);
-            $found[$type] = $rel;
-        }
-
-        // We only need to check the specific student's folder
-        // since student_id is embedded, first match is enough
-        if (!empty($found)) break;
-    }
-
-    return $found;
 }
 
 // Function to check if all required documents are uploaded
@@ -843,459 +794,13 @@ function render_table($applicants, $connection) {
                                 <button class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
-                                <?php if ($needs_upload): ?>
-                                <div class="alert alert-warning mb-3">
-                                    <i class="bi bi-info-circle"></i> 
-                                    <strong>Re-upload Required:</strong> This student is an existing applicant who needs to upload/re-upload their documents via the Upload Documents tab.
+                                <!-- Loading placeholder - content will be loaded via AJAX from get_applicant_details.php -->
+                                <div class="text-center py-5">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p class="mt-3 text-muted">Loading documents...</p>
                                 </div>
-                                <?php else: ?>
-                                <div class="alert alert-info mb-3">
-                                    <i class="bi bi-check-circle"></i> 
-                                    <strong>New Registration:</strong> This student registered through the online registration system and submitted documents during registration.
-                                </div>
-                                <?php endif; ?>
-                                <?php
-                                // Map document type codes to readable names
-                                $doc_type_map = [
-                                    '04' => 'id_picture',
-                                    '00' => 'eaf',
-                                    '02' => 'letter_to_mayor',
-                                    '03' => 'certificate_of_indigency',
-                                    '01' => 'grades'
-                                ];
-                                
-                                // First, get documents from database (only those with valid file paths that exist)
-                                $docs = pg_query_params($connection, "SELECT document_type_code, file_path FROM documents WHERE student_id = $1", [$student_id]);
-                                $db_documents = [];
-                                while ($doc = pg_fetch_assoc($docs)) {
-                                    // Only include documents where the file actually exists
-                                    // Try both temp and student directories
-                                    $filePath = $doc['file_path'];
-                                    $docTypeCode = $doc['document_type_code'];
-                                    $docTypeName = $doc_type_map[$docTypeCode] ?? 'unknown';
-                                    
-                                    $server_root = dirname(__DIR__, 2);
-                                    
-                                    // Check if path contains 'temp' - replace with 'student' for approved students
-                                    if (strpos($filePath, '/temp/') !== false) {
-                                        $permanentPath = str_replace('/temp/', '/student/', $filePath);
-                                        // Check if permanent file exists
-                                        $relative_from_root = ltrim(str_replace('../../', '', $permanentPath), '/');
-                                        $server_path = $server_root . '/' . $relative_from_root;
-                                        
-                                        if (file_exists($server_path)) {
-                                            $db_documents[$docTypeName] = $permanentPath;
-                                        } else {
-                                            // Fallback to temp path
-                                            $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
-                                            $server_path = $server_root . '/' . $relative_from_root;
-                                            if (file_exists($server_path)) {
-                                                $db_documents[$docTypeName] = $filePath;
-                                            }
-                                        }
-                                    } else {
-                                        // Already permanent path
-                                        $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
-                                        $server_path = $server_root . '/' . $relative_from_root;
-                                        if (file_exists($server_path)) {
-                                            $db_documents[$docTypeName] = $filePath;
-                                        }
-                                    }
-                                }
-                                
-                                // Map academic_grades to grades for consistency with other document lookups
-                                if (isset($db_documents['academic_grades'])) {
-                                    $db_documents['grades'] = $db_documents['academic_grades'];
-                                }
-
-                                // Then, search for documents in student directory using student_id pattern
-                                $found_documents = [];
-                                $server_base = dirname(__DIR__, 2) . '/assets/uploads/student/';
-                                $web_base = '../../assets/uploads/student/';
-                                
-                                // Get student's name for fallback search
-                                $first_name = $applicant['first_name'] ?? '';
-                                $last_name = $applicant['last_name'] ?? '';
-                                
-                                $document_folders = [
-                                    'id_pictures' => 'id_picture',
-                                    'enrollment_forms' => 'eaf',
-                                    'letter_mayor' => 'letter_to_mayor', // Fixed: matches DocumentReuploadService folder name
-                                    'indigency' => 'certificate_of_indigency',
-                                    'grades' => 'grades'
-                                ];
-                                
-                                foreach ($document_folders as $folder => $type) {
-                                    $matches = [];
-                                    
-                                    // NEW STRUCTURE: Check student/{doc_type}/{student_id}/ folder first
-                                    $student_subdir = $server_base . $folder . '/' . $student_id . '/';
-                                    if (is_dir($student_subdir)) {
-                                        foreach (glob($student_subdir . '*') as $file) {
-                                            // Skip associated files
-                                            if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $file)) continue;
-                                            if (is_dir($file)) continue;
-                                            
-                                            $matches[filemtime($file)] = [
-                                                'server' => $file,
-                                                'web' => $web_base . $folder . '/' . $student_id . '/' . basename($file)
-                                            ];
-                                        }
-                                    }
-                                    
-                                    // OLD STRUCTURE: Check flat student/{doc_type}/ folder
-                                    $dir = $server_base . $folder . '/';
-                                    if (is_dir($dir)) {
-                                        // Look for files starting with student_id OR containing student's name
-                                        $pattern = $dir . $student_id . '_*';
-                                        $id_matches = glob($pattern);
-                                        
-                                        // If no matches by student_id, try searching by name
-                                        if (empty($id_matches)) {
-                                            $all_files = glob($dir . '*');
-                                            foreach ($all_files as $file) {
-                                                // Skip subdirectories and associated files
-                                                if (is_dir($file)) continue;
-                                                if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $file)) continue;
-                                                
-                                                $basename = strtolower(basename($file));
-                                                $first_norm = strtolower($first_name);
-                                                $last_norm = strtolower($last_name);
-                                                
-                                                // Check if file contains both first and last name
-                                                if (strpos($basename, $first_norm) !== false && 
-                                                    strpos($basename, $last_norm) !== false) {
-                                                    $id_matches[] = $file;
-                                                }
-                                            }
-                                        } else {
-                                            // Filter out subdirectories and associated files from pattern matches
-                                            $id_matches = array_filter($id_matches, function($file) {
-                                                if (is_dir($file)) return false;
-                                                return !preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $file);
-                                            });
-                                        }
-                                        
-                                        // Add flat folder matches to the matches array
-                                        foreach ($id_matches as $file) {
-                                            $matches[filemtime($file)] = [
-                                                'server' => $file,
-                                                'web' => $web_base . $folder . '/' . basename($file)
-                                            ];
-                                        }
-                                    }
-                                    
-                                    if (!empty($matches)) {
-                                        // Get the newest file
-                                        krsort($matches); // Sort by timestamp, newest first
-                                        $newest = reset($matches);
-                                        $found_documents[$type] = $newest['web'];
-                                    }
-                                }
-                                
-                                // Also search temp folders for documents not yet moved to permanent storage
-                                $temp_base = dirname(__DIR__, 2) . '/assets/uploads/temp/';
-                                $temp_web_base = '../../assets/uploads/temp/';
-                                
-                                foreach ($document_folders as $folder => $type) {
-                                    // Skip if already found in student directory
-                                    if (isset($found_documents[$type])) {
-                                        continue;
-                                    }
-                                    
-                                    $temp_dir = $temp_base . $folder . '/';
-                                    if (is_dir($temp_dir)) {
-                                        // Search by student_id or name
-                                        $all_files = glob($temp_dir . '*');
-                                        $matches = [];
-                                        
-                                        foreach ($all_files as $file) {
-                                            $basename = strtolower(basename($file));
-                                            
-                                            // Skip associated files
-                                            if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/', $basename)) {
-                                                continue;
-                                            }
-                                            
-                                            // Match by student_id or name
-                                            if (strpos($basename, strtolower($student_id)) !== false ||
-                                                (strpos($basename, strtolower($first_name)) !== false && 
-                                                 strpos($basename, strtolower($last_name)) !== false)) {
-                                                $matches[filemtime($file)] = $file;
-                                            }
-                                        }
-                                        
-                                        if (!empty($matches)) {
-                                            krsort($matches); // newest first
-                                            $newest = reset($matches);
-                                            $found_documents[$type] = $temp_web_base . $folder . '/' . basename($newest);
-                                        }
-                                    }
-                                }
-
-                                // Merge all sources, prioritizing file system results over DB
-                                $all_documents = array_merge($db_documents, $found_documents);
-
-                                $document_labels = [
-                                    'id_picture' => 'ID Picture',
-                                    'eaf' => 'EAF',
-                                    'letter_to_mayor' => 'Letter to Mayor',
-                                    'certificate_of_indigency' => 'Certificate of Indigency'
-                                ];
-
-                                // Build cards grid
-                                echo "<div class='doc-grid'>";
-                                $has_documents = false;
-                                foreach ($document_labels as $type => $label) {
-                                    $cardTitle = htmlspecialchars($label);
-                                    if (isset($all_documents[$type])) {
-                                        $has_documents = true;
-                                        $filePath = trim($all_documents[$type]); // Trim any whitespace
-
-                                        // Resolve server path for metadata
-                                        $server_root = dirname(__DIR__, 2);
-                                        $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
-                                        $server_path = $server_root . '/' . $relative_from_root;
-                                        
-                                        // Convert to web-root relative path for browser (not file system)
-                                        // From modules/admin/, ../../ goes to root, so just use the path after ../../
-                                        $webPath = '../../' . $relative_from_root;
-
-                                        // Check extension for image vs PDF (trim filename for safety)
-                                        $cleanPath = basename($filePath);
-                                        $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $cleanPath);
-                                        $is_pdf   = preg_match('/\.pdf$/i', $cleanPath);
-
-                                        $size_str = '';
-                                        $date_str = '';
-                                        if (file_exists($server_path)) {
-                                            $size = filesize($server_path);
-                                            $units = ['B','KB','MB','GB'];
-                                            $pow = $size > 0 ? floor(log($size, 1024)) : 0;
-                                            $size_str = number_format($size / pow(1024, $pow), $pow ? 2 : 0) . ' ' . $units[$pow];
-                                            $date_str = date('M d, Y h:i A', filemtime($server_path));
-                                        }
-
-                                        // Fetch OCR confidence for this document
-                                        // Map type name back to document_type_code
-                                        $type_to_code = [
-                                            'id_picture' => '04',
-                                            'eaf' => '00',
-                                            'letter_to_mayor' => '02',
-                                            'certificate_of_indigency' => '03',
-                                            'grades' => '01'
-                                        ];
-                                        $doc_code = $type_to_code[$type] ?? null;
-                                        
-                                        $ocr_confidence_badge = '';
-                                        if ($doc_code) {
-                                            $ocr_query = pg_query_params($connection, 
-                                                "SELECT ocr_confidence FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
-                                                [$student_id, $doc_code]);
-                                            if ($ocr_query && pg_num_rows($ocr_query) > 0) {
-                                                $ocr_data = pg_fetch_assoc($ocr_query);
-                                                if ($ocr_data['ocr_confidence'] !== null && $ocr_data['ocr_confidence'] > 0) {
-                                                    $conf_val = round($ocr_data['ocr_confidence'], 1);
-                                                    $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
-                                                    $ocr_confidence_badge = "<span class='badge bg-{$conf_color} ms-2'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
-                                                }
-                                            }
-                                        }
-
-                                        $thumbHtml = $is_image
-                                            ? "<img src='" . htmlspecialchars($webPath) . "' class='doc-thumb' alt='$cardTitle' onerror=\"console.error('Failed to load:', this.src); this.parentElement.innerHTML='<div class=\\'doc-thumb doc-thumb-pdf\\'><i class=\\'bi bi-exclamation-triangle\\'></i></div>';\">"
-                                            : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
-
-                                        $safeSrc = htmlspecialchars($webPath);
-                                        
-                                        // Get verification status and score from documents table
-                                        $verification_badge = '';
-                                        $verification_btn = '';
-                                        if ($doc_code) {
-                                            $verify_query = pg_query_params($connection, 
-                                                "SELECT verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
-                                                [$student_id, $doc_code]);
-                                            if ($verify_query && pg_num_rows($verify_query) > 0) {
-                                                $verify_data = pg_fetch_assoc($verify_query);
-                                                $verify_score = $verify_data['verification_score'];
-                                                $verify_status = $verify_data['verification_status'];
-                                                
-                                                if ($verify_score !== null && $verify_score > 0) {
-                                                    $verify_val = round($verify_score, 1);
-                                                    $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
-                                                    $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
-                                                    $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
-                                                    
-                                                    // Add view validation button
-                                                    $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
-                                                        onclick=\"event.stopPropagation(); loadValidationData('$type', '$student_id'); showValidationModal();\">
-                                                        <i class='bi bi-clipboard-check me-1'></i>View Validation Details
-                                                    </button>";
-                                                }
-                                            }
-                                        }
-                                        
-                                        echo "<div class='doc-card'>
-                                                <div class='doc-card-header'>
-                                                    <div class='d-flex justify-content-between align-items-center'>
-                                                        <span>$cardTitle</span>
-                                                        <div class='d-flex gap-1'>
-                                                            $ocr_confidence_badge
-                                                            $verification_badge
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
-                                                <div class='doc-meta'>" .
-                                                    ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
-                                                    ($size_str ? "<span><i class='bi bi-hdd me-1'></i>$size_str</span>" : "") .
-                                                "</div>
-                                                <div class='doc-actions'>
-                                                    <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\" title='View Document'><i class='bi bi-eye'></i></button>
-                                                    <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank' title='Open in New Tab'><i class='bi bi-box-arrow-up-right'></i></a>
-                                                    <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>
-                                                </div>";
-                                        
-                                        // Add validation button if verification data exists (full width, new row)
-                                        if ($verification_btn) {
-                                            echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
-                                                  $verification_btn
-                                                  </div>";
-                                        }
-                                        
-                                        echo "</div>";
-                                    } else {
-                                        echo "<div class='doc-card doc-card-missing'>
-                                                <div class='doc-card-header'>$cardTitle</div>
-                                                <div class='doc-card-body missing'>
-                                                    <div class='missing-icon'><i class='bi bi-exclamation-triangle'></i></div>
-                                                    <div class='missing-text'>Not uploaded</div>
-                                                </div>
-                                                <div class='doc-actions'>
-                                                    <span class='text-muted small'>Awaiting submission</span>
-                                                </div>
-                                              </div>";
-                                    }
-                                }
-                                echo "</div>"; // end doc-grid
-
-                                if (!$has_documents) {
-                                    echo "<p class='text-muted'>No documents uploaded.</p>";
-                                }
-
-                                // Add Academic Grades card using same pattern as other documents
-                                $cardTitle = 'Academic Grades';
-                                
-                                // Check if grades exist in all_documents array first
-                                if (isset($all_documents['grades'])) {
-                                    $filePath = trim($all_documents['grades']); // Trim any whitespace
-                                    
-                                    // Resolve server path for metadata
-                                    $server_root = dirname(__DIR__, 2);
-                                    $relative_from_root = ltrim(str_replace('../../', '', $filePath), '/');
-                                    $server_path = $server_root . '/' . $relative_from_root;
-                                    
-                                    // Convert to web-root relative path for browser
-                                    $webPath = '../../' . $relative_from_root;
-
-                                    // Check extension for image vs PDF (trim filename for safety)
-                                    $cleanPath = basename($filePath);
-                                    $is_image = preg_match('/\.(jpg|jpeg|png|gif)$/i', $cleanPath);
-                                    $is_pdf   = preg_match('/\.pdf$/i', $cleanPath);
-
-                                    $size_str = '';
-                                    $date_str = '';
-                                    if (file_exists($server_path)) {
-                                        $size = filesize($server_path);
-                                        $units = ['B','KB','MB','GB'];
-                                        $pow = $size > 0 ? floor(log($size, 1024)) : 0;
-                                        $size_str = number_format($size / pow(1024, $pow), $pow ? 2 : 0) . ' ' . $units[$pow];
-                                        $date_str = date('M d, Y h:i A', filemtime($server_path));
-                                    }
-
-                                    $thumbHtml = $is_image
-                                        ? "<img src='" . htmlspecialchars($webPath) . "' class='doc-thumb' alt='$cardTitle' onerror=\"console.error('Failed to load:', this.src); this.parentElement.innerHTML='<div class=\\'doc-thumb doc-thumb-pdf\\'><i class=\\'bi bi-exclamation-triangle\\'></i></div>';\">"
-                                        : "<div class='doc-thumb doc-thumb-pdf'><i class='bi bi-file-earmark-pdf'></i></div>";
-
-                                    $safeSrc = htmlspecialchars($webPath);
-                                    
-                                    // Check for OCR confidence and verification from documents table (document_type_code '01' = grades)
-                                    $ocr_confidence = '';
-                                    $verification_badge = '';
-                                    $verification_btn = '';
-                                    
-                                    $docs_query = pg_query_params($connection, 
-                                        "SELECT ocr_confidence, verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = '01' ORDER BY upload_date DESC LIMIT 1", 
-                                        [$student_id]);
-                                    
-                                    if ($docs_query && pg_num_rows($docs_query) > 0) {
-                                        $doc_data = pg_fetch_assoc($docs_query);
-                                        
-                                        // OCR Confidence
-                                        if ($doc_data['ocr_confidence'] !== null && $doc_data['ocr_confidence'] > 0) {
-                                            $conf_val = round($doc_data['ocr_confidence'], 1);
-                                            $conf_color = $conf_val >= 80 ? 'success' : ($conf_val >= 60 ? 'warning' : 'danger');
-                                            $ocr_confidence = "<span class='badge bg-{$conf_color}'><i class='bi bi-robot me-1'></i>{$conf_val}%</span>";
-                                        }
-                                        
-                                        // Verification Score
-                                        $verify_score = $doc_data['verification_score'];
-                                        if ($verify_score !== null && $verify_score > 0) {
-                                            $verify_val = round($verify_score, 1);
-                                            $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
-                                            $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
-                                            $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
-                                            
-                                            // Add view validation button
-                                            $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
-                                                onclick=\"event.stopPropagation(); loadValidationData('grades', '$student_id'); showValidationModal();\">
-                                                <i class='bi bi-clipboard-check me-1'></i>View Validation Details
-                                            </button>";
-                                        }
-                                    }
-                                    
-                                    echo "<div class='doc-card'>
-                                            <div class='doc-card-header'>
-                                                <div class='d-flex justify-content-between align-items-center'>
-                                                    <span>$cardTitle</span>
-                                                    <div class='d-flex gap-1'>
-                                                        $ocr_confidence
-                                                        $verification_badge
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class='doc-card-body' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\">$thumbHtml</div>
-                                            <div class='doc-meta'>" .
-                                                ($date_str ? "<span><i class='bi bi-calendar-event me-1'></i>$date_str</span>" : "") .
-                                                ($size_str ? "<span><i class='bi bi-hdd me-1'></i>$size_str</span>" : "") .
-                                            "</div>
-                                            <div class='doc-actions'>
-                                                <button type='button' class='btn btn-sm btn-primary' onclick=\"openDocumentViewer('$safeSrc','$cardTitle')\" title='View Document'><i class='bi bi-eye'></i></button>
-                                                <a class='btn btn-sm btn-outline-secondary' href='$safeSrc' target='_blank' title='Open in New Tab'><i class='bi bi-box-arrow-up-right'></i></a>
-                                                <a class='btn btn-sm btn-outline-success' href='$safeSrc' download title='Download'><i class='bi bi-download'></i></a>
-                                            </div>";
-                                    
-                                    // Add validation button if verification data exists (full width, new row)
-                                    if ($verification_btn) {
-                                        echo "<div class='doc-actions' style='border-top: 0; padding-top: 0;'>
-                                              $verification_btn
-                                              </div>";
-                                    }
-                                    
-                                    echo "</div>";
-                                } else {
-                                    echo "<div class='doc-card doc-card-missing'>
-                                            <div class='doc-card-header'>$cardTitle</div>
-                                            <div class='doc-card-body missing'>
-                                                <div class='missing-icon'><i class='bi bi-exclamation-triangle'></i></div>
-                                                <div class='missing-text'>Not uploaded</div>
-                                            </div>
-                                            <div class='doc-actions'>
-                                                <span class='text-muted small'>Awaiting submission</span>
-                                            </div>
-                                          </div>";
-                                }
-                                ?>
                             </div>
                             <div class="modal-footer">
                                 <?php if (!$canApprove): ?>
@@ -1435,12 +940,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$sid]);
         
         // Move files from temp to permanent storage AND update documents table
-        require_once __DIR__ . '/../../services/FileManagementService.php';
-        $fileService = new FileManagementService($connection);
-        $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($sid, $_SESSION['admin_id']);
+        require_once __DIR__ . '/../../services/UnifiedFileService.php';
+        $fileService = new UnifiedFileService($connection);
+        $fileMoveResult = $fileService->moveToPermStorage($sid, $_SESSION['admin_id']);
         
         if (!$fileMoveResult['success']) {
-            error_log("FileManagement: Error moving files for student $sid: " . implode(', ', $fileMoveResult['errors']));
+            error_log("UnifiedFileService: Error moving files for student $sid: " . implode(', ', $fileMoveResult['errors'] ?? []));
         }
         
         // Add admin notification
@@ -1498,12 +1003,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             pg_query_params($connection, "UPDATE students SET status = 'active' WHERE student_id = $1", [$sid]);
 
             // Move files from temp to permanent storage AND update documents table
-            require_once __DIR__ . '/../../services/FileManagementService.php';
-            $fileService = new FileManagementService($connection);
-            $fileMoveResult = $fileService->moveTemporaryFilesToPermanent($sid, $_SESSION['admin_id']);
+            require_once __DIR__ . '/../../services/UnifiedFileService.php';
+            $fileService = new UnifiedFileService($connection);
+            $fileMoveResult = $fileService->moveToPermStorage($sid, $_SESSION['admin_id']);
             
             if (!$fileMoveResult['success']) {
-                error_log("FileManagement: Error moving files for student $sid (override): " . implode(', ', $fileMoveResult['errors']));
+                error_log("UnifiedFileService: Error moving files for student $sid (override): " . implode(', ', $fileMoveResult['errors'] ?? []));
             }
 
             // Add admin notification noting override
@@ -1563,8 +1068,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         // Archive files first
-        require_once __DIR__ . '/../../services/FileManagementService.php';
-        $fileService = new FileManagementService($connection);
+        require_once __DIR__ . '/../../services/UnifiedFileService.php';
+        $fileService = new UnifiedFileService($connection);
         $archiveResult = $fileService->compressArchivedStudent($sid);
         
         if (!$archiveResult['success']) {
@@ -1654,10 +1159,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $deleteDocsQuery = "DELETE FROM documents WHERE student_id = $1";
             pg_query_params($connection, $deleteDocsQuery, [$student_id]);
             
-            // Set needs_document_upload flag and mark documents_to_reupload
+            // Set needs_document_upload flag, mark documents_to_reupload, and reset submission flags
+            // CRITICAL: Reset documents_submitted and documents_validated to allow re-upload
             $updateQuery = "UPDATE students 
                            SET needs_document_upload = TRUE,
-                               documents_to_reupload = $1
+                               documents_to_reupload = $1,
+                               documents_submitted = FALSE,
+                               documents_validated = FALSE,
+                               documents_submission_date = NULL
                            WHERE student_id = $2";
             pg_query_params($connection, $updateQuery, [
                 json_encode(['00', '01', '02', '03', '04']), // All document types
@@ -1674,6 +1183,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SERVER['REMOTE_ADDR']
             ]);
             
+            // Send student notification about document rejection
+            createStudentNotification(
+                $connection,
+                $student_id,
+                'Documents Rejected - Re-upload Required',
+                'Your submitted documents have been rejected by the admin. Please re-upload all required documents through the Upload Documents page.',
+                'warning',
+                'high',
+                'upload_document.php'
+            );
+            
             $_SESSION['success'] = "All documents rejected. Student will be notified to re-upload.";
             
         } catch (Exception $e) {
@@ -1686,6 +1206,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // --------- AJAX handler for modal content refresh ---------
+// NOTE: This endpoint has been replaced by get_applicant_details.php
+// which focuses on permanent storage: student/{filetype}/{studentID}/
+if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
+    // Redirect to new endpoint
+    header('Location: get_applicant_details.php?student_id=' . urlencode($_GET['student_id']));
+    exit;
+}
+
+/* OLD CODE - Kept for reference during migration
 if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
     $student_id = trim($_GET['student_id']); // Keep as TEXT for proper student_id lookup
     
@@ -1974,20 +1503,23 @@ if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
             $verification_btn = '';
             if ($doc_code) {
                 $verify_query = pg_query_params($connection, 
-                    "SELECT verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
+                    "SELECT verification_score, verification_status, ocr_confidence FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
                     [$student_id, $doc_code]);
                 if ($verify_query && pg_num_rows($verify_query) > 0) {
                     $verify_data = pg_fetch_assoc($verify_query);
                     $verify_score = $verify_data['verification_score'];
                     $verify_status = $verify_data['verification_status'];
+                    $has_ocr = $verify_data['ocr_confidence'] !== null && $verify_data['ocr_confidence'] > 0;
                     
                     if ($verify_score !== null && $verify_score > 0) {
                         $verify_val = round($verify_score, 1);
                         $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
                         $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
                         $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
-                        
-                        // Add view validation button
+                    }
+                    
+                    // Show view validation button if document has OCR data OR verification score
+                    if ($has_ocr || ($verify_score !== null && $verify_score > 0)) {
                         $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
                             onclick=\"event.stopPropagation(); loadValidationData('$type', '$student_id'); showValidationModal();\">
                             <i class='bi bi-clipboard-check me-1'></i>View Validation Details
@@ -2100,13 +1632,17 @@ if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
             
             // Verification Score
             $verify_score = $doc_data['verification_score'];
+            $has_ocr_data = $doc_data['ocr_confidence'] !== null && $doc_data['ocr_confidence'] > 0;
+            
             if ($verify_score !== null && $verify_score > 0) {
                 $verify_val = round($verify_score, 1);
                 $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
                 $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
                 $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
-                
-                // Add view validation button
+            }
+            
+            // Show view validation button if document has OCR data OR verification score
+            if ($has_ocr_data || ($verify_score !== null && $verify_score > 0)) {
                 $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
                     onclick=\"event.stopPropagation(); loadValidationData('grades', '$student_id'); showValidationModal();\">
                     <i class='bi bi-clipboard-check me-1'></i>View Validation Details
@@ -2160,6 +1696,7 @@ if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
     echo json_encode(['success' => true, 'html' => $modalContent]);
     exit;
 }
+*/
 
 // --------- AJAX handler ---------
 if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest' || (isset($_GET['ajax']) && $_GET['ajax'] === '1')) {
@@ -2552,9 +2089,226 @@ let isUpdating = false;
 let lastUpdateData = null;
 let modalRefreshIntervals = new Map(); // Track refresh intervals for each open modal
 
+// Function to render documents HTML from JSON data
+function renderDocumentsHTML(data) {
+    if (!data.success || !data.documents) {
+        return '<div class="alert alert-danger">Failed to load documents</div>';
+    }
+    
+    const student = data.student;
+    const documents = data.documents;
+    
+    let html = '';
+    
+    // Student type badge
+    if (student.type === 'existing_student') {
+        html += `<div class="alert alert-warning mb-3">
+            <i class="bi bi-info-circle"></i> 
+            <strong>Re-upload Required:</strong> This student is an existing applicant who needs to upload/re-upload their documents via the Upload Documents tab.
+        </div>`;
+    } else {
+        html += `<div class="alert alert-info mb-3">
+            <i class="bi bi-check-circle"></i> 
+            <strong>New Registration:</strong> This student registered through the online registration system and submitted documents during registration.
+        </div>`;
+    }
+    
+    // Start document grid
+    html += '<div class="doc-grid">';
+    
+    // Define order for document cards (excluding grades which comes last)
+    const docOrder = ['id_picture', 'eaf', 'letter_to_mayor', 'certificate_of_indigency'];
+    
+    let hasDocuments = false;
+    
+    // Render standard documents
+    for (const key of docOrder) {
+        const doc = documents[key];
+        if (!doc) continue;
+        
+        html += '<div class="doc-card">';
+        html += `<div class="doc-card-header">${doc.label}`;
+        
+        if (doc.status) {
+            const statusBadge = doc.status === 'approved' ? 
+                '<span class="badge bg-success ms-2">Approved</span>' : 
+                '<span class="badge bg-warning ms-2">Pending</span>';
+            html += statusBadge;
+        }
+        
+        html += '</div>';
+        
+        if (doc.missing) {
+            html += `<div class="doc-card-body">
+                <div class="missing">
+                    <div class="missing-icon"><i class="bi bi-file-earmark-x"></i></div>
+                    <div class="text-muted">Not uploaded</div>
+                </div>
+            </div>`;
+        } else {
+            hasDocuments = true;
+            
+            // Document preview
+            html += '<div class="doc-card-body" onclick="openDocumentViewer(\'' + doc.path + '\', \'' + doc.label + '\')">';
+            
+            if (doc.type === 'image') {
+                html += `<img src="${doc.path}" class="doc-thumb" alt="${doc.label}">`;
+            } else if (doc.type === 'pdf') {
+                html += '<div class="doc-thumb-pdf"><i class="bi bi-file-pdf"></i></div>';
+            } else {
+                html += '<div class="doc-thumb-pdf"><i class="bi bi-file-earmark"></i></div>';
+            }
+            
+            html += '</div>';
+            
+            // Metadata with OCR confidence if available
+            html += '<div class="doc-meta">';
+            html += `<span><i class="bi bi-hdd"></i> ${doc.size_formatted}</span>`;
+            html += `<span><i class="bi bi-calendar"></i> ${doc.date_formatted}</span>`;
+            
+            // Add OCR confidence badge if available
+            if (doc.ocr_data && doc.ocr_data.confidence) {
+                const confidence = parseFloat(doc.ocr_data.confidence);
+                const confidenceClass = confidence >= 80 ? 'success' : (confidence >= 60 ? 'warning' : 'danger');
+                html += `<span class="badge bg-${confidenceClass} confidence-score">
+                    <i class="bi bi-cpu"></i> ${confidence.toFixed(1)}% OCR
+                </span>`;
+            }
+            
+            // Add verification score badge if available
+            if (doc.ocr_data && doc.ocr_data.verification_score) {
+                const verifyScore = parseFloat(doc.ocr_data.verification_score);
+                const verifyClass = verifyScore >= 80 ? 'success' : (verifyScore >= 60 ? 'warning' : 'danger');
+                const verifyIcon = verifyScore >= 80 ? 'check-circle' : (verifyScore >= 60 ? 'exclamation-triangle' : 'x-circle');
+                html += `<span class="badge bg-${verifyClass} confidence-score">
+                    <i class="bi bi-${verifyIcon}"></i> ${verifyScore.toFixed(1)}%
+                </span>`;
+            }
+            
+            html += '</div>';
+            
+            // Actions
+            html += '<div class="doc-actions">';
+            html += `<button class="btn btn-sm btn-primary" onclick="openDocumentViewer('${doc.path}', '${doc.label}')">
+                <i class="bi bi-eye"></i> View
+            </button>`;
+            html += `<a href="${doc.path}" download class="btn btn-sm btn-success">
+                <i class="bi bi-download"></i> Download
+            </a>`;
+            html += '</div>';
+            
+            // Add validation button if verification data exists (for ALL documents)
+            if (doc.ocr_data && doc.ocr_data.verification) {
+                html += '<div class="doc-actions" style="border-top: 0; padding-top: 0;">';
+                html += `<button class="btn btn-sm btn-info w-100" 
+                    onclick="event.stopPropagation(); loadValidationData('${key}', '${student.id}'); showValidationModal();">
+                    <i class="bi bi-shield-check"></i> View Validation
+                </button>`;
+                html += '</div>';
+            }
+        }
+        
+        html += '</div>'; // end doc-card
+    }
+    
+    html += '</div>'; // end doc-grid
+    
+    if (!hasDocuments) {
+        html += '<p class="text-muted mt-3">No documents uploaded.</p>';
+    }
+    
+    // Add Academic Grades card (separate from grid for special styling)
+    const gradesDoc = documents.grades;
+    if (gradesDoc) {
+        html += '<div class="doc-card mt-3">';
+        html += '<div class="doc-card-header">Academic Grades';
+        
+        if (gradesDoc.status) {
+            const statusBadge = gradesDoc.status === 'approved' ? 
+                '<span class="badge bg-success ms-2">Approved</span>' : 
+                '<span class="badge bg-warning ms-2">Pending</span>';
+            html += statusBadge;
+        }
+        
+        html += '</div>';
+        
+        if (gradesDoc.missing) {
+            html += `<div class="doc-card-body">
+                <div class="missing">
+                    <div class="missing-icon"><i class="bi bi-file-earmark-x"></i></div>
+                    <div class="text-muted">Not uploaded</div>
+                </div>
+            </div>`;
+        } else {
+            // Document preview
+            html += '<div class="doc-card-body" onclick="openDocumentViewer(\'' + gradesDoc.path + '\', \'Academic Grades\')">';
+            
+            if (gradesDoc.type === 'image') {
+                html += `<img src="${gradesDoc.path}" class="doc-thumb" alt="Academic Grades">`;
+            } else if (gradesDoc.type === 'pdf') {
+                html += '<div class="doc-thumb-pdf"><i class="bi bi-file-pdf"></i></div>';
+            } else {
+                html += '<div class="doc-thumb-pdf"><i class="bi bi-file-earmark"></i></div>';
+            }
+            
+            html += '</div>';
+            
+            // Metadata with OCR confidence and verification score
+            html += '<div class="doc-meta">';
+            html += `<span><i class="bi bi-hdd"></i> ${gradesDoc.size_formatted}</span>`;
+            html += `<span><i class="bi bi-calendar"></i> ${gradesDoc.date_formatted}</span>`;
+            
+            if (gradesDoc.ocr_data && gradesDoc.ocr_data.confidence) {
+                const confidence = parseFloat(gradesDoc.ocr_data.confidence);
+                const confidenceClass = confidence >= 80 ? 'success' : (confidence >= 60 ? 'warning' : 'danger');
+                html += `<span class="badge bg-${confidenceClass} confidence-score">
+                    <i class="bi bi-cpu"></i> ${confidence.toFixed(1)}% OCR
+                </span>`;
+            }
+            
+            // Add verification score badge if available
+            if (gradesDoc.ocr_data && gradesDoc.ocr_data.verification_score) {
+                const verifyScore = parseFloat(gradesDoc.ocr_data.verification_score);
+                const verifyClass = verifyScore >= 80 ? 'success' : (verifyScore >= 60 ? 'warning' : 'danger');
+                const verifyIcon = verifyScore >= 80 ? 'check-circle' : (verifyScore >= 60 ? 'exclamation-triangle' : 'x-circle');
+                html += `<span class="badge bg-${verifyClass} confidence-score">
+                    <i class="bi bi-${verifyIcon}"></i> ${verifyScore.toFixed(1)}%
+                </span>`;
+            }
+            
+            html += '</div>';
+            
+            // Actions
+            html += '<div class="doc-actions">';
+            html += `<button class="btn btn-sm btn-primary" onclick="openDocumentViewer('${gradesDoc.path}', 'Academic Grades')">
+                <i class="bi bi-eye"></i> View
+            </button>`;
+            html += `<a href="${gradesDoc.path}" download class="btn btn-sm btn-success">
+                <i class="bi bi-download"></i> Download
+            </a>`;
+            html += '</div>';
+            
+            // Validation button if OCR data exists (separate row for consistency)
+            if (gradesDoc.ocr_data && gradesDoc.ocr_data.verification) {
+                html += '<div class="doc-actions" style="border-top: 0; padding-top: 0;">';
+                html += `<button class="btn btn-sm btn-info w-100" 
+                    onclick="event.stopPropagation(); loadValidationData('grades', '${student.id}'); showValidationModal();">
+                    <i class="bi bi-shield-check"></i> View Validation
+                </button>`;
+                html += '</div>';
+            }
+        }
+        
+        html += '</div>'; // end grades doc-card
+    }
+    
+    return html;
+}
+
 // Function to refresh a specific modal's content
 function refreshModalContent(modalEl, studentId, silent = false) {
     const modalBody = modalEl.querySelector('.modal-body');
+    const modalFooter = modalEl.querySelector('.modal-footer');
     if (!modalBody) return;
     
     const originalContent = modalBody.innerHTML;
@@ -2564,30 +2318,112 @@ function refreshModalContent(modalEl, studentId, silent = false) {
         modalBody.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading latest documents...</p></div>';
     }
     
-    const refreshUrl = window.location.pathname + '?refresh_modal=1&student_id=' + encodeURIComponent(studentId);
+    // Add cache-busting parameter to prevent 404 caching
+    const cacheBuster = new Date().getTime();
+    const refreshUrl = 'get_applicant_details.php?student_id=' + encodeURIComponent(studentId) + '&_=' + cacheBuster;
     
     fetch(refreshUrl)
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(data => {
-            if (data.success && data.html) {
+            console.log('Received data from get_applicant_details.php:', data);
+            
+            if (data.success) {
+                // Render HTML from JSON data
+                const html = renderDocumentsHTML(data);
+                
                 // Only update if content actually changed (to avoid flickering)
-                if (modalBody.innerHTML !== data.html) {
-                    modalBody.innerHTML = data.html;
+                if (modalBody.innerHTML !== html) {
+                    modalBody.innerHTML = html;
                     console.log('Modal content updated for student:', studentId);
+                }
+                
+                // Update footer buttons based on completeness status
+                if (modalFooter && data.student) {
+                    updateModalFooterButtons(modalFooter, data.student.is_complete, studentId);
                 }
             } else {
                 if (!silent) {
-                    modalBody.innerHTML = originalContent;
+                    modalBody.innerHTML = `<div class="alert alert-danger m-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Error:</strong> ${data.error || 'Unknown error'}
+                    </div>`;
                 }
                 console.error('Failed to refresh modal content:', data.error || 'Unknown error');
             }
         })
         .catch(error => {
             if (!silent) {
-                modalBody.innerHTML = originalContent;
+                modalBody.innerHTML = `<div class="alert alert-danger m-3">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Error loading documents:</strong> ${error.message}
+                    <br><small>Check browser console for details</small>
+                </div>`;
             }
             console.error('Error refreshing modal content:', error);
         });
+}
+
+// Update modal footer buttons based on document completeness
+function updateModalFooterButtons(modalFooter, isComplete, studentId) {
+    // Find the section with approve/reject buttons (between distribution warning and super admin buttons)
+    const forms = modalFooter.querySelectorAll('form');
+    
+    if (isComplete) {
+        // Show "Verify" button and hide "Incomplete documents" message
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified"]')) {
+                form.style.display = 'inline';
+            }
+        });
+        
+        // Hide "Incomplete documents" message
+        const incompleteSpan = modalFooter.querySelector('span.text-muted');
+        if (incompleteSpan && incompleteSpan.textContent.includes('Incomplete')) {
+            incompleteSpan.style.display = 'none';
+        }
+        
+        // Hide "Override Verify" button (only show for incomplete)
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified_override"]')) {
+                form.style.display = 'none';
+            }
+        });
+        
+        console.log('✅ Documents complete - Verify button enabled for student:', studentId);
+    } else {
+        // Hide "Verify" button and show "Incomplete documents" message
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified"]')) {
+                form.style.display = 'none';
+            }
+        });
+        
+        // Show "Incomplete documents" message
+        const incompleteSpan = modalFooter.querySelector('span.text-muted');
+        if (incompleteSpan && incompleteSpan.textContent.includes('Incomplete')) {
+            incompleteSpan.style.display = 'inline';
+        } else if (!incompleteSpan) {
+            // Create the message if it doesn't exist
+            const newSpan = document.createElement('span');
+            newSpan.className = 'text-muted';
+            newSpan.textContent = 'Incomplete documents';
+            modalFooter.insertBefore(newSpan, modalFooter.firstChild);
+        }
+        
+        // Show "Override Verify" button (for super admin)
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified_override"]')) {
+                form.style.display = 'inline';
+            }
+        });
+        
+        console.log('⚠️ Documents incomplete - Verify button disabled for student:', studentId);
+    }
 }
 
 // Function to attach refresh listeners to student document modals
@@ -3513,36 +3349,40 @@ async function loadValidationData(docType, studentId) {
     modalBody.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-info"></div><p class="mt-3">Loading...</p></div>';
     
     try {
-        const response = await fetch('../student/get_validation_details.php', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({doc_type: docType, student_id: studentId})
-        });
+        // Use the NEW get_applicant_details.php endpoint which has the verification data
+        const response = await fetch(`get_applicant_details.php?student_id=${encodeURIComponent(studentId)}`);
         
-        console.log('Response status:', response.status);
-        const responseText = await response.text();
-        console.log('Raw response:', responseText);
-        
-        let data;
-        try {
-            data = JSON.parse(responseText);
-            console.log('Parsed data:', data);
-        } catch (parseError) {
-            console.error('JSON parse error:', parseError);
-            modalBody.innerHTML = `<div class="alert alert-danger">
-                <h6>Error parsing response</h6>
-                <pre style="max-height:200px;overflow:auto;">${responseText.substring(0, 500)}</pre>
-            </div>`;
-            return;
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
-        if (data.success) {
-            const html = generateValidationHTML(data.validation, docType);
-            console.log('Generated HTML length:', html.length);
-            modalBody.innerHTML = html;
+        const data = await response.json();
+        console.log('Applicant details response:', data);
+        
+        if (data.success && data.documents && data.documents[docType]) {
+            const doc = data.documents[docType];
+            
+            if (doc.ocr_data && doc.ocr_data.verification) {
+                // Use the verification data from the NEW structure
+                const validation = {
+                    ocr_confidence: doc.ocr_data.confidence,
+                    verification_score: doc.ocr_data.verification_score,
+                    verification_status: doc.ocr_data.verification_status,
+                    ...doc.ocr_data.verification
+                };
+                
+                const html = generateValidationHTML(validation, docType);
+                modalBody.innerHTML = html;
+            } else {
+                modalBody.innerHTML = `<div class="alert alert-warning">
+                    <h6><i class="bi bi-exclamation-triangle me-2"></i>No validation data available</h6>
+                    <p>This document has not been validated yet or validation data is missing.</p>
+                    <small>Document Type: ${docType}, Student ID: ${studentId}</small>
+                </div>`;
+            }
         } else {
             modalBody.innerHTML = `<div class="alert alert-warning">
-                <h6><i class="bi bi-exclamation-triangle me-2"></i>${data.message || 'No validation data available.'}</h6>
+                <h6><i class="bi bi-exclamation-triangle me-2"></i>${data.error || 'Document not found'}</h6>
                 <small>Document Type: ${docType}, Student ID: ${studentId}</small>
             </div>`;
         }
@@ -3592,11 +3432,27 @@ function generateValidationHTML(validation, docType) {
     }
     
     // === CHECK IF VERIFICATION DATA EXISTS ===
-    const hasVerificationData = validation.identity_verification && 
+    // For grades, check for enhanced_grade_validation or grades array
+    const isGrades = (docType === 'grades');
+    const hasGradesVerification = isGrades && (validation.enhanced_grade_validation || validation.grades || validation.all_grades_passing !== undefined);
+    
+    // For other documents, check for identity_verification or direct verification fields
+    const hasIdentityVerification = validation.identity_verification && 
                                 (parseFloat(validation.identity_verification.first_name_confidence || 0) > 0 ||
                                  parseFloat(validation.identity_verification.last_name_confidence || 0) > 0 ||
                                  parseFloat(validation.identity_verification.school_confidence || 0) > 0 ||
                                  parseInt(validation.identity_verification.passed_checks || 0) > 0);
+    
+    // Check if we have direct verification fields (not nested under identity_verification)
+    const hasDirectVerification = !validation.identity_verification && (
+        validation.year_level_match !== undefined ||
+        validation.semester_match !== undefined ||
+        validation.first_name_match !== undefined ||
+        validation.university_match !== undefined ||
+        validation.summary !== undefined
+    );
+    
+    const hasVerificationData = hasGradesVerification || hasIdentityVerification || hasDirectVerification;
     
     if (!hasVerificationData && parseFloat(validation.ocr_confidence || 0) > 0) {
         html += `<div class="alert alert-warning mb-4">
@@ -3627,11 +3483,80 @@ function generateValidationHTML(validation, docType) {
     }
     
     // === DETAILED VERIFICATION CHECKLIST ===
-    if (validation.identity_verification) {
-        const idv = validation.identity_verification;
+    // Handle both nested (identity_verification) and root-level verification data
+    let idv = validation.identity_verification || validation;
+    
+    // Handle ID Picture's "checks" structure
+    if (validation.checks && docType === 'id_picture') {
+        // Convert checks structure to flat structure
+        idv = {
+            first_name_match: validation.checks.first_name_match?.passed,
+            first_name_confidence: validation.checks.first_name_match?.similarity || 0,
+            middle_name_match: validation.checks.middle_name_match?.passed,
+            middle_name_confidence: validation.checks.middle_name_match?.similarity || 0,
+            last_name_match: validation.checks.last_name_match?.passed,
+            last_name_confidence: validation.checks.last_name_match?.similarity || 0,
+            university_match: validation.checks.university_match?.passed,
+            school_confidence: validation.checks.university_match?.similarity || 0,
+            official_keywords: validation.checks.document_keywords_found?.passed,
+            keywords_confidence: 100,
+            ...validation
+        };
+    }
+    
+    // Handle EAF's structure (boolean matches + confidence_scores object)
+    if (docType === 'eaf' && validation.confidence_scores) {
+        idv = {
+            first_name_match: validation.first_name_match,
+            first_name_confidence: validation.confidence_scores.first_name || 0,
+            middle_name_match: validation.middle_name_match,
+            middle_name_confidence: validation.confidence_scores.middle_name || 0,
+            last_name_match: validation.last_name_match,
+            last_name_confidence: validation.confidence_scores.last_name || 0,
+            year_level_match: validation.year_level_match,
+            year_level_confidence: validation.confidence_scores.year_level || 0,
+            university_match: validation.university_match,
+            university_confidence: validation.confidence_scores.university || 0,
+            official_keywords: validation.document_keywords_found,
+            keywords_confidence: validation.confidence_scores.document_keywords || 0,
+            ...validation
+        };
+    }
+    
+    // Check for identity data - handle different field naming conventions
+    const hasIdentityData = idv.first_name_match !== undefined || 
+                           idv.last_name_match !== undefined ||
+                           idv.first_name !== undefined || // Letter/Certificate format
+                           idv.last_name !== undefined;
+    
+    if (hasIdentityData && docType !== 'grades') {
         const isIdOrEaf = (docType === 'id_picture' || docType === 'eaf');
         const isLetter = (docType === 'letter_to_mayor');
         const isCert = (docType === 'certificate_of_indigency');
+        
+        // Convert letter/certificate simple boolean format to match format
+        if (isLetter || isCert) {
+            idv.first_name_match = idv.first_name;
+            idv.first_name_confidence = idv.confidence_scores?.first_name || 0;
+            idv.last_name_match = idv.last_name;
+            idv.last_name_confidence = idv.confidence_scores?.last_name || 0;
+            if (isLetter) {
+                idv.barangay_match = idv.barangay;
+                idv.barangay_confidence = idv.confidence_scores?.barangay || 0;
+                idv.mayor_header_match = idv.mayor_header;
+                idv.mayor_confidence = idv.confidence_scores?.mayor_header || 0;
+                idv.municipality_match = idv.municipality;
+                idv.municipality_confidence = idv.confidence_scores?.municipality || 0;
+            }
+            if (isCert) {
+                idv.certificate_title_match = idv.certificate_title;
+                idv.certificate_confidence = idv.confidence_scores?.certificate_title || 0;
+                idv.barangay_match = idv.barangay;
+                idv.barangay_confidence = idv.confidence_scores?.barangay || 0;
+                idv.municipality_match = idv.municipality;
+                idv.municipality_confidence = idv.confidence_scores?.municipality || 0;
+            }
+        }
         
         html += '<div class="card mb-4"><div class="card-header bg-primary text-white">';
         html += '<h5 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Verification Checklist</h5>';
@@ -3675,12 +3600,13 @@ function generateValidationHTML(validation, docType) {
         // YEAR LEVEL or BARANGAY
         if (isIdOrEaf) {
             const ylMatch = idv.year_level_match;
+            const ylConf = parseFloat(idv.year_level_confidence || 0);
             const ylClass = ylMatch ? 'check-passed' : 'check-failed';
             const ylIcon = ylMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
             html += `<div class="form-check ${ylClass} d-flex justify-content-between align-items-center">
                 <div><i class="bi bi-${ylIcon} me-2" style="font-size:1.2rem;"></i>
                 <span><strong>Year Level</strong> ${ylMatch ? 'Match' : 'Not Found'}</span></div>
-                <span class="badge ${ylMatch ? 'bg-success' : 'bg-secondary'} confidence-score">${ylMatch ? '✓' : '✗'}</span>
+                <span class="badge ${ylMatch ? 'bg-success' : 'bg-danger'} confidence-score">${ylConf > 0 ? ylConf.toFixed(0) + '%' : 'N/A'}</span>
             </div>`;
         } else if (isLetter || isCert) {
             const brgyMatch = idv.barangay_match;
@@ -3706,24 +3632,70 @@ function generateValidationHTML(validation, docType) {
                 <span class="badge ${schoolMatch ? 'bg-success' : 'bg-danger'} confidence-score">${schoolConf.toFixed(0)}%</span>
             </div>`;
         } else if (isLetter) {
-            const officeMatch = idv.office_header_found;
-            const officeConf = parseFloat(idv.office_header_confidence || 0);
-            const officeClass = officeMatch ? 'check-passed' : 'check-warning';
-            const officeIcon = officeMatch ? 'check-circle-fill text-success' : 'exclamation-circle-fill text-warning';
-            html += `<div class="form-check ${officeClass} d-flex justify-content-between align-items-center">
-                <div><i class="bi bi-${officeIcon} me-2" style="font-size:1.2rem;"></i>
-                <span><strong>Mayor's Office Header</strong> ${officeMatch ? 'Found' : 'Not Found'}</span></div>
-                <span class="badge ${officeMatch ? 'bg-success' : 'bg-warning'} confidence-score">${officeConf.toFixed(0)}%</span>
+            // Barangay
+            const barangayMatch = idv.barangay_match;
+            const barangayConf = parseFloat(idv.barangay_confidence || 0);
+            const barangayClass = barangayMatch ? 'check-passed' : 'check-failed';
+            const barangayIcon = barangayMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${barangayClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${barangayIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Barangay</strong> ${barangayMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${barangayMatch ? 'bg-success' : 'bg-danger'} confidence-score">${barangayConf.toFixed(0)}%</span>
+            </div>`;
+            
+            // Mayor Header
+            const mayorMatch = idv.mayor_header_match;
+            const mayorConf = parseFloat(idv.mayor_confidence || 0);
+            const mayorClass = mayorMatch ? 'check-passed' : 'check-failed';
+            const mayorIcon = mayorMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${mayorClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${mayorIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Mayor's Office Header</strong> ${mayorMatch ? 'Found' : 'Not Found'}</span></div>
+                <span class="badge ${mayorMatch ? 'bg-success' : 'bg-danger'} confidence-score">${mayorConf.toFixed(0)}%</span>
+            </div>`;
+            
+            // Municipality
+            const muniMatch = idv.municipality_match;
+            const muniConf = parseFloat(idv.municipality_confidence || 0);
+            const muniClass = muniMatch ? 'check-passed' : 'check-failed';
+            const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
             </div>`;
         } else if (isCert) {
-            const certMatch = idv.certificate_title_found;
-            const certConf = parseFloat(idv.certificate_title_confidence || 0);
-            const certClass = certMatch ? 'check-passed' : 'check-warning';
-            const certIcon = certMatch ? 'check-circle-fill text-success' : 'exclamation-circle-fill text-warning';
+            // Certificate Title
+            const certMatch = idv.certificate_title_match;
+            const certConf = parseFloat(idv.certificate_confidence || 0);
+            const certClass = certMatch ? 'check-passed' : 'check-failed';
+            const certIcon = certMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
             html += `<div class="form-check ${certClass} d-flex justify-content-between align-items-center">
                 <div><i class="bi bi-${certIcon} me-2" style="font-size:1.2rem;"></i>
                 <span><strong>Certificate Title</strong> ${certMatch ? 'Found' : 'Not Found'}</span></div>
-                <span class="badge ${certMatch ? 'bg-success' : 'bg-warning'} confidence-score">${certConf.toFixed(0)}%</span>
+                <span class="badge ${certMatch ? 'bg-success' : 'bg-danger'} confidence-score">${certConf.toFixed(0)}%</span>
+            </div>`;
+            
+            // Barangay
+            const barangayMatch = idv.barangay_match;
+            const barangayConf = parseFloat(idv.barangay_confidence || 0);
+            const barangayClass = barangayMatch ? 'check-passed' : 'check-failed';
+            const barangayIcon = barangayMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${barangayClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${barangayIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Barangay</strong> ${barangayMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${barangayMatch ? 'bg-success' : 'bg-danger'} confidence-score">${barangayConf.toFixed(0)}%</span>
+            </div>`;
+            
+            // Municipality
+            const muniMatch = idv.municipality_match;
+            const muniConf = parseFloat(idv.municipality_confidence || 0);
+            const muniClass = muniMatch ? 'check-passed' : 'check-failed';
+            const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+            html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
+                <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
+                <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
+                <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
             </div>`;
         }
         
@@ -3743,9 +3715,9 @@ function generateValidationHTML(validation, docType) {
         html += '</div></div></div>'; // Close checklist, card-body, card
         
         // === OVERALL SUMMARY ===
-        const avgConf = parseFloat(idv.average_confidence || validation.ocr_confidence || 0);
-        const passedChecks = idv.passed_checks || 0;
-        const totalChecks = idv.total_checks || 6;
+        const avgConf = parseFloat(idv.average_confidence || validation.summary?.average_confidence || validation.ocr_confidence || 0);
+        const passedChecks = idv.passed_checks || validation.summary?.passed_checks || 0;
+        const totalChecks = idv.total_checks || validation.summary?.total_checks || 6;
         const verificationScore = ((passedChecks / totalChecks) * 100);
         
         let statusMessage = '';
@@ -3790,20 +3762,159 @@ function generateValidationHTML(validation, docType) {
         
         html += `<div class="alert ${statusClass} mb-0">
             <h6 class="mb-0"><i class="bi bi-${statusIcon} me-2"></i>${statusMessage}</h6>`;
-        if (idv.recommendation) {
-            html += `<small class="mt-2 d-block"><strong>Recommendation:</strong> ${idv.recommendation}</small>`;
+        const recommendation = idv.recommendation || validation.summary?.recommendation;
+        if (recommendation) {
+            html += `<small class="mt-2 d-block"><strong>Recommendation:</strong> ${recommendation}</small>`;
         }
         html += `</div></div></div>`; // Close card-body, card
     }
     
     // === EXTRACTED GRADES (for grades document) ===
-    if (docType === 'grades' && validation.extracted_grades) {
+    // Support both old format (extracted_grades) and new format (enhanced_grade_validation.extracted_subjects)
+    let gradesArray = null;
+    if (docType === 'grades') {
+        if (validation.extracted_grades) {
+            gradesArray = validation.extracted_grades;
+        } else if (validation.enhanced_grade_validation && validation.enhanced_grade_validation.extracted_subjects) {
+            // Convert new format to old format for display
+            gradesArray = validation.enhanced_grade_validation.extracted_subjects.map(subject => ({
+                subject_name: subject.name,
+                grade_value: subject.rawGrade || subject.grade,
+                extraction_confidence: subject.confidence || 95,
+                is_passing: (parseFloat(subject.rawGrade || subject.grade || 0) <= 3.0 && parseFloat(subject.rawGrade || subject.grade || 0) > 0) ? 't' : 'f'
+            }));
+        } else if (validation.grades) {
+            // Old simple format
+            gradesArray = validation.grades.map(g => ({
+                subject_name: g.subject,
+                grade_value: g.grade,
+                extraction_confidence: 90,
+                is_passing: (parseFloat(g.grade || 0) <= 3.0 && parseFloat(g.grade || 0) > 0) ? 't' : 'f'
+            }));
+        }
+    }
+    
+    if (gradesArray && gradesArray.length > 0) {
+        // Show grades verification checklist first
+        if (validation.summary) {
+            html += '<div class="card mb-4"><div class="card-header bg-primary text-white">';
+            html += '<h5 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Grades Verification Summary</h5>';
+            html += '</div><div class="card-body"><div class="verification-checklist">';
+            
+            // First Name Match
+            if (validation.first_name_match !== undefined) {
+                const match = validation.first_name_match;
+                const conf = parseFloat(validation.confidence_scores?.first_name || 0);
+                const checkClass = match ? 'check-passed' : 'check-failed';
+                const icon = match ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${checkClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${icon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>First Name</strong> ${match ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${match ? 'bg-success' : 'bg-danger'} confidence-score">${conf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            // Last Name Match
+            if (validation.last_name_match !== undefined) {
+                const match = validation.last_name_match;
+                const conf = parseFloat(validation.confidence_scores?.last_name || 0);
+                const checkClass = match ? 'check-passed' : 'check-failed';
+                const icon = match ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${checkClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${icon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Last Name</strong> ${match ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${match ? 'bg-success' : 'bg-danger'} confidence-score">${conf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            // Year Level Match
+            if (validation.year_level_match !== undefined) {
+                const match = validation.year_level_match;
+                const conf = parseFloat(validation.confidence_scores?.year_level || 0);
+                const checkClass = match ? 'check-passed' : 'check-failed';
+                const icon = match ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${checkClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${icon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Year Level</strong> ${match ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${match ? 'bg-success' : 'bg-danger'} confidence-score">${conf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            // Semester Match
+            if (validation.semester_match !== undefined) {
+                const match = validation.semester_match;
+                const conf = parseFloat(validation.confidence_scores?.semester || 0);
+                const checkClass = match ? 'check-passed' : 'check-failed';
+                const icon = match ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${checkClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${icon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Semester</strong> ${match ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${match ? 'bg-success' : 'bg-danger'} confidence-score">${conf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            // University Match
+            if (validation.university_match !== undefined) {
+                const match = validation.university_match;
+                const conf = parseFloat(validation.confidence_scores?.university || 0);
+                const checkClass = match ? 'check-passed' : 'check-failed';
+                const icon = match ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${checkClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${icon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>University</strong> ${match ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${match ? 'bg-success' : 'bg-danger'} confidence-score">${conf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            // Student Name Match
+            if (validation.name_match !== undefined) {
+                const match = validation.name_match;
+                const conf = parseFloat(validation.confidence_scores?.name || 0);
+                const checkClass = match ? 'check-passed' : 'check-failed';
+                const icon = match ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${checkClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${icon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Student Name</strong> ${match ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${match ? 'bg-success' : 'bg-danger'} confidence-score">${conf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            // All Grades Passing
+            if (validation.all_grades_passing !== undefined) {
+                const match = validation.all_grades_passing;
+                const conf = parseFloat(validation.confidence_scores?.grades || 90);
+                const checkClass = match ? 'check-passed' : 'check-failed';
+                const icon = match ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${checkClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${icon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>All Grades Passing</strong> ${match ? 'Yes' : 'No'}</span></div>
+                    <span class="badge ${match ? 'bg-success' : 'bg-danger'} confidence-score">${conf.toFixed(0)}%</span>
+                </div>`;
+            }
+            
+            html += '</div>'; // Close verification-checklist
+            
+            // Summary Banner
+            const eligibility = validation.summary.eligibility_status || 'UNKNOWN';
+            const statusColors = {'ELIGIBLE': 'success', 'NOT_ELIGIBLE': 'danger', 'MANUAL_REVIEW': 'warning', 'UNKNOWN': 'secondary'};
+            const statusColor = statusColors[eligibility] || 'secondary';
+            const statusIcon = eligibility === 'ELIGIBLE' ? 'check-circle-fill' : (eligibility === 'NOT_ELIGIBLE' ? 'x-circle-fill' : 'exclamation-triangle-fill');
+            
+            html += `<div class="alert alert-${statusColor} mt-3 mb-0">`;
+            html += `<h6 class="mb-0"><i class="bi bi-${statusIcon} me-2"></i>${validation.summary.eligibility_status || 'Status Unknown'}</h6>`;
+            if (validation.summary.recommendation) {
+                html += `<small class="mt-2 d-block"><strong>Recommendation:</strong> ${validation.summary.recommendation}</small>`;
+            }
+            html += `</div></div></div>`; // Close alert, card-body, card
+        }
+        
+        // Now show the extracted grades table
         html += '<div class="card mb-4"><div class="card-header bg-success text-white">';
         html += '<h6 class="mb-0"><i class="bi bi-list-check me-2"></i>Extracted Grades</h6>';
         html += '</div><div class="card-body p-0"><div class="table-responsive">';
         html += '<table class="table table-bordered table-hover mb-0"><thead class="table-light"><tr><th>Subject</th><th>Grade</th><th>Confidence</th><th>Status</th></tr></thead><tbody>';
         
-        validation.extracted_grades.forEach(grade => {
+        gradesArray.forEach(grade => {
             const conf = parseFloat(grade.extraction_confidence || 0);
             const confColor = conf >= 80 ? 'success' : (conf >= 60 ? 'warning' : 'danger');
             const statusIcon = grade.is_passing === 't' ? 'check-circle-fill' : 'x-circle-fill';

@@ -2,6 +2,7 @@
 include __DIR__ . '/config/database.php';
 include __DIR__ . '/config/recaptcha_config.php';
 require_once __DIR__ . '/services/AuditLogger.php';
+require_once __DIR__ . '/includes/SessionManager.php';
 session_start();
 
 // For AJAX/POST JSON responses, prevent PHP warnings from leaking into output
@@ -320,6 +321,11 @@ if (
     }
     
     if (!password_verify($pw, $user['password'])) {
+        // Track failed login attempt if student
+        if ($user['role'] === 'student') {
+            $sessionManager = new SessionManager($connection);
+            $sessionManager->logFailedLogin($user['id'], 'Invalid password');
+        }
         echo json_encode(['status'=>'error','message'=>'Invalid password.']);
         exit;
     }
@@ -437,8 +443,9 @@ if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
     // OTP OK → finalize login based on role
     $pending = $_SESSION['login_pending'];
     
-    // Initialize audit logger
+    // Initialize audit logger and session manager
     $auditLogger = new AuditLogger($connection);
+    $sessionManager = new SessionManager($connection);
     
     if ($pending['role'] === 'student') {
         $_SESSION['student_id'] = $pending['user_id'];
@@ -460,6 +467,9 @@ if (isset($_POST['login_action']) && $_POST['login_action'] === 'verify_otp') {
         
         // Log successful student login
         $auditLogger->logLogin($pending['user_id'], 'student', $pending['name']);
+        
+        // Track session for login history
+        $sessionManager->logLogin($pending['user_id'], session_id(), 'otp');
         
         $redirect = 'modules/student/student_homepage.php';
     } else {

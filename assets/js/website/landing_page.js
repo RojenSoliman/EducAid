@@ -125,4 +125,165 @@ function formatChatbotResponse(text){
     animateElement(el){ el.classList.add('visible'); if(el.classList.contains('fade-in-stagger')){ const children=el.querySelectorAll('.fade-in'); children.forEach((c,i)=>{ setTimeout(()=>c.classList.add('visible'), i*100); }); } }
   }
   document.addEventListener('DOMContentLoaded',()=> new ScrollAnimations());
+  
+  // Live distribution status section (dedicated section like announcements)
+  (function(){
+    const section = document.getElementById('distribution-status');
+    const statusBadge = document.getElementById('distStatusBadge');
+    const period = document.getElementById('distPeriod');
+    const slotsLeft = document.getElementById('distSlotsLeft');
+    const slotsTotal = document.getElementById('distSlotsTotal');
+    const progressBar = document.getElementById('distProgressBar');
+    const progressPercent = document.getElementById('distProgressPercent');
+    const lastUpdated = document.getElementById('distLastUpdated');
+    const applyBtn = document.getElementById('distApplyBtn');
+    
+    if (!section || !statusBadge || !period || !slotsLeft) return;
+
+    let lastSlots = null;
+    let timer = null;
+
+    async function fetchSummary(){
+      try {
+        const res = await fetch('../api/public/distribution_summary.php', { cache: 'no-store' });
+        const data = await res.json();
+        
+        if (!data.success) {
+          hideSection();
+          return;
+        }
+
+        // Always show the section once we have data
+        showSection();
+
+        // Update last updated timestamp
+        if (lastUpdated) {
+          const now = new Date();
+          lastUpdated.innerHTML = `<i class="bi bi-clock-history me-1"></i>Updated ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+          lastUpdated.className = 'badge bg-success-subtle text-success small';
+        }
+
+        if (data.status !== 'open') {
+          // Distribution is closed
+          statusBadge.textContent = 'Closed';
+          statusBadge.className = 'badge text-bg-secondary status-closed';
+          period.textContent = 'No active distribution period';
+          slotsLeft.textContent = '0';
+          slotsLeft.className = 'display-3 fw-bold mb-2 no-slots';
+          if (slotsTotal) slotsTotal.innerHTML = 'out of <span class="fw-bold">0</span> total slots';
+          if (progressBar) {
+            progressBar.style.width = '0%';
+            progressBar.setAttribute('aria-valuenow', '0');
+            progressBar.className = 'progress-bar bg-gradient';
+          }
+          if (progressPercent) {
+            progressPercent.textContent = '0%';
+            progressPercent.className = 'badge bg-secondary-subtle text-secondary';
+          }
+          if (applyBtn) {
+            applyBtn.classList.add('disabled');
+            applyBtn.innerHTML = '<i class="bi bi-lock me-2"></i>Applications Closed';
+          }
+          return;
+        }
+
+        // Distribution is open
+        statusBadge.textContent = 'Open';
+        statusBadge.className = 'badge text-bg-success status-open';
+        
+        const periodText = [data.academic_year, data.semester].filter(Boolean).join(' • ');
+        period.textContent = periodText || 'Current Distribution Period';
+
+        const slots = parseInt(data.slots_left || 0, 10);
+        const total = parseInt(data.slot_count || 0, 10);
+        const used = total - slots;
+        const percent = total > 0 ? Math.round((used / total) * 100) : 0;
+
+        // Update slots with color coding
+        slotsLeft.textContent = slots.toLocaleString();
+        if (slots === 0) {
+          slotsLeft.className = 'display-3 fw-bold mb-2 no-slots';
+        } else if (slots < total * 0.2) {
+          slotsLeft.className = 'display-3 fw-bold mb-2 low-slots';
+        } else {
+          slotsLeft.className = 'display-3 fw-bold mb-2';
+        }
+
+        if (slotsTotal) {
+          slotsTotal.innerHTML = `out of <span class="fw-bold">${total.toLocaleString()}</span> total slots`;
+        }
+
+        // Update progress bar with color coding
+        if (progressBar) {
+          progressBar.style.width = percent + '%';
+          progressBar.setAttribute('aria-valuenow', percent);
+          
+          // Color code the progress bar based on fill percentage
+          if (percent >= 80) {
+            progressBar.className = 'progress-bar bg-gradient bg-success';
+          } else if (percent >= 50) {
+            progressBar.className = 'progress-bar bg-gradient bg-warning';
+          } else {
+            progressBar.className = 'progress-bar bg-gradient bg-info';
+          }
+        }
+
+        if (progressPercent) {
+          progressPercent.textContent = percent + '%';
+          // Color code percentage badge
+          if (percent >= 80) {
+            progressPercent.className = 'badge bg-success-subtle text-success';
+          } else if (percent >= 50) {
+            progressPercent.className = 'badge bg-warning-subtle text-warning';
+          } else {
+            progressPercent.className = 'badge bg-primary-subtle text-primary';
+          }
+        }
+
+        // Enable/disable apply button
+        if (applyBtn) {
+          if (slots > 0) {
+            applyBtn.classList.remove('disabled');
+            applyBtn.innerHTML = '<i class="bi bi-rocket-takeoff me-2"></i>Apply Now';
+          } else {
+            applyBtn.classList.add('disabled');
+            applyBtn.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>Slots Full';
+          }
+        }
+
+        // Pulse animation on slot change
+        if (lastSlots !== null && lastSlots !== slots) {
+          const card = section.querySelector('.dist-main-card');
+          if (card) {
+            card.classList.remove('pulse');
+            // Force reflow
+            void card.offsetWidth;
+            card.classList.add('pulse');
+          }
+        }
+        lastSlots = slots;
+
+      } catch (e) {
+        console.error('Distribution fetch error:', e);
+        hideSection();
+      }
+    }
+
+    function showSection(){
+      section.style.display = 'block';
+      section.setAttribute('aria-hidden', 'false');
+    }
+
+    function hideSection(){
+      section.style.display = 'none';
+      section.setAttribute('aria-hidden', 'true');
+    }
+
+    // Initial fetch and poll every 15s
+    fetchSummary();
+    timer = setInterval(fetchSummary, 15000);
+
+    // Cleanup
+    window.addEventListener('beforeunload', ()=>{ if (timer) clearInterval(timer); });
+  })();
 })();

@@ -171,6 +171,27 @@ if (!function_exists('extractGradesFromTSV')) {
             }
         }
         
+        // OPTIONAL CHECK 3: Validate Course (if provided from enrollment form)
+        // This is NOT required - some universities don't show course on grades documents
+        $courseValidation = [
+            'checked' => false,
+            'match' => false,
+            'confidence' => 0,
+            'found_text' => ''
+        ];
+        
+        if (!empty($studentData['course_name'])) {
+            $courseValidation = validateCourse($fullOcrText, $studentData['course_name']);
+            
+            // Log the result but DON'T fail validation if course not found
+            // This is just for additional confidence/security when available
+            if ($courseValidation['match']) {
+                error_log("GRADES: Course validation PASSED - Found '{$courseValidation['found_text']}' matching '{$studentData['course_name']}'");
+            } else {
+                error_log("GRADES: Course validation SKIPPED - Course '{$studentData['course_name']}' not found (this is OK, some universities don't show it)");
+            }
+        }
+        
         // Group words by line number to reconstruct lines
         $lines = [];
         foreach ($words as $word) {
@@ -235,7 +256,8 @@ if (!function_exists('extractGradesFromTSV')) {
         return [
             'all_passing' => $allPassing,
             'grades' => $validGrades,
-            'failing_grades' => $failingGrades
+            'failing_grades' => $failingGrades,
+            'course_validation' => $courseValidation  // Include course check results
         ];
     }
 }
@@ -560,6 +582,82 @@ if (!function_exists('validateStudentName')) {
         }
         
         return $overallMatch;
+    }
+}
+
+if (!function_exists('validateCourse')) {
+    /**
+     * Validate course name in OCR text (OPTIONAL check - not required)
+     * Aligns with course scanned from enrollment form
+     * 
+     * @param string $ocrText Full OCR text to search in
+     * @param string $courseName Expected course name from enrollment form
+     * @return array Match result with confidence and found text
+     */
+    function validateCourse($ocrText, $courseName) {
+        $match = false;
+        $confidence = 0;
+        $foundText = '';
+
+        if (empty($courseName)) {
+            return [
+                'checked' => false,
+                'match' => false,
+                'confidence' => 0,
+                'found_text' => 'No course to validate'
+            ];
+        }
+
+        $ocrTextLower = strtolower($ocrText);
+        $courseNameLower = strtolower($courseName);
+
+        // Extract key words from course name
+        // Skip common words like "Bachelor", "Science", "of", "in", "the"
+        $stopWords = ['bachelor', 'bachelors', 'master', 'masters', 'of', 'in', 'the', 'and', 'science', 'sciences', 'arts', 'art'];
+        
+        $courseWords = preg_split('/\s+/', $courseNameLower);
+        $keyWords = array_filter($courseWords, function($word) use ($stopWords) {
+            return strlen($word) > 2 && !in_array($word, $stopWords);
+        });
+
+        // Look for exact full course name match first
+        if (stripos($ocrTextLower, $courseNameLower) !== false) {
+            $match = true;
+            $confidence = 95;
+            $foundText = $courseName;
+        } else {
+            // Look for key words from course name (e.g., "Computer", "Engineering", "Nursing")
+            $matchedWords = 0;
+            $foundWords = [];
+            
+            foreach ($keyWords as $word) {
+                if (stripos($ocrTextLower, $word) !== false) {
+                    $matchedWords++;
+                    $foundWords[] = $word;
+                }
+            }
+
+            // Calculate match percentage
+            $totalKeyWords = count($keyWords);
+            if ($totalKeyWords > 0 && $matchedWords > 0) {
+                $matchRatio = $matchedWords / $totalKeyWords;
+                
+                // Require at least 60% of key words for a match
+                if ($matchRatio >= 0.6) {
+                    $match = true;
+                    $confidence = round(60 + ($matchRatio * 35)); // 60-95% confidence
+                    $foundText = implode(' ', $foundWords);
+                }
+            }
+        }
+
+        return [
+            'checked' => true,
+            'match' => $match,
+            'confidence' => $confidence,
+            'found_text' => $foundText,
+            'expected_course' => $courseName
+        ];
     }
 }
 

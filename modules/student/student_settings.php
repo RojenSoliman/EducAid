@@ -8,6 +8,9 @@ if (!isset($_SESSION['student_username'])) {
 }
 $student_id = $_SESSION['student_id'];
 
+// Track session activity
+include __DIR__ . '/../../includes/student_session_tracker.php';
+
 // PHPMailer setup
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -294,6 +297,8 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
   <link href="../../assets/css/bootstrap-icons.css" rel="stylesheet" />
   <link rel="stylesheet" href="../../assets/css/student/homepage.css" />
   <link rel="stylesheet" href="../../assets/css/student/sidebar.css" />
+  <link rel="stylesheet" href="../../assets/css/student/accessibility.css" />
+  <script src="../../assets/js/student/accessibility.js"></script>
   <style>
     .verified-indicator { color: #28a745; font-weight: bold; }
     .form-error { color:#e14343; font-size: 0.92em; font-weight: 500; min-width: 90px; text-align: left; }
@@ -303,6 +308,80 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
     
     /* Settings Header */
     .settings-header {
+      background: transparent;
+      border-bottom: none;
+      padding: 0;
+      margin-bottom: 2rem;
+    }
+    
+    .settings-header h1 {
+      color: #1a202c;
+      font-weight: 600;
+      font-size: 2rem;
+      margin: 0;
+    }
+
+    /* YouTube-Style Settings Navigation */
+    .settings-nav {
+      background: #f7fafc;
+      border-radius: 12px;
+      padding: 0.5rem;
+      border: 1px solid #e2e8f0;
+    }
+
+    .settings-nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      color: #4a5568;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+      margin-bottom: 0.25rem;
+    }
+
+    .settings-nav-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .settings-nav-item:hover {
+      background: #edf2f7;
+      color: #2d3748;
+      text-decoration: none;
+    }
+
+    .settings-nav-item.active {
+      background: #4299e1;
+      color: white;
+    }
+
+    .settings-nav-item.active:hover {
+      background: #3182ce;
+    }
+
+    /* Settings Content Sections */
+    .settings-content-section {
+      margin-bottom: 3rem;
+      scroll-margin-top: 100px;
+    }
+
+    .section-title {
+      color: #1a202c;
+      font-weight: 600;
+      font-size: 1.5rem;
+      margin: 0 0 0.5rem 0;
+    }
+
+    .section-description {
+      color: #718096;
+      font-size: 0.95rem;
+      margin: 0 0 1.5rem 0;
+    }
+    
+    /* Settings Header */
+    .settings-header-old {
       background: white;
       border-bottom: 1px solid #e9ecef;
       padding: 1.5rem 0;
@@ -565,6 +644,301 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
         padding: 1.5rem;
       }
     }
+
+    /* Active Sessions Styling */
+    .section-header {
+      background: #f7fafc;
+      padding: 1.5rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .section-header h2 {
+      color: #2d3748;
+      font-weight: 600;
+      font-size: 1.25rem;
+      margin: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .section-header p {
+      color: #718096;
+      margin: 0.5rem 0 0 0;
+      font-size: 0.95rem;
+    }
+
+    .section-content {
+      padding: 1.5rem;
+    }
+
+    .active-sessions-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #ffffff;
+      transition: all 0.2s ease;
+    }
+
+    .session-item:hover {
+      border-color: #cbd5e0;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .session-item.current-session {
+      background: #f0fdf4;
+      border-color: #86efac;
+    }
+
+    .session-icon {
+      flex-shrink: 0;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f7fafc;
+      border-radius: 10px;
+      color: #4a5568;
+      font-size: 1.5rem;
+    }
+
+    .current-session .session-icon {
+      background: #dcfce7;
+      color: #16a34a;
+    }
+
+    .session-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .session-device {
+      color: #2d3748;
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .session-meta {
+      font-size: 0.85rem;
+      color: #718096;
+    }
+
+    .session-action {
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 576px) {
+      .section-content {
+        padding: 1rem;
+      }
+
+      .session-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+      }
+
+      .session-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 1.25rem;
+      }
+
+      .session-device {
+        font-size: 0.9rem;
+      }
+
+      .session-meta {
+        font-size: 0.8rem;
+      }
+
+      .session-action {
+        width: 100%;
+      }
+
+      .session-action .btn {
+        width: 100%;
+      }
+    }
+
+    /* Login History Styling */
+    .login-history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .history-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #ffffff;
+      transition: all 0.2s ease;
+    }
+
+    .history-item:hover {
+      border-color: #cbd5e0;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .history-item.failed {
+      background: #fef2f2;
+      border-color: #fecaca;
+    }
+
+    .history-icon {
+      flex-shrink: 0;
+      font-size: 1.5rem;
+      padding-top: 0.25rem;
+    }
+
+    .history-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .history-status {
+      color: #2d3748;
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .history-meta {
+      font-size: 0.85rem;
+      color: #718096;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 576px) {
+      .history-item {
+        padding: 0.75rem;
+      }
+
+      .history-icon {
+        font-size: 1.25rem;
+      }
+
+      .history-status {
+        font-size: 0.9rem;
+      }
+
+      .history-meta {
+        font-size: 0.8rem;
+      }
+
+      .history-meta .mx-2 {
+        display: none;
+      }
+
+      .history-meta small {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+    }
+
+    /* Accessibility Features CSS */
+    /* Text Size Options */
+    html.text-small {
+      font-size: 14px;
+    }
+
+    html.text-normal {
+      font-size: 16px;
+    }
+
+    html.text-large {
+      font-size: 18px;
+    }
+
+    /* High Contrast Mode */
+    html.high-contrast {
+      filter: contrast(1.5);
+    }
+
+    html.high-contrast body {
+      background: #000 !important;
+      color: #fff !important;
+    }
+
+    html.high-contrast .settings-section,
+    html.high-contrast .content-card,
+    html.high-contrast .settings-nav {
+      background: #000 !important;
+      border-color: #FFFF00 !important;
+      color: #FFFF00 !important;
+    }
+
+    /* Inline settings nav items - high contrast overrides */
+    html.high-contrast .settings-nav-item {
+      background: #000 !important;
+      color: #FFFF00 !important;
+      border: 2px solid transparent !important;
+    }
+
+    html.high-contrast .settings-nav-item:hover,
+    html.high-contrast .settings-nav-item:focus-visible {
+      background: #1a1a00 !important;
+      color: #FFFF00 !important;
+      border-color: #FFFF00 !important;
+      outline: 3px solid #FFFF00 !important;
+      outline-offset: 2px !important;
+    }
+
+    html.high-contrast .settings-nav-item.active,
+    html.high-contrast .settings-nav-item.active:hover {
+      background: #1a1a00 !important;
+      color: #FFFF00 !important;
+      border: 2px solid #FFFF00 !important;
+      font-weight: 700 !important;
+    }
+
+    html.high-contrast .session-item,
+    html.high-contrast .history-item {
+      background: #222 !important;
+      border-color: #555 !important;
+      color: #fff !important;
+    }
+
+    html.high-contrast .btn {
+      border: 2px solid #fff !important;
+      font-weight: 600 !important;
+    }
+
+    /* Reduce Animations */
+    html.reduce-animations *,
+    html.reduce-animations *::before,
+    html.reduce-animations *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+
+    /* Toggle Switch Styling */
+    .form-check-input:checked {
+      background-color: #4299e1;
+      border-color: #4299e1;
+    }
   </style>
 </head>
 <body>
@@ -582,17 +956,8 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
     <section class="home-section" id="page-content-wrapper">
       <div class="container-fluid py-4 px-4">
         <!-- Settings Header -->
-        <div class="settings-header">
-          <div class="d-flex justify-content-between align-items-center">
-            <div>
-              <h1>Settings</h1>
-              <p>Manage your account settings and preferences</p>
-            </div>
-            <a href="student_profile.php" class="back-btn">
-              <i class="bi bi-arrow-left"></i>
-              Back to Profile
-            </a>
-          </div>
+        <div class="settings-header mb-4">
+          <h1 class="mb-1">Settings</h1>
         </div>
 
         <!-- Flash Messages -->
@@ -604,120 +969,242 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
           </div>
         <?php endif; ?>
 
-        <!-- Account Information Section -->
-        <div class="settings-section" id="account">
-          <div class="settings-section-header">
-            <h3>
-              <i class="bi bi-person-circle"></i>
-              Account Information
-            </h3>
-            <p>Your basic account details and personal information</p>
-          </div>
-          <div class="settings-section-body">
-            <div class="setting-item">
-              <div class="setting-info">
-                <div class="setting-label">Full Name</div>
-                <div class="setting-value"><?php echo htmlspecialchars($student['last_name'] . ', ' . $student['first_name'] . ' ' . $student['middle_name']); ?></div>
-                <div class="setting-description">Your registered name with the institution</div>
-              </div>
-              <div class="setting-actions">
-                <span class="text-muted small">Read-only</span>
-              </div>
-            </div>
-            
-            <div class="setting-item">
-              <div class="setting-info">
-                <div class="setting-label">Date of Birth</div>
-                <div class="setting-value"><?php echo htmlspecialchars(date('F j, Y', strtotime($student['bdate']))); ?></div>
-                <div class="setting-description">Your birth date as registered</div>
-              </div>
-              <div class="setting-actions">
-                <span class="text-muted small">Read-only</span>
-              </div>
-            </div>
-            
-            <div class="setting-item">
-              <div class="setting-info">
-                <div class="setting-label">Student ID</div>
-                <div class="setting-value"><?php echo htmlspecialchars($student_id); ?></div>
-                <div class="setting-description">Your unique student identification number</div>
-              </div>
-              <div class="setting-actions">
-                <span class="text-muted small">Read-only</span>
-              </div>
+        <!-- YouTube-style Layout: Sidebar + Content -->
+        <div class="row g-4">
+          <!-- Settings Navigation Sidebar -->
+          <div class="col-12 col-lg-3">
+            <div class="settings-nav sticky-top" style="top: 100px;">
+              <a href="#account" class="settings-nav-item active">
+                <i class="bi bi-person-circle me-2"></i>
+                Account
+              </a>
+              <a href="#security" class="settings-nav-item">
+                <i class="bi bi-shield-lock me-2"></i>
+                Security & Privacy
+              </a>
+              <a href="#notifications" class="settings-nav-item">
+                <i class="bi bi-envelope-open me-2"></i>
+                Notification Preferences
+              </a>
+              <a href="#privacy-data" class="settings-nav-item">
+                <i class="bi bi-incognito me-2"></i>
+                Privacy & Data
+              </a>
+              <a href="accessibility.php" class="settings-nav-item">
+                <i class="bi bi-universal-access me-2"></i>
+                Accessibility
+              </a>
+              <a href="active_sessions.php" class="settings-nav-item">
+                <i class="bi bi-laptop me-2"></i>
+                Active Sessions
+              </a>
+              <a href="security_activity.php" class="settings-nav-item">
+                <i class="bi bi-clock-history me-2"></i>
+                Security Activity
+              </a>
             </div>
           </div>
-        </div>
 
-        <!-- Contact Information Section -->
-        <div class="settings-section" id="contact">
-          <div class="settings-section-header">
-            <h3>
-              <i class="bi bi-envelope"></i>
-              Contact Information
-            </h3>
-            <p>Manage your contact details for important notifications</p>
-          </div>
-          <div class="settings-section-body">
-            <div class="setting-item" id="email">
-              <div class="setting-info">
-                <div class="setting-label">Email Address</div>
-                <div class="setting-value"><?php echo htmlspecialchars($student['email']); ?></div>
-                <div class="setting-description">Used for notifications and account recovery</div>
-              </div>
-              <div class="setting-actions">
-                <button class="btn btn-setting btn-setting-primary" data-bs-toggle="modal" data-bs-target="#emailModal">
-                  <i class="bi bi-pencil me-1"></i>Change Email
-                </button>
-              </div>
-            </div>
-            
-            <div class="setting-item" id="mobile">
-              <div class="setting-info">
-                <div class="setting-label">Mobile Number</div>
-                <div class="setting-value"><?php echo htmlspecialchars($student['mobile']); ?></div>
-                <div class="setting-description">For SMS notifications and contact purposes</div>
-              </div>
-              <div class="setting-actions">
-                <button class="btn btn-setting btn-setting-primary" data-bs-toggle="modal" data-bs-target="#mobileModal">
-                  <i class="bi bi-pencil me-1"></i>Change Number
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+          <!-- Settings Content -->
+          <div class="col-12 col-lg-9">
+            <!-- Account Information Section -->
+            <div class="settings-content-section" id="account">
+              <h2 class="section-title">Account</h2>
+              <p class="section-description">Your basic account details and contact information</p>
+              
+              <div class="settings-section">
+                <div class="settings-section-body">
+                  <!-- Account Information -->
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Full Name</div>
+                      <div class="setting-value"><?php echo htmlspecialchars($student['last_name'] . ', ' . $student['first_name'] . ' ' . $student['middle_name']); ?></div>
+                      <div class="setting-description">Your registered name with the institution</div>
+                    </div>
+                    <div class="setting-actions">
+                      <span class="text-muted small">Read-only</span>
+                    </div>
+                  </div>
+                  
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Date of Birth</div>
+                      <div class="setting-value"><?php echo htmlspecialchars(date('F j, Y', strtotime($student['bdate']))); ?></div>
+                      <div class="setting-description">Your birth date as registered</div>
+                    </div>
+                    <div class="setting-actions">
+                      <span class="text-muted small">Read-only</span>
+                    </div>
+                  </div>
+                  
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Student ID</div>
+                      <div class="setting-value"><?php echo htmlspecialchars($student_id); ?></div>
+                      <div class="setting-description">Your unique student identification number</div>
+                    </div>
+                    <div class="setting-actions">
+                      <span class="text-muted small">Read-only</span>
+                    </div>
+                  </div>
 
-        <!-- Security Settings Section -->
-        <div class="settings-section" id="security">
-          <div class="settings-section-header">
-            <h3>
-              <i class="bi bi-shield-lock"></i>
-              Security & Privacy
-            </h3>
-            <p>Protect your account with strong security settings</p>
-          </div>
-          <div class="settings-section-body">
-            <div class="setting-item" id="password">
-              <div class="setting-info">
-                <div class="setting-label">Password</div>
-                <div class="setting-value">••••••••••••</div>
-                <div class="setting-description">Last changed: Recently (secure password required)</div>
-              </div>
-              <div class="setting-actions">
-                <button class="btn btn-setting btn-setting-danger" data-bs-toggle="modal" data-bs-target="#passwordModal">
-                  <i class="bi bi-key me-1"></i>Change Password
-                </button>
+                  <!-- Contact Information (combined in Account section) -->
+                  <div class="setting-item" id="email">
+                    <div class="setting-info">
+                      <div class="setting-label">Email Address</div>
+                      <div class="setting-value"><?php echo htmlspecialchars($student['email']); ?></div>
+                      <div class="setting-description">Used for notifications and account recovery</div>
+                    </div>
+                    <div class="setting-actions">
+                      <button class="btn btn-setting btn-setting-primary" data-bs-toggle="modal" data-bs-target="#emailModal">
+                        <i class="bi bi-pencil me-1"></i>Change Email
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div class="setting-item" id="mobile">
+                    <div class="setting-info">
+                      <div class="setting-label">Mobile Number</div>
+                      <div class="setting-value"><?php echo htmlspecialchars($student['mobile']); ?></div>
+                      <div class="setting-description">For SMS notifications and contact purposes</div>
+                    </div>
+                    <div class="setting-actions">
+                      <button class="btn btn-setting btn-setting-primary" data-bs-toggle="modal" data-bs-target="#mobileModal">
+                        <i class="bi bi-pencil me-1"></i>Change Number
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <!-- Modals (same as before but updated redirects) -->
-        <!-- Email Modal with OTP -->
-        <div class="modal fade" id="emailModal" tabindex="-1">
-          <div class="modal-dialog modal-dialog-centered">
-            <form id="emailUpdateForm" method="POST" class="modal-content">
-              <div class="modal-header">
+            <!-- Security & Privacy Section -->
+            <div class="settings-content-section" id="security">
+              <h2 class="section-title">Security & Privacy</h2>
+              <p class="section-description">Protect your account with strong security settings</p>
+              
+              <div class="settings-section">
+                <div class="settings-section-body">
+                  <div class="setting-item" id="password">
+                    <div class="setting-info">
+                      <div class="setting-label">Password</div>
+                      <div class="setting-value">••••••••••••</div>
+                      <div class="setting-description">Last changed: Recently (secure password required)</div>
+                    </div>
+                    <div class="setting-actions">
+                      <button class="btn btn-setting btn-setting-danger" data-bs-toggle="modal" data-bs-target="#passwordModal">
+                        <i class="bi bi-key me-1"></i>Change Password
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Privacy & Data Section (inline) -->
+            <div class="settings-content-section" id="privacy-data">
+              <h2 class="section-title">Privacy & Data</h2>
+              <p class="section-description">Download a copy of your data from EducAid.</p>
+              <div class="settings-section">
+                <div class="settings-section-body">
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Download My Data</div>
+                      <div id="exportStatus" class="setting-description">No export requested yet.</div>
+                      <div id="downloadContainer" class="mt-2 d-none">
+                        <a id="downloadLink" href="#" class="btn btn-success btn-sm"><i class="bi bi-file-zip me-1"></i> Download ZIP</a>
+                        <small class="text-muted ms-2" id="fileMeta"></small>
+                      </div>
+                    </div>
+                    <div class="setting-actions">
+                      <button id="requestExportBtn" class="btn btn-setting btn-setting-primary"><i class="bi bi-cloud-arrow-down me-1"></i> Request Export</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Notification Preferences (email-only) -->
+            <div class="settings-content-section" id="notifications">
+              <h2 class="section-title">Notification Preferences</h2>
+              <p class="section-description">Choose how you receive notifications by email.</p>
+              <div class="settings-section">
+                <div class="settings-section-body">
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Email Delivery</div>
+                      <div class="setting-description">Select immediate emails or a once-daily digest.</div>
+                      <div class="d-flex align-items-center gap-2 mt-1">
+                        <div class="form-check form-switch">
+                          <input class="form-check-input" type="checkbox" id="prefEmailEnabled">
+                          <label class="form-check-label" for="prefEmailEnabled">Enable email notifications</label>
+                        </div>
+                        <select id="prefEmailFrequency" class="form-select form-select-sm" style="width:auto;">
+                          <option value="immediate">Immediate</option>
+                          <option value="daily">Daily digest</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="setting-actions">
+                      <button id="saveNotifPrefsBtn" class="btn btn-setting btn-setting-primary"><i class="bi bi-save me-1"></i>Save</button>
+                    </div>
+                  </div>
+
+                  <div class="setting-item">
+                    <div class="setting-info">
+                      <div class="setting-label">Types to email</div>
+                      <div class="setting-description">Toggle which notification types should be emailed to you.</div>
+                      <div class="row mt-2 g-2">
+                        <div class="col-12 col-md-6">
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_announcement">
+                            <label class="form-check-label" for="email_announcement">Announcements</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_document">
+                            <label class="form-check-label" for="email_document">Documents</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_schedule">
+                            <label class="form-check-label" for="email_schedule">Schedule</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_system">
+                            <label class="form-check-label" for="email_system">System</label>
+                          </div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_warning">
+                            <label class="form-check-label" for="email_warning">Warnings</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_error">
+                            <label class="form-check-label" for="email_error">Errors / Rejections</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_success">
+                            <label class="form-check-label" for="email_success">Success / Approvals</label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="email_info">
+                            <label class="form-check-label" for="email_info">General Info</label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+            <!-- Modals (same as before but updated redirects) -->
+            <!-- Email Modal with OTP -->
+            <div class="modal fade" id="emailModal" tabindex="-1">
+              <div class="modal-dialog modal-dialog-centered">
+                <form id="emailUpdateForm" method="POST" class="modal-content">
+                  <div class="modal-header">
                 <h5 class="modal-title">
                   <i class="bi bi-envelope me-2"></i>Update Email Address
                 </h5>
@@ -868,33 +1355,181 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
         </div>
       </div>
     </section>
-  </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
 
   <script src="../../assets/js/bootstrap.bundle.min.js"></script>
   <script src="../../assets/js/student/sidebar.js"></script>
   <script src="../../assets/js/student/student_profile.js"></script>
   
   <script>
-    // Smooth scroll to anchor on page load
+    // Smooth scroll and active navigation highlighting
     document.addEventListener('DOMContentLoaded', function() {
+      const navItems = document.querySelectorAll('.settings-nav-item[href^="#"]'); // Only hash links
+      const sections = document.querySelectorAll('.settings-content-section');
+
+      // Handle navigation clicks (only for hash links)
+      navItems.forEach(item => {
+        item.addEventListener('click', function(e) {
+          e.preventDefault();
+          const targetId = this.getAttribute('href').substring(1);
+          const targetSection = document.getElementById(targetId);
+          
+          // Remove active class from all nav items
+          navItems.forEach(nav => nav.classList.remove('active'));
+          // Add active class to clicked item
+          this.classList.add('active');
+          
+          // Smooth scroll to section
+          if (targetSection) {
+            targetSection.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'start'
+            });
+            // Update URL
+            history.pushState(null, null, '#' + targetId);
+          }
+        });
+      });
+
+      // Highlight nav on scroll (intersection observer)
+      const observerOptions = {
+        rootMargin: '-100px 0px -50% 0px',
+        threshold: 0
+      };
+
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            navItems.forEach(item => {
+              item.classList.remove('active');
+              if (item.getAttribute('href') === '#' + entry.target.id) {
+                item.classList.add('active');
+              }
+            });
+          }
+        });
+      }, observerOptions);
+
+      sections.forEach(section => observer.observe(section));
+
+      // Handle initial hash
       const hash = window.location.hash;
       if (hash) {
-        const target = document.querySelector(hash);
-        if (target) {
+        const targetSection = document.querySelector(hash);
+        const targetNav = document.querySelector(`.settings-nav-item[href="${hash}"]`);
+        if (targetSection && targetNav) {
+          navItems.forEach(nav => nav.classList.remove('active'));
+          targetNav.classList.add('active');
           setTimeout(() => {
-            target.scrollIntoView({ 
-              behavior: 'smooth', 
-              block: 'start',
-              inline: 'nearest'
-            });
-            // Add highlight effect
-            target.style.backgroundColor = '#e3f2fd';
-            target.style.transition = 'background-color 0.3s ease';
-            setTimeout(() => {
-              target.style.backgroundColor = '';
-            }, 2000);
+            targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }, 100);
         }
+      }
+    });
+
+    // Initialize Privacy & Data export controls if present
+    document.addEventListener('DOMContentLoaded', function() {
+      const statusEl = document.getElementById('exportStatus');
+      const btn = document.getElementById('requestExportBtn');
+      const dlWrap = document.getElementById('downloadContainer');
+      const dlLink = document.getElementById('downloadLink');
+      const fileMeta = document.getElementById('fileMeta');
+
+      if (!statusEl || !btn) return; // Section not on page
+
+      async function fetchStatus() {
+        try {
+          const res = await fetch('../../api/student/export_status.php', { credentials: 'include' });
+          const data = await res.json();
+          if (!data.success) { statusEl.textContent = 'Unable to fetch export status.'; return; }
+          if (!data.exists) { statusEl.textContent = 'No export requested yet.'; dlWrap.classList.add('d-none'); return; }
+
+          statusEl.textContent = `Status: ${data.status}` + (data.processed_at ? ` • Processed: ${new Date(data.processed_at).toLocaleString()}` : '');
+          if (data.status === 'ready' && data.download_url) {
+            dlLink.href = data.download_url;
+            dlWrap.classList.remove('d-none');
+            if (data.file_size_bytes) {
+              const mb = (data.file_size_bytes / (1024*1024)).toFixed(2);
+              fileMeta.textContent = `(~${mb} MB) • Expires: ${data.expires_at ? new Date(data.expires_at).toLocaleString() : ''}`;
+            } else {
+              fileMeta.textContent = '';
+            }
+          } else {
+            dlWrap.classList.add('d-none');
+          }
+        } catch (e) {
+          statusEl.textContent = 'Error fetching export status.';
+        }
+      }
+
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; const original = btn.innerHTML; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing…';
+        try {
+          const res = await fetch('../../api/student/request_data_export.php', { method: 'POST', credentials: 'include' });
+          const data = await res.json();
+          if (!data.success) { statusEl.textContent = 'Export request failed.'; }
+          await fetchStatus();
+        } catch (e) {
+          statusEl.textContent = 'Export request failed.';
+        } finally { btn.disabled = false; btn.innerHTML = original; }
+      });
+
+      // Initial status
+      fetchStatus();
+    });
+
+    // Notification Preferences: load and save
+    document.addEventListener('DOMContentLoaded', function() {
+      const enableEl = document.getElementById('prefEmailEnabled');
+      const freqEl = document.getElementById('prefEmailFrequency');
+      const saveBtn = document.getElementById('saveNotifPrefsBtn');
+      const typeIds = [
+        'email_announcement','email_document','email_schedule','email_warning',
+        'email_error','email_success','email_system','email_info'
+      ];
+      const typeInputs = Object.fromEntries(typeIds.map(id => [id, document.getElementById(id)]));
+
+      async function loadPrefs() {
+        try {
+          const res = await fetch('../../api/student/get_notification_preferences.php', { credentials: 'include' });
+          const data = await res.json();
+          if (!data.success) return;
+          const p = data.preferences;
+          enableEl.checked = !!p.email_enabled;
+          freqEl.value = p.email_frequency === 'daily' ? 'daily' : 'immediate';
+          typeIds.forEach(id => { if (id in typeInputs && id in p) typeInputs[id].checked = !!p[id]; });
+        } catch (e) { /* noop */ }
+      }
+
+      async function savePrefs() {
+        const payload = {
+          email_enabled: enableEl.checked,
+          email_frequency: freqEl.value
+        };
+        typeIds.forEach(id => payload[id] = !!typeInputs[id].checked);
+        saveBtn.disabled = true; const original = saveBtn.innerHTML; saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+        try {
+          const res = await fetch('../../api/student/save_notification_preferences.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(payload)
+          });
+          const out = await res.json();
+          // Lightweight feedback via alert() to avoid extra toasts framework
+          alert(out.success ? 'Preferences saved.' : 'Failed to save preferences.');
+        } catch (e) {
+          alert('Failed to save preferences.');
+        } finally { saveBtn.disabled = false; saveBtn.innerHTML = original; }
+      }
+
+      if (enableEl && freqEl && saveBtn) {
+        loadPrefs();
+        saveBtn.addEventListener('click', savePrefs);
       }
     });
   </script>

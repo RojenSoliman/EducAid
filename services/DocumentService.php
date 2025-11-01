@@ -27,6 +27,37 @@ class DocumentService {
     }
     
     /**
+     * Convert absolute file path to web-accessible relative path
+     * 
+     * @param string $filePath Absolute file path
+     * @return string Relative web path
+     */
+    private function convertToWebPath($filePath) {
+        // Normalize path separators
+        $filePath = str_replace('\\', '/', $filePath);
+        $baseDir = str_replace('\\', '/', $this->baseDir);
+        
+        // If path starts with base directory, make it relative
+        if (strpos($filePath, $baseDir) === 0) {
+            $relativePath = substr($filePath, strlen($baseDir));
+            return 'assets/uploads/' . ltrim($relativePath, '/');
+        }
+        
+        // If it's already a relative path starting with assets/
+        if (strpos($filePath, 'assets/uploads/') === 0) {
+            return $filePath;
+        }
+        
+        // If it's a relative path with ../../
+        if (strpos($filePath, '../../assets/uploads/') === 0) {
+            return str_replace('../../', '', $filePath);
+        }
+        
+        // Fallback: return as-is
+        return $filePath;
+    }
+    
+    /**
      * Log action to existing audit_logs table
      */
     private function logAudit($userId, $userType, $username, $eventType, $eventCategory, $description, $metadata = null, $status = 'success') {
@@ -64,7 +95,7 @@ class DocumentService {
      * 
      * @param string $studentId Student ID (e.g., GENERALTRIAS-2025-3-DWXA3N)
      * @param string $docTypeName Document type name (eaf, academic_grades, etc.)
-     * @param string $filePath Full file path
+     * @param string $filePath Full file path (absolute or relative)
      * @param array $ocrData OCR and verification results
      * @return array ['success' => bool, 'document_id' => string, 'message' => string]
      */
@@ -80,6 +111,9 @@ class DocumentService {
             // Generate document ID
             $documentId = $this->generateDocumentId($studentId, $docInfo['code'], $currentYear);
             
+            // Convert absolute path to web-accessible relative path for storage
+            $webPath = $this->convertToWebPath($filePath);
+            
             // Extract file information
             $fileName = basename($filePath);
             $fileExtension = pathinfo($filePath, PATHINFO_EXTENSION);
@@ -92,6 +126,7 @@ class DocumentService {
             
             // Debug logging
             error_log("DocumentService::saveDocument - DocType: {$docTypeName}, OCR: {$ocrConfidence}%, Verification: {$verificationScore}%");
+            error_log("DocumentService::saveDocument - Storing web path: {$webPath}");
             
             // Prepare verification details JSONB (this contains ALL OCR and verification data)
             $verificationDetails = null;
@@ -134,7 +169,7 @@ class DocumentService {
                 $studentId,
                 $docInfo['code'],
                 $docInfo['name'],
-                $filePath,
+                $webPath,  // Store web-accessible path instead of absolute path
                 $fileName,
                 $fileExtension,
                 $fileSize,
@@ -266,6 +301,9 @@ class DocumentService {
                     $this->moveAssociatedFiles($oldPath, $newPath);
                 }
                 
+                // Convert new path to web-accessible relative path for database storage
+                $webPath = $this->convertToWebPath($newPath);
+                
                 // Update database
                 $updateQuery = "UPDATE documents 
                                SET file_path = $1, 
@@ -275,7 +313,7 @@ class DocumentService {
                                WHERE document_id = $2";
                 
                 $updateResult = pg_query_params($this->db, $updateQuery, [
-                    $newPath,
+                    $webPath,  // Store web-accessible path
                     $doc['document_id']
                 ]);
                 

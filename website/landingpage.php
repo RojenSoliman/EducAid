@@ -251,6 +251,116 @@ function lp_block_style($key){
     </div>
   </section>
 
+  <!-- Distribution Status Section -->
+  <section id="distribution-status" class="distribution-status-section fade-in" style="display:none;" aria-hidden="true">
+    <div class="container">
+      <!-- Section Header with Animated Icon -->
+      <div class="text-center mb-4">
+        <div class="dist-icon-wrapper mb-3">
+          <i class="bi bi-calendar-check dist-icon"></i>
+        </div>
+        <h2 class="section-title mb-2">
+          <span class="text-primary">Application Status</span> & Slot Availability
+        </h2>
+        <p class="section-lead mb-3">Check current distribution status and available slots</p>
+        <span id="distLastUpdated" class="badge bg-success-subtle text-success small">
+          <i class="bi bi-clock-history me-1"></i>Checking...
+        </span>
+      </div>
+      
+      <!-- Main Distribution Card with Gradient -->
+      <div class="dist-main-card">
+        <div class="dist-card-inner">
+          <!-- Status Banner -->
+          <div class="dist-status-banner text-center mb-4">
+            <div class="d-inline-flex align-items-center gap-3 flex-wrap justify-content-center">
+              <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-info-circle-fill"></i>
+                <span>Status:</span>
+                <span id="distStatusBadge" class="badge text-bg-secondary">Loading</span>
+              </div>
+              <div class="vr d-none d-md-block" style="height: 24px;"></div>
+              <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-calendar3"></i>
+                <span id="distPeriod" class="fw-semibold">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slots Showcase -->
+          <div class="row g-4 mb-4">
+            <!-- Big Slots Counter -->
+            <div class="col-lg-6">
+              <div class="dist-slots-showcase">
+                <div class="slots-icon mb-3">
+                  <i class="bi bi-people-fill"></i>
+                </div>
+                <div class="display-3 fw-bold mb-2" id="distSlotsLeft">—</div>
+                <div class="h5 text-body-secondary mb-1">Slots Available</div>
+                <div class="small text-body-secondary" id="distSlotsTotal">
+                  out of <span class="fw-bold">—</span> total slots
+                </div>
+              </div>
+            </div>
+
+            <!-- Progress & CTA -->
+            <div class="col-lg-6">
+              <div class="dist-progress-wrapper">
+                <div class="mb-4">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="fw-semibold">Distribution Progress</span>
+                    <span id="distProgressPercent" class="badge bg-primary-subtle text-primary">—%</span>
+                  </div>
+                  <div class="progress dist-progress-bar">
+                    <div id="distProgressBar" class="progress-bar bg-gradient" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                  </div>
+                  <div class="d-flex justify-content-between mt-1 small text-body-secondary">
+                    <span>Empty</span>
+                    <span>Full</span>
+                  </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="dist-cta-group">
+                  <a href="<?php echo $base_path; ?>register.php" class="btn btn-lg btn-primary w-100 mb-2 dist-apply-btn" id="distApplyBtn">
+                    <i class="bi bi-rocket-takeoff me-2"></i>Apply Now
+                  </a>
+                  <a href="<?php echo $base_path; ?>unified_login.php" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-box-arrow-in-right me-1"></i>Track My Application
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Info Footer -->
+          <div class="dist-info-footer">
+            <div class="row g-3 text-center">
+              <div class="col-md-4">
+                <div class="dist-info-item">
+                  <i class="bi bi-lightning-charge-fill text-warning"></i>
+                  <span>Real-time Updates</span>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="dist-info-item">
+                  <i class="bi bi-shield-check text-success"></i>
+                  <span>Secure Portal</span>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="dist-info-item">
+                  <i class="bi bi-clock text-info"></i>
+                  <span>24/7 Access</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- About -->
   <section id="about">
     <div class="container">
@@ -754,6 +864,8 @@ function formatChatbotResponse(text) {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <!-- Mobile Navbar JS -->
 <script src="../assets/js/website/mobile-navbar.js"></script>
+<!-- Landing page behaviors (includes live distribution banner polling) -->
+<script src="../assets/js/website/landing_page.js"></script>
 
 <!-- Enhanced scroll animations - KEEP ONLY THIS ONE -->
 <script>

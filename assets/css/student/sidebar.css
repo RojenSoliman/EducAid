@@ -247,3 +247,58 @@
     width: 100% !important;
   }
 }
+
+/* ==========================
+   HIGH CONTRAST OVERRIDES
+   (when html.high-contrast is present)
+   Ensures sidebar never shows white/bright backgrounds
+========================== */
+html.high-contrast .sidebar {
+  background-color: #000 !important;
+  box-shadow: none !important;
+}
+
+html.high-contrast .sidebar .logo-details .icon,
+html.high-contrast .sidebar .logo-details .logo_name {
+  color: #FFFF00 !important;
+}
+
+html.high-contrast .nav-item a {
+  background: #000 !important;
+  color: #FFFF00 !important;
+  border: 2px solid transparent !important;
+}
+
+/* Hover and focus-visible states */
+html.high-contrast .nav-item a:hover,
+html.high-contrast .nav-item:hover > a,
+html.high-contrast .nav-item a:focus-visible {
+  background: #1a1a00 !important; /* dark hover */
+  color: #FFFF00 !important;
+  border: 3px solid #FFFF00 !important;
+  border-left: 8px solid #FFFF00 !important;
+  font-weight: 900 !important;
+  transform: translateX(5px) !important;
+  outline: 3px solid #FFFF00 !important;
+  outline-offset: 2px !important;
+}
+
+/* Active matches hover for consistency */
+html.high-contrast .nav-item.active a {
+  background: #1a1a00 !important;
+  color: #FFFF00 !important;
+  border: 3px solid #FFFF00 !important;
+  border-left: 8px solid #FFFF00 !important;
+  font-weight: 900 !important;
+}
+
+/* Ensure icon color follows */
+html.high-contrast .nav-item a .icon,
+html.high-contrast .nav-item.active a .icon {
+  color: #FFFF00 !important;
+}
+
+/* Remove the default active blue bar */
+html.high-contrast .nav-item.active a::before {
+  background-color: #FFFF00 !important;
+}

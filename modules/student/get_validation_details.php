@@ -31,6 +31,155 @@ if (empty($doc_type) || empty($student_id)) {
     exit;
 }
 
+/**
+ * Get validation details for UNDER_REGISTRATION students (TEMP directory)
+ * Files are stored in: assets/uploads/temp/{doc_type}/{student_id}_*
+ */
+function getValidationDetails_Registration($connection, $student_id, $document_type_code, $doc_type) {
+    $server_base = dirname(__DIR__, 2) . '/assets/uploads/temp/';
+    
+    // Map document codes to temp folder names
+    $temp_folder_map = [
+        '04' => 'id_pictures',
+        '00' => 'enrollment_forms',
+        '01' => 'grades',
+        '02' => 'letter_mayor',
+        '03' => 'indigency'
+    ];
+    
+    $folder_name = $temp_folder_map[$document_type_code] ?? '';
+    if (empty($folder_name)) {
+        return ['success' => false, 'message' => 'Invalid document type'];
+    }
+    
+    $search_dir = $server_base . $folder_name . '/';
+    
+    // Find file matching student_id pattern
+    $file_path = null;
+    $verify_json_path = null;
+    
+    if (is_dir($search_dir)) {
+        $pattern = $search_dir . $student_id . '_*';
+        $files = glob($pattern);
+        
+        // Filter out OCR-related files, keep only main document
+        foreach ($files as $f) {
+            if (preg_match('/\.(ocr\.txt|verify\.json|confidence\.json|tsv)$/i', $f)) continue;
+            if (is_file($f)) {
+                $file_path = $f;
+                // Get verify.json path - same filename but add .verify.json
+                $verify_json_path = $f . '.verify.json';
+                break;
+            }
+        }
+    }
+    
+    if (!$file_path || !file_exists($file_path)) {
+        return ['success' => false, 'message' => 'Document file not found in temp directory'];
+    }
+    
+    // Load verification data from .verify.json if exists
+    $verification_data = null;
+    if ($verify_json_path && file_exists($verify_json_path)) {
+        $verification_data = json_decode(file_get_contents($verify_json_path), true);
+    }
+    
+    // Load OCR text if exists
+    $ocr_text = null;
+    $ocr_text_path = $file_path . '.ocr.txt';
+    if (file_exists($ocr_text_path)) {
+        $ocr_text = file_get_contents($ocr_text_path);
+    }
+    
+    return [
+        'success' => true,
+        'file_path' => $file_path,
+        'verify_json_path' => $verify_json_path,
+        'verification_data' => $verification_data,
+        'ocr_text' => $ocr_text,
+        'storage_type' => 'temp'
+    ];
+}
+
+/**
+ * Get validation details for APPROVED/REUPLOAD students (PERMANENT directory)
+ * Files are stored in: assets/uploads/student/{doc_type}/{student_id}/filename_timestamp.ext
+ */
+function getValidationDetails_Permanent($connection, $student_id, $document_type_code, $doc_type) {
+    $server_base = dirname(__DIR__, 2) . '/assets/uploads/student/';
+    
+    // Map document codes to permanent folder names
+    $folder_map = [
+        '04' => 'id_pictures',
+        '00' => 'enrollment_forms',
+        '01' => 'grades',
+        '02' => 'letter_to_mayor',  // Note: different from temp (letter_mayor)
+        '03' => 'indigency'
+    ];
+    
+    $folder_name = $folder_map[$document_type_code] ?? '';
+    if (empty($folder_name)) {
+        return ['success' => false, 'message' => 'Invalid document type'];
+    }
+    
+    // NEW structure: assets/uploads/student/{doc_type}/{student_id}/
+    $student_dir = $server_base . $folder_name . '/' . $student_id . '/';
+    
+    $file_path = null;
+    $verify_json_path = null;
+    
+    if (is_dir($student_dir)) {
+        // Get all files in student's directory (excluding OCR files)
+        $files = glob($student_dir . '*');
+        
+        // Filter and sort by modification time (newest first)
+        $main_files = [];
+        foreach ($files as $f) {
+            if (preg_match('/\.(ocr\.txt|verify\.json|confidence\.json|tsv)$/i', $f)) continue;
+            if (is_file($f)) {
+                $main_files[] = $f;
+            }
+        }
+        
+        if (!empty($main_files)) {
+            // Sort by modification time (newest first)
+            usort($main_files, function($a, $b) {
+                return filemtime($b) - filemtime($a);
+            });
+            
+            $file_path = $main_files[0];  // Get newest file
+            // Get verify.json path - same filename but add .verify.json
+            $verify_json_path = $file_path . '.verify.json';
+        }
+    }
+    
+    if (!$file_path || !file_exists($file_path)) {
+        return ['success' => false, 'message' => 'Document file not found in permanent directory'];
+    }
+    
+    // Load verification data from .verify.json if exists
+    $verification_data = null;
+    if ($verify_json_path && file_exists($verify_json_path)) {
+        $verification_data = json_decode(file_get_contents($verify_json_path), true);
+    }
+    
+    // Load OCR text if exists
+    $ocr_text = null;
+    $ocr_text_path = $file_path . '.ocr.txt';
+    if (file_exists($ocr_text_path)) {
+        $ocr_text = file_get_contents($ocr_text_path);
+    }
+    
+    return [
+        'success' => true,
+        'file_path' => $file_path,
+        'verify_json_path' => $verify_json_path,
+        'verification_data' => $verification_data,
+        'ocr_text' => $ocr_text,
+        'storage_type' => 'permanent'
+    ];
+}
+
 $validation_data = [];
 
 try {
@@ -50,425 +199,232 @@ try {
         exit;
     }
     
-    // Get basic document info from documents table by student_id and document_type_code
-    $doc_query = pg_query_params($connection, 
-        "SELECT * FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1",
-        [$student_id, $document_type_code]
+    // Get student status to determine which directory to search
+    $student_query = pg_query_params($connection,
+        "SELECT status, first_name, last_name FROM students WHERE student_id = $1",
+        [$student_id]
     );
     
-    $document = null;
-    $file_path = null;
-    $verification_data_path = null;
-    
-    // If document found in database, use that
-    if ($doc_query && pg_num_rows($doc_query) > 0) {
-        $document = pg_fetch_assoc($doc_query);
-        $file_path = $document['file_path'];
-        
-        // Construct verification_data_path from file_path (verification_data_path column removed from schema)
-        $verification_data_path = null;
-        if (!empty($file_path)) {
-            $path_info = pathinfo($file_path);
-            $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
-            $verification_data_path = $file_base . '.verify.json';
-        }
-        
-        $validation_data['ocr_confidence'] = floatval($document['ocr_confidence'] ?? 0);
-        $validation_data['upload_date'] = $document['upload_date'];
-    } else {
-        // Document not in database - search filesystem for registration documents
-        // This handles new applicants whose documents haven't been moved to permanent storage yet
-        
-        // Get student name for file search
-        $student_query = pg_query_params($connection,
-            "SELECT first_name, last_name FROM students WHERE student_id = $1",
-            [$student_id]
-        );
-        
-        if (!$student_query || pg_num_rows($student_query) === 0) {
-            echo json_encode(['success' => false, 'message' => 'Student not found']);
-            exit;
-        }
-        
-        $student_info = pg_fetch_assoc($student_query);
-        $first_name = $student_info['first_name'];
-        $last_name = $student_info['last_name'];
-        
-        // Build search paths based on document type
-        $server_base = dirname(__DIR__, 2) . '/assets/uploads/';
-        
-        // Map document codes to folder names for student directory
-        $student_folder_map = [
-            '04' => 'id_pictures',
-            '00' => 'enrollment_forms',
-            '01' => 'grades',
-            '02' => 'letter_mayor',
-            '03' => 'indigency'
-        ];
-        
-        // Map document codes to temp folder paths
-        $temp_folder_map = [
-            '04' => 'temp/id_pictures/',
-            '00' => 'temp/enrollment_forms/',
-            '01' => 'temp/grades/',
-            '02' => 'temp/letter_mayor/',
-            '03' => 'temp/indigency/'
-        ];
-        
-        $matches = [];
-        
-        // PRIORITY 1: Search NEW structure - student/{doc_type}/{student_id}/
-        $student_folder_name = $student_folder_map[$document_type_code] ?? '';
-        if ($student_folder_name) {
-            $student_dir = $server_base . 'student/' . $student_folder_name . '/' . $student_id . '/';
-            if (is_dir($student_dir)) {
-                foreach (glob($student_dir . '*.*') as $file) {
-                    // Skip associated files
-                    if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', basename($file))) {
-                        continue;
-                    }
-                    if (is_dir($file)) continue;
-                    
-                    $matches[filemtime($file)] = $file;
-                }
-            }
-        }
-        
-        // PRIORITY 2: Search OLD structure - student/{doc_type}/{student_id}_*
-        if ($student_folder_name && empty($matches)) {
-            $student_flat_dir = $server_base . 'student/' . $student_folder_name . '/';
-            if (is_dir($student_flat_dir)) {
-                $pattern = $student_flat_dir . $student_id . '_*';
-                foreach (glob($pattern) as $file) {
-                    // Skip associated files and directories
-                    if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', basename($file))) {
-                        continue;
-                    }
-                    if (is_dir($file)) continue;
-                    
-                    $matches[filemtime($file)] = $file;
-                }
-            }
-        }
-        
-        // PRIORITY 3: Search TEMP folder (for newly uploaded documents)
-        $search_folder = $server_base . ($temp_folder_map[$document_type_code] ?? '');
-        if (is_dir($search_folder) && empty($matches)) {
-            foreach (glob($search_folder . '*.*') as $file) {
-                $basename = basename($file);
-                // Skip associated files
-                if (preg_match('/\.(verify\.json|ocr\.txt|confidence\.json|tsv)$/i', $basename)) {
-                    continue;
-                }
-                if (is_dir($file)) continue;
-                
-                // Match by student_id or name
-                $normalized_name = strtolower($basename);
-                if (strpos($normalized_name, strtolower($student_id)) !== false ||
-                    (strpos($normalized_name, strtolower($first_name)) !== false && 
-                     strpos($normalized_name, strtolower($last_name)) !== false)) {
-                    $matches[filemtime($file)] = $file;
-                }
-            }
-        }
-        
-        // Process matches if found
-        if (!empty($matches)) {
-            krsort($matches); // newest first
-            $file_path = reset($matches);
-            
-            // Construct verification file path - remove file extension first, then add .verify.json
-            $path_info = pathinfo($file_path);
-            $file_base = $path_info['dirname'] . '/' . $path_info['filename']; // Path without extension
-            $verification_data_path = $file_base . '.verify.json';
-            
-            // Get OCR confidence from .confidence.json or .verify.json
-            $confidence_file = $file_base . '.confidence.json';
-            if (file_exists($confidence_file)) {
-                $conf_data = json_decode(file_get_contents($confidence_file), true);
-                $validation_data['ocr_confidence'] = floatval($conf_data['ocr_confidence'] ?? 0);
-            } elseif (file_exists($verification_data_path)) {
-                $verify_data = json_decode(file_get_contents($verification_data_path), true);
-                $validation_data['ocr_confidence'] = floatval($verify_data['summary']['average_confidence'] ?? 
-                                                    $verify_data['ocr_confidence'] ?? 0);
-            } else {
-                // No verification data found - set to 0
-                $validation_data['ocr_confidence'] = 0;
-            }
-            
-            $validation_data['upload_date'] = date('Y-m-d H:i:s', filemtime($file_path));
-        }
-    }
-    
-    if (!$file_path || !file_exists($file_path)) {
-        echo json_encode(['success' => false, 'message' => 'Document file not found on server']);
+    if (!$student_query || pg_num_rows($student_query) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Student not found']);
         exit;
     }
     
+    $student_info = pg_fetch_assoc($student_query);
+    $student_status = $student_info['status'];
+    
+    // Determine which function to use based on student status
+    // UNDER_REGISTRATION = temp directory
+    // APPLICANT/ACTIVE/GIVEN/etc = permanent directory
+    if ($student_status === 'under_registration') {
+        $file_result = getValidationDetails_Registration($connection, $student_id, $document_type_code, $doc_type);
+    } else {
+        $file_result = getValidationDetails_Permanent($connection, $student_id, $document_type_code, $doc_type);
+    }
+    
+    if (!$file_result['success']) {
+        echo json_encode($file_result);
+        exit;
+    }
+    
+    // Extract file information
+    $file_path = $file_result['file_path'];
+    $verify_json_path = $file_result['verify_json_path'];
+    $verification_data_from_file = $file_result['verification_data'];
+    $ocr_text = $file_result['ocr_text'];
+    
+    // Get OCR confidence from verification data
+    if ($verification_data_from_file) {
+        if (isset($verification_data_from_file['summary']['average_confidence'])) {
+            $validation_data['ocr_confidence'] = floatval($verification_data_from_file['summary']['average_confidence']);
+        } elseif (isset($verification_data_from_file['ocr_confidence'])) {
+            $validation_data['ocr_confidence'] = floatval($verification_data_from_file['ocr_confidence']);
+        } else {
+            $validation_data['ocr_confidence'] = 0;
+        }
+    } else {
+        $validation_data['ocr_confidence'] = 0;
+    }
+    
+    $validation_data['upload_date'] = date('Y-m-d H:i:s', filemtime($file_path));
+    $validation_data['storage_type'] = $file_result['storage_type'];
+    
+    // ===========================================
+    // PROCESS VALIDATION DETAILS BY DOCUMENT TYPE
+    // ===========================================
+    
     // ID Picture - Get identity verification data
     if ($doc_type === 'id_picture') {
-        // Use verification_data_path from database instead of manual construction
-        if (!empty($verification_data_path) && file_exists($verification_data_path)) {
-            $verify_data = json_decode(file_get_contents($verification_data_path), true);
-            if ($verify_data) {
-                // Get student info for verification
-                $student_query = pg_query_params($connection,
-                    "SELECT s.first_name, s.middle_name, s.last_name, yl.name as year_level, u.name as university_name
-                     FROM students s
-                     LEFT JOIN universities u ON s.university_id = u.university_id
-                     LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
-                     WHERE s.student_id = $1",
-                    [$student_id]
-                );
-                $student_info = pg_fetch_assoc($student_query);
-                
-                // Parse verify.json for detailed validation (6-check structure)
+        if ($verification_data_from_file) {
+            // ID Picture uses "checks" object format
+            if (isset($verification_data_from_file['checks'])) {
+                $checks = $verification_data_from_file['checks'];
                 $validation_data['identity_verification'] = [
                     'document_type' => $doc_type,
-                    'first_name_match' => $verify_data['first_name_match'] ?? false,
-                    'first_name_confidence' => $verify_data['confidence_scores']['first_name'] ?? 0,
-                    'middle_name_match' => $verify_data['middle_name_match'] ?? false,
-                    'middle_name_confidence' => $verify_data['confidence_scores']['middle_name'] ?? 0,
-                    'last_name_match' => $verify_data['last_name_match'] ?? false,
-                    'last_name_confidence' => $verify_data['confidence_scores']['last_name'] ?? 0,
-                    'year_level_match' => $verify_data['year_level_match'] ?? false,
-                    'year_level_confidence' => 0, // Year level is boolean, not percentage
-                    'school_match' => $verify_data['university_match'] ?? false,
-                    'school_confidence' => $verify_data['confidence_scores']['university'] ?? 0,
-                    'official_keywords' => $verify_data['document_keywords_found'] ?? false,
-                    'keywords_confidence' => $verify_data['confidence_scores']['document_keywords'] ?? 0,
-                    'verification_score' => $verify_data['verification_score'] ?? 0,
-                    'passed_checks' => $verify_data['summary']['passed_checks'] ?? 0,
-                    'total_checks' => $verify_data['summary']['total_checks'] ?? 6,
-                    'average_confidence' => $verify_data['summary']['average_confidence'] ?? round(($document['ocr_confidence'] ?? 0), 1),
-                    'recommendation' => $verify_data['summary']['recommendation'] ?? 'No recommendation available',
-                    'found_text_snippets' => $verify_data['found_text_snippets'] ?? []
+                    'first_name_match' => $checks['first_name_match']['passed'] ?? false,
+                    'first_name_confidence' => $checks['first_name_match']['similarity'] ?? 0,
+                    'middle_name_match' => $checks['middle_name_match']['passed'] ?? false,
+                    'middle_name_confidence' => $checks['middle_name_match']['similarity'] ?? 0,
+                    'last_name_match' => $checks['last_name_match']['passed'] ?? false,
+                    'last_name_confidence' => $checks['last_name_match']['similarity'] ?? 0,
+                    'year_level_match' => false, // ID Picture doesn't verify year level
+                    'year_level_confidence' => 0,
+                    'school_match' => $checks['university_match']['passed'] ?? false,
+                    'school_confidence' => $checks['university_match']['similarity'] ?? 0,
+                    'official_keywords' => $checks['document_keywords_found']['passed'] ?? false,
+                    'keywords_confidence' => 100, // keywords_found doesn't have similarity score
+                    'verification_score' => $verification_data_from_file['verification_score'] ?? 0,
+                    'passed_checks' => $verification_data_from_file['summary']['passed_checks'] ?? 0,
+                    'total_checks' => $verification_data_from_file['summary']['total_checks'] ?? 6,
+                    'average_confidence' => $verification_data_from_file['summary']['average_confidence'] ?? 0,
+                    'recommendation' => $verification_data_from_file['summary']['recommendation'] ?? 'No recommendation available',
+                    'found_text_snippets' => []
                 ];
-            }
-        }
-        
-        // Get OCR text
-        $path_info = pathinfo($file_path);
-        $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
-        $ocr_text_path = $file_base . '.ocr.txt';
-        if (file_exists($ocr_text_path)) {
-            $validation_data['extracted_text'] = file_get_contents($ocr_text_path);
-        }
-    }
-    
-    // Academic Grades - Get detailed grade validation from JSON file
-    elseif ($doc_type === 'grades') {
-        // Use JSON verification file which contains all grade information
-        // Remove file extension before adding .verify.json
-        $path_info = pathinfo($file_path);
-        $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
-        $verify_json_path = $file_base . '.verify.json';
-        
-        if (file_exists($verify_json_path)) {
-            // Load verification JSON
-            $verify_data = json_decode(file_get_contents($verify_json_path), true);
-            
-            if ($verify_data && is_array($verify_data)) {
-                // Extract validation status
-                $validation_data['validation_status'] = $verify_data['overall_success'] 
-                    ? ($verify_data['is_eligible'] ? 'passed' : 'failed') 
-                    : 'pending';
                 
-                // Get OCR confidence from summary or confidence_scores
-                if (isset($verify_data['summary']['average_confidence'])) {
-                    $validation_data['ocr_confidence'] = floatval($verify_data['summary']['average_confidence']);
-                } elseif (isset($verify_data['confidence_scores']['grades'])) {
-                    $validation_data['ocr_confidence'] = floatval($verify_data['confidence_scores']['grades']);
-                } else {
-                    $validation_data['ocr_confidence'] = floatval($document['ocr_confidence'] ?? 0);
-                }
-                
-                // Extract grades from enhanced_grade_validation if available, otherwise from grades array
-                $extracted_grades = [];
-                
-                if (isset($verify_data['enhanced_grade_validation']['extracted_subjects'])) {
-                    // Use enhanced validation data (has confidence per subject)
-                    foreach ($verify_data['enhanced_grade_validation']['extracted_subjects'] as $subject) {
-                        // Determine if grade is passing (typically <= 3.0 for Philippine grading, or <= 5.0 for some schools)
-                        $grade_val = floatval($subject['rawGrade'] ?? 0);
-                        $is_passing = ($grade_val > 0 && $grade_val <= 3.0) || 
-                                     (isset($verify_data['failing_grades']) && !in_array($subject['name'], $verify_data['failing_grades']));
-                        
-                        $extracted_grades[] = [
-                            'subject_name' => $subject['name'] ?? 'Unknown Subject',
-                            'grade_value' => $subject['rawGrade'] ?? 'N/A',
-                            'extraction_confidence' => floatval($subject['confidence'] ?? 95),
-                            'is_passing' => $is_passing ? 't' : 'f'
-                        ];
-                    }
-                } elseif (isset($verify_data['grades']) && is_array($verify_data['grades'])) {
-                    // Fallback to basic grades array
-                    $default_confidence = floatval($verify_data['confidence_scores']['grades'] ?? 90);
-                    
-                    foreach ($verify_data['grades'] as $grade_item) {
-                        if (!isset($grade_item['subject']) || !isset($grade_item['grade'])) continue;
-                        
-                        $grade_val = floatval($grade_item['grade']);
-                        $is_passing = ($grade_val > 0 && $grade_val <= 3.0) || 
-                                     (isset($verify_data['failing_grades']) && !in_array($grade_item['subject'], $verify_data['failing_grades']));
-                        
-                        $extracted_grades[] = [
-                            'subject_name' => $grade_item['subject'],
-                            'grade_value' => $grade_item['grade'],
-                            'extraction_confidence' => $default_confidence,
-                            'is_passing' => $is_passing ? 't' : 'f'
-                        ];
+                // Build found_text_snippets from checks data
+                foreach ($checks as $checkKey => $checkData) {
+                    if (isset($checkData['expected'])) {
+                        $validation_data['identity_verification']['found_text_snippets'][$checkKey] = 
+                            'Expected: ' . $checkData['expected'] . 
+                            ($checkData['found_in_ocr'] ? ' (Found)' : ' (Not Found)');
                     }
                 }
-                
-                if (!empty($extracted_grades)) {
-                    $validation_data['extracted_grades'] = $extracted_grades;
-                }
-                
-                // Add summary information
-                if (isset($verify_data['summary'])) {
-                    $validation_data['summary'] = $verify_data['summary'];
-                }
-                
-                // Add eligibility status
-                $validation_data['is_eligible'] = $verify_data['is_eligible'] ?? false;
-                $validation_data['all_grades_passing'] = $verify_data['all_grades_passing'] ?? false;
-                
-                // Add comprehensive validation checks for grades modal display
+            } else {
+                // Fallback to flat structure (old format)
                 $validation_data['identity_verification'] = [
-                    'document_type' => 'grades',
-                    'year_level_match' => $verify_data['year_level_match'] ?? false,
-                    'year_level_confidence' => floatval($verify_data['confidence_scores']['year_level'] ?? 0),
-                    'semester_match' => $verify_data['semester_match'] ?? false,
-                    'semester_confidence' => floatval($verify_data['confidence_scores']['semester'] ?? 0),
-                    'school_year_match' => $verify_data['school_year_match'] ?? false,
-                    'school_year_confidence' => floatval($verify_data['confidence_scores']['school_year'] ?? 0),
-                    'university_match' => $verify_data['university_match'] ?? false,
-                    'university_confidence' => floatval($verify_data['confidence_scores']['university'] ?? 0),
-                    'name_match' => $verify_data['name_match'] ?? false,
-                    'name_confidence' => floatval($verify_data['confidence_scores']['name'] ?? 0),
-                    'all_grades_passing' => $verify_data['all_grades_passing'] ?? false,
-                    'grades_confidence' => floatval($verify_data['confidence_scores']['grades'] ?? 0),
-                    'is_eligible' => $verify_data['is_eligible'] ?? false,
-                    'passed_checks' => $verify_data['summary']['passed_checks'] ?? 0,
-                    'total_checks' => $verify_data['summary']['total_checks'] ?? 6,
-                    'average_confidence' => $verify_data['summary']['average_confidence'] ?? floatval($document['ocr_confidence'] ?? 0),
-                    'eligibility_status' => $verify_data['summary']['eligibility_status'] ?? 'UNKNOWN',
-                    'recommendation' => $verify_data['summary']['recommendation'] ?? 'No recommendation available',
-                    'found_text_snippets' => $verify_data['found_text_snippets'] ?? [],
-                    'validation_method' => $verify_data['validation_method'] ?? 'unknown',
-                    'university_code' => $verify_data['university_code'] ?? ''
+                    'document_type' => $doc_type,
+                    'first_name_match' => $verification_data_from_file['first_name_match'] ?? false,
+                    'first_name_confidence' => $verification_data_from_file['confidence_scores']['first_name'] ?? 0,
+                    'middle_name_match' => $verification_data_from_file['middle_name_match'] ?? false,
+                    'middle_name_confidence' => $verification_data_from_file['confidence_scores']['middle_name'] ?? 0,
+                    'last_name_match' => $verification_data_from_file['last_name_match'] ?? false,
+                    'last_name_confidence' => $verification_data_from_file['confidence_scores']['last_name'] ?? 0,
+                    'year_level_match' => $verification_data_from_file['year_level_match'] ?? false,
+                    'year_level_confidence' => 0,
+                    'school_match' => $verification_data_from_file['university_match'] ?? false,
+                    'school_confidence' => $verification_data_from_file['confidence_scores']['university'] ?? 0,
+                    'official_keywords' => $verification_data_from_file['document_keywords_found'] ?? false,
+                    'keywords_confidence' => $verification_data_from_file['confidence_scores']['document_keywords'] ?? 0,
+                    'verification_score' => $verification_data_from_file['verification_score'] ?? 0,
+                    'passed_checks' => $verification_data_from_file['summary']['passed_checks'] ?? 0,
+                    'total_checks' => $verification_data_from_file['summary']['total_checks'] ?? 6,
+                    'average_confidence' => $verification_data_from_file['summary']['average_confidence'] ?? 0,
+                    'recommendation' => $verification_data_from_file['summary']['recommendation'] ?? 'No recommendation available',
+                    'found_text_snippets' => $verification_data_from_file['found_text_snippets'] ?? []
                 ];
             }
         }
         
-        // Fallback: check if OCR text exists
-        if (empty($validation_data['extracted_text'])) {
-            $path_info = pathinfo($file_path);
-            $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
-            $ocr_text_path = $file_base . '.ocr.txt';
-            if (file_exists($ocr_text_path)) {
-                $validation_data['extracted_text'] = file_get_contents($ocr_text_path);
-            }
+        if ($ocr_text) {
+            $validation_data['extracted_text'] = $ocr_text;
         }
     }
     
-    // EAF, Letter, Certificate - Get OCR text and verification data
-    else {
-        // Use verification_data_path from database or filesystem search
-        if (!empty($verification_data_path) && file_exists($verification_data_path)) {
-            $verify_data = json_decode(file_get_contents($verification_data_path), true);
-            if ($verify_data) {
-                // Get student info for display
-                $student_query = pg_query_params($connection,
-                    "SELECT s.first_name, s.middle_name, s.last_name, yl.name as year_level, u.name as university_name, b.name as barangay_name
-                     FROM students s
-                     LEFT JOIN universities u ON s.university_id = u.university_id
-                     LEFT JOIN year_levels yl ON s.year_level_id = yl.year_level_id
-                     LEFT JOIN barangays b ON s.barangay_id = b.barangay_id
-                     WHERE s.student_id = $1",
-                    [$student_id]
-                );
-                $student_info = pg_fetch_assoc($student_query);
-                
-                // Parse verify.json for detailed validation
-                // Structure varies by document type:
-                // - EAF: first_name, middle_name, last_name, year_level, university, document_keywords
-                // - Letter/Certificate: first_name, middle_name, last_name, barangay, office_header, document_keywords
-                
-                if ($doc_type === 'eaf') {
-                    $validation_data['identity_verification'] = [
-                        'document_type' => $doc_type,
-                        'first_name_match' => $verify_data['first_name_match'] ?? false,
-                        'first_name_confidence' => $verify_data['confidence_scores']['first_name'] ?? 0,
-                        'middle_name_match' => $verify_data['middle_name_match'] ?? false,
-                        'middle_name_confidence' => $verify_data['confidence_scores']['middle_name'] ?? 0,
-                        'last_name_match' => $verify_data['last_name_match'] ?? false,
-                        'last_name_confidence' => $verify_data['confidence_scores']['last_name'] ?? 0,
-                        'year_level_match' => $verify_data['year_level_match'] ?? false,
-                        'year_level_confidence' => 0,
-                        'school_match' => $verify_data['university_match'] ?? false,
-                        'school_confidence' => $verify_data['confidence_scores']['university'] ?? 0,
-                        'official_keywords' => $verify_data['document_keywords_found'] ?? false,
-                        'keywords_confidence' => $verify_data['confidence_scores']['document_keywords'] ?? 0,
-                        'passed_checks' => $verify_data['summary']['passed_checks'] ?? 0,
-                        'total_checks' => $verify_data['summary']['total_checks'] ?? 6,
-                        'average_confidence' => $verify_data['summary']['average_confidence'] ?? round(($document['ocr_confidence'] ?? 0), 1),
-                        'recommendation' => $verify_data['summary']['recommendation'] ?? 'No recommendation available',
-                        'found_text_snippets' => $verify_data['found_text_snippets'] ?? []
-                    ];
-                } elseif (in_array($doc_type, ['letter_to_mayor', 'certificate_of_indigency'])) {
-                    // Letter to Mayor uses 4 checks: first_name, last_name, barangay, mayor_header
-                    // Certificate uses 5 checks: certificate_title, first_name, last_name, barangay, general_trias
+    // Academic Grades
+    elseif ($doc_type === 'grades') {
+        if ($verification_data_from_file) {
+            $validation_data['validation_status'] = $verification_data_from_file['overall_success'] 
+                ? ($verification_data_from_file['is_eligible'] ? 'passed' : 'failed') 
+                : 'pending';
+            
+            $extracted_grades = [];
+            
+            if (isset($verification_data_from_file['enhanced_grade_validation']['extracted_subjects'])) {
+                foreach ($verification_data_from_file['enhanced_grade_validation']['extracted_subjects'] as $subject) {
+                    $grade_val = floatval($subject['rawGrade'] ?? 0);
+                    $is_passing = ($grade_val > 0 && $grade_val <= 3.0);
                     
-                    if ($doc_type === 'letter_to_mayor') {
-                        $validation_data['identity_verification'] = [
-                            'first_name_match' => $verify_data['first_name'] ?? false,
-                            'first_name_confidence' => $verify_data['confidence_scores']['first_name'] ?? 0,
-                            'last_name_match' => $verify_data['last_name'] ?? false,
-                            'last_name_confidence' => $verify_data['confidence_scores']['last_name'] ?? 0,
-                            'barangay_match' => $verify_data['barangay'] ?? false,
-                            'barangay_confidence' => $verify_data['confidence_scores']['barangay'] ?? 0,
-                            'office_header_found' => $verify_data['mayor_header'] ?? false,
-                            'office_header_confidence' => $verify_data['confidence_scores']['mayor_header'] ?? 0,
-                            'passed_checks' => $verify_data['summary']['passed_checks'] ?? 0,
-                            'total_checks' => $verify_data['summary']['total_checks'] ?? 4,
-                            'average_confidence' => $verify_data['summary']['average_confidence'] ?? round(($document['ocr_confidence'] ?? 0), 1),
-                            'recommendation' => $verify_data['summary']['recommendation'] ?? 'No recommendation available',
-                            'found_text_snippets' => $verify_data['found_text_snippets'] ?? [],
-                            'document_type' => $doc_type
-                        ];
-                    } else {
-                        // Certificate of Indigency
-                        $validation_data['identity_verification'] = [
-                            'certificate_title_found' => $verify_data['certificate_title'] ?? false,
-                            'certificate_title_confidence' => $verify_data['confidence_scores']['certificate_title'] ?? 0,
-                            'first_name_match' => $verify_data['first_name'] ?? false,
-                            'first_name_confidence' => $verify_data['confidence_scores']['first_name'] ?? 0,
-                            'last_name_match' => $verify_data['last_name'] ?? false,
-                            'last_name_confidence' => $verify_data['confidence_scores']['last_name'] ?? 0,
-                            'barangay_match' => $verify_data['barangay'] ?? false,
-                            'barangay_confidence' => $verify_data['confidence_scores']['barangay'] ?? 0,
-                            'general_trias_found' => $verify_data['general_trias'] ?? false,
-                            'general_trias_confidence' => $verify_data['confidence_scores']['general_trias'] ?? 0,
-                            'passed_checks' => $verify_data['summary']['passed_checks'] ?? 0,
-                            'total_checks' => $verify_data['summary']['total_checks'] ?? 5,
-                            'average_confidence' => $verify_data['summary']['average_confidence'] ?? round(($document['ocr_confidence'] ?? 0), 1),
-                            'recommendation' => $verify_data['summary']['recommendation'] ?? 'No recommendation available',
-                            'found_text_snippets' => $verify_data['found_text_snippets'] ?? [],
-                            'document_type' => $doc_type
-                        ];
-                    }
+                    $extracted_grades[] = [
+                        'subject_name' => $subject['name'] ?? 'Unknown Subject',
+                        'grade_value' => $subject['rawGrade'] ?? 'N/A',
+                        'extraction_confidence' => floatval($subject['confidence'] ?? 95),
+                        'is_passing' => $is_passing ? 't' : 'f'
+                    ];
+                }
+            } elseif (isset($verification_data_from_file['grades'])) {
+                foreach ($verification_data_from_file['grades'] as $grade_item) {
+                    $grade_val = floatval($grade_item['grade'] ?? 0);
+                    $is_passing = ($grade_val > 0 && $grade_val <= 3.0);
+                    
+                    $extracted_grades[] = [
+                        'subject_name' => $grade_item['subject'] ?? 'Unknown',
+                        'grade_value' => $grade_item['grade'] ?? 'N/A',
+                        'extraction_confidence' => 90,
+                        'is_passing' => $is_passing ? 't' : 'f'
+                    ];
                 }
             }
+            
+            if (!empty($extracted_grades)) {
+                $validation_data['extracted_grades'] = $extracted_grades;
+            }
+            
+            $validation_data['summary'] = $verification_data_from_file['summary'] ?? [];
+            $validation_data['is_eligible'] = $verification_data_from_file['is_eligible'] ?? false;
+            $validation_data['all_grades_passing'] = $verification_data_from_file['all_grades_passing'] ?? false;
+            
+            $validation_data['identity_verification'] = [
+                'document_type' => 'grades',
+                'year_level_match' => $verification_data_from_file['year_level_match'] ?? false,
+                'year_level_confidence' => floatval($verification_data_from_file['confidence_scores']['year_level'] ?? 0),
+                'semester_match' => $verification_data_from_file['semester_match'] ?? false,
+                'semester_confidence' => floatval($verification_data_from_file['confidence_scores']['semester'] ?? 0),
+                'school_year_match' => $verification_data_from_file['school_year_match'] ?? false,
+                'school_year_confidence' => floatval($verification_data_from_file['confidence_scores']['school_year'] ?? 0),
+                'university_match' => $verification_data_from_file['university_match'] ?? false,
+                'university_confidence' => floatval($verification_data_from_file['confidence_scores']['university'] ?? 0),
+                'name_match' => $verification_data_from_file['name_match'] ?? false,
+                'name_confidence' => floatval($verification_data_from_file['confidence_scores']['name'] ?? 0),
+                'all_grades_passing' => $verification_data_from_file['all_grades_passing'] ?? false,
+                'grades_confidence' => floatval($verification_data_from_file['confidence_scores']['grades'] ?? 0),
+                'is_eligible' => $verification_data_from_file['is_eligible'] ?? false,
+                'passed_checks' => $verification_data_from_file['summary']['passed_checks'] ?? 0,
+                'total_checks' => $verification_data_from_file['summary']['total_checks'] ?? 6,
+                'average_confidence' => $verification_data_from_file['summary']['average_confidence'] ?? 0,
+                'eligibility_status' => $verification_data_from_file['summary']['eligibility_status'] ?? 'UNKNOWN',
+                'recommendation' => $verification_data_from_file['summary']['recommendation'] ?? '',
+                'found_text_snippets' => $verification_data_from_file['found_text_snippets'] ?? []
+            ];
         }
         
-        // Get OCR text for all document types
-        $path_info = pathinfo($file_path);
-        $file_base = $path_info['dirname'] . '/' . $path_info['filename'];
-        $ocr_text_path = $file_base . '.ocr.txt';
-        if (file_exists($ocr_text_path)) {
-            $validation_data['extracted_text'] = file_get_contents($ocr_text_path);
+        if ($ocr_text) {
+            $validation_data['extracted_text'] = $ocr_text;
+        }
+    }
+    
+    // EAF, Letter, Certificate
+    else {
+        if ($verification_data_from_file) {
+            // Check if data is nested under "verification" key (EAF format)
+            $verif_data = isset($verification_data_from_file['verification']) 
+                ? $verification_data_from_file['verification'] 
+                : $verification_data_from_file;
+            
+            $validation_data['identity_verification'] = [
+                'document_type' => $doc_type,
+                'first_name_match' => $verif_data['first_name_match'] ?? false,
+                'first_name_confidence' => $verif_data['confidence_scores']['first_name'] ?? 0,
+                'middle_name_match' => $verif_data['middle_name_match'] ?? false,
+                'middle_name_confidence' => $verif_data['confidence_scores']['middle_name'] ?? 0,
+                'last_name_match' => $verif_data['last_name_match'] ?? false,
+                'last_name_confidence' => $verif_data['confidence_scores']['last_name'] ?? 0,
+                'year_level_match' => $verif_data['year_level_match'] ?? false,
+                'year_level_confidence' => $verif_data['confidence_scores']['year_level'] ?? 0,
+                'university_match' => $verif_data['university_match'] ?? false,
+                'university_confidence' => $verif_data['confidence_scores']['university'] ?? 0,
+                'document_keywords_found' => $verif_data['document_keywords_found'] ?? false,
+                'document_keywords_confidence' => $verif_data['confidence_scores']['document_keywords'] ?? 0,
+                'verification_score' => $verif_data['verification_score'] ?? 0,
+                'passed_checks' => $verif_data['summary']['passed_checks'] ?? 0,
+                'total_checks' => $verif_data['summary']['total_checks'] ?? 0,
+                'average_confidence' => $verif_data['summary']['average_confidence'] ?? 0,
+                'recommendation' => $verif_data['summary']['recommendation'] ?? '',
+                'found_text_snippets' => $verif_data['found_text_snippets'] ?? []
+            ];
+        }
+        
+        if ($ocr_text) {
+            $validation_data['extracted_text'] = $ocr_text;
         }
     }
     

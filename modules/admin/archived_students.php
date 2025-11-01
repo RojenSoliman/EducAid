@@ -344,7 +344,7 @@ $query = "
         s.bdate,
         yl.name as year_level_name,
         u.name as university_name,
-        s.academic_year_registered,
+        s.first_registered_academic_year as academic_year_registered,
         s.expected_graduation_year,
         s.archived_at,
         s.archived_by,
