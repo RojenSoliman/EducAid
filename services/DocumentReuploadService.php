@@ -1294,6 +1294,7 @@ class DocumentReuploadService {
                 'last_name' => false,
                 'barangay' => false,
                 'mayor_header' => false,
+                'municipality' => false,
                 'confidence_scores' => [],
                 'found_text_snippets' => []
             ];
@@ -1393,8 +1394,53 @@ class DocumentReuploadService {
                 $verification['found_text_snippets']['mayor_header'] = implode(', ', $foundMayorKeywords);
             }
             
+            // Verify municipality (matching registration logic)
+            // Get active municipality from session or default to General Trias
+            $activeMunicipality = $_SESSION['active_municipality'] ?? 'General Trias';
+            
+            // Create municipality variants for flexible matching
+            $municipalityVariants = [
+                $activeMunicipality,
+                strtolower($activeMunicipality),
+                str_replace(' ', '', strtolower($activeMunicipality))
+            ];
+            
+            // Add common abbreviations if municipality is "General Trias"
+            if (stripos($activeMunicipality, 'general trias') !== false) {
+                $municipalityVariants[] = 'gen trias';
+                $municipalityVariants[] = 'gen. trias';
+                $municipalityVariants[] = 'gentrias';
+            }
+            
+            $municipalityFound = false;
+            $municipalityConfidence = 0;
+            $foundMunicipalityText = '';
+            
+            foreach ($municipalityVariants as $variant) {
+                $similarity = $calculateSimilarity($variant, $ocrTextLower);
+                if ($similarity > $municipalityConfidence) {
+                    $municipalityConfidence = $similarity;
+                }
+                
+                if ($similarity >= 70) {
+                    $municipalityFound = true;
+                    // Try to find the actual text snippet
+                    $pattern = '/[^\n]*' . preg_quote(explode(' ', $variant)[0], '/') . '[^\n]*/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $foundMunicipalityText = trim($matches[0]);
+                    }
+                    break;
+                }
+            }
+            
+            $verification['municipality'] = $municipalityFound;
+            $verification['confidence_scores']['municipality'] = round($municipalityConfidence, 1);
+            if (!empty($foundMunicipalityText)) {
+                $verification['found_text_snippets']['municipality'] = $foundMunicipalityText;
+            }
+            
             // Calculate overall success
-            $requiredChecks = ['first_name', 'last_name', 'barangay', 'mayor_header'];
+            $requiredChecks = ['first_name', 'last_name', 'barangay', 'mayor_header', 'municipality'];
             $passedChecks = 0;
             $totalConfidence = 0;
             
@@ -1405,7 +1451,7 @@ class DocumentReuploadService {
                 $totalConfidence += $verification['confidence_scores'][$check] ?? 0;
             }
             
-            $averageConfidence = $totalConfidence / 4;
+            $averageConfidence = $totalConfidence / 5;
             
             // CRITICAL: Check for cross-document confusion (Letter vs Certificate)
             $indigencyKeywords = ['indigency', 'indigent', 'certificate of indigency'];
@@ -1426,15 +1472,18 @@ class DocumentReuploadService {
                 ];
             }
             
-            $verification['overall_success'] = ($passedChecks >= 3) || ($passedChecks >= 2 && $averageConfidence >= 75);
+            // STRICTER SUCCESS CRITERIA: ALL 5 checks must pass (matching registration)
+            // This prevents wrong documents (like indigency certificates) from being accepted
+            $verification['overall_success'] = ($passedChecks >= 5 && $averageConfidence >= 70);
             
             $verification['summary'] = [
                 'passed_checks' => $passedChecks,
-                'total_checks' => 4,
+                'total_checks' => 5,
                 'average_confidence' => round($averageConfidence, 1),
                 'recommendation' => $verification['overall_success'] ? 
                     'Document validation successful' : 
-                    'Please ensure the document contains your name, barangay, and mayor office header clearly'
+                    'Please ensure the document contains your name, barangay, mayor office header, and municipality (' . $activeMunicipality . ') clearly',
+                'required_municipality' => $activeMunicipality
             ];
             
             $ocrData['ocr_confidence'] = round($averageConfidence, 1);
@@ -1456,7 +1505,7 @@ class DocumentReuploadService {
                 'status' => $ocrData['verification_status'],
                 'timestamp' => date('Y-m-d H:i:s'),
                 'checks_passed' => $passedChecks,
-                'total_checks' => 4
+                'total_checks' => 5
             ], JSON_PRETTY_PRINT));
             
             error_log("Letter OCR: Confidence={$ocrData['ocr_confidence']}%, Passed={$passedChecks}/4 checks");
@@ -1506,7 +1555,7 @@ class DocumentReuploadService {
                 'first_name' => false,
                 'last_name' => false,
                 'barangay' => false,
-                'general_trias' => false,
+                'municipality' => false,
                 'confidence_scores' => [],
                 'found_text_snippets' => []
             ];
@@ -1607,29 +1656,53 @@ class DocumentReuploadService {
                 }
             }
             
-            // Verify General Trias mention
-            $generalTriasKeywords = ['general trias', 'city of general trias', 'municipality of general trias', 'gen. trias'];
-            $generalTriasMatches = 0;
-            $foundGeneralTriasText = '';
+            // Verify municipality (matching registration and letter logic)
+            // Get active municipality from session or default to General Trias
+            $activeMunicipality = $_SESSION['active_municipality'] ?? 'General Trias';
             
-            foreach ($generalTriasKeywords as $keyword) {
-                if (stripos($ocrTextLower, $keyword) !== false) {
-                    $generalTriasMatches++;
-                    $foundGeneralTriasText = $keyword;
+            // Create municipality variants for flexible matching
+            $municipalityVariants = [
+                $activeMunicipality,
+                strtolower($activeMunicipality),
+                str_replace(' ', '', strtolower($activeMunicipality))
+            ];
+            
+            // Add common abbreviations if municipality is "General Trias"
+            if (stripos($activeMunicipality, 'general trias') !== false) {
+                $municipalityVariants[] = 'gen trias';
+                $municipalityVariants[] = 'gen. trias';
+                $municipalityVariants[] = 'gentrias';
+            }
+            
+            $municipalityFound = false;
+            $municipalityConfidence = 0;
+            $foundMunicipalityText = '';
+            
+            foreach ($municipalityVariants as $variant) {
+                $similarity = $calculateSimilarity($variant, $ocrTextLower);
+                if ($similarity > $municipalityConfidence) {
+                    $municipalityConfidence = $similarity;
+                }
+                
+                if ($similarity >= 70) {
+                    $municipalityFound = true;
+                    // Try to find the actual text snippet
+                    $pattern = '/[^\n]*' . preg_quote(explode(' ', $variant)[0], '/') . '[^\n]*/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $foundMunicipalityText = trim($matches[0]);
+                    }
                     break;
                 }
             }
             
-            $generalTriasConfidence = $generalTriasMatches > 0 ? 100 : 0;
-            $verification['confidence_scores']['general_trias'] = $generalTriasConfidence;
-            
-            if ($generalTriasMatches > 0) {
-                $verification['general_trias'] = true;
-                $verification['found_text_snippets']['general_trias'] = $foundGeneralTriasText;
+            $verification['municipality'] = $municipalityFound;
+            $verification['confidence_scores']['municipality'] = round($municipalityConfidence, 1);
+            if (!empty($foundMunicipalityText)) {
+                $verification['found_text_snippets']['municipality'] = $foundMunicipalityText;
             }
             
             // Calculate overall success
-            $requiredChecks = ['certificate_title', 'first_name', 'last_name', 'barangay', 'general_trias'];
+            $requiredChecks = ['certificate_title', 'first_name', 'last_name', 'barangay', 'municipality'];
             $passedChecks = 0;
             $totalConfidence = 0;
             
@@ -1670,7 +1743,7 @@ class DocumentReuploadService {
                 ];
             }
             
-            $verification['overall_success'] = ($passedChecks >= 4) || ($passedChecks >= 3 && $averageConfidence >= 75);
+            $verification['overall_success'] = ($passedChecks >= 5 && $averageConfidence >= 70);
             
             $verification['summary'] = [
                 'passed_checks' => $passedChecks,
