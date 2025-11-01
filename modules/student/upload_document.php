@@ -1817,19 +1817,27 @@ $page_title = 'Upload Documents';
         }
         
         // Global lock to prevent concurrent OCR processing
-        let isProcessing = false;
-        let currentProcessingType = null;
+        // Use sessionStorage to persist across page reloads
+        let isProcessing = sessionStorage.getItem('isProcessing') === 'true';
+        let currentProcessingType = sessionStorage.getItem('currentProcessingType');
+        
+        // Clear stale processing locks on page load (older than 2 minutes)
+        const processingTimestamp = sessionStorage.getItem('processingTimestamp');
+        if (processingTimestamp) {
+            const elapsedTime = Date.now() - parseInt(processingTimestamp);
+            if (elapsedTime > 120000) { // 2 minutes
+                console.log('⚠️ Clearing stale processing lock (elapsed: ' + (elapsedTime / 1000) + 's)');
+                sessionStorage.removeItem('isProcessing');
+                sessionStorage.removeItem('currentProcessingType');
+                sessionStorage.removeItem('processingTimestamp');
+                isProcessing = false;
+                currentProcessingType = null;
+            }
+        }
         
         // Process Document OCR with concurrency protection
         async function processDocument(typeCode) {
-            // Prevent concurrent processing
-            if (isProcessing) {
-                alert('⏳ Another document is being processed. Please wait until it completes.');
-                console.warn('Concurrent processing blocked - currently processing:', currentProcessingType);
-                return;
-            }
-            
-            console.log('processDocument() called with typeCode:', typeCode);
+            // IMMEDIATELY disable button on click to prevent double-clicks
             const processBtn = document.getElementById('process-btn-' + typeCode);
             
             if (!processBtn) {
@@ -1837,17 +1845,35 @@ $page_title = 'Upload Documents';
                 return;
             }
             
+            // Check if already disabled (race condition protection)
+            if (processBtn.disabled) {
+                console.warn('Button already disabled, ignoring click');
+                return;
+            }
+            
+            // Prevent concurrent processing
+            if (isProcessing) {
+                alert('⏳ A file is still being processed. Please wait until it completes.');
+                console.warn('Concurrent processing blocked - currently processing:', currentProcessingType);
+                return;
+            }
+            
+            console.log('processDocument() called with typeCode:', typeCode);
+            
             const originalHTML = processBtn.innerHTML;
             
-            // Set global processing lock
-            isProcessing = true;
-            currentProcessingType = typeCode;
-            
-            // Disable ALL process buttons to prevent concurrent processing
+            // IMMEDIATELY disable this button and all others
+            processBtn.disabled = true;
             disableAllProcessButtons();
             
+            // Set global processing lock AND persist to sessionStorage
+            isProcessing = true;
+            currentProcessingType = typeCode;
+            sessionStorage.setItem('isProcessing', 'true');
+            sessionStorage.setItem('currentProcessingType', typeCode);
+            sessionStorage.setItem('processingTimestamp', Date.now().toString());
+            
             // Show loading state on current button
-            processBtn.disabled = true;
             processBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing OCR...';
             
             const formData = new FormData();
@@ -1863,6 +1889,11 @@ $page_title = 'Upload Documents';
                 const data = await response.json();
                 
                 if (data.success) {
+                    // Clear processing lock before reload
+                    sessionStorage.removeItem('isProcessing');
+                    sessionStorage.removeItem('currentProcessingType');
+                    sessionStorage.removeItem('processingTimestamp');
+                    
                     // Show success message and reload to show confidence badges
                     console.log('✅ OCR processing successful:', data);
                     alert('✅ Document processed successfully!\n\nOCR Confidence: ' + (data.ocr_confidence || 0) + '%\nVerification Score: ' + (data.verification_score || 0) + '%');
@@ -1871,9 +1902,13 @@ $page_title = 'Upload Documents';
                     console.error('Processing failed:', data.message);
                     alert('❌ Processing failed: ' + data.message);
                     
-                    // Re-enable all buttons on failure
+                    // Clear processing lock and re-enable buttons
                     isProcessing = false;
                     currentProcessingType = null;
+                    sessionStorage.removeItem('isProcessing');
+                    sessionStorage.removeItem('currentProcessingType');
+                    sessionStorage.removeItem('processingTimestamp');
+                    
                     enableAllProcessButtons();
                     processBtn.innerHTML = originalHTML;
                 }
@@ -1881,9 +1916,13 @@ $page_title = 'Upload Documents';
                 console.error('Processing error:', error);
                 alert('❌ Processing failed: ' + (error.message || 'Please try again.'));
                 
-                // Re-enable all buttons on error
+                // Clear processing lock and re-enable buttons
                 isProcessing = false;
                 currentProcessingType = null;
+                sessionStorage.removeItem('isProcessing');
+                sessionStorage.removeItem('currentProcessingType');
+                sessionStorage.removeItem('processingTimestamp');
+                
                 enableAllProcessButtons();
                 processBtn.innerHTML = originalHTML;
             }

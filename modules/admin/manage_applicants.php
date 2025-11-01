@@ -2308,6 +2308,7 @@ function renderDocumentsHTML(data) {
 // Function to refresh a specific modal's content
 function refreshModalContent(modalEl, studentId, silent = false) {
     const modalBody = modalEl.querySelector('.modal-body');
+    const modalFooter = modalEl.querySelector('.modal-footer');
     if (!modalBody) return;
     
     const originalContent = modalBody.innerHTML;
@@ -2340,6 +2341,11 @@ function refreshModalContent(modalEl, studentId, silent = false) {
                     modalBody.innerHTML = html;
                     console.log('Modal content updated for student:', studentId);
                 }
+                
+                // Update footer buttons based on completeness status
+                if (modalFooter && data.student) {
+                    updateModalFooterButtons(modalFooter, data.student.is_complete, studentId);
+                }
             } else {
                 if (!silent) {
                     modalBody.innerHTML = `<div class="alert alert-danger m-3">
@@ -2360,6 +2366,64 @@ function refreshModalContent(modalEl, studentId, silent = false) {
             }
             console.error('Error refreshing modal content:', error);
         });
+}
+
+// Update modal footer buttons based on document completeness
+function updateModalFooterButtons(modalFooter, isComplete, studentId) {
+    // Find the section with approve/reject buttons (between distribution warning and super admin buttons)
+    const forms = modalFooter.querySelectorAll('form');
+    
+    if (isComplete) {
+        // Show "Verify" button and hide "Incomplete documents" message
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified"]')) {
+                form.style.display = 'inline';
+            }
+        });
+        
+        // Hide "Incomplete documents" message
+        const incompleteSpan = modalFooter.querySelector('span.text-muted');
+        if (incompleteSpan && incompleteSpan.textContent.includes('Incomplete')) {
+            incompleteSpan.style.display = 'none';
+        }
+        
+        // Hide "Override Verify" button (only show for incomplete)
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified_override"]')) {
+                form.style.display = 'none';
+            }
+        });
+        
+        console.log('✅ Documents complete - Verify button enabled for student:', studentId);
+    } else {
+        // Hide "Verify" button and show "Incomplete documents" message
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified"]')) {
+                form.style.display = 'none';
+            }
+        });
+        
+        // Show "Incomplete documents" message
+        const incompleteSpan = modalFooter.querySelector('span.text-muted');
+        if (incompleteSpan && incompleteSpan.textContent.includes('Incomplete')) {
+            incompleteSpan.style.display = 'inline';
+        } else if (!incompleteSpan) {
+            // Create the message if it doesn't exist
+            const newSpan = document.createElement('span');
+            newSpan.className = 'text-muted';
+            newSpan.textContent = 'Incomplete documents';
+            modalFooter.insertBefore(newSpan, modalFooter.firstChild);
+        }
+        
+        // Show "Override Verify" button (for super admin)
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified_override"]')) {
+                form.style.display = 'inline';
+            }
+        });
+        
+        console.log('⚠️ Documents incomplete - Verify button disabled for student:', studentId);
+    }
 }
 
 // Function to attach refresh listeners to student document modals
