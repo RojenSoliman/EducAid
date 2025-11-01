@@ -267,6 +267,10 @@ class DocumentReuploadService {
             
             error_log("DocumentReuploadService: Saved to database - " . ($saveResult['document_id'] ?? 'unknown ID'));
             
+            // CRITICAL: Mark documents as submitted on first upload
+            // This allows the student to see their documents are being processed
+            $this->markDocumentsSubmitted($studentId);
+            
             // Log audit trail
             $this->logAudit($studentId, $docInfo['name'], $ocrData);
             
@@ -1833,6 +1837,40 @@ class DocumentReuploadService {
             ]);
         } catch (Exception $e) {
             error_log("DocumentReuploadService::logAudit error: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Mark documents as submitted when student uploads their first document
+     * This sets documents_submitted = TRUE and documents_submission_date = NOW()
+     */
+    private function markDocumentsSubmitted($studentId) {
+        try {
+            // Check if already marked as submitted
+            $checkQuery = pg_query_params($this->db,
+                "SELECT documents_submitted FROM students WHERE student_id = $1",
+                [$studentId]
+            );
+            
+            if ($checkQuery && pg_num_rows($checkQuery) > 0) {
+                $row = pg_fetch_assoc($checkQuery);
+                $alreadySubmitted = ($row['documents_submitted'] === 't' || $row['documents_submitted'] === true);
+                
+                // Only update if not already submitted
+                if (!$alreadySubmitted) {
+                    pg_query_params($this->db,
+                        "UPDATE students 
+                         SET documents_submitted = TRUE,
+                             documents_submission_date = NOW()
+                         WHERE student_id = $1",
+                        [$studentId]
+                    );
+                    
+                    error_log("DocumentReuploadService: Marked documents as submitted for student $studentId");
+                }
+            }
+        } catch (Exception $e) {
+            error_log("DocumentReuploadService::markDocumentsSubmitted error: " . $e->getMessage());
         }
     }
     

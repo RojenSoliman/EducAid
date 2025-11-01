@@ -1159,10 +1159,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $deleteDocsQuery = "DELETE FROM documents WHERE student_id = $1";
             pg_query_params($connection, $deleteDocsQuery, [$student_id]);
             
-            // Set needs_document_upload flag and mark documents_to_reupload
+            // Set needs_document_upload flag, mark documents_to_reupload, and reset submission flags
+            // CRITICAL: Reset documents_submitted and documents_validated to allow re-upload
             $updateQuery = "UPDATE students 
                            SET needs_document_upload = TRUE,
-                               documents_to_reupload = $1
+                               documents_to_reupload = $1,
+                               documents_submitted = FALSE,
+                               documents_validated = FALSE,
+                               documents_submission_date = NULL
                            WHERE student_id = $2";
             pg_query_params($connection, $updateQuery, [
                 json_encode(['00', '01', '02', '03', '04']), // All document types
@@ -1178,6 +1182,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "Admin rejected all documents. Deleted $deletedCount files. Student must re-upload all documents.",
                 $_SERVER['REMOTE_ADDR']
             ]);
+            
+            // Send student notification about document rejection
+            createStudentNotification(
+                $connection,
+                $student_id,
+                'Documents Rejected - Re-upload Required',
+                'Your submitted documents have been rejected by the admin. Please re-upload all required documents through the Upload Documents page.',
+                'warning',
+                'high',
+                'upload_document.php'
+            );
             
             $_SESSION['success'] = "All documents rejected. Student will be notified to re-upload.";
             
