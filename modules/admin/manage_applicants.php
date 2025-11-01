@@ -1159,10 +1159,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $deleteDocsQuery = "DELETE FROM documents WHERE student_id = $1";
             pg_query_params($connection, $deleteDocsQuery, [$student_id]);
             
-            // Set needs_document_upload flag and mark documents_to_reupload
+            // Set needs_document_upload flag, mark documents_to_reupload, and reset submission flags
+            // CRITICAL: Reset documents_submitted and documents_validated to allow re-upload
             $updateQuery = "UPDATE students 
                            SET needs_document_upload = TRUE,
-                               documents_to_reupload = $1
+                               documents_to_reupload = $1,
+                               documents_submitted = FALSE,
+                               documents_validated = FALSE,
+                               documents_submission_date = NULL
                            WHERE student_id = $2";
             pg_query_params($connection, $updateQuery, [
                 json_encode(['00', '01', '02', '03', '04']), // All document types
@@ -1178,6 +1182,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "Admin rejected all documents. Deleted $deletedCount files. Student must re-upload all documents.",
                 $_SERVER['REMOTE_ADDR']
             ]);
+            
+            // Send student notification about document rejection
+            createStudentNotification(
+                $connection,
+                $student_id,
+                'Documents Rejected - Re-upload Required',
+                'Your submitted documents have been rejected by the admin. Please re-upload all required documents through the Upload Documents page.',
+                'warning',
+                'high',
+                'upload_document.php'
+            );
             
             $_SESSION['success'] = "All documents rejected. Student will be notified to re-upload.";
             
@@ -1488,20 +1503,23 @@ if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
             $verification_btn = '';
             if ($doc_code) {
                 $verify_query = pg_query_params($connection, 
-                    "SELECT verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
+                    "SELECT verification_score, verification_status, ocr_confidence FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
                     [$student_id, $doc_code]);
                 if ($verify_query && pg_num_rows($verify_query) > 0) {
                     $verify_data = pg_fetch_assoc($verify_query);
                     $verify_score = $verify_data['verification_score'];
                     $verify_status = $verify_data['verification_status'];
+                    $has_ocr = $verify_data['ocr_confidence'] !== null && $verify_data['ocr_confidence'] > 0;
                     
                     if ($verify_score !== null && $verify_score > 0) {
                         $verify_val = round($verify_score, 1);
                         $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
                         $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
                         $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
-                        
-                        // Add view validation button
+                    }
+                    
+                    // Show view validation button if document has OCR data OR verification score
+                    if ($has_ocr || ($verify_score !== null && $verify_score > 0)) {
                         $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
                             onclick=\"event.stopPropagation(); loadValidationData('$type', '$student_id'); showValidationModal();\">
                             <i class='bi bi-clipboard-check me-1'></i>View Validation Details
@@ -1614,13 +1632,17 @@ if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
             
             // Verification Score
             $verify_score = $doc_data['verification_score'];
+            $has_ocr_data = $doc_data['ocr_confidence'] !== null && $doc_data['ocr_confidence'] > 0;
+            
             if ($verify_score !== null && $verify_score > 0) {
                 $verify_val = round($verify_score, 1);
                 $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
                 $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
                 $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
-                
-                // Add view validation button
+            }
+            
+            // Show view validation button if document has OCR data OR verification score
+            if ($has_ocr_data || ($verify_score !== null && $verify_score > 0)) {
                 $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
                     onclick=\"event.stopPropagation(); loadValidationData('grades', '$student_id'); showValidationModal();\">
                     <i class='bi bi-clipboard-check me-1'></i>View Validation Details
@@ -2286,6 +2308,7 @@ function renderDocumentsHTML(data) {
 // Function to refresh a specific modal's content
 function refreshModalContent(modalEl, studentId, silent = false) {
     const modalBody = modalEl.querySelector('.modal-body');
+    const modalFooter = modalEl.querySelector('.modal-footer');
     if (!modalBody) return;
     
     const originalContent = modalBody.innerHTML;
@@ -2318,6 +2341,11 @@ function refreshModalContent(modalEl, studentId, silent = false) {
                     modalBody.innerHTML = html;
                     console.log('Modal content updated for student:', studentId);
                 }
+                
+                // Update footer buttons based on completeness status
+                if (modalFooter && data.student) {
+                    updateModalFooterButtons(modalFooter, data.student.is_complete, studentId);
+                }
             } else {
                 if (!silent) {
                     modalBody.innerHTML = `<div class="alert alert-danger m-3">
@@ -2338,6 +2366,64 @@ function refreshModalContent(modalEl, studentId, silent = false) {
             }
             console.error('Error refreshing modal content:', error);
         });
+}
+
+// Update modal footer buttons based on document completeness
+function updateModalFooterButtons(modalFooter, isComplete, studentId) {
+    // Find the section with approve/reject buttons (between distribution warning and super admin buttons)
+    const forms = modalFooter.querySelectorAll('form');
+    
+    if (isComplete) {
+        // Show "Verify" button and hide "Incomplete documents" message
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified"]')) {
+                form.style.display = 'inline';
+            }
+        });
+        
+        // Hide "Incomplete documents" message
+        const incompleteSpan = modalFooter.querySelector('span.text-muted');
+        if (incompleteSpan && incompleteSpan.textContent.includes('Incomplete')) {
+            incompleteSpan.style.display = 'none';
+        }
+        
+        // Hide "Override Verify" button (only show for incomplete)
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified_override"]')) {
+                form.style.display = 'none';
+            }
+        });
+        
+        console.log('✅ Documents complete - Verify button enabled for student:', studentId);
+    } else {
+        // Hide "Verify" button and show "Incomplete documents" message
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified"]')) {
+                form.style.display = 'none';
+            }
+        });
+        
+        // Show "Incomplete documents" message
+        const incompleteSpan = modalFooter.querySelector('span.text-muted');
+        if (incompleteSpan && incompleteSpan.textContent.includes('Incomplete')) {
+            incompleteSpan.style.display = 'inline';
+        } else if (!incompleteSpan) {
+            // Create the message if it doesn't exist
+            const newSpan = document.createElement('span');
+            newSpan.className = 'text-muted';
+            newSpan.textContent = 'Incomplete documents';
+            modalFooter.insertBefore(newSpan, modalFooter.firstChild);
+        }
+        
+        // Show "Override Verify" button (for super admin)
+        forms.forEach(form => {
+            if (form.querySelector('input[name="mark_verified_override"]')) {
+                form.style.display = 'inline';
+            }
+        });
+        
+        console.log('⚠️ Documents incomplete - Verify button disabled for student:', studentId);
+    }
 }
 
 // Function to attach refresh listeners to student document modals
@@ -3568,16 +3654,18 @@ function generateValidationHTML(validation, docType) {
                 <span class="badge ${mayorMatch ? 'bg-success' : 'bg-danger'} confidence-score">${mayorConf.toFixed(0)}%</span>
             </div>`;
             
-            // Municipality
-            const muniMatch = idv.municipality_match;
-            const muniConf = parseFloat(idv.municipality_confidence || 0);
-            const muniClass = muniMatch ? 'check-passed' : 'check-failed';
-            const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
-            html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
-                <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
-                <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
-                <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
-            </div>`;
+            // Municipality (only show if municipality check exists in validation data)
+            if (idv.municipality !== undefined || idv.general_trias !== undefined) {
+                const muniMatch = idv.municipality || idv.general_trias;
+                const muniConf = parseFloat(idv.confidence_scores?.municipality || idv.confidence_scores?.general_trias || 0);
+                const muniClass = muniMatch ? 'check-passed' : 'check-failed';
+                const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
+                </div>`;
+            }
         } else if (isCert) {
             // Certificate Title
             const certMatch = idv.certificate_title_match;
@@ -3601,16 +3689,18 @@ function generateValidationHTML(validation, docType) {
                 <span class="badge ${barangayMatch ? 'bg-success' : 'bg-danger'} confidence-score">${barangayConf.toFixed(0)}%</span>
             </div>`;
             
-            // Municipality
-            const muniMatch = idv.municipality_match;
-            const muniConf = parseFloat(idv.municipality_confidence || 0);
-            const muniClass = muniMatch ? 'check-passed' : 'check-failed';
-            const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
-            html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
-                <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
-                <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
-                <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
-            </div>`;
+            // Municipality (only show if municipality check exists in validation data)
+            if (idv.municipality !== undefined || idv.general_trias !== undefined) {
+                const muniMatch = idv.municipality || idv.general_trias;
+                const muniConf = parseFloat(idv.confidence_scores?.municipality || idv.confidence_scores?.general_trias || 0);
+                const muniClass = muniMatch ? 'check-passed' : 'check-failed';
+                const muniIcon = muniMatch ? 'check-circle-fill text-success' : 'x-circle-fill text-danger';
+                html += `<div class="form-check ${muniClass} d-flex justify-content-between align-items-center">
+                    <div><i class="bi bi-${muniIcon} me-2" style="font-size:1.2rem;"></i>
+                    <span><strong>Municipality</strong> ${muniMatch ? 'Match' : 'Not Found'}</span></div>
+                    <span class="badge ${muniMatch ? 'bg-success' : 'bg-danger'} confidence-score">${muniConf.toFixed(0)}%</span>
+                </div>`;
+            }
         }
         
         // OFFICIAL KEYWORDS (ID/EAF only)

@@ -1,4 +1,9 @@
 <?php
+// Include JSON fallback only when native functions are missing.
+if (!function_exists('json_encode')) {
+    // compat/json_fallback.php provides minimal json_encode/json_decode implementations
+    @include_once __DIR__ . '/compat/json_fallback.php';
+}
 
 class CSRFProtection {
     private static $session_key = 'csrf_tokens';

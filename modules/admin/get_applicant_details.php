@@ -27,9 +27,9 @@ if (!isset($_GET['student_id'])) {
 
 $student_id = trim($_GET['student_id']);
 
-// Fetch student data
+// Fetch student data (including needs_document_upload to determine student type)
 $student_query = pg_query_params($connection, 
-    "SELECT student_id, first_name, last_name, status FROM students WHERE student_id = $1", 
+    "SELECT student_id, first_name, last_name, status, needs_document_upload FROM students WHERE student_id = $1", 
     [$student_id]);
 
 if (!$student_query || pg_num_rows($student_query) === 0) {
@@ -39,6 +39,13 @@ if (!$student_query || pg_num_rows($student_query) === 0) {
 }
 
 $student = pg_fetch_assoc($student_query);
+
+// Determine student type based on needs_document_upload flag
+// If needs_document_upload = true, they are an existing student who needs to reupload
+// If needs_document_upload = false, they are a new registration who uploaded during registration
+$student_type = ($student['needs_document_upload'] === 't' || $student['needs_document_upload'] === true) 
+    ? 'existing_student' 
+    : 'new_registration';
 
 // Map document type codes to folder names and display labels
 $doc_type_config = [
@@ -167,8 +174,21 @@ foreach ($doc_type_config as $code => $config) {
         $ocr_data = null;
         
         // Look for .verify.json file
+        // First try: full path with extension (temp files): filename.pdf.verify.json
         $verify_json_path = $server_path . '.verify.json';
         $ocr_txt_path = $server_path . '.ocr.txt';
+        
+        // Second try: without document extension (permanent files): filename_timestamp.verify.json
+        // Remove extension from path and add .verify.json
+        $path_without_ext = preg_replace('/\.(pdf|jpg|jpeg|png|gif)$/i', '', $server_path);
+        $verify_json_path_alt = $path_without_ext . '.verify.json';
+        $ocr_txt_path_alt = $path_without_ext . '.ocr.txt';
+        
+        // Check which path exists
+        if (file_exists($verify_json_path_alt)) {
+            $verify_json_path = $verify_json_path_alt;
+            $ocr_txt_path = $ocr_txt_path_alt;
+        }
         
         if (file_exists($verify_json_path)) {
             $verify_content = file_get_contents($verify_json_path);
@@ -250,6 +270,16 @@ foreach ($doc_type_config as $code => $config) {
     }
 }
 
+// Check if all required documents are present (not missing)
+$required_docs = ['id_picture', 'eaf', 'letter_to_mayor', 'certificate_of_indigency', 'grades'];
+$is_complete = true;
+foreach ($required_docs as $doc_key) {
+    if (!isset($documents[$doc_key]) || ($documents[$doc_key]['missing'] ?? false)) {
+        $is_complete = false;
+        break;
+    }
+}
+
 // Return JSON response
 header('Content-Type: application/json');
 echo json_encode([
@@ -257,7 +287,9 @@ echo json_encode([
     'student' => [
         'id' => $student['student_id'],
         'name' => trim($student['first_name'] . ' ' . $student['last_name']),
-        'status' => $student['status']
+        'status' => $student['status'],
+        'type' => $student_type,
+        'is_complete' => $is_complete
     ],
     'documents' => $documents
 ]);

@@ -267,6 +267,10 @@ class DocumentReuploadService {
             
             error_log("DocumentReuploadService: Saved to database - " . ($saveResult['document_id'] ?? 'unknown ID'));
             
+            // CRITICAL: Mark documents as submitted on first upload
+            // This allows the student to see their documents are being processed
+            $this->markDocumentsSubmitted($studentId);
+            
             // Log audit trail
             $this->logAudit($studentId, $docInfo['name'], $ocrData);
             
@@ -310,6 +314,63 @@ class DocumentReuploadService {
 
             if (!in_array($extension, ['jpg', 'jpeg', 'png', 'pdf', 'tiff', 'bmp'])) {
                 return ['success' => false, 'message' => 'Unsupported file type for OCR'];
+            }
+            
+            // CROSS-DOCUMENT TYPE VALIDATION: Quick OCR check to prevent uploading wrong document
+            // This helps users catch mistakes early (e.g., uploading certificate instead of grades)
+            $quickOcrResult = $this->runDirectTesseractOCR($tempPath, $docTypeCode);
+            $quickText = strtolower($quickOcrResult['text'] ?? '');
+            
+            // Define document type signatures (keywords that strongly indicate document type)
+            $documentSignatures = [
+                '01' => ['semester', 'subject', 'gwa', 'units', 'prelim', 'midterm', 'final'],
+                '02' => ['mayor', 'office of the mayor', 'municipal', 'honorable mayor'],
+                '03' => ['indigency', 'indigent', 'certificate of indigency'],
+                '04' => ['student id', 'identification card', 'id number', 'valid until'],
+                '00' => ['enrollment', 'assessment', 'tuition fee', 'registration']
+            ];
+            
+            // Get expected keywords for THIS document type
+            $expectedKeywords = $documentSignatures[$docTypeCode] ?? [];
+            
+            // Check for cross-document confusion
+            foreach ($documentSignatures as $otherDocCode => $keywords) {
+                if ($otherDocCode === $docTypeCode) continue; // Skip self
+                
+                $matchCount = 0;
+                $matchedKeywords = [];
+                
+                foreach ($keywords as $keyword) {
+                    if (stripos($quickText, $keyword) !== false) {
+                        $matchCount++;
+                        $matchedKeywords[] = $keyword;
+                    }
+                }
+                
+                // STRICTER: Require 3+ keywords from ANOTHER document type (reduced false positives)
+                // OR 2+ keywords if they're very specific (like "certificate of indigency")
+                $isStrongMatch = ($matchCount >= 3) || 
+                                 ($matchCount >= 2 && strlen($keywords[0]) > 15);
+                
+                if ($isStrongMatch) {
+                    $docTypeNames = [
+                        '01' => 'Grades',
+                        '02' => 'Letter to Mayor',
+                        '03' => 'Certificate of Indigency',
+                        '04' => 'ID Picture',
+                        '00' => 'Enrollment Form'
+                    ];
+                    
+                    $expectedDocName = $docTypeNames[$docTypeCode] ?? 'this document';
+                    $detectedDocName = $docTypeNames[$otherDocCode] ?? 'another document';
+                    
+                    error_log("CROSS-DOCUMENT CONFUSION: Expected $expectedDocName ($docTypeCode), but detected $detectedDocName ($otherDocCode) keywords: " . implode(', ', $matchedKeywords));
+                    
+                    return [
+                        'success' => false,
+                        'message' => "This appears to be a <strong>$detectedDocName</strong>, not a <strong>$expectedDocName</strong>. Please upload it in the correct document field."
+                    ];
+                }
             }
 
             // Grades keep existing specialised flow
@@ -358,7 +419,7 @@ class DocumentReuploadService {
             $confidence = $ocrResult['confidence'] ?? 0;
             $status = $confidence >= 75 ? 'passed' : ($confidence >= 50 ? 'manual_review' : 'failed');
 
-            // Persist OCR artifacts beside the temp file
+            // Persist ALL OCR artifacts beside the temp file (matching registration)
             @file_put_contents($tempPath . '.ocr.txt', $ocrResult['text'] ?? '');
 
             $verificationPayload = [
@@ -373,6 +434,20 @@ class DocumentReuploadService {
             ];
 
             @file_put_contents($tempPath . '.verify.json', json_encode($verificationPayload, JSON_PRETTY_PRINT));
+            
+            // Save confidence.json (separate file for confidence tracking)
+            $confidencePayload = [
+                'ocr_confidence' => $confidence,
+                'verification_score' => $confidence,
+                'status' => $status,
+                'timestamp' => date('Y-m-d H:i:s')
+            ];
+            @file_put_contents($tempPath . '.confidence.json', json_encode($confidencePayload, JSON_PRETTY_PRINT));
+            
+            // Generate TSV output if applicable (for structured OCR data)
+            $tsvCmd = "tesseract " . escapeshellarg($tempPath) . " " . escapeshellarg($tempPath) . " -l eng --oem 1 --psm " . $this->getPSMForDocType($docTypeCode) . " tsv 2>&1";
+            @shell_exec($tsvCmd);
+            // TSV file will be saved as {tempPath}.tsv by Tesseract
 
             return [
                 'success' => true,
@@ -1162,6 +1237,16 @@ class DocumentReuploadService {
             // Save verification data
             @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
             
+            // Save confidence.json (matching registration format)
+            @file_put_contents($tempPath . '.confidence.json', json_encode([
+                'ocr_confidence' => $ocrData['ocr_confidence'],
+                'verification_score' => $ocrData['verification_score'],
+                'status' => $ocrData['verification_status'],
+                'timestamp' => date('Y-m-d H:i:s'),
+                'checks_passed' => $passedChecks,
+                'total_checks' => 6
+            ], JSON_PRETTY_PRINT));
+            
             error_log("EAF OCR: Confidence={$ocrData['ocr_confidence']}%, Passed={$passedChecks}/6 checks");
             
             return [
@@ -1209,6 +1294,7 @@ class DocumentReuploadService {
                 'last_name' => false,
                 'barangay' => false,
                 'mayor_header' => false,
+                'municipality' => false,
                 'confidence_scores' => [],
                 'found_text_snippets' => []
             ];
@@ -1308,8 +1394,53 @@ class DocumentReuploadService {
                 $verification['found_text_snippets']['mayor_header'] = implode(', ', $foundMayorKeywords);
             }
             
+            // Verify municipality (matching registration logic)
+            // Get active municipality from session or default to General Trias
+            $activeMunicipality = $_SESSION['active_municipality'] ?? 'General Trias';
+            
+            // Create municipality variants for flexible matching
+            $municipalityVariants = [
+                $activeMunicipality,
+                strtolower($activeMunicipality),
+                str_replace(' ', '', strtolower($activeMunicipality))
+            ];
+            
+            // Add common abbreviations if municipality is "General Trias"
+            if (stripos($activeMunicipality, 'general trias') !== false) {
+                $municipalityVariants[] = 'gen trias';
+                $municipalityVariants[] = 'gen. trias';
+                $municipalityVariants[] = 'gentrias';
+            }
+            
+            $municipalityFound = false;
+            $municipalityConfidence = 0;
+            $foundMunicipalityText = '';
+            
+            foreach ($municipalityVariants as $variant) {
+                $similarity = $calculateSimilarity($variant, $ocrTextLower);
+                if ($similarity > $municipalityConfidence) {
+                    $municipalityConfidence = $similarity;
+                }
+                
+                if ($similarity >= 70) {
+                    $municipalityFound = true;
+                    // Try to find the actual text snippet
+                    $pattern = '/[^\n]*' . preg_quote(explode(' ', $variant)[0], '/') . '[^\n]*/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $foundMunicipalityText = trim($matches[0]);
+                    }
+                    break;
+                }
+            }
+            
+            $verification['municipality'] = $municipalityFound;
+            $verification['confidence_scores']['municipality'] = round($municipalityConfidence, 1);
+            if (!empty($foundMunicipalityText)) {
+                $verification['found_text_snippets']['municipality'] = $foundMunicipalityText;
+            }
+            
             // Calculate overall success
-            $requiredChecks = ['first_name', 'last_name', 'barangay', 'mayor_header'];
+            $requiredChecks = ['first_name', 'last_name', 'barangay', 'mayor_header', 'municipality'];
             $passedChecks = 0;
             $totalConfidence = 0;
             
@@ -1320,17 +1451,39 @@ class DocumentReuploadService {
                 $totalConfidence += $verification['confidence_scores'][$check] ?? 0;
             }
             
-            $averageConfidence = $totalConfidence / 4;
+            $averageConfidence = $totalConfidence / 5;
             
-            $verification['overall_success'] = ($passedChecks >= 3) || ($passedChecks >= 2 && $averageConfidence >= 75);
+            // CRITICAL: Check for cross-document confusion (Letter vs Certificate)
+            $indigencyKeywords = ['indigency', 'indigent', 'certificate of indigency'];
+            $hasIndigencyKeywords = false;
+            foreach ($indigencyKeywords as $keyword) {
+                if (stripos($ocrTextLower, $keyword) !== false) {
+                    $hasIndigencyKeywords = true;
+                    break;
+                }
+            }
+            
+            if ($hasIndigencyKeywords) {
+                // This is likely a Certificate of Indigency, not a Letter to Mayor
+                error_log("Letter OCR REJECTED: Document contains indigency keywords - likely Certificate of Indigency");
+                return [
+                    'success' => false,
+                    'message' => 'This appears to be a Certificate of Indigency, not a Letter to Mayor. Please upload it in the correct document field.'
+                ];
+            }
+            
+            // STRICTER SUCCESS CRITERIA: ALL 5 checks must pass (matching registration)
+            // This prevents wrong documents (like indigency certificates) from being accepted
+            $verification['overall_success'] = ($passedChecks >= 5 && $averageConfidence >= 70);
             
             $verification['summary'] = [
                 'passed_checks' => $passedChecks,
-                'total_checks' => 4,
+                'total_checks' => 5,
                 'average_confidence' => round($averageConfidence, 1),
                 'recommendation' => $verification['overall_success'] ? 
                     'Document validation successful' : 
-                    'Please ensure the document contains your name, barangay, and mayor office header clearly'
+                    'Please ensure the document contains your name, barangay, mayor office header, and municipality (' . $activeMunicipality . ') clearly',
+                'required_municipality' => $activeMunicipality
             ];
             
             $ocrData['ocr_confidence'] = round($averageConfidence, 1);
@@ -1344,6 +1497,16 @@ class DocumentReuploadService {
             
             // Save verification data
             @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
+            
+            // Save confidence.json (matching registration format)
+            @file_put_contents($tempPath . '.confidence.json', json_encode([
+                'ocr_confidence' => $ocrData['ocr_confidence'],
+                'verification_score' => $ocrData['verification_score'],
+                'status' => $ocrData['verification_status'],
+                'timestamp' => date('Y-m-d H:i:s'),
+                'checks_passed' => $passedChecks,
+                'total_checks' => 5
+            ], JSON_PRETTY_PRINT));
             
             error_log("Letter OCR: Confidence={$ocrData['ocr_confidence']}%, Passed={$passedChecks}/4 checks");
             
@@ -1392,7 +1555,7 @@ class DocumentReuploadService {
                 'first_name' => false,
                 'last_name' => false,
                 'barangay' => false,
-                'general_trias' => false,
+                'municipality' => false,
                 'confidence_scores' => [],
                 'found_text_snippets' => []
             ];
@@ -1493,29 +1656,53 @@ class DocumentReuploadService {
                 }
             }
             
-            // Verify General Trias mention
-            $generalTriasKeywords = ['general trias', 'city of general trias', 'municipality of general trias', 'gen. trias'];
-            $generalTriasMatches = 0;
-            $foundGeneralTriasText = '';
+            // Verify municipality (matching registration and letter logic)
+            // Get active municipality from session or default to General Trias
+            $activeMunicipality = $_SESSION['active_municipality'] ?? 'General Trias';
             
-            foreach ($generalTriasKeywords as $keyword) {
-                if (stripos($ocrTextLower, $keyword) !== false) {
-                    $generalTriasMatches++;
-                    $foundGeneralTriasText = $keyword;
+            // Create municipality variants for flexible matching
+            $municipalityVariants = [
+                $activeMunicipality,
+                strtolower($activeMunicipality),
+                str_replace(' ', '', strtolower($activeMunicipality))
+            ];
+            
+            // Add common abbreviations if municipality is "General Trias"
+            if (stripos($activeMunicipality, 'general trias') !== false) {
+                $municipalityVariants[] = 'gen trias';
+                $municipalityVariants[] = 'gen. trias';
+                $municipalityVariants[] = 'gentrias';
+            }
+            
+            $municipalityFound = false;
+            $municipalityConfidence = 0;
+            $foundMunicipalityText = '';
+            
+            foreach ($municipalityVariants as $variant) {
+                $similarity = $calculateSimilarity($variant, $ocrTextLower);
+                if ($similarity > $municipalityConfidence) {
+                    $municipalityConfidence = $similarity;
+                }
+                
+                if ($similarity >= 70) {
+                    $municipalityFound = true;
+                    // Try to find the actual text snippet
+                    $pattern = '/[^\n]*' . preg_quote(explode(' ', $variant)[0], '/') . '[^\n]*/i';
+                    if (preg_match($pattern, $ocrText, $matches)) {
+                        $foundMunicipalityText = trim($matches[0]);
+                    }
                     break;
                 }
             }
             
-            $generalTriasConfidence = $generalTriasMatches > 0 ? 100 : 0;
-            $verification['confidence_scores']['general_trias'] = $generalTriasConfidence;
-            
-            if ($generalTriasMatches > 0) {
-                $verification['general_trias'] = true;
-                $verification['found_text_snippets']['general_trias'] = $foundGeneralTriasText;
+            $verification['municipality'] = $municipalityFound;
+            $verification['confidence_scores']['municipality'] = round($municipalityConfidence, 1);
+            if (!empty($foundMunicipalityText)) {
+                $verification['found_text_snippets']['municipality'] = $foundMunicipalityText;
             }
             
             // Calculate overall success
-            $requiredChecks = ['certificate_title', 'first_name', 'last_name', 'barangay', 'general_trias'];
+            $requiredChecks = ['certificate_title', 'first_name', 'last_name', 'barangay', 'municipality'];
             $passedChecks = 0;
             $totalConfidence = 0;
             
@@ -1528,7 +1715,35 @@ class DocumentReuploadService {
             
             $averageConfidence = $totalConfidence / 5;
             
-            $verification['overall_success'] = ($passedChecks >= 4) || ($passedChecks >= 3 && $averageConfidence >= 75);
+            // CRITICAL: Check for cross-document confusion (Certificate vs Letter)
+            $mayorKeywords = ['mayor', 'endorse', 'recommend', "mayor's office", 'municipal office'];
+            $hasMayorKeywords = 0;
+            foreach ($mayorKeywords as $keyword) {
+                if (stripos($ocrTextLower, $keyword) !== false) {
+                    $hasMayorKeywords++;
+                }
+            }
+            
+            // If has 2+ mayor keywords AND no indigency keyword, it's likely a Letter
+            $hasIndigency = stripos($ocrTextLower, 'indigency') !== false || stripos($ocrTextLower, 'indigent') !== false;
+            if ($hasMayorKeywords >= 2 && !$hasIndigency) {
+                error_log("Certificate OCR REJECTED: Document contains mayor/endorsement keywords but no indigency - likely Letter to Mayor");
+                return [
+                    'success' => false,
+                    'message' => 'This appears to be a Letter to Mayor, not a Certificate of Indigency. Please upload it in the correct document field.'
+                ];
+            }
+            
+            // CRITICAL: Must have "indigency" or "indigent" keyword
+            if (!$hasIndigency) {
+                error_log("Certificate OCR REJECTED: No 'indigency' or 'indigent' keyword found");
+                return [
+                    'success' => false,
+                    'message' => 'Document does not contain "indigency" or "indigent" keyword - not a valid Certificate of Indigency.'
+                ];
+            }
+            
+            $verification['overall_success'] = ($passedChecks >= 5 && $averageConfidence >= 70);
             
             $verification['summary'] = [
                 'passed_checks' => $passedChecks,
@@ -1550,6 +1765,16 @@ class DocumentReuploadService {
             
             // Save verification data
             @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
+            
+            // Save confidence.json (matching registration format)
+            @file_put_contents($tempPath . '.confidence.json', json_encode([
+                'ocr_confidence' => $ocrData['ocr_confidence'],
+                'verification_score' => $ocrData['verification_score'],
+                'status' => $ocrData['verification_status'],
+                'timestamp' => date('Y-m-d H:i:s'),
+                'checks_passed' => $passedChecks,
+                'total_checks' => 5
+            ], JSON_PRETTY_PRINT));
             
             error_log("Certificate OCR: Confidence={$ocrData['ocr_confidence']}%, Passed={$passedChecks}/5 checks");
             
@@ -1799,6 +2024,16 @@ class DocumentReuploadService {
             // Save verification data
             @file_put_contents($tempPath . '.verify.json', json_encode($verification, JSON_PRETTY_PRINT));
             
+            // Save confidence.json (matching registration format)
+            @file_put_contents($tempPath . '.confidence.json', json_encode([
+                'ocr_confidence' => $ocrData['ocr_confidence'],
+                'verification_score' => $ocrData['verification_score'],
+                'status' => $ocrData['verification_status'],
+                'timestamp' => date('Y-m-d H:i:s'),
+                'checks_passed' => $passedChecks,
+                'total_checks' => 6
+            ], JSON_PRETTY_PRINT));
+            
             error_log("ID Picture OCR: Confidence={$ocrData['ocr_confidence']}%, Passed={$passedChecks}/6 checks");
             
             return [
@@ -1833,6 +2068,40 @@ class DocumentReuploadService {
             ]);
         } catch (Exception $e) {
             error_log("DocumentReuploadService::logAudit error: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Mark documents as submitted when student uploads their first document
+     * This sets documents_submitted = TRUE and documents_submission_date = NOW()
+     */
+    private function markDocumentsSubmitted($studentId) {
+        try {
+            // Check if already marked as submitted
+            $checkQuery = pg_query_params($this->db,
+                "SELECT documents_submitted FROM students WHERE student_id = $1",
+                [$studentId]
+            );
+            
+            if ($checkQuery && pg_num_rows($checkQuery) > 0) {
+                $row = pg_fetch_assoc($checkQuery);
+                $alreadySubmitted = ($row['documents_submitted'] === 't' || $row['documents_submitted'] === true);
+                
+                // Only update if not already submitted
+                if (!$alreadySubmitted) {
+                    pg_query_params($this->db,
+                        "UPDATE students 
+                         SET documents_submitted = TRUE,
+                             documents_submission_date = NOW()
+                         WHERE student_id = $1",
+                        [$studentId]
+                    );
+                    
+                    error_log("DocumentReuploadService: Marked documents as submitted for student $studentId");
+                }
+            }
+        } catch (Exception $e) {
+            error_log("DocumentReuploadService::markDocumentsSubmitted error: " . $e->getMessage());
         }
     }
     
@@ -1892,5 +2161,117 @@ class DocumentReuploadService {
         } catch (Exception $e) {
             error_log("DocumentReuploadService::checkAndClearRejectionStatus error: " . $e->getMessage());
         }
+    }
+    
+    /**
+     * Cleanup orphaned temporary files older than specified age
+     * This prevents storage bloat from abandoned uploads
+     * 
+     * @param int $maxAgeMinutes Files older than this will be deleted (default: 60 minutes)
+     * @return array Statistics about cleanup operation
+     */
+    public function cleanupOrphanedTempFiles($maxAgeMinutes = 60) {
+        $stats = [
+            'files_deleted' => 0,
+            'artifacts_deleted' => 0,
+            'bytes_freed' => 0,
+            'errors' => []
+        ];
+        
+        try {
+            $tempBaseDir = $this->baseDir . 'temp/';
+            $cutoffTime = time() - ($maxAgeMinutes * 60);
+            
+            // Iterate through all document type folders
+            foreach (self::DOCUMENT_TYPES as $code => $docInfo) {
+                $tempFolder = $tempBaseDir . $docInfo['folder'] . '/';
+                
+                if (!is_dir($tempFolder)) {
+                    continue;
+                }
+                
+                $files = glob($tempFolder . '*');
+                
+                foreach ($files as $file) {
+                    if (!is_file($file)) {
+                        continue;
+                    }
+                    
+                    $fileAge = filemtime($file);
+                    
+                    // Delete if older than cutoff time
+                    if ($fileAge < $cutoffTime) {
+                        $fileSize = filesize($file);
+                        $filename = basename($file);
+                        
+                        // Delete main file
+                        if (@unlink($file)) {
+                            $stats['files_deleted']++;
+                            $stats['bytes_freed'] += $fileSize;
+                            error_log("CLEANUP: Deleted orphaned temp file: $filename (age: " . 
+                                     round((time() - $fileAge) / 60, 1) . " min)");
+                            
+                            // Delete associated OCR artifacts
+                            $artifacts = [
+                                $file . '.ocr.txt',
+                                $file . '.verify.json',
+                                $file . '.confidence.json',
+                                $file . '.tsv'
+                            ];
+                            
+                            foreach ($artifacts as $artifact) {
+                                if (file_exists($artifact)) {
+                                    $artifactSize = filesize($artifact);
+                                    if (@unlink($artifact)) {
+                                        $stats['artifacts_deleted']++;
+                                        $stats['bytes_freed'] += $artifactSize;
+                                        error_log("CLEANUP: Deleted artifact: " . basename($artifact));
+                                    }
+                                }
+                            }
+                        } else {
+                            $stats['errors'][] = "Failed to delete: $filename";
+                            error_log("CLEANUP ERROR: Could not delete $filename");
+                        }
+                    }
+                }
+            }
+            
+            error_log("CLEANUP COMPLETE: Deleted {$stats['files_deleted']} files, " .
+                     "{$stats['artifacts_deleted']} artifacts, freed " .
+                     round($stats['bytes_freed'] / 1024, 2) . " KB");
+            
+        } catch (Exception $e) {
+            $stats['errors'][] = $e->getMessage();
+            error_log("CLEANUP EXCEPTION: " . $e->getMessage());
+        }
+        
+        return $stats;
+    }
+    
+    /**
+     * Cleanup all processing locks older than specified age
+     * Prevents deadlocks from crashed/interrupted processing
+     * 
+     * @param int $maxAgeSeconds Locks older than this will be removed (default: 60 seconds)
+     * @return int Number of locks cleared
+     */
+    public static function cleanupStaleLocks($maxAgeSeconds = 60) {
+        $cleared = 0;
+        $currentTime = time();
+        
+        if (isset($_SESSION['processing_lock']) && is_array($_SESSION['processing_lock'])) {
+            foreach ($_SESSION['processing_lock'] as $lockKey => $lockTime) {
+                $lockAge = $currentTime - $lockTime;
+                
+                if ($lockAge > $maxAgeSeconds) {
+                    unset($_SESSION['processing_lock'][$lockKey]);
+                    $cleared++;
+                    error_log("LOCK CLEANUP: Removed stale lock '$lockKey' (age: {$lockAge}s)");
+                }
+            }
+        }
+        
+        return $cleared;
     }
 }

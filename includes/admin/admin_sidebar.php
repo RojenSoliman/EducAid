@@ -140,6 +140,48 @@ $isSysControlsActive = in_array($current, $sysControlsFiles, true);
     <!-- Manage Applicants -->
     <?= menu_link('manage_applicants.php', 'bi bi-people', 'Manage Applicants', is_active('manage_applicants.php', $current)); ?>
 
+  <!-- Potential Household Matches -->
+    <?php
+      // Ensure $matches_count is defined and compute server-side if DB is available.
+      $matches_count = 0;
+      if (!isset($connection) && is_readable(__DIR__ . '/../../config/database.php')) {
+        include_once __DIR__ . '/../../config/database.php';
+      }
+      if (isset($connection)) {
+        $countRes = @pg_query($connection, "SELECT COUNT(*) AS c FROM (SELECT LOWER(last_name) FROM students GROUP BY LOWER(last_name) HAVING COUNT(*) > 1) t");
+        if ($countRes) {
+          $matches_count = (int) pg_fetch_result($countRes, 0, 'c');
+          pg_free_result($countRes);
+        }
+      }
+
+      if ($matches_count > 0) {
+      $badge = ['text' => (string)$matches_count, 'class' => ($matches_count > 9 ? 'bg-danger' : 'bg-warning'), 'id' => 'phm-badge'];
+    } else {
+      // always render an element so JS can update it later
+      $badge = ['text' => '', 'class' => 'bg-transparent', 'id' => 'phm-badge'];
+    }
+
+    // Render a custom menu item so we can display a shorter visible label while keeping
+    // a descriptive tooltip for hover and screen readers.
+    $phm_href = '/EducAid/modules/admin/duplicate_surnames.php';
+    $phm_active = is_active('duplicate_surnames.php', $current);
+    $visibleLabel = 'Flagged Matches';
+    $tooltipLabel = 'Potential Household Matches';
+    $badgeClass = $badge['class'];
+    $badgeText = $badge['text'];
+    $badgeIdAttr = ' id="' . htmlspecialchars($badge['id']) . '"';
+
+    $phmHtml  = '<li class="nav-item ' . $phm_active . '">';
+    $phmHtml .=   '<a href="' . $phm_href . '" title="' . htmlspecialchars($tooltipLabel) . '" data-bs-toggle="tooltip" data-bs-placement="right" aria-describedby="' . htmlspecialchars($badge['id']) . '">';
+    $phmHtml .=     '<i class="bi bi-people-fill icon" aria-hidden="true"></i>';
+    $phmHtml .=     '<span class="links_name">' . htmlspecialchars($visibleLabel) . '</span>';
+    $phmHtml .=     '<span' . $badgeIdAttr . ' class="badge ' . $badgeClass . '" role="status" aria-live="polite" aria-label="' . htmlspecialchars(($matches_count>0? $matches_count . ' flagged matches' : '')) . '">' . htmlspecialchars($badgeText) . '</span>';
+    $phmHtml .=   '</a>';
+    $phmHtml .= '</li>';
+    echo $phmHtml;
+  ?>
+
     <!-- My Profile -->
     <?= menu_link('admin_profile.php', 'bi bi-person-circle', 'My Profile', is_active('admin_profile.php', $current)); ?>
 
@@ -358,6 +400,70 @@ function confirmLogout() {
 }
 </script>
 
+<!-- Live badge for Review Registrations (injected client-side; does NOT change server-side UI) -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    // Find the Review Registrations anchor inside the sidebar
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    const anchors = sidebar.querySelectorAll('a[href]');
+    let reviewAnchor = null;
+    anchors.forEach(a => {
+      const href = a.getAttribute('href') || '';
+      // match exact filename or path ending with review_registrations.php
+      if (href.endsWith('review_registrations.php') || href.includes('/review_registrations.php')) {
+        reviewAnchor = a;
+      }
+    });
+    if (!reviewAnchor) return;
+
+    // Create badge element only if not already present
+    const badgeId = 'review-pending-badge';
+    let badgeEl = reviewAnchor.querySelector('#' + badgeId);
+    if (!badgeEl) {
+      badgeEl = document.createElement('span');
+      badgeEl.id = badgeId;
+      badgeEl.className = 'badge bg-transparent ms-2';
+      badgeEl.setAttribute('role', 'status');
+      badgeEl.setAttribute('aria-live', 'polite');
+      badgeEl.textContent = '';
+      reviewAnchor.appendChild(badgeEl);
+    }
+
+    // Polling function to update count
+    const apiUrl = '/EducAid/modules/admin/review_registrations.php?api=badge_count';
+    async function updateBadge() {
+      try {
+        const res = await fetch(apiUrl, {cache: 'no-store'});
+        if (!res.ok) return;
+        const data = await res.json();
+        const count = parseInt(data.count || 0, 10) || 0;
+        if (count > 0) {
+          badgeEl.textContent = count;
+          badgeEl.classList.remove('bg-transparent');
+          badgeEl.classList.remove('bg-secondary');
+          badgeEl.classList.add(count > 9 ? 'bg-danger' : 'bg-warning');
+        } else {
+          badgeEl.textContent = '';
+          badgeEl.classList.remove('bg-danger');
+          badgeEl.classList.remove('bg-warning');
+          badgeEl.classList.add('bg-transparent');
+        }
+      } catch (e) {
+        // silent
+      }
+    }
+
+    // initial update shortly after load and then every 45s
+    setTimeout(updateBadge, 300);
+    setInterval(updateBadge, 45000);
+  } catch (err) {
+    console.debug('review badge init error', err);
+  }
+});
+</script>
+
 <style>
 <?php
 // Dynamic sidebar theming using dedicated sidebar theme settings
@@ -397,14 +503,21 @@ function adjustColorOpacity($color, $opacity = 0.3) {
     background: linear-gradient(180deg, <?= htmlspecialchars($sidebarBgStart) ?> 0%, <?= htmlspecialchars($sidebarBgEnd) ?> 100%);
     border-right: 1px solid <?= htmlspecialchars($sidebarBorder) ?>;
 }
-.admin-sidebar .nav-item a {
+ .admin-sidebar .nav-item a {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
     border-radius: 10px;
     margin: 2px 12px;
     padding: 10px 14px;
-    font-size: .9rem;
+    font-size: .8rem;
     font-weight: 500;
     color: <?= htmlspecialchars($navTextColor) ?>;
+    /* inline flex layout keeps badge inside its own anchor so it can't visually overlap other items */
+    overflow: visible;   /* avoid clipping badge with border-radius */
 }
+/* Slightly smaller label text to avoid wrapping and fit narrow sidebars */
+.admin-sidebar .links_name { font-size: .8rem; line-height:1.1; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-sidebar .nav-item a .icon {
     color: <?= htmlspecialchars($navIconColor) ?>;
     transition: .2s;
@@ -479,6 +592,29 @@ function adjustColorOpacity($color, $opacity = 0.3) {
     .admin-sidebar .dropdown > a { margin: 4px 8px; }
     .admin-sidebar .nav-item.logout a.logout-link { margin: 6px 8px 8px; }
 }
+/* Badge positioning and gap tuning */
+.admin-sidebar .nav-item a .badge {
+  /* Use inline placement in the flex row so the badge is always inside its anchor
+     and pushes to the right using auto margin. This prevents overlap with siblings. */
+  position: static;
+  margin-left: auto;
+  z-index: 5;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .75rem;
+  border-radius: 999px;
+}
+@media (max-width:768px) {
+  .admin-sidebar .nav-item a { padding-right: 30px; }
+  .admin-sidebar .nav-item a .badge { right: 8px; }
+}
+/* Collapsed sidebar: nudge badge closer to icon so it remains visible */
+.admin-sidebar.close .nav-item a { padding-right: 14px; }
+.admin-sidebar.close .nav-item a .badge { margin-left: 0; }
 /* Collapse behavior for submenus when sidebar collapsed */
 .admin-sidebar.close #submenu-sys,
 .admin-sidebar.close #submenu-distribution { 
