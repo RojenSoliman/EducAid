@@ -15,6 +15,19 @@ if (!isset($_SESSION['admin_username'])) {
     exit;
 }
 
+// Lightweight API for sidebar: return pending registrations count as JSON
+if (isset($_GET['api']) && $_GET['api'] === 'badge_count') {
+    header('Content-Type: application/json');
+    $countRes = @pg_query($connection, "SELECT COUNT(*) FROM students WHERE status = 'under_registration' AND (is_archived IS NULL OR is_archived = FALSE)");
+    $count = 0;
+    if ($countRes) {
+        $count = (int) pg_fetch_result($countRes, 0, 0);
+        pg_free_result($countRes);
+    }
+    echo json_encode(['count' => $count]);
+    exit;
+}
+
 // Initialize DocumentService
 $docService = new DocumentService($connection);
 
@@ -1304,9 +1317,9 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                             currentTableBody.innerHTML = newTableBody.innerHTML;
                         }
 
-                        // Update pending count badge
-                        const newBadge = tempDiv.querySelector('.badge.bg-warning');
-                        const currentBadge = document.querySelector('.badge.bg-warning');
+                        // Update pending count badge (scope to main content to avoid touching sidebar badges)
+                        const newBadge = tempDiv.querySelector('#mainContent .badge.bg-warning');
+                        const currentBadge = document.querySelector('#mainContent .badge.bg-warning');
                         if (newBadge && currentBadge) {
                             currentBadge.textContent = newBadge.textContent;
                         }
@@ -1326,7 +1339,8 @@ $yearLevels = pg_fetch_all(pg_query($connection, "SELECT year_level_id, name FRO
                 })
                 .finally(() => {
                     isUpdating = false;
-                    setTimeout(updateTableData, 100); // Update every 100ms
+                    // Poll for updates periodically. Use a conservative 30s interval to avoid excessive requests.
+                    setTimeout(updateTableData, 30000);
                 });
         }
 
