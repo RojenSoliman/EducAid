@@ -1503,20 +1503,23 @@ if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
             $verification_btn = '';
             if ($doc_code) {
                 $verify_query = pg_query_params($connection, 
-                    "SELECT verification_score, verification_status FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
+                    "SELECT verification_score, verification_status, ocr_confidence FROM documents WHERE student_id = $1 AND document_type_code = $2 ORDER BY upload_date DESC LIMIT 1", 
                     [$student_id, $doc_code]);
                 if ($verify_query && pg_num_rows($verify_query) > 0) {
                     $verify_data = pg_fetch_assoc($verify_query);
                     $verify_score = $verify_data['verification_score'];
                     $verify_status = $verify_data['verification_status'];
+                    $has_ocr = $verify_data['ocr_confidence'] !== null && $verify_data['ocr_confidence'] > 0;
                     
                     if ($verify_score !== null && $verify_score > 0) {
                         $verify_val = round($verify_score, 1);
                         $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
                         $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
                         $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
-                        
-                        // Add view validation button
+                    }
+                    
+                    // Show view validation button if document has OCR data OR verification score
+                    if ($has_ocr || ($verify_score !== null && $verify_score > 0)) {
                         $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
                             onclick=\"event.stopPropagation(); loadValidationData('$type', '$student_id'); showValidationModal();\">
                             <i class='bi bi-clipboard-check me-1'></i>View Validation Details
@@ -1629,13 +1632,17 @@ if (isset($_GET['refresh_modal']) && isset($_GET['student_id'])) {
             
             // Verification Score
             $verify_score = $doc_data['verification_score'];
+            $has_ocr_data = $doc_data['ocr_confidence'] !== null && $doc_data['ocr_confidence'] > 0;
+            
             if ($verify_score !== null && $verify_score > 0) {
                 $verify_val = round($verify_score, 1);
                 $verify_color = $verify_val >= 80 ? 'success' : ($verify_val >= 60 ? 'warning' : 'danger');
                 $verify_icon = $verify_val >= 80 ? 'check-circle' : ($verify_val >= 60 ? 'exclamation-triangle' : 'x-circle');
                 $verification_badge = " <span class='badge bg-{$verify_color}'><i class='bi bi-{$verify_icon} me-1'></i>{$verify_val}%</span>";
-                
-                // Add view validation button
+            }
+            
+            // Show view validation button if document has OCR data OR verification score
+            if ($has_ocr_data || ($verify_score !== null && $verify_score > 0)) {
                 $verification_btn = "<button type='button' class='btn btn-sm btn-outline-info w-100' 
                     onclick=\"event.stopPropagation(); loadValidationData('grades', '$student_id'); showValidationModal();\">
                     <i class='bi bi-clipboard-check me-1'></i>View Validation Details
