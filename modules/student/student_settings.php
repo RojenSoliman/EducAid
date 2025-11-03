@@ -1301,22 +1301,37 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
                 
                 <div class="mb-3 position-relative">
                   <label class="form-label">Current Password</label>
-                  <input type="password" name="current_password" id="currentPwdInput" 
-                         class="form-control" placeholder="Enter your current password" required minlength="8">
+                  <div class="input-group">
+                    <input type="password" name="current_password" id="currentPwdInput" 
+                           class="form-control" placeholder="Enter your current password" required minlength="8">
+                    <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('currentPwdInput', 'currentPwdIcon')">
+                      <i class="bi bi-eye" id="currentPwdIcon"></i>
+                    </button>
+                  </div>
                   <span id="currentPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
                 </div>
                 
                 <div class="mb-3 position-relative">
                   <label class="form-label">New Password</label>
-                  <input type="password" name="new_password" id="newPwdInput" 
-                         class="form-control" placeholder="Enter your new password" required minlength="12">
+                  <div class="input-group">
+                    <input type="password" name="new_password" id="newPwdInput" 
+                           class="form-control" placeholder="Enter your new password" required minlength="12">
+                    <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('newPwdInput', 'newPwdIcon')">
+                      <i class="bi bi-eye" id="newPwdIcon"></i>
+                    </button>
+                  </div>
                   <span id="newPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
                 </div>
                 
                 <div class="mb-3 position-relative">
                   <label class="form-label">Confirm New Password</label>
-                  <input type="password" name="confirm_password" id="confirmPwdInput" 
-                         class="form-control" placeholder="Confirm your new password" required minlength="12">
+                  <div class="input-group">
+                    <input type="password" name="confirm_password" id="confirmPwdInput" 
+                           class="form-control" placeholder="Confirm your new password" required minlength="12">
+                    <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('confirmPwdInput', 'confirmPwdIcon')">
+                      <i class="bi bi-eye" id="confirmPwdIcon"></i>
+                    </button>
+                  </div>
                   <span id="confirmPwdError" class="form-error position-absolute" style="right:15px;top:35px;"></span>
                 </div>
                 
@@ -1366,6 +1381,22 @@ unset($_SESSION['profile_flash'], $_SESSION['profile_flash_type']);
   <script src="../../assets/js/student/student_profile.js"></script>
   
   <script>
+    // Password visibility toggle function
+    function togglePasswordVisibility(fieldId, iconId) {
+      const field = document.getElementById(fieldId);
+      const icon = document.getElementById(iconId);
+      
+      if (field.type === 'password') {
+        field.type = 'text';
+        icon.classList.remove('bi-eye');
+        icon.classList.add('bi-eye-slash');
+      } else {
+        field.type = 'password';
+        icon.classList.remove('bi-eye-slash');
+        icon.classList.add('bi-eye');
+      }
+    }
+
     // Smooth scroll and active navigation highlighting
     document.addEventListener('DOMContentLoaded', function() {
       const navItems = document.querySelectorAll('.settings-nav-item[href^="#"]'); // Only hash links

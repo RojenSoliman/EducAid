@@ -269,14 +269,24 @@ $admins = pg_fetch_all($adminsResult) ?: [];
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="password" class="form-label">Password <span class="text-danger">*</span></label>
-                                <input type="password" class="form-control" id="password" name="password" required minlength="6">
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="password" name="password" required minlength="6">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('password', 'passwordIcon')">
+                                        <i class="bi bi-eye" id="passwordIcon"></i>
+                                    </button>
+                                </div>
                                 <small class="text-muted">Minimum 6 characters</small>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="confirm_password" class="form-label">Confirm Password <span class="text-danger">*</span></label>
-                                <input type="password" class="form-control" id="confirm_password" required minlength="6">
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="confirm_password" required minlength="6">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('confirm_password', 'confirmPasswordIcon')">
+                                        <i class="bi bi-eye" id="confirmPasswordIcon"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -338,6 +348,22 @@ $admins = pg_fetch_all($adminsResult) ?: [];
 <script src="../../assets/js/admin/sidebar.js"></script>
 
 <script>
+// Password visibility toggle function
+function togglePasswordVisibility(fieldId, iconId) {
+    const field = document.getElementById(fieldId);
+    const icon = document.getElementById(iconId);
+    
+    if (field.type === 'password') {
+        field.type = 'text';
+        icon.classList.remove('bi-eye');
+        icon.classList.add('bi-eye-slash');
+    } else {
+        field.type = 'password';
+        icon.classList.remove('bi-eye-slash');
+        icon.classList.add('bi-eye');
+    }
+}
+
 // Function for toggle status modal
 function showToggleStatusModal(adminId, adminName, action) {
     const isDeactivate = action === 'deactivate';

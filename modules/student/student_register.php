@@ -5627,14 +5627,24 @@ if (!$isAjaxRequest) {
                 <div class="step-panel d-none" id="step-10">
                     <div class="mb-3">
                         <label class="form-label" for="password">Password</label>
-                        <input type="password" class="form-control" name="password" id="password" minlength="12" required />
+                        <div class="input-group">
+                            <input type="password" class="form-control" name="password" id="password" minlength="12" required />
+                            <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('password', 'passwordIcon')">
+                                <i class="bi bi-eye" id="passwordIcon"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="form-text">
                         Must be at least 12 characters long with letters, numbers, and symbols.
                     </div>
                     <div class="mb-3">
                         <label class="form-label" for="confirmPassword">Confirm Password</label>
-                        <input type="password" class="form-control" name="confirm_password" id="confirmPassword" minlength="12" required />
+                        <div class="input-group">
+                            <input type="password" class="form-control" name="confirm_password" id="confirmPassword" minlength="12" required />
+                            <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('confirmPassword', 'confirmPasswordIcon')">
+                                <i class="bi bi-eye" id="confirmPasswordIcon"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Password Strength</label>
@@ -5704,6 +5714,22 @@ if (!$isAjaxRequest) {
 
 <!-- Immediate function definitions for onclick handlers -->
 <script>
+// Password visibility toggle function
+function togglePasswordVisibility(fieldId, iconId) {
+    const field = document.getElementById(fieldId);
+    const icon = document.getElementById(iconId);
+    
+    if (field.type === 'password') {
+        field.type = 'text';
+        icon.classList.remove('bi-eye');
+        icon.classList.add('bi-eye-slash');
+    } else {
+        field.type = 'password';
+        icon.classList.remove('bi-eye-slash');
+        icon.classList.add('bi-eye');
+    }
+}
+
 // Simple working navigation functions (fallback if main script fails)
 let currentStep = 1;
 
