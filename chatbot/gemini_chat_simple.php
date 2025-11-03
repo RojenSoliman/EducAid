@@ -26,16 +26,30 @@ if ($userMessage === '') {
   exit;
 }
 
-$url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' . urlencode($API_KEY);
+// Use fastest model available
+$url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=' . urlencode($API_KEY);
 
-// Simple, shorter prompt for testing
+// Optimized prompt - broader and more conversational
 $payload = [
     'contents' => [[
         'role' => 'user',
         'parts' => [[
-            'text' => "You are EducAid Assistant for General Trias City. Help with scholarship questions. USER MESSAGE: " . $userMessage
+            'text' => "You are EducAid Assistant for the scholarship program in General Trias, Cavite.\n\n" .
+                     "Your role:\n" .
+                     "- Answer questions about eligibility, requirements, documents, application process, and deadlines\n" .
+                     "- Help with general student concerns, academic guidance, and university/scholarship information\n" .
+                     "- Be conversational, helpful, and friendly for casual chat or greetings\n" .
+                     "- Keep responses concise (2-3 sentences for simple questions)\n\n" .
+                     "Student message: " . $userMessage
         ]]
     ]],
+    'generationConfig' => [
+        'temperature' => 0.7,
+        'topK' => 20,
+        'topP' => 0.9,
+        'maxOutputTokens' => 512,
+        'candidateCount' => 1
+    ]
 ];
 
 $ch = curl_init($url);
@@ -44,9 +58,10 @@ curl_setopt_array($ch, [
   CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
   CURLOPT_POSTFIELDS => json_encode($payload),
   CURLOPT_RETURNTRANSFER => true,
-  CURLOPT_TIMEOUT => 30,
-  CURLOPT_SSL_VERIFYPEER => false,
-  CURLOPT_SSL_VERIFYHOST => false,
+  CURLOPT_CONNECTTIMEOUT => 5,        // Faster connection timeout
+  CURLOPT_TIMEOUT => 15,              // Faster overall timeout
+  CURLOPT_SSL_VERIFYPEER => true,     // Enable for production security
+  CURLOPT_SSL_VERIFYHOST => 2,
 ]);
 
 $response = curl_exec($ch);

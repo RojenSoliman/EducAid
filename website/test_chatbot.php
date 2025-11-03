@@ -14,7 +14,7 @@
             try {
                 console.log('Testing chatbot API...');
                 
-                const response = await fetch('../chatbot/gemini_chat.php', {
+                const response = await fetch('../chatbot/gemini_chat_fast.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

@@ -407,3 +407,27 @@
 [16-Oct-2025 20:29:39 Europe/Berlin] [GeminiAttempt] {"model":"gemini-pro-latest","api_version":"v1beta","attempt_index":35,"rate_retry":2,"http_code":429,"status":"rate_limited","retry_after":null,"backoff_seconds":2.155}
 [16-Oct-2025 20:29:42 Europe/Berlin] [GeminiAttempt] {"model":"gemini-pro-latest","api_version":"v1beta","attempt_index":36,"rate_retry":3,"http_code":429,"status":"rate_limited","retry_after":null,"backoff_seconds":4.143}
 [16-Oct-2025 20:29:42 Europe/Berlin] [GeminiAttempt] {"status":"exhausted_attempts","last_error":"HTTP 429","http_code":429,"attempted_models":["v1:gemini-2.5-flash","v1:gemini-2.5-flash-lite","v1:gemini-2.0-flash","v1beta:gemini-flash-latest","v1:gemini-2.0-flash-001","v1:gemini-2.0-flash-lite","v1:gemini-2.0-flash-lite-001","v1:gemini-2.5-pro","v1beta:gemini-pro-latest"]}
+[03-Nov-2025 17:31:54 Europe/Berlin] [GeminiAttempt] {"model":"gemini-2.5-flash","api_version":"v1","attempt_index":1,"retry_count":0,"http_code":200,"status":"success","response_id":"-9gIac6CAs3r2roP1efo2AM","total_tokens":343}
+[03-Nov-2025 17:44:27 Europe/Berlin] [GeminiAttempt] {"model":"gemini-2.0-flash-lite","api_version":"v1","attempt_index":1,"retry_count":0,"http_code":200,"status":"success","response_id":"3NsIaauoM-222roP8fWIoAQ","total_tokens":153}
+[03-Nov-2025 17:49:52 Europe/Berlin] [FastChatbot] Response time: 507ms | HTTP: 404 | Model: gemini-1.5-flash
+[03-Nov-2025 17:49:52 Europe/Berlin] [FastChatbot] HTTP 404 | Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available model
+[03-Nov-2025 17:52:24 Europe/Berlin] [FastChatbot] Response time: 1075ms | HTTP: 429 | Model: gemini-2.0-flash-exp
+[03-Nov-2025 17:52:24 Europe/Berlin] [FastChatbot] HTTP 429 | Response: {
+  "error": {
+    "code": 429,
+    "message": "Resource exhausted. Please try again later. Please refer to https://cloud.google.com/vertex-ai/generative-ai/docs/error-code-429 for more details.",
+   
+[03-Nov-2025 17:53:42 Europe/Berlin] [FastChatbot] Response time: 597ms | HTTP: 404 | Model: gemini-1.5-flash
+[03-Nov-2025 17:53:42 Europe/Berlin] [FastChatbot] HTTP 404 | Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available model
+[03-Nov-2025 18:01:03 Europe/Berlin] [FastChatbot] Response time: 530ms | HTTP: 404 | Model: gemini-1.5-flash-latest
+[03-Nov-2025 18:01:03 Europe/Berlin] [FastChatbot] HTTP 404 | Response: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of availabl
+[03-Nov-2025 18:03:01 Europe/Berlin] [FastChatbot] Response time: 1789ms | HTTP: 200 | Model: gemini-2.0-flash-exp

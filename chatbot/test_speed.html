@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Speed Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1 { color: #333; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .test-item {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        .test-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .test-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+        .test-status {
+            font-size: 14px;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .status-waiting { background: #e3f2fd; color: #1976d2; }
+        .status-running { background: #fff3e0; color: #f57c00; }
+        .status-success { background: #e8f5e9; color: #388e3c; }
+        .status-error { background: #ffebee; color: #d32f2f; }
+        .message-text { color: #666; font-size: 14px; margin-bottom: 10px; font-style: italic; }
+        .response-box {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 10px;
+            display: none;
+        }
+        .response-box.show { display: block; }
+        .response-text { color: #333; line-height: 1.6; margin-bottom: 10px; }
+        .timing { color: #666; font-size: 13px; }
+        .timing strong { color: #1976d2; font-weight: 600; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: #1565c0; }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .endpoint-select {
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            flex: 1;
+        }
+        .summary {
+            background: #e8f5e9;
+            border: 1px solid #c8e6c9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+        .summary.show { display: block; }
+        .summary h3 { color: #388e3c; margin-bottom: 10px; }
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1976d2;
+            margin-bottom: 5px;
+        }
+        .stat-label { font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚡ Chatbot Speed Test</h1>
+        <p class="subtitle">Test the optimized chatbot response times</p>
+
+        <div class="controls">
+            <select id="endpoint" class="endpoint-select">
+                <option value="chatbot/gemini_chat.php">Production (gemini_chat.php)</option>
+                <option value="chatbot/gemini_chat_simple.php">Simple Test (gemini_chat_simple.php)</option>
+            </select>
+            <button id="runTests" onclick="runAllTests()">Run All Tests</button>
+            <button id="clearResults" onclick="clearResults()">Clear Results</button>
+        </div>
+
+        <div id="test1" class="test-item">
+            <div class="test-header">
+                <div class="test-name">Test 1: Simple Greeting</div>
+                <div class="test-status status-waiting">Waiting</div>
+            </div>
+            <div class="message-text">"Hello!"</div>
+            <div class="response-box">
+                <div class="response-text"></div>
+                <div class="timing"></div>
+            </div>
+        </div>
+
+        <div id="test2" class="test-item">
+            <div class="test-header">
+                <div class="test-name">Test 2: Eligibility Question</div>
+                <div class="test-status status-waiting">Waiting</div>
+            </div>
+            <div class="message-text">"Am I eligible for the scholarship?"</div>
+            <div class="response-box">
+                <div class="response-text"></div>
+                <div class="timing"></div>
+            </div>
+        </div>
+
+        <div id="test3" class="test-item">
+            <div class="test-header">
+                <div class="test-name">Test 3: Document Requirements</div>
+                <div class="test-status status-waiting">Waiting</div>
+            </div>
+            <div class="message-text">"What documents do I need to submit?"</div>
+            <div class="response-box">
+                <div class="response-text"></div>
+                <div class="timing"></div>
+            </div>
+        </div>
+
+        <div id="test4" class="test-item">
+            <div class="test-header">
+                <div class="test-name">Test 4: Complex Question</div>
+                <div class="test-status status-waiting">Waiting</div>
+            </div>
+            <div class="message-text">"Tell me about the application process, eligibility criteria, and required documents"</div>
+            <div class="response-box">
+                <div class="response-text"></div>
+                <div class="timing"></div>
+            </div>
+        </div>
+
+        <div id="test5" class="test-item">
+            <div class="test-header">
+                <div class="test-name">Test 5: Casual Conversation</div>
+                <div class="test-status status-waiting">Waiting</div>
+            </div>
+            <div class="message-text">"How are you?"</div>
+            <div class="response-box">
+                <div class="response-text"></div>
+                <div class="timing"></div>
+            </div>
+        </div>
+
+        <div id="summary" class="summary">
+            <h3>📊 Test Summary</h3>
+            <div class="summary-stats">
+                <div class="stat">
+                    <div class="stat-value" id="avgTime">-</div>
+                    <div class="stat-label">Average Time (s)</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="fastestTime">-</div>
+                    <div class="stat-label">Fastest (s)</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="slowestTime">-</div>
+                    <div class="stat-label">Slowest (s)</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="successRate">-</div>
+                    <div class="stat-label">Success Rate</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const tests = [
+            { id: 'test1', message: 'Hello!' },
+            { id: 'test2', message: 'Am I eligible for the scholarship?' },
+            { id: 'test3', message: 'What documents do I need to submit?' },
+            { id: 'test4', message: 'Tell me about the application process, eligibility criteria, and required documents' },
+            { id: 'test5', message: 'How are you?' }
+        ];
+
+        let results = [];
+
+        function setStatus(testId, status, text) {
+            const statusEl = document.querySelector(`#${testId} .test-status`);
+            statusEl.className = `test-status status-${status}`;
+            statusEl.textContent = text;
+        }
+
+        function showResponse(testId, response, time) {
+            const box = document.querySelector(`#${testId} .response-box`);
+            const responseText = box.querySelector('.response-text');
+            const timing = box.querySelector('.timing');
+            
+            responseText.textContent = response;
+            timing.innerHTML = `<strong>${time.toFixed(2)}s</strong> response time`;
+            box.classList.add('show');
+        }
+
+        async function runTest(test) {
+            const endpoint = document.getElementById('endpoint').value;
+            const url = `/${endpoint}`;
+            
+            setStatus(test.id, 'running', 'Running...');
+            
+            const startTime = performance.now();
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: test.message })
+                });
+                
+                const endTime = performance.now();
+                const time = (endTime - startTime) / 1000;
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    setStatus(test.id, 'error', 'Error');
+                    showResponse(test.id, `Error: ${data.error}`, time);
+                    return { success: false, time };
+                }
+                
+                const reply = data.reply || data.message || 'No response';
+                setStatus(test.id, 'success', `${time.toFixed(2)}s`);
+                showResponse(test.id, reply, time);
+                
+                return { success: true, time };
+                
+            } catch (error) {
+                const endTime = performance.now();
+                const time = (endTime - startTime) / 1000;
+                
+                setStatus(test.id, 'error', 'Failed');
+                showResponse(test.id, `Error: ${error.message}`, time);
+                
+                return { success: false, time };
+            }
+        }
+
+        async function runAllTests() {
+            const runButton = document.getElementById('runTests');
+            runButton.disabled = true;
+            runButton.textContent = 'Running Tests...';
+            
+            results = [];
+            document.getElementById('summary').classList.remove('show');
+            
+            for (const test of tests) {
+                const result = await runTest(test);
+                results.push(result);
+                await new Promise(resolve => setTimeout(resolve, 500)); // Small delay between tests
+            }
+            
+            showSummary();
+            
+            runButton.disabled = false;
+            runButton.textContent = 'Run All Tests';
+        }
+
+        function showSummary() {
+            const successCount = results.filter(r => r.success).length;
+            const times = results.filter(r => r.success).map(r => r.time);
+            
+            if (times.length === 0) {
+                return;
+            }
+            
+            const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+            const fastest = Math.min(...times);
+            const slowest = Math.max(...times);
+            const successRate = ((successCount / results.length) * 100).toFixed(0);
+            
+            document.getElementById('avgTime').textContent = avgTime.toFixed(2);
+            document.getElementById('fastestTime').textContent = fastest.toFixed(2);
+            document.getElementById('slowestTime').textContent = slowest.toFixed(2);
+            document.getElementById('successRate').textContent = successRate + '%';
+            
+            document.getElementById('summary').classList.add('show');
+        }
+
+        function clearResults() {
+            tests.forEach(test => {
+                setStatus(test.id, 'waiting', 'Waiting');
+                document.querySelector(`#${test.id} .response-box`).classList.remove('show');
+            });
+            document.getElementById('summary').classList.remove('show');
+            results = [];
+        }
+    </script>
+</body>
+</html>

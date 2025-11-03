@@ -245,20 +245,28 @@ $in=json_decode($raw,true);
 $userMessage=trim($in['message']??'');
 if($userMessage===''){ http_response_code(400); echo json_encode(['error'=>'Empty message']); exit; }
 
-$prompt = "You are EducAid Assistant, the official AI helper for the EducAid scholarship program in General Trias City, Cavite. " .
-  "Provide accurate, concise assistance about eligibility, required documents, process steps, deadlines (remind they change), and contact details. Maintain privacy (RA 10173). If unsure, advise verifying on the official portal.\n\n" .
-  "USER MESSAGE: " . $userMessage;
+// Optimized prompt - shorter for faster response, broader capabilities
+$prompt = "You are EducAid Assistant for the scholarship program in General Trias, Cavite.\n\n" .
+  "Your role:\n" .
+  "- Answer questions about eligibility, requirements, documents, application process, and deadlines\n" .
+  "- Help with general student concerns, academic guidance, and university/scholarship information\n" .
+  "- Be conversational, helpful, and friendly for casual chat or greetings\n" .
+  "- Keep responses concise (2-3 sentences for simple questions, more detail when needed)\n" .
+  "- If you don't know something specific, guide them to check the official portal or contact the office\n\n" .
+  "Student message: " . $userMessage;
 
-// Preferred logical ordering (fast flash > flash lite > pro)
+// Optimized: Prioritize fastest flash models (2.0 flash is fastest, then 1.5 flash)
 $preference = [
+  'gemini-2.0-flash-lite',           // Fastest - prioritize this
+  'gemini-2.0-flash-lite-001',
+  'gemini-2.0-flash',                // Very fast
+  'gemini-2.0-flash-001',
+  'gemini-1.5-flash',                // Fast and reliable
+  'gemini-1.5-flash-001',
+  'gemini-flash-latest',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-flash-latest',
-  'gemini-2.0-flash-001',
-  'gemini-2.0-flash-lite',
-  'gemini-2.0-flash-lite-001',
-  'gemini-2.5-pro',
+  'gemini-1.5-pro',                  // Slower, more capable - use as last resort
   'gemini-pro-latest'
 ];
 
@@ -280,7 +288,17 @@ if(empty($attempts)){
   foreach($versions as $ver){ foreach($preference as $cand){ $attempts[] = [$ver,$cand]; } }
 }
 
-$payload = [ 'contents' => [[ 'role'=>'user','parts'=>[[ 'text'=>$prompt ]] ]] ];
+// Optimized payload with generation config for faster, more concise responses
+$payload = [
+  'contents' => [[ 'role'=>'user','parts'=>[[ 'text'=>$prompt ]] ]],
+  'generationConfig' => [
+    'temperature' => 0.7,           // Balanced creativity/consistency
+    'topK' => 20,                   // Reduced from default 40 for faster generation
+    'topP' => 0.9,                  // Slightly reduced for faster response
+    'maxOutputTokens' => 512,       // Limit response length for speed (increased to 512 for better answers)
+    'candidateCount' => 1           // Only generate one response
+  ]
+];
 
 $totalCandidates = count($attempts);
 $maxAllowedAttempts = max(1, $totalCandidates * GEMINI_MAX_RETRY_ATTEMPTS);
@@ -328,8 +346,8 @@ foreach($attempts as [$ver,$model]){
       CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
       CURLOPT_POSTFIELDS => json_encode($payload),
       CURLOPT_RETURNTRANSFER => true,
-      CURLOPT_CONNECTTIMEOUT => 10,
-      CURLOPT_TIMEOUT => 40,
+      CURLOPT_CONNECTTIMEOUT => 5,      // Reduced from 10 to 5 seconds
+      CURLOPT_TIMEOUT => 20,            // Reduced from 40 to 20 seconds
       CURLOPT_SSL_VERIFYPEER => true,
       CURLOPT_SSL_VERIFYHOST => 2,
       CURLOPT_HEADERFUNCTION => function($ch, $header) use (&$responseHeaders){

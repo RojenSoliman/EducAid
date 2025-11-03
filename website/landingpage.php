@@ -730,7 +730,7 @@ function lp_block_style($key){
 <script>
 // Enhanced EducAid Chatbot
 document.addEventListener('DOMContentLoaded', function() {
-  const apiUrl = '../chatbot/gemini_chat.php'; // Fixed path - go up one directory
+  const apiUrl = '../chatbot/gemini_chat_fast.php'; // Fast single-model chatbot
   const toggle = document.getElementById('eaToggle');
   const panel  = document.getElementById('eaPanel');
   const close  = document.getElementById('eaClose');

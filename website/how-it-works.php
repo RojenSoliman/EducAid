@@ -531,7 +531,7 @@ if ($is_super_admin && isset($_GET['edit']) && $_GET['edit'] == '1') { $IS_EDIT_
 <script>
 // Enhanced EducAid Chatbot
 document.addEventListener('DOMContentLoaded', function() {
-  const apiUrl = 'chatbot/gemini_chat.php'; // Update this path as needed
+  const apiUrl = 'chatbot/gemini_chat_fast.php'; // Fast single-model chatbot
   const toggle = document.getElementById('eaToggle');
   const panel  = document.getElementById('eaPanel');
   const close  = document.getElementById('eaClose');

@@ -374,7 +374,7 @@ document.getElementById('year').textContent = new Date().getFullYear();
 
 // Chatbot (lightweight reuse)
 (function(){
-  const apiUrl = '../chatbot/gemini_chat.php';
+  const apiUrl = '../chatbot/gemini_chat_fast.php';
   const t=document.getElementById('eaToggle'),p=document.getElementById('eaPanel'),c=document.getElementById('eaClose'),b=document.getElementById('eaBody'),i=document.getElementById('eaInput'),s=document.getElementById('eaSend'),ty=document.getElementById('eaTyping');
   if(!t) return; let open=false; function toggle(){ open=!open; p.style.display=open?'block':'none'; if(open) i.focus(); }
   t.addEventListener('click',toggle); c.addEventListener('click',toggle);
